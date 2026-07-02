@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 1 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -40,7 +40,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | 📋 ToDo | P0 | M | — |
+| 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | ✅ Done | P0 | M | — |
 | 1.2 | Shared catalogs and canonical types | 📋 ToDo | P0 | M | 1.1 |
 | 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | 📋 ToDo | P0 | M | 1.2 |
 | 1.4 | Usage normalizers ×9 with reconciliation invariants | 📋 ToDo | P0 | L | 1.2, 1.3 |
@@ -58,7 +58,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 
 ### Task 1.1 — Project scaffold + 4 CI workflows (5-subpath build)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: —
@@ -69,11 +69,11 @@ Create the folder structure, all tooling configs (adapted from `../nest-storage/
 
 #### Acceptance criteria
 
-- [ ] `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` all pass on the empty skeleton
-- [ ] `pnpm build` produces `dist/{server,shared,prices,prisma,redis}/index.{mjs,cjs,d.ts}`
-- [ ] The four workflows are valid and incremental-safe (`passWithNoTests`); `release.yml` inert until a `v*.*.*` tag
-- [ ] `package.json` matches spec §3.2 exports and §18.2 peers exactly; `"dependencies": {}`
-- [ ] eslint flat v9 (`strictTypeChecked` + `stylisticTypeChecked` + prettier); zero warnings
+- [x] `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` all pass on the empty skeleton
+- [x] `pnpm build` produces `dist/{server,shared,prices,prisma,redis}/index.{mjs,cjs,d.ts}`
+- [x] The four workflows are valid and incremental-safe (`passWithNoTests`); `release.yml` inert until a `v*.*.*` tag
+- [x] `package.json` matches spec §3.2 exports and §18.2 peers exactly; `"dependencies": {}`
+- [x] eslint flat v9 (`strictTypeChecked` + `stylisticTypeChecked` + prettier); zero warnings
 
 #### Files to create / modify
 
@@ -1052,3 +1052,5 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
+- 1.1 ✅ 2026-07-02 — Scaffolded the five-subpath peer-only package (tsup dual-format, 5 tsconfig/jest variants, eslint flat v9, Stryker, brotli size budgets) and the four CI workflows (ci/codeql/scorecard/release); typecheck, lint, build (all 5 subpaths mjs+cjs+d.ts), size, and passWithNoTests all green with `dependencies: {}`.

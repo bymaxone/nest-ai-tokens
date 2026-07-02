@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "verbatimModuleSyntax": false,
+    "isolatedModules": false,
+    "sourceMap": true,
+    "inlineSourceMap": false,
+    "types": ["node", "jest", "reflect-metadata"],
+    "baseUrl": ".",
+    "paths": {
+      "@bymax-one/nest-ai-tokens": ["./src/server/index.ts"],
+      "@bymax-one/nest-ai-tokens/shared": ["./src/shared/index.ts"],
+      "@bymax-one/nest-ai-tokens/prices": ["./src/prices/index.ts"],
+      "@bymax-one/nest-ai-tokens/prisma": ["./src/prisma/index.ts"],
+      "@bymax-one/nest-ai-tokens/redis": ["./src/redis/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

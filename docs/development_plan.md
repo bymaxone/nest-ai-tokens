@@ -70,15 +70,15 @@ The phase order respects the dependency graph (Appendix A): shared types before 
 
 ### 1.4 Progress
 
-- **Overall progress:** 📋 0 / 5 phases done (0%) — 0 / 47 sub-steps
-- **Active phase:** none (execution not started)
+- **Overall progress:** 🔄 0 / 5 phases done (0%) — 1 / 47 sub-steps
+- **Active phase:** Phase 1 — Foundation + Shared Core + Pricing
 - **Blocked:** none
 
 ### 1.5 Phase dashboard
 
 | ID | Phase | Status | Progress | Complexity | Last updated |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [Foundation + Shared Core + Pricing](./tasks/phase-01-foundation-shared-core-pricing.md) | 📋 ToDo | 0/11 | MEDIUM | 2026-07-02 |
+| 1 | [Foundation + Shared Core + Pricing](./tasks/phase-01-foundation-shared-core-pricing.md) | 🔄 In Progress | 1/11 | MEDIUM | 2026-07-02 |
 | 2 | [Ledger + Markup + Events + Prisma Store](./tasks/phase-02-ledger-markup-events-prisma.md) | 📋 ToDo | 0/7 | HIGH | 2026-07-02 |
 | 3 | [Wallets + Budgets + Enforcement](./tasks/phase-03-wallets-budgets-enforcement.md) | 📋 ToDo | 0/10 | HIGH | 2026-07-02 |
 | 4 | [Metering Lifecycle + Streaming + Telemetry + Reporting + E2E](./tasks/phase-04-metering-streaming-telemetry-reporting.md) | 📋 ToDo | 0/12 | HIGH | 2026-07-02 |

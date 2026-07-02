@@ -1,0 +1,157 @@
+{
+  "name": "@bymax-one/nest-ai-tokens",
+  "version": "0.1.0-alpha.0",
+  "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (×9), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
+  "author": "Bymax One <support@bymax.one>",
+  "license": "MIT",
+  "homepage": "https://github.com/bymaxone/nest-ai-tokens#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bymaxone/nest-ai-tokens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bymaxone/nest-ai-tokens/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.cjs"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.mjs",
+      "require": "./dist/shared/index.cjs"
+    },
+    "./prices": {
+      "types": "./dist/prices/index.d.ts",
+      "import": "./dist/prices/index.mjs",
+      "require": "./dist/prices/index.cjs"
+    },
+    "./prisma": {
+      "types": "./dist/prisma/index.d.ts",
+      "import": "./dist/prisma/index.mjs",
+      "require": "./dist/prisma/index.cjs"
+    },
+    "./redis": {
+      "types": "./dist/redis/index.d.ts",
+      "import": "./dist/redis/index.mjs",
+      "require": "./dist/redis/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "pnpm clean && tsup",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:e2e": "jest --config jest.e2e.config.ts",
+    "test:all": "pnpm test && pnpm test:e2e",
+    "test:cov:all": "jest --config jest.coverage.config.ts --coverage",
+    "mutation": "stryker run",
+    "mutation:incremental": "stryker run --incremental",
+    "mutation:dry-run": "stryker run --dryRunOnly",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "size": "node scripts/check-size.mjs",
+    "clean": "rm -rf dist coverage",
+    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build",
+    "release": "pnpm publish --provenance"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "reflect-metadata": "^0.2.0",
+    "@prisma/client": ">=6.0.0",
+    "ioredis": "^5.0.0",
+    "@nestjs/event-emitter": ">=2.0.0",
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": { "optional": false },
+    "@nestjs/core": { "optional": false },
+    "reflect-metadata": { "optional": false },
+    "@prisma/client": { "optional": true },
+    "ioredis": { "optional": true },
+    "@nestjs/event-emitter": { "optional": true },
+    "@opentelemetry/api": { "optional": true }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@nestjs/common": "^11.1.20",
+    "@nestjs/core": "^11.1.20",
+    "@nestjs/event-emitter": "^3.0.1",
+    "@nestjs/platform-express": "^11.1.20",
+    "@nestjs/testing": "^11.1.20",
+    "@opentelemetry/api": "^1.9.0",
+    "@prisma/client": "^6.16.2",
+    "@stryker-mutator/core": "^9",
+    "@stryker-mutator/jest-runner": "^9",
+    "@stryker-mutator/typescript-checker": "^9",
+    "@testcontainers/postgresql": "^10",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^7.2.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "fast-check": "^3.23.2",
+    "ioredis": "^5.4.2",
+    "jest": "^30.4.2",
+    "prettier": "^3.8.3",
+    "prisma": "^6.16.2",
+    "reflect-metadata": "^0.2.2",
+    "supertest": "^7.2.2",
+    "testcontainers": "^10",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1",
+      "multer": "2.2.0",
+      "qs": "6.15.2",
+      "undici": "8.5.0",
+      "uuid": "11.1.1"
+    },
+    "onlyBuiltDependencies": ["esbuild", "@prisma/client", "@prisma/engines", "prisma"]
+  },
+  "keywords": [
+    "nestjs",
+    "ai",
+    "tokens",
+    "metering",
+    "billing",
+    "usage-based-billing",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "pricing",
+    "ledger",
+    "wallet",
+    "budget",
+    "markup"
+  ],
+  "packageManager": "pnpm@10.8.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  }
+}

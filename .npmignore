@@ -1,0 +1,16 @@
+src/
+test/
+docs/
+scripts/
+coverage/
+.stryker-tmp/
+reports/
+.github/
+*.config.ts
+*.config.mjs
+*.config.cjs
+*.config.json
+tsconfig*.json
+.prettierrc
+.editorconfig
+*.tsbuildinfo
