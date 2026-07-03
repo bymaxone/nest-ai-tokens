@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 🔄 In Progress · **Progress**: 4 / 12 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 5 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -43,7 +43,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 | 4.2 | capture() + release() (idempotency contracts, delta math) | ✅ Done | P0 | L | 4.1 |
 | 4.3 | Hold reaper (TTL sweep, multi-replica claim) | ✅ Done | P0 | M | 4.2 |
 | 4.4 | meter() + reverse() orchestrator + getStatus() | ✅ Done | P0 | L | 4.2, 3.6 |
-| 4.5 | StreamUsageCollector (abort-safe streaming capture) | 📋 ToDo | P0 | L | 4.2 |
+| 4.5 | StreamUsageCollector (abort-safe streaming capture) | ✅ Done | P0 | L | 4.2 |
 | 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | 📋 ToDo | P0 | L | 4.2, 3.8 |
 | 4.7 | OpenTelemetry gen_ai.* emission | 📋 ToDo | P1 | M | 4.4 |
 | 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | 📋 ToDo | P0 | L | 2.7 |
@@ -404,7 +404,7 @@ Completion Protocol:
 
 ### Task 4.5 — StreamUsageCollector
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2
@@ -415,11 +415,11 @@ Streaming-safe usage capture: prefer the provider's final usage chunk; fall back
 
 #### Acceptance criteria
 
-- [ ] OpenAI stream fixture (final chunk with `include_usage`) → provider-final usage wins
-- [ ] Anthropic fixture (cumulative `message_delta` + `message_stop`) → finalized correctly
-- [ ] Aborted stream + tokenizer → partial output billed; input per the fallback order (collector prompt count → hold estimate → 0)
-- [ ] No tokenizer + no final usage → 422 `AI_TOKENS_STREAM_USAGE_MISSING`
-- [ ] Exported from the server entry (public class)
+- [x] OpenAI stream fixture (final chunk with `include_usage`) → provider-final usage wins
+- [x] Anthropic fixture (cumulative `message_delta` + `message_stop`) → finalized correctly
+- [x] Aborted stream + tokenizer → partial output billed; input per the fallback order (collector prompt count → hold estimate → 0)
+- [x] No tokenizer + no final usage → 422 `AI_TOKENS_STREAM_USAGE_MISSING`
+- [x] Exported from the server entry (public class)
 
 #### Files to create / modify
 
@@ -1037,3 +1037,4 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 - 4.2 ✅ 2026-07-03 — capture()/release(): idempotent settlement ±delta, cross-tenant HOLD_NOT_FOUND, 409/410 contracts, release restores in full and never bills.
 - 4.3 ✅ 2026-07-03 — hold reaper: setInterval lifecycle sweep, atomic multi-replica claim, shared restore path, per-hold error isolation, unref'd (no open handles).
 - 4.4 ✅ 2026-07-03 — meter()/reverse()/getStatus() + record({enforce}) post-hoc consume; orchestrated reversal restores wallet+budget+count; AccessStatus blockedBy.
+- 4.5 ✅ 2026-07-03 — StreamUsageCollector: provider-final usage (OpenAI/Anthropic) vs tokenizer fallback on abort; capture collector overload with the §5.6 input fallback order.

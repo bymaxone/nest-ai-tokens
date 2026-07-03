@@ -5,8 +5,9 @@ import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-stor
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import type { ResolvedAiTokensOptions } from '../config'
-import type { Hold, HoldEstimate, MeteringContext } from '../interfaces'
+import type { Hold, HoldEstimate, ITokenizer, MeteringContext } from '../interfaces'
 import { providerPresets } from '../config/provider-presets'
+import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import { AiTokensException } from '../errors'
 import { BudgetService } from './budget.service'
 import { LedgerService } from './ledger.service'
@@ -1126,6 +1127,37 @@ describe('MeteringService additional edges', () => {
     const hold = await built.service.hold(context(), ESTIMATE_A)
     await built.service.capture(hold, normalized({ inputTokens: 500, outputTokens: 250 }))
     expect((await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(96_875_000n)
+  })
+})
+
+describe('MeteringService.capture — streaming collector', () => {
+  const wordTokenizer: ITokenizer = { countTokens: ({ text }): number => (text.trim() === '' ? 0 : text.trim().split(/\s+/).length) }
+
+  /** An aborted stream settles via the tokenizer, taking input tokens from the hold estimate. */
+  it('captures an aborted stream using the hold estimate for input', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
+    collector.push({ choices: [{ delta: { content: 'one two three' } }] })
+    const record = await built.service.capture(hold, collector, providerPresets.openaiChat)
+    expect(record.status).toBe('posted')
+    expect(record.inputTokens).toBe(1500) // hold.estimatedTokens (variant A total) — the §5.6 input fallback
+    expect(record.outputTokens).toBe(3)
+  })
+
+  /** A stream with provider-final usage settles on the reported actuals. */
+  it('captures a stream with provider-final usage', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
+    collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 800, completion_tokens: 400 } })
+    const record = await built.service.capture(hold, collector)
+    expect(record.inputTokens).toBe(800)
+    expect(record.outputTokens).toBe(400)
   })
 })
 

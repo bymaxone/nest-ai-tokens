@@ -37,6 +37,7 @@ import { LedgerService } from './ledger.service'
 import { MarkupResolver, type ResolvedMarkup } from './markup.resolver'
 import { MeteringEffects } from './metering-effects'
 import { PricingService } from './pricing.service'
+import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import type { TokenCounts } from './hold-support'
 import {
   isNormalizedUsage,
@@ -327,7 +328,7 @@ export class MeteringService {
   async capture(hold: Hold, usage: unknown, preset?: ProviderPreset): Promise<UsageRecord> {
     const record = await this.loadHoldRecord(hold)
     if (record.status !== 'pending') return this.settledOrConflict(record)
-    const normalized = this.finalizeCaptureUsage(usage, hold, preset)
+    const normalized = await this.finalizeCaptureUsage(usage, hold, preset)
     const usageForRating: NormalizedUsage = {
       ...normalized,
       provider: record.provider,
@@ -536,8 +537,20 @@ export class MeteringService {
     return record
   }
 
-  /** Normalize the usage handed to `capture()` (collector overload added with streaming). */
-  private finalizeCaptureUsage(usage: unknown, _hold: Hold, preset?: ProviderPreset): NormalizedUsage {
+  /**
+   * Normalize the usage handed to `capture()`. A {@link StreamUsageCollector} is
+   * finalized here; when it fell back to a tokenizer count with no prompt tokens
+   * (input `0`), the hold's estimated tokens supply the aborted-stream input
+   * fallback (spec §5.6 order: collector prompt count → hold estimate → 0).
+   */
+  private async finalizeCaptureUsage(usage: unknown, hold: Hold, preset?: ProviderPreset): Promise<NormalizedUsage> {
+    if (usage instanceof StreamUsageCollector) {
+      const finalized = await usage.finalize()
+      if (usage.usedFallback && finalized.inputTokens === 0 && hold.estimatedTokens > 0) {
+        return { ...finalized, inputTokens: hold.estimatedTokens }
+      }
+      return finalized
+    }
     return normalizeCaptureUsage(usage, preset?.normalizer)
   }
 
