@@ -2,9 +2,13 @@
  * @fileoverview Host-side derivation of a stable idempotency key from request
  * content (spec §8.4). The payload is serialized to canonical JSON — object keys
  * sorted recursively, array order preserved, `undefined` dropped, `bigint`
- * rendered as a decimal string, `Date` as its ISO string — then hashed with a
- * pure synchronous SHA-256. Deriving the key from content means a retry after a
- * 429/network failure reuses the same key and is deduplicated.
+ * encoded as a QUOTED, type-tagged string (e.g. `42n` → `"42n"`), `Date` as its
+ * ISO string — then hashed with a pure synchronous SHA-256. The `n`-suffixed
+ * quoted form makes a `bigint` unambiguous: it can never serialize to the same
+ * text as the number `42` (`42`) or a numeric string `"42"` (`"42"`), so
+ * `deriveIdempotencyKey(42)` and `deriveIdempotencyKey(42n)` never collide.
+ * Deriving the key from content means a retry after a 429/network failure reuses
+ * the same key and is deduplicated.
  * @layer shared
  */
 
@@ -14,11 +18,13 @@ import { sha256Hex } from './sha256'
  * Serialize a value to a canonical JSON string: object keys are sorted so
  * `{a,b}` and `{b,a}` produce identical output; arrays keep their order;
  * `undefined` object members are dropped; `undefined` array elements become
- * `null`; `bigint` and `Date` are stringified.
+ * `null`; `bigint` is encoded as an `n`-suffixed quoted string (`42n` → `"42n"`)
+ * so it can never collide with a number or a numeric string; `Date` is its ISO
+ * string.
  */
 function canonicalize(value: unknown): string {
   if (value === null || value === undefined) return 'null'
-  if (typeof value === 'bigint') return value.toString()
+  if (typeof value === 'bigint') return JSON.stringify(`${value.toString()}n`)
   if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
   if (value instanceof Date) return JSON.stringify(value.toISOString())

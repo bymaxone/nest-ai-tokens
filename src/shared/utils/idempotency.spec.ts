@@ -45,6 +45,37 @@ describe('deriveIdempotencyKey', () => {
     expect(deriveIdempotencyKey({ a: 1, b: undefined })).toBe(deriveIdempotencyKey({ a: 1 }))
   })
 
+  /** A bigint must never canonicalize to the same text as the equal number (exactly-once). */
+  it('distinguishes a bigint from the equal number', () => {
+    expect(deriveIdempotencyKey(42n)).not.toBe(deriveIdempotencyKey(42))
+    expect(deriveIdempotencyKey({ v: 42n })).not.toBe(deriveIdempotencyKey({ v: 42 }))
+  })
+
+  /** A bigint must never canonicalize to the same text as the equal numeric string. */
+  it('distinguishes a bigint from the equal numeric string', () => {
+    expect(deriveIdempotencyKey(42n)).not.toBe(deriveIdempotencyKey('42'))
+    expect(deriveIdempotencyKey({ v: 42n })).not.toBe(deriveIdempotencyKey({ v: '42' }))
+  })
+
+  /** A bigint round-trips deterministically: equal bigints derive equal keys. */
+  it('derives a stable key for equal bigints', () => {
+    fc.assert(
+      fc.property(fc.bigInt(), (value) => {
+        expect(deriveIdempotencyKey({ v: value })).toBe(deriveIdempotencyKey({ v: BigInt(value.toString()) }))
+      }),
+    )
+  })
+
+  /** Distinct bigints derive distinct keys (no cross-magnitude collision). */
+  it('derives distinct keys for distinct bigints', () => {
+    fc.assert(
+      fc.property(fc.bigInt(), fc.bigInt(), (a, b) => {
+        fc.pre(a !== b)
+        expect(deriveIdempotencyKey({ v: a })).not.toBe(deriveIdempotencyKey({ v: b }))
+      }),
+    )
+  })
+
   /** Arrays render undefined holes as null, and non-finite numbers as null. */
   it('normalizes undefined array elements and non-finite numbers to null', () => {
     expect(deriveIdempotencyKey([1, undefined, 3])).toBe(deriveIdempotencyKey([1, null, 3]))
