@@ -23,15 +23,33 @@ export interface RedisBudgetCounterStoreOptions {
   keyPrefix?: string
 }
 
+/** The largest integer Redis Lua's IEEE-754 doubles represent exactly (`2^53 − 1`), as a Lua literal. */
+const SAFE_INTEGER_MAX = '9007199254740991'
+
 /**
  * Atomically increment `KEYS[1]` by `ARGV[1]`, but undo and return `0` when the new
  * value would exceed the limit `ARGV[2]`; otherwise set the TTL `ARGV[3]` (ms) and
  * return `1`. The increment-then-undo keeps the whole check-and-set in ONE atomic
  * script — no other command interleaves between the read and the write.
+ *
+ * Redis Lua compares with IEEE-754 doubles, which lose precision above `2^53 − 1`.
+ * When an operand OR the resulting counter falls outside that safe-integer range the
+ * script undoes any increment and returns `-1` so the caller signals the counter as
+ * unavailable and falls back to the authoritative DB conditional consume, which
+ * compares int64 nano-USD exactly — a fail-safe to the source of truth.
  */
 const INCR_IF_BELOW_LUA = `
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+if amount > ${SAFE_INTEGER_MAX} or amount < -${SAFE_INTEGER_MAX} or limit > ${SAFE_INTEGER_MAX} or limit < -${SAFE_INTEGER_MAX} then
+  return -1
+end
 local newValue = redis.call('INCRBY', KEYS[1], ARGV[1])
-if newValue > tonumber(ARGV[2]) then
+if newValue > ${SAFE_INTEGER_MAX} or newValue < -${SAFE_INTEGER_MAX} then
+  redis.call('DECRBY', KEYS[1], ARGV[1])
+  return -1
+end
+if newValue > limit then
   redis.call('DECRBY', KEYS[1], ARGV[1])
   return 0
 end
@@ -47,6 +65,21 @@ if newValue < 0 then
 end
 return 1
 `
+
+/**
+ * Signals that a counter operand or result falls outside the IEEE-754 safe-integer
+ * range (`±(2^53 − 1)`), where the Lua/Redis double arithmetic the fast path relies
+ * on would silently lose precision. It is thrown so `BudgetService` treats the counter
+ * as unavailable and falls back to the authoritative DB conditional consume, which
+ * compares int64 nano-USD exactly.
+ */
+export class CounterValueOutOfRangeError extends Error {
+  readonly isCounterValueOutOfRange = true
+  constructor() {
+    super('counter operand or result exceeds the safe-integer range')
+    this.name = 'CounterValueOutOfRangeError'
+  }
+}
 
 /** The official Redis adapter for the live budget counter port. */
 export class RedisBudgetCounterStore implements IBudgetCounterStore {
@@ -72,6 +105,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param limit The dimension limit.
    * @param ttlSeconds The key TTL (window length + grace).
    * @returns `true` when incremented within the limit, `false` when it would exceed it.
+   * @throws {CounterValueOutOfRangeError} when an operand or the resulting counter exceeds the safe-integer range.
    */
   async incrIfBelow(key: string, amount: bigint, limit: bigint, ttlSeconds: number): Promise<boolean> {
     const client = await this.resolve()
@@ -83,6 +117,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
       limit.toString(),
       Math.ceil(ttlSeconds * 1_000).toString(),
     )
+    if (result === -1) throw new CounterValueOutOfRangeError()
     return result === 1
   }
 

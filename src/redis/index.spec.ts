@@ -1,5 +1,8 @@
 import type { Redis } from 'ioredis'
-import { RedisBudgetCounterStore } from './index'
+import { CounterValueOutOfRangeError, RedisBudgetCounterStore } from './index'
+
+/** The largest integer the shipped Lua script treats as safe (`2^53 − 1`). */
+const SAFE_MAX = 9_007_199_254_740_991n
 
 /** A minimal in-memory Redis that interprets the two shipped Lua scripts. */
 class FakeRedis {
@@ -10,8 +13,11 @@ class FakeRedis {
   eval(script: string, _numKeys: number, key: string, ...args: string[]): Promise<number> {
     if (script.includes('PEXPIRE')) {
       const [amount, limit, ttl] = args as [string, string, string]
-      const next = (this.values.get(key) ?? 0n) + BigInt(amount)
-      if (next > BigInt(limit)) return Promise.resolve(0)
+      const amt = BigInt(amount)
+      const lim = BigInt(limit)
+      const next = (this.values.get(key) ?? 0n) + amt
+      if (outOfSafeRange(amt) || outOfSafeRange(lim) || outOfSafeRange(next)) return Promise.resolve(-1)
+      if (next > lim) return Promise.resolve(0)
       this.values.set(key, next)
       this.ttls.set(key, Number(ttl))
       return Promise.resolve(1)
@@ -27,6 +33,11 @@ class FakeRedis {
     this.values.delete(key)
     return Promise.resolve(1)
   }
+}
+
+/** Whether a value falls outside the Lua safe-integer range (`±(2^53 − 1)`). */
+function outOfSafeRange(value: bigint): boolean {
+  return value > SAFE_MAX || value < -SAFE_MAX
 }
 
 /** Cast a FakeRedis to the ioredis surface the store consumes. */
@@ -79,6 +90,32 @@ describe('RedisBudgetCounterStore', () => {
     const store = new RedisBudgetCounterStore(asRedis(redis), { keyPrefix: 'app:' })
     await store.incrIfBelow('k', 10n, 100n, 60)
     expect(redis.values.has('app:k')).toBe(true)
+  })
+
+  /** An operand beyond the safe-integer range throws so the service falls back to the DB. */
+  it('throws when an operand exceeds the safe-integer range', async () => {
+    const redis = new FakeRedis()
+    const store = new RedisBudgetCounterStore(asRedis(redis))
+    await expect(store.incrIfBelow('k', 9_007_199_254_740_993n, 9_007_199_254_740_999n, 60)).rejects.toBeInstanceOf(
+      CounterValueOutOfRangeError,
+    )
+    expect(redis.values.get('k') ?? 0n).toBe(0n) // nothing persisted
+  })
+
+  /** An in-range increment that would push the accumulated counter out of range also throws. */
+  it('throws when the accumulated counter exceeds the safe-integer range', async () => {
+    const redis = new FakeRedis()
+    const store = new RedisBudgetCounterStore(asRedis(redis))
+    expect(await store.incrIfBelow('k', 5_000_000_000_000_000n, 9_000_000_000_000_000n, 60)).toBe(true) // 5e15 ≤ limit
+    await expect(store.incrIfBelow('k', 5_000_000_000_000_000n, 9_000_000_000_000_000n, 60)).rejects.toBeInstanceOf(
+      CounterValueOutOfRangeError,
+    )
+    expect(redis.values.get('k')).toBe(5_000_000_000_000_000n) // second increment undone
+  })
+
+  /** The out-of-range signal is structurally branded for cross-bundle detection. */
+  it('brands the out-of-range signal', () => {
+    expect(new CounterValueOutOfRangeError().isCounterValueOutOfRange).toBe(true)
   })
 
   /** A connection URL is lazily connected via a dynamic ioredis import (mocked). */

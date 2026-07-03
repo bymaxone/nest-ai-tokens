@@ -529,10 +529,15 @@ class FakeCounter implements IBudgetCounterStore {
   failIncr = false
   failDecr = false
   failReset = false
+  /** When set, an amount or limit beyond this bound throws — modeling the Redis safe-integer signal. */
+  safeMax?: bigint
 
   incrIfBelow(key: string, amount: bigint, limit: bigint, _ttlSeconds: number): Promise<boolean> {
     if (this.failIncr) return Promise.reject(new Error('counter down'))
     const next = (this.values.get(key) ?? 0n) + amount
+    if (this.safeMax !== undefined && (amount > this.safeMax || limit > this.safeMax || next > this.safeMax)) {
+      return Promise.reject(new Error('counter value exceeds the safe-integer range'))
+    }
     if (next > limit) return Promise.resolve(false)
     this.values.set(key, next)
     return Promise.resolve(true)
@@ -606,6 +611,22 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
     await service.consume(context(), delta(40n))
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(40n)
+  })
+
+  /**
+   * A near-2^53 nano-USD amount is beyond the counter's safe-integer range, so the
+   * counter signals unavailable and the service falls back to the exact int64 DB path
+   * (which records the full amount without precision loss) rather than a wrong compare.
+   */
+  it('falls back to the database when the counter value exceeds the safe-integer range', async () => {
+    const counter = new FakeCounter()
+    counter.safeMax = 9_007_199_254_740_991n // 2^53 - 1, the Redis Lua safe bound
+    const limit = 9_007_199_254_740_993n // 2^53 + 1
+    const amount = 9_007_199_254_740_992n // 2^53 — beyond the counter's safe range
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: limit }))
+    await service.consume(context(), delta(amount))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(amount)
   })
 
   /** Counter down AND database down with failClosed blocks with a store error. */
