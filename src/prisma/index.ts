@@ -511,59 +511,59 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   getWallet(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   appendEntry(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   conditionalDebit(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   openGrants(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   listEntries(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   reconcile(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   upsert(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   remove(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   findMatching(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   conditionalConsume(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   adjustWindow(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   getWindow(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   setWindowStart(): Promise<never> {
-    return this.notPhase3()
+    return this.notImplemented()
   }
 
   /** Reject a wallet/budget call until those halves are implemented. */
-  private notPhase3(): Promise<never> {
+  private notImplemented(): Promise<never> {
     return Promise.reject(
       new AiTokensException('AI_TOKENS_NOT_CONFIGURED', undefined, { reason: 'the wallet/budget store is not yet implemented' }),
     )
