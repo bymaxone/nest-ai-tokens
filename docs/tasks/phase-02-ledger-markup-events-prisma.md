@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 🔄 In Progress · **Progress**: 2 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 3 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -42,7 +42,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 |---|---|---|---|---|---|
 | 2.1 | LedgerService — append, idempotency, query, sumCost | ✅ Done | P0 | L | 1.11 |
 | 2.2 | Ledger state machine + compensation (reverse, ledger-only) | ✅ Done | P0 | L | 2.1 |
-| 2.3 | Opt-in per-tenant hash chain + verifyChain | 📋 ToDo | P1 | M | 2.2 |
+| 2.3 | Opt-in per-tenant hash chain + verifyChain | ✅ Done | P1 | M | 2.2 |
 | 2.4 | Markup engine wiring (number \| IMarkupPolicy) | 📋 ToDo | P0 | S | 1.11 |
 | 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | 📋 ToDo | P0 | M | 2.1, 2.4 |
 | 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | 📋 ToDo | P0 | M | 2.5 |
@@ -220,7 +220,7 @@ Completion Protocol:
 
 ### Task 2.3 — Opt-in per-tenant hash chain + verifyChain
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 2.2
@@ -231,9 +231,9 @@ Tamper-evident per-tenant hash chain over settled records (`ledger.hashChain: tr
 
 #### Acceptance criteria
 
-- [ ] Chain off by default — zero hash computation when disabled (no `lastHash` store calls)
-- [ ] Enabled: `record → capture-style settle → reverse` yields a verifiable chain; tampering any posted row makes `verifyChain` report exactly that row
-- [ ] Settling a hold does not invalidate the chain (pending excluded)
+- [x] Chain off by default — zero hash computation when disabled (no `lastHash` store calls)
+- [x] Enabled: `record → capture-style settle → reverse` yields a verifiable chain; tampering any posted row makes `verifyChain` report exactly that row
+- [x] Settling a hold does not invalidate the chain (pending excluded)
 
 #### Files to create / modify
 
@@ -640,3 +640,4 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 
 - 2.1 ✅ 2026-07-03 — LedgerService append (payload-hash replay-or-conflict), query matrix, sumCost, toJsonSafe, and the in-memory ledger fake; 100% coverage.
 - 2.2 ✅ 2026-07-03 — Ledger state machine (`transition` legality table + atomic claim) and `reverse()` compensation (negation property test, sum-to-zero, concurrent-claim race); added `ILedgerStore.findById`.
+- 2.3 ✅ 2026-07-03 — Opt-in per-tenant tamper-evident hash chain (`chainHash` util, store-serialized settlement hashing via a `hashChain` flag on append/transition) + `verifyChain` (off-by-default, tamper detection, pending-excluded); chain survives the annotation-only reversal.

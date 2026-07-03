@@ -2,20 +2,23 @@
  * @fileoverview `LedgerService` — the append-only usage ledger core over
  * `ILedgerStore` (spec §8): exactly-once append (payload-hash replay-or-conflict,
  * §8.4), filtered queries, cost aggregation, the lifecycle state machine
- * (`transition`, §8.3), and the ledger-only compensation primitive (`reverse`,
- * §8.5 steps 1–2). Balance and spend math sums `posted` + `reversed` records only
- * (§8.3), so those are the default query statuses. The service NEVER issues an
- * `UPDATE`/`DELETE` of a posted amount — corrections are compensating records
- * (a `posted` row with negated amounts) and the sole permitted post-posting
- * mutation is the annotation-only `posted → reversed` flip.
+ * (`transition`, §8.3), the ledger-only compensation primitive (`reverse`, §8.5
+ * steps 1–2), and the opt-in per-tenant tamper-evident hash chain (§8.6). Balance
+ * and spend math sums `posted` + `reversed` records only (§8.3), so those are the
+ * default query statuses. The service NEVER issues an `UPDATE`/`DELETE` of a posted
+ * amount — corrections are compensating records (a `posted` row with negated
+ * amounts) and the sole permitted post-posting mutation is the annotation-only
+ * `posted → reversed` flip.
  * @layer server
  */
 
 import { randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
+import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, LedgerCostSummary } from '../interfaces'
+import { chainHash, type ChainVerification } from '../utils/hash-chain'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
@@ -61,6 +64,16 @@ type TokenCounts = Pick<
  */
 export type LedgerAppendInput = Omit<NewUsageRecord, 'idempotencyKey' | 'totalTokens'>
 
+/** The resolved-options subset the ledger consumes (the hash-chain flag, §8.6). */
+export type LedgerServiceOptions = Pick<ResolvedAiTokensOptions, 'ledger'>
+
+/**
+ * Audit hook invoked by {@link LedgerService.verifyChain}. The module wires it to
+ * the event dispatcher's `ai_tokens.audit` emission; it defaults to a no-op so the
+ * service has no dependency cycle on the dispatcher.
+ */
+export type LedgerAuditHook = (action: string, details: Record<string, unknown>) => void
+
 /** Sum every token category into the record's `totalTokens` total. */
 function sumTokens(counts: TokenCounts): number {
   return (
@@ -81,8 +94,19 @@ function sumTokens(counts: TokenCounts): number {
 export class LedgerService {
   /**
    * @param store The append-only ledger store port.
+   * @param options The resolved options carrying the hash-chain flag (§8.6).
+   * @param audit The audit hook for chain verification; wired by the module.
    */
-  constructor(private readonly store: ILedgerStore) {}
+  constructor(
+    private readonly store: ILedgerStore,
+    private readonly options: LedgerServiceOptions = { ledger: { hashChain: false } },
+    private readonly audit: LedgerAuditHook = (): void => undefined,
+  ) {}
+
+  /** Whether the per-tenant tamper-evident hash chain is enabled (§8.6). */
+  private get hashChainEnabled(): boolean {
+    return this.options.ledger.hashChain
+  }
 
   /**
    * Append a record exactly once. The idempotency key is `ctxKey` when supplied
@@ -105,7 +129,7 @@ export class LedgerService {
     }
     const payloadHash = computePayloadHash(record)
     try {
-      return await this.store.append(record, payloadHash)
+      return await this.store.append(record, payloadHash, this.hashChainEnabled)
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) {
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
@@ -179,7 +203,41 @@ export class LedgerService {
     patch?: Partial<UsageRecord>,
   ): Promise<UsageRecord | null> {
     this.assertLegalTransition(from, to, patch)
-    return this.store.transition(id, from, to, patch)
+    return this.store.transition(id, from, to, patch, this.hashChainEnabled)
+  }
+
+  /**
+   * Verify a tenant's tamper-evident hash chain (§8.6). Walks its settled records
+   * (`posted` + `reversed`) in append order and recomputes each record's chain hash
+   * from its stored `prevHash` link, comparing it to the stored `hash`; reports the
+   * first record whose hash does not match (a post-hoc content modification).
+   * Recomputing from each record's own stored link makes verification independent
+   * of walk order and of any `from`/`to` window (the first in-range record keeps
+   * its real predecessor link). Always emits an `ai_tokens.audit` hook.
+   *
+   * @param tenantId The tenant whose chain to verify.
+   * @param from Optional inclusive lower bound on `occurredAt`.
+   * @param to Optional inclusive upper bound on `occurredAt`.
+   * @returns `{ valid: true }`, or `{ valid: false, brokenAtRecordId }`.
+   */
+  async verifyChain(tenantId: string, from?: Date, to?: Date): Promise<ChainVerification> {
+    const filter: LedgerFilter = { tenantId, status: ['posted', 'reversed'] }
+    if (from !== undefined) filter.from = from
+    if (to !== undefined) filter.to = to
+
+    const settled = await this.store.query(filter)
+    let result: ChainVerification = { valid: true }
+    for (const record of settled) {
+      if (record.hash !== chainHash(record.prevHash ?? null, record)) {
+        result = { valid: false, brokenAtRecordId: record.id }
+        break
+      }
+    }
+
+    const details: Record<string, unknown> = { tenantId, valid: result.valid }
+    if (!result.valid) details.brokenAtRecordId = result.brokenAtRecordId
+    this.audit('ai_tokens.chain.verified', details)
+    return result
   }
 
   /**
