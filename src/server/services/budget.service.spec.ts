@@ -6,7 +6,7 @@ import type {
   MeteringScope,
   NewUsageRecord,
 } from '../../shared'
-import type { MeteringContext } from '../interfaces'
+import type { IBudgetCounterStore, MeteringContext } from '../interfaces'
 import { AiTokensException } from '../errors'
 import { LedgerService } from './ledger.service'
 import { BudgetService, type BudgetEventHooks, type BudgetServiceOptions, type UpsertBudgetInput } from './budget.service'
@@ -504,6 +504,175 @@ describe('BudgetService — defaults & edge fractions', () => {
     await service.upsertBudget(budgetInput({ features: ['workout.generate'] }))
     const [status] = await service.status(TENANT, USER_SCOPE)
     expect(status?.features).toEqual(['workout.generate'])
+  })
+})
+
+/** An in-memory budget counter with configurable outage modes. */
+class FakeCounter implements IBudgetCounterStore {
+  readonly values = new Map<string, bigint>()
+  readonly resetKeys: string[] = []
+  failIncr = false
+  failDecr = false
+  failReset = false
+
+  incrIfBelow(key: string, amount: bigint, limit: bigint, _ttlSeconds: number): Promise<boolean> {
+    if (this.failIncr) return Promise.reject(new Error('counter down'))
+    const next = (this.values.get(key) ?? 0n) + amount
+    if (next > limit) return Promise.resolve(false)
+    this.values.set(key, next)
+    return Promise.resolve(true)
+  }
+
+  decr(key: string, amount: bigint): Promise<void> {
+    if (this.failDecr) return Promise.reject(new Error('decr down'))
+    const next = (this.values.get(key) ?? 0n) - amount
+    this.values.set(key, next < 0n ? 0n : next)
+    return Promise.resolve()
+  }
+
+  reset(key: string): Promise<void> {
+    this.resetKeys.push(key)
+    if (this.failReset) return Promise.reject(new Error('reset down'))
+    this.values.delete(key)
+    return Promise.resolve()
+  }
+}
+
+/** The cost counter key for a budget's current (calendar-month) window under the fixed clock. */
+function costKey(budgetId: string): string {
+  return `ai_tokens:budget:${budgetId}:2026-06-01T00:00:00.000Z:cost`
+}
+
+describe('BudgetService — live counter fast path (§10.8)', () => {
+  /** The counter fast path increments within the limit, then the DB records the consume. */
+  it('consumes through the counter and the database', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    expect(counter.values.get(costKey(budget.id))).toBe(40n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(40n)
+  })
+
+  /** An over-limit counter reject blocks without touching the database. */
+  it('rejects via the counter without a database write', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    counter.values.set(costKey(budget.id), 100n) // counter already full
+    await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'))).toBeNull() // DB untouched
+  })
+
+  /** A partial counter pass on one dimension is rolled back when another rejects. */
+  it('rolls back a partial counter increment on a multi-dimension reject', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n, limitTokens: 10 }))
+    await expectRejectCode(service.consume(context(), delta(50n, 20)), 'AI_TOKENS_QUOTA_EXCEEDED')
+    expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n) // cost increment rolled back
+  })
+
+  /** A counter pass but a DB shortfall rolls the counter back and blocks. */
+  it('rolls back the counter when the database rejects', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    store.forceWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'), { spentNanoUsd: 100n, spentTokens: 0, spentCount: 0 })
+    await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n)
+  })
+
+  /** An unavailable counter falls back to the authoritative database (fail-closed still consumes). */
+  it('falls back to the database when the counter is down', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(40n)
+  })
+
+  /** Counter down AND database down with failClosed blocks with a store error. */
+  it('blocks when both the counter and database are down (failClosed)', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    jest.spyOn(store, 'conditionalConsume').mockRejectedValue(new Error('db down'))
+    await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_ERROR')
+  })
+
+  /** A database outage with failClosed disabled allows the call (fail open) after rolling the counter back. */
+  it('allows on a database outage when failClosed is disabled', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter, failClosed: false } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    jest.spyOn(store, 'conditionalConsume').mockRejectedValue(new Error('db down'))
+    await expect(service.consume(context(), delta(40n))).resolves.toBeUndefined()
+    expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n) // counter rolled back
+  })
+
+  /** A block failure rolls back a sibling budget's live counter, best-effort even if decr fails. */
+  it('rolls back a sibling counter on a partial multi-budget failure', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const wide = await service.upsertBudget(budgetInput({ scope: { type: 'tenant', id: TENANT }, limitNanoUsd: 1_000n }))
+    await service.upsertBudget(budgetInput({ scope: USER_SCOPE, limitNanoUsd: 10n }))
+    counter.failDecr = true // rollback decr fails → logged, never thrown
+    await expectRejectCode(service.consume(context(), delta(50n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    void wide
+  })
+
+  /** release decrements the live counter across matching budgets. */
+  it('releases the counter on release', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.release(context(), delta(40n))
+    expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n)
+  })
+
+  /** rotateWindow resets the counter keys for the new window, tolerating a reset failure. */
+  it('resets counter keys on rotation', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.rotateWindow(budget.id, new Date('2026-06-20T00:00:00.000Z'))
+    expect(counter.resetKeys.some((key) => key.includes(':cost'))).toBe(true)
+    counter.failReset = true
+    await expect(service.rotateWindow(budget.id, new Date('2026-06-21T00:00:00.000Z'))).resolves.toBeUndefined()
+  })
+
+  /** The count dimension flows through the counter; a zero-delta dimension is skipped. */
+  it('consumes the count dimension through the counter', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n, limitTokens: 100, limitCount: 5 }))
+    await service.consume(context(), delta(0n, 0, 1)) // count only; cost and token deltas are 0 → skipped
+    const countKey = `ai_tokens:budget:${budget.id}:2026-06-01T00:00:00.000Z:count`
+    expect(counter.values.get(countKey)).toBe(1n)
+  })
+
+  /** A counter outage followed by a database rejection blocks without a counter rollback. */
+  it('blocks when the counter is down and the database rejects', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    store.forceWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'), { spentNanoUsd: 100n, spentTokens: 0, spentCount: 0 })
+    await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+  })
+
+  /** A total-window budget uses the long counter TTL without error. */
+  it('supports a total-window counter', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ window: 'total', limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    const key = `ai_tokens:budget:${budget.id}:${budget.createdAt.toISOString()}:cost` // total → windowStart = createdAt
+    expect(counter.values.get(key)).toBe(40n)
   })
 })
 

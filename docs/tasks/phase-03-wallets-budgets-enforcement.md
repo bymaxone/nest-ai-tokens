@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 🔄 In Progress · **Progress**: 8 / 10 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 9 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -50,7 +50,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 | 3.6 | Budget status API (BudgetStatus[]) | ✅ Done | P0 | M | 3.5 |
 | 3.7 | Soft thresholds + projections + throttle policy | ✅ Done | P1 | M | 3.5, 3.6 |
 | 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | ✅ Done | P0 | M | 3.6 |
-| 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | 📋 ToDo | P0 | M | 3.5 |
+| 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | ✅ Done | P0 | M | 3.5 |
 | 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | 📋 ToDo | P0 | L | 3.3, 3.5, 2.7 |
 
 ---
@@ -715,7 +715,7 @@ Completion Protocol:
 
 ### Task 3.9 — RedisBudgetCounterStore + fail-closed fallback
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.5
@@ -726,9 +726,9 @@ The optional live cross-replica counter (`./redis` subpath, atomic Lua `incrIfBe
 
 #### Acceptance criteria
 
-- [ ] `incrIfBelow` atomic (single Lua script); unit-tested against ioredis-mock; real Redis in Phase 4 e2e
-- [ ] Counter unavailable + `failClosed: true` → falls back to DB conditional consume; DB also down → blocks
-- [ ] `decr`/`reset` used by release/rotate paths
+- [x] `incrIfBelow` atomic (single Lua script); unit-tested against ioredis-mock; real Redis in Phase 4 e2e
+- [x] Counter unavailable + `failClosed: true` → falls back to DB conditional consume; DB also down → blocks
+- [x] `decr`/`reset` used by release/rotate paths
 
 #### Files to create / modify
 
@@ -893,3 +893,4 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 - 3.6 ✅ 2026-07-03 — BudgetService.status → BudgetStatus[] (live windows, unlimited dims absent from remaining, bigint-safe usedFraction, correct resetsAt).
 - 3.7 ✅ 2026-07-03 — Soft thresholds (once-per-threshold-per-window dedupe), burn-rate projected_exceeded, and the throttle/allow policy branches with the onThrottle callback.
 - 3.8 ✅ 2026-07-03 — Check-only BudgetGuard (scopeResolver trusted input, decorator feature-precedence merge, 402/429 pre-handler block, request.aiTokens enrichment, fail-fast on a missing scopeResolver) plus the @Meter/@RequireBudget/@AiFeature decorators.
+- 3.9 ✅ 2026-07-03 — RedisBudgetCounterStore (./redis, single atomic Lua incrIfBelow, lazy dynamic ioredis import, masked URLs) and the BudgetService counter fast-path with fail-closed fallback (counter reject → block without DB; counter down → DB fallback; both down → failClosed blocks) plus release/rotate counter maintenance.

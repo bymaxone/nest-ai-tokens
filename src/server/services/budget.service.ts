@@ -27,7 +27,14 @@ import type {
 } from '../../shared'
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { BudgetDelta, BudgetLimits, BudgetWindowSpend, IBudgetStore, MeteringContext } from '../interfaces'
+import type {
+  BudgetDelta,
+  BudgetLimits,
+  BudgetWindowSpend,
+  IBudgetCounterStore,
+  IBudgetStore,
+  MeteringContext,
+} from '../interfaces'
 import { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
@@ -69,12 +76,37 @@ interface LocatedWindow {
   limits: BudgetLimits
 }
 
+/** A live counter increment made during a guarded consume (kept for rollback). */
+interface CounterIncrement {
+  key: string
+  amount: bigint
+}
+
+/** A dimension consumed against the live counter (limited dimension, non-zero delta). */
+interface CounterDimension {
+  name: 'cost' | 'tokens' | 'count'
+  amount: bigint
+  limit: bigint
+}
+
 /** A recorded consumption, kept for rollback on a partial multi-budget failure. */
 interface Consumed {
   budgetId: string
   windowStart: Date
   delta: BudgetDelta
+  increments: CounterIncrement[]
 }
+
+/** The result of a guarded consume: whether it passed and the live counter increments it made. */
+interface GuardResult {
+  ok: boolean
+  increments: CounterIncrement[]
+}
+
+/** The window-length grace (seconds) added to a counter key's TTL (§10.8). */
+const COUNTER_GRACE_SECONDS = 3_600
+/** The counter TTL for a `'total'` window that never resets (≈ 400 days). */
+const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
 
 @Injectable()
 export class BudgetService {
@@ -153,8 +185,19 @@ export class BudgetService {
   async rotateWindow(budgetId: string, newWindowStart?: Date): Promise<void> {
     const budget = await this.requireBudget(budgetId)
     const start = newWindowStart ?? this.now()
+    const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
     await this.store.upsert({ ...budget, anchorAt: start })
-    await this.store.setWindowStart(budgetId, windowStartFor({ ...budget, anchorAt: start }, start))
+    await this.store.setWindowStart(budgetId, windowStart)
+    const counter = this.options.counter
+    if (counter !== undefined) {
+      for (const dimension of counterDimensions({ nanoUsd: 1n, tokens: 1, count: 1 }, limitsOf(budget))) {
+        try {
+          await counter.reset(counterKey(budgetId, windowStart, dimension.name))
+        } catch {
+          this.logger.warn(`failed to reset budget counter for ${budgetId}`)
+        }
+      }
+    }
     await this.events.audit('ai_tokens.budget.rotated', { tenantId: budget.tenantId, budgetId, windowStart: start.toISOString() })
   }
 
@@ -186,8 +229,14 @@ export class BudgetService {
    */
   async release(context: MeteringContext, delta: BudgetDelta): Promise<void> {
     const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+    const counter = this.options.counter
     for (const located of windows) {
       await this.store.adjustWindow(located.budget.id, located.windowStart, negate(delta))
+      if (counter !== undefined) {
+        for (const dimension of counterDimensions(delta, located.limits)) {
+          await this.decrCounters(counter, [{ key: counterKey(located.budget.id, located.windowStart, dimension.name), amount: dimension.amount }])
+        }
+      }
     }
   }
 
@@ -249,18 +298,99 @@ export class BudgetService {
     before: BudgetWindowSpend,
     consumed: Consumed[],
   ): Promise<void> {
+    let increments: CounterIncrement[] = []
     if (located.budget.policy === 'block') {
-      const ok = await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits)
-      if (!ok) {
+      const result = await this.guardedConsume(located, delta)
+      if (!result.ok) {
         await this.rollback(consumed)
         await this.blockExceeded(context, located, before, delta)
       }
+      increments = result.increments
     } else {
       await this.store.adjustWindow(located.budget.id, located.windowStart, delta)
       await this.softOverLimit(context, located, before, delta)
     }
-    consumed.push({ budgetId: located.budget.id, windowStart: located.windowStart, delta })
+    consumed.push({ budgetId: located.budget.id, windowStart: located.windowStart, delta, increments })
     await this.signalThresholds(context, located, before, addSpend(before, delta))
+  }
+
+  /**
+   * The atomic §10.8 consume with the optional live-counter fast path and
+   * fail-closed fallback. With a counter bound, each limited dimension is checked
+   * cheaply via `incrIfBelow` FIRST (a reject touches no DB); on pass the DB
+   * conditional consume remains authoritative and rolls the counter back on a DB
+   * shortfall. A counter that is UNAVAILABLE falls back to the DB alone; if the DB
+   * is also down, `failClosed` blocks (else it allows with a warning). Without a
+   * counter it is the plain DB conditional consume.
+   */
+  private async guardedConsume(located: LocatedWindow, delta: BudgetDelta): Promise<GuardResult> {
+    const counter = this.options.counter
+    if (counter === undefined) {
+      return { ok: await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits), increments: [] }
+    }
+    const fast = await this.counterFastPath(counter, located, delta)
+    if (fast.rejected) return { ok: false, increments: [] }
+    return this.databaseConsume(counter, located, delta, fast.increments, fast.available)
+  }
+
+  /** Try the live-counter fast path; report a hard reject, the increments made, and availability. */
+  private async counterFastPath(
+    counter: IBudgetCounterStore,
+    located: LocatedWindow,
+    delta: BudgetDelta,
+  ): Promise<{ rejected: boolean; increments: CounterIncrement[]; available: boolean }> {
+    const ttl = counterTtlSeconds(located.windowStart, located.windowEnd)
+    const increments: CounterIncrement[] = []
+    try {
+      for (const dimension of counterDimensions(delta, located.limits)) {
+        const key = counterKey(located.budget.id, located.windowStart, dimension.name)
+        if (await counter.incrIfBelow(key, dimension.amount, dimension.limit, ttl)) {
+          increments.push({ key, amount: dimension.amount })
+          continue
+        }
+        await this.decrCounters(counter, increments)
+        return { rejected: true, increments: [], available: true }
+      }
+      return { rejected: false, increments, available: true }
+    } catch {
+      await this.decrCounters(counter, increments)
+      this.logger.warn(`budget counter unavailable for ${located.budget.id}; falling back to the database`)
+      return { rejected: false, increments: [], available: false }
+    }
+  }
+
+  /** Run the authoritative DB consume, rolling the counter back on a shortfall and failing closed on an outage. */
+  private async databaseConsume(
+    counter: IBudgetCounterStore,
+    located: LocatedWindow,
+    delta: BudgetDelta,
+    increments: CounterIncrement[],
+    counterAvailable: boolean,
+  ): Promise<GuardResult> {
+    try {
+      const ok = await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits)
+      if (!ok) {
+        if (counterAvailable) await this.decrCounters(counter, increments)
+        return { ok: false, increments: [] }
+      }
+      return { ok: true, increments: counterAvailable ? increments : [] }
+    } catch {
+      if (counterAvailable) await this.decrCounters(counter, increments)
+      if (this.options.failClosed) throw new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, {})
+      this.logger.warn(`budget store unavailable for ${located.budget.id}; allowing (failClosed disabled)`)
+      return { ok: true, increments: [] }
+    }
+  }
+
+  /** Best-effort counter decrement (rollback); failures are logged, never thrown. */
+  private async decrCounters(counter: IBudgetCounterStore, increments: CounterIncrement[]): Promise<void> {
+    for (const increment of increments) {
+      try {
+        await counter.decr(increment.key, increment.amount)
+      } catch {
+        this.logger.warn(`failed to roll back budget counter ${increment.key}`)
+      }
+    }
   }
 
   /** Emit `exceeded` and throw the dimension's typed error for a blocked budget. */
@@ -386,10 +516,12 @@ export class BudgetService {
       })
   }
 
-  /** Undo every recorded consumption (signed subtraction). */
+  /** Undo every recorded consumption (signed DB subtraction + live-counter decrement). */
   private async rollback(consumed: Consumed[]): Promise<void> {
+    const counter = this.options.counter
     for (const entry of consumed) {
       await this.store.adjustWindow(entry.budgetId, entry.windowStart, negate(entry.delta))
+      if (counter !== undefined) await this.decrCounters(counter, entry.increments)
     }
   }
 
@@ -522,6 +654,32 @@ function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | null, s
 /** Compose the per-window dedupe key. */
 function windowKey(budgetId: string, windowStart: Date): string {
   return `${budgetId}|${windowStart.toISOString()}`
+}
+
+/** The live-counter key for one dimension (§10.8 scheme). */
+function counterKey(budgetId: string, windowStart: Date, dimension: 'cost' | 'tokens' | 'count'): string {
+  return `ai_tokens:budget:${budgetId}:${windowStart.toISOString()}:${dimension}`
+}
+
+/** The counter TTL: the window length plus a grace hour, or a long fixed TTL for `'total'`. */
+function counterTtlSeconds(windowStart: Date, windowEnd: Date | null): number {
+  if (windowEnd === null) return TOTAL_WINDOW_TTL_SECONDS
+  return Math.ceil((windowEnd.getTime() - windowStart.getTime()) / 1_000) + COUNTER_GRACE_SECONDS
+}
+
+/** The limited dimensions a delta touches, as int64 counter amounts/limits. */
+function counterDimensions(delta: BudgetDelta, limits: BudgetLimits): CounterDimension[] {
+  const dimensions: CounterDimension[] = []
+  if (limits.nanoUsd !== undefined && delta.nanoUsd !== 0n) {
+    dimensions.push({ name: 'cost', amount: delta.nanoUsd, limit: limits.nanoUsd })
+  }
+  if (limits.tokens !== undefined && delta.tokens !== 0) {
+    dimensions.push({ name: 'tokens', amount: BigInt(delta.tokens), limit: BigInt(limits.tokens) })
+  }
+  if (limits.count !== undefined && delta.count !== 0) {
+    dimensions.push({ name: 'count', amount: BigInt(delta.count), limit: BigInt(limits.count) })
+  }
+  return dimensions
 }
 
 /** Floor a bigint at zero. */

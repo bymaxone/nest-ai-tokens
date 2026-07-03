@@ -10,8 +10,8 @@
  * true. This is CHECK-ONLY — it performs NO consumption; the §10.8 atomic consume
  * still protects the actual charge at record/capture time (the documented gate
  * race). A missing `scopeResolver` fails fast at guard construction. The
- * hold-placing `@RequireBudget.estimate` branch arrives with the hold lifecycle in
- * Phase 4.
+ * hold-placing `@RequireBudget.estimate` branch arrives with the hold lifecycle,
+ * which is not yet shipped.
  * @layer server
  */
 
