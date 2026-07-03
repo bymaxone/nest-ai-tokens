@@ -1589,6 +1589,8 @@ export interface ILedgerStore {
    */
   transition(id: string, from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): Promise<UsageRecord | null>
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
+  /** Load one record by its global id — the reversal path loads the original to negate it (§8.5). */
+  findById(id: string): Promise<UsageRecord | null>
   findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]>
   query(filter: LedgerFilter): Promise<UsageRecord[]>
   sumCost(filter: LedgerFilter): Promise<{ rawCostNanoUsd: bigint; billedCostNanoUsd: bigint
