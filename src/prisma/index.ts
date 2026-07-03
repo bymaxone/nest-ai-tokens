@@ -492,7 +492,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     prevHash: string | null,
     hash: string | null,
   ): Promise<UsageRecord | null> {
-    const assignments = statusAssignments(to, patch, prevHash, hash)
+    const assignments = statusAssignments(from, to, patch, prevHash, hash)
     const rows = await executor.$queryRaw<UsageRow[]>(
       Prisma.sql`UPDATE "ai_usage_records" SET ${assignments} WHERE "id" = ${id} AND "status" = ${from} RETURNING *`,
     )
@@ -607,18 +607,27 @@ function priceValues(input: NewPriceVersion, serviceTier: ServiceTier, effective
   ]
 }
 
-/** The record-amount columns that a `posted → reversed` annotation may never patch. */
+/** The amount/cost columns a settlement (`pending → posted`) replaces with actuals. */
 const AMOUNT_COLUMNS = new Set<string>([
   'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWrite5mTokens', 'cacheWrite1hTokens', 'reasoningTokens',
   'audioInTokens', 'audioOutTokens', 'imageInTokens', 'imageOutTokens', 'totalTokens', 'rawCostNanoUsd',
   'surchargeNanoUsd', 'billedCostNanoUsd', 'priceVersionId', 'priceMissing', 'markupMultiplier',
 ])
 
-/** The patch columns a settlement may set (guards raw identifiers against injection). */
-const SETTLE_COLUMNS = new Set<string>([...AMOUNT_COLUMNS, 'reversedByRecordId'])
+/**
+ * Whether a patch column may be set on a transition FROM `from`. Enforces
+ * append-only at the store boundary (§8.3): amount/cost columns are writable ONLY
+ * when settling a hold (`from = 'pending'`); the sole post-`posted` annotation is
+ * `reversedByRecordId`. Raw identifiers are whitelisted, guarding against injection.
+ */
+function isPatchable(column: string, from: UsageStatus): boolean {
+  if (column === 'reversedByRecordId') return true
+  return from === 'pending' && AMOUNT_COLUMNS.has(column)
+}
 
-/** Build the `SET` clause for a status transition (status + updatedAt + whitelisted patch + chain). */
+/** Build the `SET` clause for a status transition (status + updatedAt + append-only patch + chain). */
 function statusAssignments(
+  from: UsageStatus,
   to: UsageStatus,
   patch: Partial<UsageRecord> | undefined,
   prevHash: string | null,
@@ -627,7 +636,7 @@ function statusAssignments(
   const parts: Prisma.Sql[] = [Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = CURRENT_TIMESTAMP`]
   if (patch !== undefined) {
     for (const [key, value] of Object.entries(patch)) {
-      if (SETTLE_COLUMNS.has(key)) parts.push(Prisma.sql`${Prisma.raw(`"${key}"`)} = ${value}`)
+      if (isPatchable(key, from)) parts.push(Prisma.sql`${Prisma.raw(`"${key}"`)} = ${value}`)
     }
   }
   if (hash !== null) {
