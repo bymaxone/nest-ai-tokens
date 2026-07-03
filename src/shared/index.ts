@@ -19,6 +19,8 @@ export * from './normalizers'
 
 // Pure money math and utilities.
 export * from './pricing/money'
+export * from './pricing/compute-cost'
+export * from './pricing/apply-markup'
 export * from './utils/idempotency'
 
 // Canonical types.
