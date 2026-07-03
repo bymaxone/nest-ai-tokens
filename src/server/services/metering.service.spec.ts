@@ -40,6 +40,16 @@ function normalized(over: Partial<NormalizedUsage> = {}): NormalizedUsage {
   }
 }
 
+/** A complete normalized usage with one required field removed, returned opaquely. */
+function withoutField(field: keyof NormalizedUsage): unknown {
+  return Object.fromEntries(Object.entries(normalized()).filter(([key]) => key !== field))
+}
+
+/** A complete normalized usage with one field replaced by a wrong-typed value. */
+function withField(field: string, value: unknown): unknown {
+  return { ...normalized(), [field]: value }
+}
+
 /** Assemble a MeteringService over in-memory stores; returns the collaborators for assertions. */
 function build(opts: { markup?: number; strict?: boolean; ratingMode?: 'rate-table' | 'provider-reported' } = {}): {
   service: MeteringService
@@ -125,6 +135,52 @@ describe('MeteringService.record', () => {
       expect((error as AiTokensException).getStatus()).toBe(400)
     },
   )
+
+  /** An object missing any required NormalizedUsage field is not accepted as normalized → 400. */
+  it.each([
+    ['provider', withoutField('provider')],
+    ['model', withoutField('model')],
+    ['operation', withoutField('operation')],
+    ['inputTokens', withoutField('inputTokens')],
+    ['outputTokens', withoutField('outputTokens')],
+    ['cacheReadTokens', withoutField('cacheReadTokens')],
+    ['cacheWrite5mTokens', withoutField('cacheWrite5mTokens')],
+    ['cacheWrite1hTokens', withoutField('cacheWrite1hTokens')],
+    ['reasoningTokens', withoutField('reasoningTokens')],
+    ['audioInTokens', withoutField('audioInTokens')],
+    ['audioOutTokens', withoutField('audioOutTokens')],
+    ['imageInTokens', withoutField('imageInTokens')],
+    ['imageOutTokens', withoutField('imageOutTokens')],
+  ])('rejects a normalized usage missing %s', async (_field, usage) => {
+    const { service } = build()
+    const error = await service.record({ usage, context: context() }).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_UNKNOWN_PROVIDER')
+    expect((error as AiTokensException).getStatus()).toBe(400)
+  })
+
+  /** An object mistyping any required field (wrong type, unknown operation, non-finite count) is rejected. */
+  it.each([
+    ['provider not a string', withField('provider', 123)],
+    ['model not a string', withField('model', 123)],
+    ['operation not a string', withField('operation', 42)],
+    ['operation not in the catalog', withField('operation', 'not-an-operation')],
+    ['inputTokens not a number', withField('inputTokens', '1000')],
+    ['outputTokens NaN', withField('outputTokens', Number.NaN)],
+    ['cacheReadTokens Infinity', withField('cacheReadTokens', Number.POSITIVE_INFINITY)],
+  ])('rejects a normalized usage with %s', async (_case, usage) => {
+    const { service } = build()
+    const error = await service.record({ usage, context: context() }).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_UNKNOWN_PROVIDER')
+  })
+
+  /** A fully-typed normalized usage still passes the tightened guard and rates. */
+  it('accepts a complete normalized usage across every required field', async () => {
+    const { service, pricingStore } = build()
+    await seedGpt5(pricingStore)
+    const record = await service.record({ usage: normalized(), context: context() })
+    expect(record.status).toBe('posted')
+    expect(record.rawCostNanoUsd).toBe(6_250_000n)
+  })
 
   /** All attribution fields land on the record. */
   it('persists every attribution field', async () => {

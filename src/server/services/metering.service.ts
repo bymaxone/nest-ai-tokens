@@ -25,7 +25,7 @@ import type {
   UsageNormalizer,
   UsageRecord,
 } from '../../shared'
-import { computeCostNanoUsd } from '../../shared'
+import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
@@ -85,15 +85,29 @@ const NOOP_EVENT_HOOKS: MeteringEventHooks = {
 /** The neutral scope used for an estimate when the caller supplies none. */
 const ESTIMATE_SCOPE: MeteringScope = { type: 'tenant', id: '' }
 
-/** Detect an already-normalized usage: an object with a provider id and numeric token counts. */
+/** The required numeric token fields on a {@link NormalizedUsage} — one per rated category (§5). */
+const REQUIRED_TOKEN_FIELDS: readonly string[] = TOKEN_CATEGORIES.map((category) => `${category}Tokens`)
+
+/**
+ * Detect an already-normalized usage: a complete {@link NormalizedUsage} carrying
+ * a provider and model string, a known operation, and every required token count
+ * as a finite number. Partial or mistyped objects are rejected so a malformed
+ * usage fails fast in {@link MeteringService.record} instead of mis-rating
+ * downstream on a missing `model`/`operation` or token field.
+ */
 function isNormalizedUsage(usage: unknown): usage is NormalizedUsage {
   if (typeof usage !== 'object' || usage === null) return false
   const candidate = usage as Record<string, unknown>
-  return (
-    typeof candidate.provider === 'string' &&
-    typeof candidate.inputTokens === 'number' &&
-    typeof candidate.outputTokens === 'number'
-  )
+  if (typeof candidate.provider !== 'string') return false
+  if (typeof candidate.model !== 'string') return false
+  if (typeof candidate.operation !== 'string' || !(AI_OPERATIONS as readonly string[]).includes(candidate.operation)) {
+    return false
+  }
+  for (const field of REQUIRED_TOKEN_FIELDS) {
+    const value = candidate[field]
+    if (typeof value !== 'number' || !Number.isFinite(value)) return false
+  }
+  return true
 }
 
 /** Build the ledger append input from the rated call (§8.2 columns). */
