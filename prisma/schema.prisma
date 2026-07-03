@@ -11,5 +11,9 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Generate-time placeholder only: `prisma generate` never opens a connection, so a
+  // hard-coded URL lets it run out-of-the-box with no DATABASE_URL or .env present.
+  // This value is never used at runtime — the adapter receives its PrismaClient from
+  // the host application.
+  url      = "postgresql://localhost:5432/ai_tokens_dev?schema=public"
 }

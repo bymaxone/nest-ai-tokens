@@ -1,3 +1,4 @@
+import { cpSync } from 'node:fs'
 import { defineConfig, type Options } from 'tsup'
 
 /**
@@ -44,9 +45,12 @@ export default defineConfig([
     ...base,
     entry: { 'prisma/index': 'src/prisma/index.ts' },
     // Ship the schema fragment + SQL migrations alongside the adapter so hosts can
-    // merge/apply them from `dist/prisma/` (they are data, not bundled code).
-    onSuccess:
-      'cp src/prisma/schema.prisma.fragment dist/prisma/schema.prisma.fragment && cp -R src/prisma/migrations dist/prisma/migrations',
+    // merge/apply them from `dist/prisma/` (they are data, not bundled code). A
+    // Node-based copy keeps the build cross-platform (no POSIX `cp` dependency).
+    onSuccess: async (): Promise<void> => {
+      cpSync('src/prisma/schema.prisma.fragment', 'dist/prisma/schema.prisma.fragment')
+      cpSync('src/prisma/migrations', 'dist/prisma/migrations', { recursive: true })
+    },
   },
   { ...base, entry: { 'redis/index': 'src/redis/index.ts' } },
 ])
