@@ -36,7 +36,12 @@ export interface IBudgetStore {
   remove(budgetId: string): Promise<void>
   /** Load one budget by id — the rotateWindow/reconcileWindow paths read it by id (§10.5). */
   findBudgetById(budgetId: string): Promise<Budget | null>
-  /** Every budget matching the scope AND all ancestor scopes (§10.3) for the tenant. */
+  /**
+   * Every budget for the tenant scoped to the EXACT scope or tenant-wide (§10.3). A
+   * single {@link MeteringScope} carries no team/user lineage, so the tenant is the
+   * only ancestor resolvable — intermediate ancestors are not matched. Each budget
+   * returned consumes independently; a subject-level budget never exempts the tenant cap.
+   */
   findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]>
   /**
    * Atomic multi-dimension conditional consume (§10.8). `false` = a limit would be
