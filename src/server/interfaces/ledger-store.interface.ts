@@ -5,7 +5,7 @@
  * @layer server
  */
 
-import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
+import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus, UsageSummary } from '../../shared'
 
 /** Aggregate cost totals returned by {@link ILedgerStore.sumCost}. */
 export interface LedgerCostSummary {
@@ -15,6 +15,21 @@ export interface LedgerCostSummary {
   totalTokens: number
   records: number
 }
+
+/** A report group-by dimension (spec §13.1). */
+export type ReportGroupBy =
+  | 'day'
+  | 'week'
+  | 'month'
+  | 'feature'
+  | 'provider'
+  | 'model'
+  | 'operation'
+  | 'serviceTier'
+  | 'scope'
+  | 'beneficiary'
+  | 'tag'
+  | 'systemCostCategory'
 
 /** The append-only usage ledger port. */
 export interface ILedgerStore {
@@ -56,6 +71,13 @@ export interface ILedgerStore {
   query(filter: LedgerFilter): Promise<UsageRecord[]>
   /** Aggregate cost/token totals for a filter. */
   sumCost(filter: LedgerFilter): Promise<LedgerCostSummary>
+  /**
+   * OPTIONAL scalable aggregation (spec §13.1): `SUM … GROUP BY` across the report
+   * dimensions, computed in the store (the official Prisma adapter uses SQL). A
+   * store that omits it falls back to `UsageReportService`'s documented
+   * query-and-aggregate-in-memory path, capped at `reporting.maxExportRows`.
+   */
+  summarize?(filter: LedgerFilter, groupBy: ReportGroupBy[]): Promise<UsageSummary[]>
   /**
    * The last posted record's hash for a tenant (hash-chain continuation, §8.6).
    * The chain is serialized per tenant: the official Prisma adapter takes a

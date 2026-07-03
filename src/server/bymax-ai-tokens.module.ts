@@ -36,7 +36,7 @@ import { BudgetGuard, MeteringInterceptor } from './enforcement'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, ITelemetrySink, IWalletStore } from './interfaces'
 import { TelemetryEmitter } from './telemetry/otel-emitter'
-import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
+import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, UsageReportService, WalletService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
 const CORE_TOKENS = [
@@ -116,6 +116,12 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         new HoldReaper(ledger, metering, options),
       inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS],
     },
+    {
+      provide: UsageReportService,
+      useFactory: (options: ResolvedAiTokensOptions, ledgerStore: ILedgerStore, pricingStore: IPricingStore, dispatcher: EventDispatcher): UsageReportService =>
+        new UsageReportService(ledgerStore, pricingStore, options, (action, details) => void dispatcher.audit(action, details)),
+      inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_LEDGER_STORE, BYMAX_AI_TOKENS_PRICING_STORE, EventDispatcher],
+    },
     MeteringInterceptor,
   ]
 }
@@ -176,7 +182,7 @@ export class BymaxAiTokensModule {
     return {
       module: BymaxAiTokensModule,
       providers: [...buildCoreProviders(resolved), ...buildFeatureProviders(resolved)],
-      exports: [...CORE_TOKENS, PricingService, LedgerService, MeteringService, MeteringInterceptor, ...buildFeatureExports(resolved)],
+      exports: [...CORE_TOKENS, PricingService, LedgerService, MeteringService, MeteringInterceptor, UsageReportService, ...buildFeatureExports(resolved)],
     }
   }
 }
