@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 1 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 2 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -41,7 +41,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
 | 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | ✅ Done | P0 | M | — |
-| 1.2 | Shared catalogs and canonical types | 📋 ToDo | P0 | M | 1.1 |
+| 1.2 | Shared catalogs and canonical types | ✅ Done | P0 | M | 1.1 |
 | 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | 📋 ToDo | P0 | M | 1.2 |
 | 1.4 | Usage normalizers ×9 with reconciliation invariants | 📋 ToDo | P0 | L | 1.2, 1.3 |
 | 1.5 | Pure cost engine (computeCostNanoUsd + applyMarkup) | 📋 ToDo | P0 | L | 1.2 |
@@ -171,7 +171,7 @@ nothing else there. 6. Append to Completion log: `- 1.1 ✅ <YYYY-MM-DD> — <on
 
 ### Task 1.2 — Shared catalogs and canonical types
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.1
@@ -182,10 +182,10 @@ Implement the entire `./shared` type surface — provider/operation/tier/token-c
 
 #### Acceptance criteria
 
-- [ ] Every symbol listed in spec §3.3 "Shared" exists and is exported from the barrel
-- [ ] Zero imports of `@nestjs/*`, `@prisma/*`, `ioredis` under `src/shared/` (grep-verified)
-- [ ] Constants `as const`; types via `import type`; `(string & {})` on `ProviderId` preserves autocomplete
-- [ ] `pnpm typecheck` passes; no `any`
+- [x] Every symbol listed in spec §3.3 "Shared" exists and is exported from the barrel
+- [x] Zero imports of `@nestjs/*`, `@prisma/*`, `ioredis` under `src/shared/` (grep-verified)
+- [x] Constants `as const`; types via `import type`; `(string & {})` on `ProviderId` preserves autocomplete
+- [x] `pnpm typecheck` passes; no `any`
 
 #### Files to create / modify
 
@@ -1054,3 +1054,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
 
 - 1.1 ✅ 2026-07-02 — Scaffolded the five-subpath peer-only package (tsup dual-format, 5 tsconfig/jest variants, eslint flat v9, Stryker, brotli size budgets) and the four CI workflows (ci/codeql/scorecard/release); typecheck, lint, build (all 5 subpaths mjs+cjs+d.ts), size, and passWithNoTests all green with `dependencies: {}`.
+- 1.2 ✅ 2026-07-02 — Implemented the full zero-dependency shared surface: 6 as-const catalog constants (+ derived unions) and the canonical types (NormalizedUsage, PriceVersion, UsageRecord, wallet/budget/report/event/error types, plus New* insert aliases and LedgerFilter), all barrel-exported; typecheck, lint, and the src/shared zero-dep grep clean.
