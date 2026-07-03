@@ -45,9 +45,10 @@ describe('E2E — hold→capture concurrency (§10.8)', () => {
     const outcomes = [a, b]
     expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1)
     const rejected = outcomes.find((o) => o.status === 'rejected') as PromiseRejectedResult
-    // Blocked with a 402/429 (spec §19.2): the exact dimension code depends on whether the
-    // Redis counter fast path or the DB conditional consume detected the shortfall first.
-    expect(['AI_TOKENS_QUOTA_EXCEEDED', 'AI_TOKENS_BUDGET_EXCEEDED']).toContain(codeOf(rejected.reason))
+    // A count-quota block is a 429 (spec §19.2/§16) regardless of which path detected the
+    // shortfall: the DB conditional consume and the Redis counter fast path both thread the
+    // count dimension, so neither mislabels it as the spend 402.
+    expect(codeOf(rejected.reason)).toBe('AI_TOKENS_QUOTA_EXCEEDED')
 
     const posted = (await app.ledger.query({ tenantId: 'e2e', feature: 'chat.reply' })).filter((r) => r.status === 'posted')
     expect(posted).toHaveLength(1)
