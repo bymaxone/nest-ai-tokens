@@ -17,6 +17,9 @@ const external = [
   'ioredis',
   '@nestjs/event-emitter',
   '@opentelemetry/api',
+  // The server lazily imports the ./prices subpath by its published name; keep it
+  // external so it resolves from the consumer's install rather than being bundled.
+  /^@bymax-one\/nest-ai-tokens/,
 ]
 
 const base: Omit<Options, 'entry'> = {

@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 10 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 👀 Review · **Progress**: 11 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -50,7 +50,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | ✅ Done | P0 | M | 1.2, 1.7 |
 | 1.9 | DI tokens + options validation + defaults | ✅ Done | P0 | M | 1.7, 1.8 |
 | 1.10 | PricingService (resolution chain + cache + idempotent seed) | ✅ Done | P0 | L | 1.5, 1.6, 1.8, 1.9 |
-| 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | 📋 ToDo | P0 | M | 1.4, 1.9, 1.10 |
+| 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | ✅ Done | P0 | M | 1.4, 1.9, 1.10 |
 
 ---
 
@@ -961,7 +961,7 @@ Completion Protocol:
 
 ### Task 1.11 — BymaxAiTokensModule.forRoot() + provider presets + fixture demo
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.4, 1.9, 1.10
@@ -972,11 +972,11 @@ The synchronous `@Global()` dynamic module (store fan-out under per-port tokens,
 
 #### Acceptance criteria
 
-- [ ] Fixture app boots with only `store`; `PricingService` injectable; `WalletService`/`BudgetService` NOT registered
-- [ ] With `wallets: {}`/`budgets: {}`, the corresponding providers register (services themselves arrive in later phases — register placeholders is NOT acceptable: gate on existence, so this criterion is validated structurally via the provider-factory map)
-- [ ] Host-bound `BYMAX_AI_TOKENS_PRICING_STORE` token overrides the bundle's pricing half
-- [ ] Every preset produces the right `{ provider, normalizer, ratingMode }`; `openaiCompatible('deepseek')` works
-- [ ] End-to-end fixture: raw OpenAI usage → preset normalizer → PricingService → exact expected nano-USD cost
+- [x] Fixture app boots with only `store`; `PricingService` injectable; `WalletService`/`BudgetService` NOT registered
+- [x] With `wallets: {}`/`budgets: {}`, the corresponding providers register (services themselves arrive in later phases — register placeholders is NOT acceptable: gate on existence, so this criterion is validated structurally via the provider-factory map)
+- [x] Host-bound `BYMAX_AI_TOKENS_PRICING_STORE` token overrides the bundle's pricing half
+- [x] Every preset produces the right `{ provider, normalizer, ratingMode }`; `openaiCompatible('deepseek')` works
+- [x] End-to-end fixture: raw OpenAI usage → preset normalizer → PricingService → exact expected nano-USD cost
 
 #### Files to create / modify
 
@@ -1063,3 +1063,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 - 1.8 ✅ 2026-07-02 — Transcribed all 14 port/options interfaces (ILedgerStore/IPricingStore/IWalletStore/IBudgetStore/IBudgetCounterStore + IAiTokensStore bundle, ITokenizer, ITelemetrySink, IEventSink, IContentStore, IMarkupPolicy, MeteringContext/MeterResult, Hold/HoldEstimate union, BymaxAiTokensModuleOptions + async options/factory); also fixed a spec defect by defining the previously-unspecified ITokenizer port (docs(spec)). Typecheck/lint/build clean, zero any.
 - 1.9 ✅ 2026-07-02 — Implemented the 11 Symbol DI tokens, validateOptions (store presence + always-required ledger/pricing ports, feature-gated wallet/budget port checks, FX_REQUIRED for non-USD without fx, markup/threshold/holds/wallet validation → INVALID_CONFIG with actionable reason) and applyDefaults → frozen ResolvedAiTokensOptions with { enabled } discriminated unions matching §4.2; 32-case config spec, 100% coverage.
 - 1.10 ✅ 2026-07-02 — Implemented normalizeModelId (models/ + region + date strip, lowercase) and PricingService: the six-step resolution chain (exact → baseModel → alias → normalized → longest-startsWith → miss), tier-exact resolution (no batch/flex fallback), TTL cache keyed by the resolution tuple with an injected clock, cache-invalidating upsertPrice/getPriceHistory, and an advisory-locked idempotent seedFromSnapshot (lazy ./prices import) run from onModuleInit; faithful in-memory fake store; 100% coverage.
+- 1.11 ✅ 2026-07-02 — Implemented the @Global() BymaxAiTokensModule.forRoot() (validate → resolve → fan the store out under per-port tokens, feature-gated wallet/budget tokens, optional collaborator tokens, PricingService via factory injecting the pricing-store token, exports), the 11 providerPresets (+ openaiCompatible factory), and the public server barrel with the `export * from '../shared'` re-export rule; module spec proves boot, feature gating, token override, presets, and the Definition-of-Done end-to-end demo (raw OpenAI usage → normalize → resolveRate → computeCostNanoUsd = 6_025_000n raw, 24_100_000n billed at 4× markup); 100% coverage, server bundle 9.6 KB brotli.

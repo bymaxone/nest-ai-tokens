@@ -21,6 +21,11 @@ const K_WORDS: number[] = [
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ]
 
+/** Initial hash values: first 32 bits of the fractional parts of the square roots of the first 8 primes. */
+const INITIAL_HASH: number[] = [
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+]
+
 /** Round constants held in a `DataView` so `kView.getUint32` returns a definite `number`. */
 const kView = new DataView(new ArrayBuffer(64 * 4))
 K_WORDS.forEach((value, index) => {
@@ -30,6 +35,51 @@ K_WORDS.forEach((value, index) => {
 /** Rotate a 32-bit word right by `n` bits. */
 function rotr(x: number, n: number): number {
   return ((x >>> n) | (x << (32 - n))) >>> 0
+}
+
+/** Fill message-schedule words 16..63 from the first 16 (in place). */
+function expandSchedule(w: DataView): void {
+  for (let i = 16; i < 64; i++) {
+    const w15 = w.getUint32((i - 15) * 4)
+    const w2 = w.getUint32((i - 2) * 4)
+    const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3)
+    const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10)
+    w.setUint32(i * 4, (w.getUint32((i - 16) * 4) + s0 + w.getUint32((i - 7) * 4) + s1) >>> 0)
+  }
+}
+
+/** Run the 64 compression rounds for one block and fold the result into the hash state. */
+function compressBlock(h: DataView, w: DataView): void {
+  let a = h.getUint32(0)
+  let b = h.getUint32(4)
+  let c = h.getUint32(8)
+  let d = h.getUint32(12)
+  let e = h.getUint32(16)
+  let f = h.getUint32(20)
+  let g = h.getUint32(24)
+  let hh = h.getUint32(28)
+
+  for (let i = 0; i < 64; i++) {
+    const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)
+    const ch = (e & f) ^ (~e & g)
+    const t1 = (hh + s1 + ch + kView.getUint32(i * 4) + w.getUint32(i * 4)) >>> 0
+    const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)
+    const maj = (a & b) ^ (a & c) ^ (b & c)
+    const t2 = (s0 + maj) >>> 0
+    hh = g
+    g = f
+    f = e
+    e = (d + t1) >>> 0
+    d = c
+    c = b
+    b = a
+    a = (t1 + t2) >>> 0
+  }
+
+  const next = [a, b, c, d, e, f, g, hh]
+  next.forEach((value, index) => {
+    h.setUint32(index * 4, (h.getUint32(index * 4) + value) >>> 0)
+  })
 }
 
 /**
@@ -53,61 +103,19 @@ export function sha256Hex(input: string): string {
   view.setUint32(paddedLength - 8, Math.floor(bitLength / 0x100000000))
   view.setUint32(paddedLength - 4, bitLength >>> 0)
 
-  let h0 = 0x6a09e667
-  let h1 = 0xbb67ae85
-  let h2 = 0x3c6ef372
-  let h3 = 0xa54ff53a
-  let h4 = 0x510e527f
-  let h5 = 0x9b05688c
-  let h6 = 0x1f83d9ab
-  let h7 = 0x5be0cd19
-
+  const hView = new DataView(new ArrayBuffer(32))
+  INITIAL_HASH.forEach((value, index) => {
+    hView.setUint32(index * 4, value)
+  })
   const wView = new DataView(new ArrayBuffer(64 * 4))
+
   for (let offset = 0; offset < paddedLength; offset += 64) {
     for (let i = 0; i < 16; i++) wView.setUint32(i * 4, view.getUint32(offset + i * 4))
-    for (let i = 16; i < 64; i++) {
-      const w15 = wView.getUint32((i - 15) * 4)
-      const w2 = wView.getUint32((i - 2) * 4)
-      const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3)
-      const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10)
-      wView.setUint32(i * 4, (wView.getUint32((i - 16) * 4) + s0 + wView.getUint32((i - 7) * 4) + s1) >>> 0)
-    }
-
-    let a = h0
-    let b = h1
-    let c = h2
-    let d = h3
-    let e = h4
-    let f = h5
-    let g = h6
-    let h = h7
-
-    for (let i = 0; i < 64; i++) {
-      const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)
-      const ch = (e & f) ^ (~e & g)
-      const t1 = (h + s1 + ch + kView.getUint32(i * 4) + wView.getUint32(i * 4)) >>> 0
-      const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)
-      const maj = (a & b) ^ (a & c) ^ (b & c)
-      const t2 = (s0 + maj) >>> 0
-      h = g
-      g = f
-      f = e
-      e = (d + t1) >>> 0
-      d = c
-      c = b
-      b = a
-      a = (t1 + t2) >>> 0
-    }
-
-    h0 = (h0 + a) >>> 0
-    h1 = (h1 + b) >>> 0
-    h2 = (h2 + c) >>> 0
-    h3 = (h3 + d) >>> 0
-    h4 = (h4 + e) >>> 0
-    h5 = (h5 + f) >>> 0
-    h6 = (h6 + g) >>> 0
-    h7 = (h7 + h) >>> 0
+    expandSchedule(wView)
+    compressBlock(hView, wView)
   }
 
-  return [h0, h1, h2, h3, h4, h5, h6, h7].map((n) => n.toString(16).padStart(8, '0')).join('')
+  let hex = ''
+  for (let i = 0; i < 8; i++) hex += hView.getUint32(i * 4).toString(16).padStart(8, '0')
+  return hex
 }

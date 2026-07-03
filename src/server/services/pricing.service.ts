@@ -90,7 +90,14 @@ export class PricingService implements OnModuleInit {
     return resolved
   }
 
-  /** Close the current open row and insert a new one; clears the resolution cache. */
+  /**
+   * Close the current open row and insert a new one; clears the resolution cache.
+   * ADMIN PLANE: this sets prices — the host MUST restrict it to privileged roles
+   * (§14.4) and should audit every call.
+   *
+   * @param input The new price version (rates default to `0n`, tier to `'standard'`).
+   * @returns The newly-inserted open price row.
+   */
   async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
     const row = await this.store.upsertPrice(input)
     this.cache.clear()

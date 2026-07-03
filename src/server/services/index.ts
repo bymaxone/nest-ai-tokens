@@ -1,6 +1,6 @@
 /**
- * @fileoverview Barrel for the server services. Phase 1 ships `PricingService`;
- * later phases add the metering/wallet/budget/reporting facades.
+ * @fileoverview Barrel for the server services. Exports `PricingService`; the
+ * metering, wallet, budget, and reporting facades are added as they land.
  * @layer server
  */
 
