@@ -18,7 +18,7 @@
 import { randomUUID } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import type { PrismaClient } from '@prisma/client'
-import { REVERSAL_LINKAGE_FIELD, SETTLEMENT_FIELDS } from '../shared'
+import { isLegalTransitionPatchKey } from '../shared'
 import type {
   AiOperation,
   LedgerFilter,
@@ -609,24 +609,16 @@ function priceValues(input: NewPriceVersion, serviceTier: ServiceTier, effective
 }
 
 /**
- * The amount/cost columns a settlement (`pending → posted`) replaces with actuals.
- * Sourced from the shared whitelist so this store boundary and the service-layer
- * transition guard can never drift.
+ * Build the `SET` clause for a status transition (status + updatedAt + the
+ * validated append-only patch + optional chain hashes). Every patch column is
+ * checked against the shared per-transition whitelist ({@link isLegalTransitionPatchKey}),
+ * the same guard the service layer runs, so the two layers can never drift. An
+ * out-of-whitelist column is REJECTED with the typed conflict — never silently
+ * dropped — so a caller bug can never post a settlement whose chain hash was
+ * computed from a field that would not be persisted (§8.3/§8.6). Because only a
+ * whitelisted (constant) column name survives the check, the raw identifier
+ * interpolation stays injection-safe.
  */
-const AMOUNT_COLUMNS = new Set<string>(SETTLEMENT_FIELDS)
-
-/**
- * Whether a patch column may be set on a transition FROM `from`. Enforces
- * append-only at the store boundary (§8.3): amount/cost columns are writable ONLY
- * when settling a hold (`from = 'pending'`); the sole post-`posted` annotation is
- * `reversedByRecordId`. Raw identifiers are whitelisted, guarding against injection.
- */
-function isPatchable(column: string, from: UsageStatus): boolean {
-  if (column === REVERSAL_LINKAGE_FIELD) return true
-  return from === 'pending' && AMOUNT_COLUMNS.has(column)
-}
-
-/** Build the `SET` clause for a status transition (status + updatedAt + append-only patch + chain). */
 function statusAssignments(
   from: UsageStatus,
   to: UsageStatus,
@@ -637,7 +629,12 @@ function statusAssignments(
   const parts: Prisma.Sql[] = [Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = CURRENT_TIMESTAMP`]
   if (patch !== undefined) {
     for (const [key, value] of Object.entries(patch)) {
-      if (isPatchable(key, from)) parts.push(Prisma.sql`${Prisma.raw(`"${key}"`)} = ${value}`)
+      if (!isLegalTransitionPatchKey(from, to, key)) {
+        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
+          reason: `${from} → ${to} may not patch "${key}"`,
+        })
+      }
+      parts.push(Prisma.sql`${Prisma.raw(`"${key}"`)} = ${value}`)
     }
   }
   if (hash !== null) {

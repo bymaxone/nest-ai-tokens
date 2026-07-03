@@ -301,11 +301,17 @@ describe('LedgerService.transition', () => {
     expect((await service.transition(record.id, 'pending', 'released'))?.status).toBe('released')
   })
 
-  /** pending → released tolerates a non-amount patch. */
+  /** pending → released persists a legal audit annotation (correlation linkage). */
   it('allows a non-amount patch on release', async () => {
     const { service, record } = await appendWith('pending')
     const released = await service.transition(record.id, 'pending', 'released', { correlationId: 'corr-9' })
     expect(released?.correlationId).toBe('corr-9')
+  })
+
+  /** A release voids a hold, so a non-annotation column (settlement pricing metadata) is rejected. */
+  it('rejects a non-annotation patch on release', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'released', { priceVersionId: 'price-2' }))
   })
 
   /** posted → reversed annotates with reversedByRecordId. */

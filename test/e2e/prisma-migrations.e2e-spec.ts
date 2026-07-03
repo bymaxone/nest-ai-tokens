@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import type { NewUsageRecord } from '@bymax-one/nest-ai-tokens/shared'
-import { LedgerService } from '@bymax-one/nest-ai-tokens'
+import { AiTokensException, LedgerService } from '@bymax-one/nest-ai-tokens'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
@@ -125,6 +125,35 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     ])
     expect(results.filter((r) => r === null)).toHaveLength(1)
     expect(results.filter((r) => r !== null)).toHaveLength(1)
+  })
+
+  /** pending → released persists a legal audit annotation (matching the service contract). */
+  it('persists a legal annotation on a release', async () => {
+    const hold = await store.append(makeRecord({ idempotencyKey: 'release-1', status: 'pending' }), 'hash-rel')
+    const released = await store.transition(hold.id, 'pending', 'released', { correlationId: 'corr-release' })
+    expect(released?.status).toBe('released')
+    expect(released?.correlationId).toBe('corr-release')
+  })
+
+  /** A settlement patch that targets an immutable identity column is rejected, never silently dropped. */
+  it('rejects an out-of-whitelist key on a settlement', async () => {
+    const hold = await store.append(makeRecord({ idempotencyKey: 'reject-posted', status: 'pending' }), 'hash-rp')
+    await expect(store.transition(hold.id, 'pending', 'posted', { tenantId: 'hijacked' })).rejects.toBeInstanceOf(
+      AiTokensException,
+    )
+    const untouched = await store.findById(hold.id)
+    expect(untouched?.status).toBe('pending')
+    expect(untouched?.tenantId).toBe('t1')
+  })
+
+  /** An amount patch on a release is rejected (a void never rewrites amounts). */
+  it('rejects an amount patch on a release', async () => {
+    const hold = await store.append(makeRecord({ idempotencyKey: 'reject-released', status: 'pending' }), 'hash-rr')
+    await expect(store.transition(hold.id, 'pending', 'released', { billedCostNanoUsd: 1n })).rejects.toBeInstanceOf(
+      AiTokensException,
+    )
+    const untouched = await store.findById(hold.id)
+    expect(untouched?.status).toBe('pending')
   })
 
   /** Concurrent effective-dated upserts keep exactly one open row for the key. */

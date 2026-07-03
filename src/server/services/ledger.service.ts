@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
-import { AMOUNT_FIELDS, REVERSAL_LINKAGE_FIELD, SETTLEMENT_FIELDS } from '../../shared'
+import { isLegalLedgerTransition, isLegalTransitionPatchKey } from '../../shared'
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
@@ -25,14 +25,6 @@ import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
 /** The statuses that contribute to balance/spend sums (§8.3). */
 const BALANCE_STATUSES: readonly UsageStatus[] = ['posted', 'reversed']
-
-/**
- * The only patch keys a settlement (`pending → posted`) may set — the settlement
- * amount/cost columns plus the reversal-linkage field. Sourced from the shared
- * whitelist so the service layer and the store adapters can never drift; any key
- * outside it (notably an immutable `id`/`tenantId`/`idempotencyKey`) is rejected.
- */
-const SETTLEMENT_PATCH_KEYS: ReadonlySet<string> = new Set<string>([...SETTLEMENT_FIELDS, REVERSAL_LINKAGE_FIELD])
 
 /** The token categories summed into a record's `totalTokens`. */
 type TokenCounts = Pick<
@@ -266,61 +258,25 @@ export class LedgerService {
     return compensating
   }
 
-  /** Enforce the legality table and per-transition patch contract (§8.3/§8.5). */
-  private assertLegalTransition(from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): void {
-    if (from === 'pending' && to === 'posted') {
-      this.assertOnlySettlementPatch(patch, `${from} → ${to}`)
-      return
-    }
-    if (from === 'pending' && to === 'released') {
-      this.assertNoAmountPatch(patch, `${from} → ${to}`)
-      return
-    }
-    if (from === 'posted' && to === 'reversed') {
-      this.assertOnlyKeys(patch, REVERSAL_LINKAGE_FIELD, `${from} → ${to}`)
-      return
-    }
-    throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-      reason: `illegal transition ${from} → ${to}`,
-    })
-  }
-
   /**
-   * Reject a settlement patch that sets any key outside the append-only
-   * settlement whitelist (§8.3). Store-agnostic: it runs before the store applies
-   * the patch, so even a store that assigns patches broadly can never mutate an
-   * immutable field (`id`, `tenantId`, `idempotencyKey`) on a `pending → posted`.
+   * Enforce the legality table and per-transition patch contract (§8.3/§8.5) via
+   * the shared guard the store adapters also consume, so the service layer and the
+   * store boundary can never drift. Store-agnostic: it runs before the store
+   * applies the patch, so even a store that assigns patches broadly can never
+   * mutate an immutable field (`id`/`tenantId`/`idempotencyKey`) or write an
+   * out-of-contract column.
    */
-  private assertOnlySettlementPatch(patch: Partial<UsageRecord> | undefined, label: string): void {
+  private assertLegalTransition(from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): void {
+    if (!isLegalLedgerTransition(from, to)) {
+      throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
+        reason: `illegal transition ${from} → ${to}`,
+      })
+    }
     if (patch === undefined) return
     for (const key of Object.keys(patch)) {
-      if (!SETTLEMENT_PATCH_KEYS.has(key)) {
+      if (!isLegalTransitionPatchKey(from, to, key)) {
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          reason: `${label} may only patch settlement fields`,
-        })
-      }
-    }
-  }
-
-  /** Reject a patch that mutates any amount field. */
-  private assertNoAmountPatch(patch: Partial<UsageRecord> | undefined, label: string): void {
-    if (patch === undefined) return
-    for (const field of AMOUNT_FIELDS) {
-      if (field in patch) {
-        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          reason: `${label} may not patch amount fields`,
-        })
-      }
-    }
-  }
-
-  /** Reject a patch that sets any key other than the single allowed annotation key. */
-  private assertOnlyKeys(patch: Partial<UsageRecord> | undefined, allowed: keyof UsageRecord, label: string): void {
-    if (patch === undefined) return
-    for (const key of Object.keys(patch)) {
-      if (key !== allowed) {
-        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          reason: `${label} may only annotate ${allowed}`,
+          reason: `${from} → ${to} may not patch "${key}"`,
         })
       }
     }
