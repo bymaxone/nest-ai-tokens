@@ -234,6 +234,25 @@ describe('UsageReportService.summarize', () => {
     expect(summary?.group.systemCostCategory).toBe('')
   })
 
+  /** summarize refuses to emit partial totals: it throws when matches exceed maxExportRows (not truncate). */
+  it('throws when matched rows exceed maxExportRows instead of truncating', async () => {
+    const built = build({ maxExportRows: 1 })
+    await built.ledger.append(appendInput({ billedCostNanoUsd: 1_000_000n }), 'a')
+    await built.ledger.append(appendInput({ billedCostNanoUsd: 2_000_000n }), 'b')
+    const error = await built.service.summarize({ ...FILTER, groupBy: [] }).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** At exactly maxExportRows the aggregate is complete — the boundary neither truncates nor throws. */
+  it('returns complete totals at exactly maxExportRows', async () => {
+    const built = build({ maxExportRows: 2 })
+    await built.ledger.append(appendInput({ billedCostNanoUsd: 1_000_000n }), 'a')
+    await built.ledger.append(appendInput({ billedCostNanoUsd: 2_000_000n }), 'b')
+    const [summary] = await built.service.summarize({ ...FILTER, groupBy: [] })
+    expect(summary?.records).toBe(2)
+    expect(summary?.billedCostNanoUsd).toBe(3_000_000n)
+  })
+
   /** A store implementing summarize is delegated to directly. */
   it('delegates to a store summarize implementation', async () => {
     const canned: UsageSummary[] = [{ group: { model: 'gpt-5' }, records: 9, totalTokens: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, reasoning: 0, audioIn: 0, audioOut: 0, imageIn: 0, imageOut: 0 }, rawCostNanoUsd: 0n, surchargeNanoUsd: 0n, billedCostNanoUsd: 0n, cacheSavingsNanoUsd: 0n }]

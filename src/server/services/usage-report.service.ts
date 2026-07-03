@@ -59,17 +59,22 @@ export class UsageReportService {
 
   /**
    * Aggregate `SUM … GROUP BY` across the report dimensions. Delegates to the
-   * store's SQL `summarize` when present, else aggregates in memory (capped at
-   * `reporting.maxExportRows`). An empty `groupBy` yields one grand-total row.
+   * store's SQL `summarize` when present, else aggregates in memory. The in-memory
+   * fallback REFUSES to emit partial totals: like `export()` it throws when the
+   * filter matches more than `reporting.maxExportRows` rows (paginate instead) — a
+   * silent truncation would hand callers incorrect aggregates. An empty `groupBy`
+   * yields one grand-total row.
    *
    * @param input The report filter plus the group-by dimensions.
    * @returns One {@link UsageSummary} per group.
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the matched rows exceed `reporting.maxExportRows`.
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     const { groupBy, ...filter } = input
-    const ledgerFilter = toLedgerFilter(filter, this.options.reporting.maxExportRows)
-    if (this.store.summarize !== undefined) return this.store.summarize(ledgerFilter, groupBy)
-    const records = await this.store.query(ledgerFilter)
+    const max = this.options.reporting.maxExportRows
+    if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)
+    const records = await this.store.query(toLedgerFilter(filter, max + 1))
+    this.assertWithinMaxRows(records.length, 'summarize')
     const groups = new Map<string, UsageSummary>()
     for (const record of records) {
       const savings = await this.cacheSavings(record)
@@ -96,11 +101,25 @@ export class UsageReportService {
   async export(filter: ReportFilter, format: ReportExportFormat): Promise<Readable> {
     const max = this.options.reporting.maxExportRows
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
-    if (records.length > max) {
-      throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `export exceeds reporting.maxExportRows (${String(max)}); paginate the filter` })
-    }
+    this.assertWithinMaxRows(records.length, 'export')
     this.audit('ai_tokens.audit', { action: 'export', tenantId: filter.tenantId, format, rows: records.length })
     return Readable.from(this.serialize(records, format))
+  }
+
+  /**
+   * Refuse a partial result: throw when a `maxExportRows + 1`-bounded query matched
+   * more rows than `reporting.maxExportRows`, signaling the caller to paginate. Both
+   * `summarize()` and `export()` share this guard so neither ever silently truncates.
+   *
+   * @param rowCount The number of rows the `(max + 1)`-bounded query returned.
+   * @param operation The operation name for the error reason (`summarize`/`export`).
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `rowCount` exceeds the limit.
+   */
+  private assertWithinMaxRows(rowCount: number, operation: string): void {
+    const max = this.options.reporting.maxExportRows
+    if (rowCount > max) {
+      throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${operation} exceeds reporting.maxExportRows (${String(max)}); paginate the filter` })
+    }
   }
 
   /** Yield the serialized rows (CSV header + rows, or ndjson lines). */
