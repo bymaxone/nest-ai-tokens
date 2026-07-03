@@ -1,0 +1,82 @@
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '18 2 * * 2'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # OpenSSF Scorecard requires a public repository — its checkout cannot authenticate
+  # against a private repo. Gate the analysis on visibility so the workflow stays green
+  # (the analysis job is skipped) while the repository is private, and runs automatically
+  # once the repository becomes public — no workflow change required.
+  gate:
+    name: Resolve repository visibility
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      public: ${{ steps.vis.outputs.public }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Determine visibility
+        id: vis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail safe: any API/CLI error defaults to private, so a transient gh failure
+          # skips the analysis (run stays green) instead of failing the whole workflow.
+          if visibility="$(gh api "repos/${{ github.repository }}" --jq '.visibility' 2>/dev/null)" \
+            && [ "$visibility" = "public" ]; then
+            echo 'public=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'public=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  analysis:
+    name: Scorecard analysis
+    needs: gate
+    if: ${{ needs.gate.outputs.public == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      id-token: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: results.sarif

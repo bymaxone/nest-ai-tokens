@@ -732,7 +732,7 @@ export interface PriceVersion {
   /**
    * Non-token line items in nano-USD PER UNIT, matched against
    * NormalizedUsage.serverToolUse / MeteringContext.extraUnits — e.g.
-   * { web_search_request: 10_000_000n, image: 40_000_000n, video_second: 100_000_000n }
+   * { web_search_requests: 10_000_000n, image: 40_000_000n, video_second: 100_000_000n }
    * (10_000_000n nano-USD = $0.01 per web-search call).
    * Persisted as JSON of decimal strings (bigint is not JSON-serializable) — §15.3.
    */
@@ -905,7 +905,7 @@ export interface UsageRecord {
   imageInTokens: number
   imageOutTokens: number
   totalTokens: number
-  /** Non-token line items actually rated, e.g. { web_search_request: 2 }. */
+  /** Non-token line items actually rated, e.g. { web_search_requests: 2 }. */
   extraUnits?: Record<string, number>
   // Cost — typed, indexed, integer nano-USD:
   priceVersionId: string | null      // null for provider-reported mode or priceMissing
@@ -1521,6 +1521,17 @@ export interface IContentStore {
 ```
 
 `content.mask` runs before persistence; `purge()` supports erasure requests independently of the ledger.
+
+#### 14.2.1 Token estimation port (`ITokenizer`)
+
+`hold()` pre-flight estimation (when the caller supplies text instead of counts) and the aborted-stream fallback (§5.6) count tokens from text via a host-plugged tokenizer. The library ships none (§17):
+
+```typescript
+export interface ITokenizer {
+  /** Count the tokens `text` consumes for the given model/provider (sync or async). */
+  countTokens(input: { text: string; model?: string; provider?: ProviderId }): number | Promise<number>
+}
+```
 
 ### 14.3 GDPR / LGPD
 

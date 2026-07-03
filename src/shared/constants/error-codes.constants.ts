@@ -1,0 +1,29 @@
+/**
+ * @fileoverview The exhaustive catalog of error codes the library raises. Keys
+ * and values are identical strings so `keyof typeof AI_TOKENS_ERROR_CODES` is the
+ * canonical code union that the message/status maps (server layer) are typed
+ * against — the compiler then enforces exhaustive coverage (see spec §16).
+ * @layer shared
+ */
+
+/** Every error code the library can raise, mapped to itself for value access. */
+export const AI_TOKENS_ERROR_CODES = {
+  AI_TOKENS_NOT_CONFIGURED: 'AI_TOKENS_NOT_CONFIGURED',
+  AI_TOKENS_INVALID_CONFIG: 'AI_TOKENS_INVALID_CONFIG',
+  AI_TOKENS_UNKNOWN_PROVIDER: 'AI_TOKENS_UNKNOWN_PROVIDER',
+  AI_TOKENS_USAGE_MALFORMED: 'AI_TOKENS_USAGE_MALFORMED',
+  AI_TOKENS_PRICE_NOT_FOUND: 'AI_TOKENS_PRICE_NOT_FOUND',
+  AI_TOKENS_FX_REQUIRED: 'AI_TOKENS_FX_REQUIRED',
+  AI_TOKENS_BUDGET_EXCEEDED: 'AI_TOKENS_BUDGET_EXCEEDED',
+  AI_TOKENS_QUOTA_EXCEEDED: 'AI_TOKENS_QUOTA_EXCEEDED',
+  AI_TOKENS_INSUFFICIENT_CREDITS: 'AI_TOKENS_INSUFFICIENT_CREDITS',
+  AI_TOKENS_HOLD_NOT_FOUND: 'AI_TOKENS_HOLD_NOT_FOUND',
+  AI_TOKENS_HOLD_EXPIRED: 'AI_TOKENS_HOLD_EXPIRED',
+  AI_TOKENS_HOLD_ALREADY_SETTLED: 'AI_TOKENS_HOLD_ALREADY_SETTLED',
+  AI_TOKENS_IDEMPOTENCY_CONFLICT: 'AI_TOKENS_IDEMPOTENCY_CONFLICT',
+  AI_TOKENS_STREAM_USAGE_MISSING: 'AI_TOKENS_STREAM_USAGE_MISSING',
+  AI_TOKENS_STORE_ERROR: 'AI_TOKENS_STORE_ERROR',
+} as const
+
+/** A library error code. */
+export type AiTokensErrorCode = keyof typeof AI_TOKENS_ERROR_CODES

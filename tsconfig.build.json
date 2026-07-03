@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "baseUrl": ".",
+    "paths": {
+      "@bymax-one/nest-ai-tokens": ["./src/server/index.ts"],
+      "@bymax-one/nest-ai-tokens/shared": ["./src/shared/index.ts"],
+      "@bymax-one/nest-ai-tokens/prices": ["./src/prices/index.ts"],
+      "@bymax-one/nest-ai-tokens/prisma": ["./src/prisma/index.ts"],
+      "@bymax-one/nest-ai-tokens/redis": ["./src/redis/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "**/*.spec.ts", "test"]
+}

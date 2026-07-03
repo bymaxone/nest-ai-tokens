@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 👀 Review · **Progress**: 11 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -40,17 +40,17 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | 📋 ToDo | P0 | M | — |
-| 1.2 | Shared catalogs and canonical types | 📋 ToDo | P0 | M | 1.1 |
-| 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | 📋 ToDo | P0 | M | 1.2 |
-| 1.4 | Usage normalizers ×9 with reconciliation invariants | 📋 ToDo | P0 | L | 1.2, 1.3 |
-| 1.5 | Pure cost engine (computeCostNanoUsd + applyMarkup) | 📋 ToDo | P0 | L | 1.2 |
-| 1.6 | Price seed dataset (`./prices`) | 📋 ToDo | P0 | M | 1.2 |
-| 1.7 | Error catalog (AiTokensException + maps) | 📋 ToDo | P0 | S | 1.2 |
-| 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | 📋 ToDo | P0 | M | 1.2, 1.7 |
-| 1.9 | DI tokens + options validation + defaults | 📋 ToDo | P0 | M | 1.7, 1.8 |
-| 1.10 | PricingService (resolution chain + cache + idempotent seed) | 📋 ToDo | P0 | L | 1.5, 1.6, 1.8, 1.9 |
-| 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | 📋 ToDo | P0 | M | 1.4, 1.9, 1.10 |
+| 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | ✅ Done | P0 | M | — |
+| 1.2 | Shared catalogs and canonical types | ✅ Done | P0 | M | 1.1 |
+| 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | ✅ Done | P0 | M | 1.2 |
+| 1.4 | Usage normalizers ×9 with reconciliation invariants | ✅ Done | P0 | L | 1.2, 1.3 |
+| 1.5 | Pure cost engine (computeCostNanoUsd + applyMarkup) | ✅ Done | P0 | L | 1.2 |
+| 1.6 | Price seed dataset (`./prices`) | ✅ Done | P0 | M | 1.2 |
+| 1.7 | Error catalog (AiTokensException + maps) | ✅ Done | P0 | S | 1.2 |
+| 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | ✅ Done | P0 | M | 1.2, 1.7 |
+| 1.9 | DI tokens + options validation + defaults | ✅ Done | P0 | M | 1.7, 1.8 |
+| 1.10 | PricingService (resolution chain + cache + idempotent seed) | ✅ Done | P0 | L | 1.5, 1.6, 1.8, 1.9 |
+| 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | ✅ Done | P0 | M | 1.4, 1.9, 1.10 |
 
 ---
 
@@ -58,7 +58,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 
 ### Task 1.1 — Project scaffold + 4 CI workflows (5-subpath build)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: —
@@ -69,11 +69,11 @@ Create the folder structure, all tooling configs (adapted from `../nest-storage/
 
 #### Acceptance criteria
 
-- [ ] `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` all pass on the empty skeleton
-- [ ] `pnpm build` produces `dist/{server,shared,prices,prisma,redis}/index.{mjs,cjs,d.ts}`
-- [ ] The four workflows are valid and incremental-safe (`passWithNoTests`); `release.yml` inert until a `v*.*.*` tag
-- [ ] `package.json` matches spec §3.2 exports and §18.2 peers exactly; `"dependencies": {}`
-- [ ] eslint flat v9 (`strictTypeChecked` + `stylisticTypeChecked` + prettier); zero warnings
+- [x] `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` all pass on the empty skeleton
+- [x] `pnpm build` produces `dist/{server,shared,prices,prisma,redis}/index.{mjs,cjs,d.ts}`
+- [x] The four workflows are valid and incremental-safe (`passWithNoTests`); `release.yml` inert until a `v*.*.*` tag
+- [x] `package.json` matches spec §3.2 exports and §18.2 peers exactly; `"dependencies": {}`
+- [x] eslint flat v9 (`strictTypeChecked` + `stylisticTypeChecked` + prettier); zero warnings
 
 #### Files to create / modify
 
@@ -171,7 +171,7 @@ nothing else there. 6. Append to Completion log: `- 1.1 ✅ <YYYY-MM-DD> — <on
 
 ### Task 1.2 — Shared catalogs and canonical types
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.1
@@ -182,10 +182,10 @@ Implement the entire `./shared` type surface — provider/operation/tier/token-c
 
 #### Acceptance criteria
 
-- [ ] Every symbol listed in spec §3.3 "Shared" exists and is exported from the barrel
-- [ ] Zero imports of `@nestjs/*`, `@prisma/*`, `ioredis` under `src/shared/` (grep-verified)
-- [ ] Constants `as const`; types via `import type`; `(string & {})` on `ProviderId` preserves autocomplete
-- [ ] `pnpm typecheck` passes; no `any`
+- [x] Every symbol listed in spec §3.3 "Shared" exists and is exported from the barrel
+- [x] Zero imports of `@nestjs/*`, `@prisma/*`, `ioredis` under `src/shared/` (grep-verified)
+- [x] Constants `as const`; types via `import type`; `(string & {})` on `ProviderId` preserves autocomplete
+- [x] `pnpm typecheck` passes; no `any`
 
 #### Files to create / modify
 
@@ -260,7 +260,7 @@ Completion Protocol:
 
 ### Task 1.3 — Money + idempotency utilities
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.2
@@ -271,9 +271,9 @@ The exact-arithmetic foundation: nano-USD bigint helpers (`formatNanoUsd`, float
 
 #### Acceptance criteria
 
-- [ ] `fast-check` property suite: formatNanoUsd round-trips known values; float→nano conversion round-half-up, exact for costs < $1,000; no `number` intermediate on money paths
-- [ ] `deriveIdempotencyKey` stable under key order (`{a:1,b:2}` ≡ `{b:2,a:1}`), distinct for distinct payloads
-- [ ] Pure — no `node:crypto` hard dependency (pure-TS sha256, sync, edge-safe)
+- [x] `fast-check` property suite: formatNanoUsd round-trips known values; float→nano conversion round-half-up, exact for costs < $1,000; no `number` intermediate on money paths
+- [x] `deriveIdempotencyKey` stable under key order (`{a:1,b:2}` ≡ `{b:2,a:1}`), distinct for distinct payloads
+- [x] Pure — no `node:crypto` hard dependency (pure-TS sha256, sync, edge-safe)
 
 #### Files to create / modify
 
@@ -347,7 +347,7 @@ Completion Protocol:
 
 ### Task 1.4 — Usage normalizers ×9 with reconciliation invariants
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.2, 1.3
@@ -358,11 +358,11 @@ One pure normalizer per provider shape (OpenAI Chat, OpenAI Responses, OpenAI-co
 
 #### Acceptance criteria
 
-- [ ] Each normalizer has fixture tests with realistic payloads (streaming-final and non-streaming where shapes differ)
-- [ ] Property tests assert both spec §5.5 invariants per adapter
-- [ ] Malformed input throws a plain `Error` (server layer wraps later); shared code never imports the exception class
-- [ ] `serviceTier` read from the response where reported (OpenAI `service_tier`, Anthropic `usage.service_tier`)
-- [ ] Unknown fields preserved in `raw`
+- [x] Each normalizer has fixture tests with realistic payloads (streaming-final and non-streaming where shapes differ)
+- [x] Property tests assert both spec §5.5 invariants per adapter
+- [x] Malformed input throws a plain `Error` (server layer wraps later); shared code never imports the exception class
+- [x] `serviceTier` read from the response where reported (OpenAI `service_tier`, Anthropic `usage.service_tier`)
+- [x] Unknown fields preserved in `raw`
 
 #### Files to create / modify
 
@@ -459,7 +459,7 @@ Completion Protocol:
 
 ### Task 1.5 — Pure cost engine (computeCostNanoUsd + applyMarkup)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.2
@@ -470,11 +470,11 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Worked examples from spec §7.1 pass exactly (1,000 Opus input tokens → 5_000_000n)
-- [ ] Tier boundary tests: at/below/above `tierThresholdTokens` (threshold counts ALL input-side categories)
-- [ ] Surcharge tests: units in `serverToolUse` missing from `unitRates` are ignored; and vice versa
-- [ ] `applyMarkup` property tests: m=1.0 identity; 4-dp rounding; truncation-toward-zero; rejects non-finite/≤0
-- [ ] Return shape exposes `{ totalNanoUsd, tokenNanoUsd, surchargeNanoUsd }`
+- [x] Worked examples from spec §7.1 pass exactly (1,000 Opus input tokens → 5_000_000n)
+- [x] Tier boundary tests: at/below/above `tierThresholdTokens` (threshold counts ALL input-side categories)
+- [x] Surcharge tests: units in `serverToolUse` missing from `unitRates` are ignored; and vice versa
+- [x] `applyMarkup` property tests: m=1.0 identity; 4-dp rounding; truncation-toward-zero; rejects non-finite/≤0
+- [x] Return shape exposes `{ totalNanoUsd, tokenNanoUsd, surchargeNanoUsd }`
 
 #### Files to create / modify
 
@@ -547,7 +547,7 @@ Completion Protocol:
 
 ### Task 1.6 — Price seed dataset (`./prices`)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.2
@@ -558,10 +558,10 @@ The pinned `MODEL_PRICES_SEED` snapshot in its own data-only subpath, converted 
 
 #### Acceptance criteria
 
-- [ ] Seed covers: current OpenAI GPT-5.x family + embeddings, Anthropic Opus/Sonnet/Haiku (cache rates 1.25×/2×/0.1× of input), Gemini Pro/Flash (incl. long-context tier rows), Mistral Large/Medium/Small, DeepSeek/xAI/Groq headline models
-- [ ] Every entry validates against the `PriceVersion` row schema (typed, no floats)
-- [ ] Snapshot date + source recorded in the file header (`source: 'snapshot'`)
-- [ ] `./shared` does NOT import `./prices`
+- [x] Seed covers: current OpenAI GPT-5.x family + embeddings, Anthropic Opus/Sonnet/Haiku (cache rates 1.25×/2×/0.1× of input), Gemini Pro/Flash (incl. long-context tier rows), Mistral Large/Medium/Small, DeepSeek/xAI/Groq headline models
+- [x] Every entry validates against the `PriceVersion` row schema (typed, no floats)
+- [x] Snapshot date + source recorded in the file header (`source: 'snapshot'`)
+- [x] `./shared` does NOT import `./prices`
 
 #### Files to create / modify
 
@@ -640,7 +640,7 @@ Completion Protocol:
 
 ### Task 1.7 — Error catalog
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: S
 - **Depends on**: 1.2
@@ -651,9 +651,9 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Maps typed `Record<keyof typeof AI_TOKENS_ERROR_CODES, …>` (exhaustiveness compiler-enforced)
-- [ ] Only `AI_TOKENS_ERROR_CODES`, `AiTokensException`, `AiTokensErrorResponse` public; maps internal
-- [ ] Response body `{ error: { code, message, details? } }` snapshot-tested
+- [x] Maps typed `Record<keyof typeof AI_TOKENS_ERROR_CODES, …>` (exhaustiveness compiler-enforced)
+- [x] Only `AI_TOKENS_ERROR_CODES`, `AiTokensException`, `AiTokensErrorResponse` public; maps internal
+- [x] Response body `{ error: { code, message, details? } }` snapshot-tested
 
 #### Files to create / modify
 
@@ -714,7 +714,7 @@ Completion Protocol:
 
 ### Task 1.8 — Port interfaces
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.2, 1.7
@@ -725,9 +725,9 @@ Every port contract the module wires: the four storage ports + counter port, plu
 
 #### Acceptance criteria
 
-- [ ] Every port interface from spec §3.3 exists with JSDoc lifted from the spec's normative text
-- [ ] `BymaxAiTokensModuleAsyncOptions` follows the NestJS async dynamic-module pattern
-- [ ] No `any`; discriminated unions for `HoldEstimate`
+- [x] Every port interface from spec §3.3 exists with JSDoc lifted from the spec's normative text
+- [x] `BymaxAiTokensModuleAsyncOptions` follows the NestJS async dynamic-module pattern
+- [x] No `any`; discriminated unions for `HoldEstimate`
 
 #### Files to create / modify
 
@@ -791,7 +791,7 @@ Completion Protocol:
 
 ### Task 1.9 — DI tokens + options validation + defaults
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.7, 1.8
@@ -802,9 +802,9 @@ The `Symbol()` injection tokens, `validateOptions()` (every §4.6 rule → `AI_T
 
 #### Acceptance criteria
 
-- [ ] Every invalid-config case from spec §4.6 throws with an actionable `details.reason`
-- [ ] `wallets: {}` with a store missing `conditionalDebit` fails at init (feature-port validation)
-- [ ] Defaults exactly match spec §4.2 (holds TTL 3600, reaper 300, thresholds [0.8, 1.0], burnOrder 'expiry', failClosed true, …)
+- [x] Every invalid-config case from spec §4.6 throws with an actionable `details.reason`
+- [x] `wallets: {}` with a store missing `conditionalDebit` fails at init (feature-port validation)
+- [x] Defaults exactly match spec §4.2 (holds TTL 3600, reaper 300, thresholds [0.8, 1.0], burnOrder 'expiry', failClosed true, …)
 
 #### Files to create / modify
 
@@ -870,7 +870,7 @@ Completion Protocol:
 
 ### Task 1.10 — PricingService (resolution chain + cache + idempotent seed)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.5, 1.6, 1.8, 1.9
@@ -881,11 +881,11 @@ Effective-dated rate resolution with the six-step model-resolution chain (exact 
 
 #### Acceptance criteria
 
-- [ ] Resolution-chain tests: exact; `baseModel`; alias map; date-suffix strip (`gpt-5.2-2026-03-14`); `models/` prefix strip; Bedrock region strip; longest-`startsWith`; strict miss throws / non-strict null
-- [ ] Tier resolution: `flex` with no flex row → strict miss (never standard rates); `standard` resolves standard
-- [ ] `upsertPrice` closes the open row and inserts a new one; history returns both
-- [ ] Cache: hit within TTL, refresh after, keyed by the full resolution tuple
-- [ ] Seed runs once across two concurrent module inits (fake store records lock acquisitions)
+- [x] Resolution-chain tests: exact; `baseModel`; alias map; date-suffix strip (`gpt-5.2-2026-03-14`); `models/` prefix strip; Bedrock region strip; longest-`startsWith`; strict miss throws / non-strict null
+- [x] Tier resolution: `flex` with no flex row → strict miss (never standard rates); `standard` resolves standard
+- [x] `upsertPrice` closes the open row and inserts a new one; history returns both
+- [x] Cache: hit within TTL, refresh after, keyed by the full resolution tuple
+- [x] Seed runs once across two concurrent module inits (fake store records lock acquisitions)
 
 #### Files to create / modify
 
@@ -961,7 +961,7 @@ Completion Protocol:
 
 ### Task 1.11 — BymaxAiTokensModule.forRoot() + provider presets + fixture demo
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.4, 1.9, 1.10
@@ -972,11 +972,11 @@ The synchronous `@Global()` dynamic module (store fan-out under per-port tokens,
 
 #### Acceptance criteria
 
-- [ ] Fixture app boots with only `store`; `PricingService` injectable; `WalletService`/`BudgetService` NOT registered
-- [ ] With `wallets: {}`/`budgets: {}`, the corresponding providers register (services themselves arrive in later phases — register placeholders is NOT acceptable: gate on existence, so this criterion is validated structurally via the provider-factory map)
-- [ ] Host-bound `BYMAX_AI_TOKENS_PRICING_STORE` token overrides the bundle's pricing half
-- [ ] Every preset produces the right `{ provider, normalizer, ratingMode }`; `openaiCompatible('deepseek')` works
-- [ ] End-to-end fixture: raw OpenAI usage → preset normalizer → PricingService → exact expected nano-USD cost
+- [x] Fixture app boots with only `store`; `PricingService` injectable; `WalletService`/`BudgetService` NOT registered
+- [x] With `wallets: {}`/`budgets: {}`, the corresponding providers register (services themselves arrive in later phases — register placeholders is NOT acceptable: gate on existence, so this criterion is validated structurally via the provider-factory map)
+- [x] Host-bound `BYMAX_AI_TOKENS_PRICING_STORE` token overrides the bundle's pricing half
+- [x] Every preset produces the right `{ provider, normalizer, ratingMode }`; `openaiCompatible('deepseek')` works
+- [x] End-to-end fixture: raw OpenAI usage → preset normalizer → PricingService → exact expected nano-USD cost
 
 #### Files to create / modify
 
@@ -1052,3 +1052,15 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
+- 1.1 ✅ 2026-07-02 — Scaffolded the five-subpath peer-only package (tsup dual-format, 5 tsconfig/jest variants, eslint flat v9, Stryker, brotli size budgets) and the four CI workflows (ci/codeql/scorecard/release); typecheck, lint, build (all 5 subpaths mjs+cjs+d.ts), size, and passWithNoTests all green with `dependencies: {}`.
+- 1.2 ✅ 2026-07-02 — Implemented the full zero-dependency shared surface: 6 as-const catalog constants (+ derived unions) and the canonical types (NormalizedUsage, PriceVersion, UsageRecord, wallet/budget/report/event/error types, plus New* insert aliases and LedgerFilter), all barrel-exported; typecheck, lint, and the src/shared zero-dep grep clean.
+- 1.3 ✅ 2026-07-02 — Added exact nano-USD money utilities (perMillion, floatUsdToNanoUsd round-half-up exact < $1,000, formatNanoUsd bigint presentation) and deriveIdempotencyKey over canonical JSON + a pure sync SHA-256 (no node:crypto); fast-check property suites + FIPS test vectors, 100% coverage on every file.
+- 1.4 ✅ 2026-07-02 — Implemented the nine pure provider normalizers (OpenAI chat/responses/compatible, Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter, Vercel v5+v6) over a shared field-reader helper; OpenAI/OpenRouter/Vercel subtract reasoning, Gemini maps thoughts directly, Anthropic keeps reasoning 0; fast-check tests assert both §5.5 invariants per adapter; 100% coverage, shared bundle 4.2 KB brotli, no provider SDK imports.
+- 1.5 ✅ 2026-07-02 — Implemented the pure cost engine: computeCostNanoUsd (all-or-nothing long-context tier, per-category perMillion math, unitRates surcharge intersection, separable {total,token,surcharge}) and applyMarkup + resolveMultiplier4dp (4-dp bigint, truncation-toward-zero, rejects non-finite/≤0); tier-boundary + surcharge + fast-check property suites, 100% coverage.
+- 1.6 ✅ 2026-07-02 — Authored the pinned MODEL_PRICES_SEED snapshot (OpenAI gpt-5 family + embeddings + batch, Anthropic Opus/Sonnet/Haiku with 0.1×/1.25×/2× cache rates + batch, Gemini Pro/Flash long-context tier rows, Mistral L/M/S, DeepSeek/xAI/Groq) in bigint nano-USD, plus the offline convert-litellm-prices.mjs provenance script; validation spec (shape, no duplicate keys, non-negative, coverage) at 100%; dist/prices has zero runtime imports and ./shared does not import ./prices.
+- 1.7 ✅ 2026-07-02 — Implemented AiTokensException (extends HttpException, canonical { error: { code, message, details? } } body) plus the internal exhaustive code→message and code→HttpStatus maps (compiler-enforced via Record<AiTokensErrorCode, …>); one-throw-per-code spec asserting the §16.2 statuses (402/429/404/410/409/422/400/500/502/503), 100% coverage.
+- 1.8 ✅ 2026-07-02 — Transcribed all 14 port/options interfaces (ILedgerStore/IPricingStore/IWalletStore/IBudgetStore/IBudgetCounterStore + IAiTokensStore bundle, ITokenizer, ITelemetrySink, IEventSink, IContentStore, IMarkupPolicy, MeteringContext/MeterResult, Hold/HoldEstimate union, BymaxAiTokensModuleOptions + async options/factory); also fixed a spec defect by defining the previously-unspecified ITokenizer port (docs(spec)). Typecheck/lint/build clean, zero any.
+- 1.9 ✅ 2026-07-02 — Implemented the 11 Symbol DI tokens, validateOptions (store presence + always-required ledger/pricing ports, feature-gated wallet/budget port checks, FX_REQUIRED for non-USD without fx, markup/threshold/holds/wallet validation → INVALID_CONFIG with actionable reason) and applyDefaults → frozen ResolvedAiTokensOptions with { enabled } discriminated unions matching §4.2; 32-case config spec, 100% coverage.
+- 1.10 ✅ 2026-07-02 — Implemented normalizeModelId (models/ + region + date strip, lowercase) and PricingService: the six-step resolution chain (exact → baseModel → alias → normalized → longest-startsWith → miss), tier-exact resolution (no batch/flex fallback), TTL cache keyed by the resolution tuple with an injected clock, cache-invalidating upsertPrice/getPriceHistory, and an advisory-locked idempotent seedFromSnapshot (lazy ./prices import) run from onModuleInit; faithful in-memory fake store; 100% coverage.
+- 1.11 ✅ 2026-07-02 — Implemented the @Global() BymaxAiTokensModule.forRoot() (validate → resolve → fan the store out under per-port tokens, feature-gated wallet/budget tokens, optional collaborator tokens, PricingService via factory injecting the pricing-store token, exports), the 11 providerPresets (+ openaiCompatible factory), and the public server barrel with the `export * from '../shared'` re-export rule; module spec proves boot, feature gating, token override, presets, and the Definition-of-Done end-to-end demo (raw OpenAI usage → normalize → resolveRate → computeCostNanoUsd = 6_025_000n raw, 24_100_000n billed at 4× markup); 100% coverage, server bundle 9.6 KB brotli.
