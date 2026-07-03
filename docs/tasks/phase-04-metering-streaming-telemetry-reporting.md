@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 🔄 In Progress · **Progress**: 8 / 12 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 9 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -47,7 +47,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 | 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | ✅ Done | P0 | L | 4.2, 3.8 |
 | 4.7 | OpenTelemetry gen_ai.* emission | ✅ Done | P1 | M | 4.4 |
 | 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | ✅ Done | P0 | L | 2.7 |
-| 4.9 | forRootAsync() | 📋 ToDo | P0 | S | 4.4 |
+| 4.9 | forRootAsync() | ✅ Done | P0 | S | 4.4 |
 | 4.10 | Content sidecar wiring (opt-in) | 📋 ToDo | P2 | S | 4.4 |
 | 4.11 | E2E suite — the ten scenarios (Testcontainers PG + Redis) | 📋 ToDo | P0 | L | 4.1–4.10 |
 | 4.12 | Phase-4 integration review (matrix audit + export surface) | 📋 ToDo | P0 | M | 4.11 |
@@ -736,7 +736,7 @@ Completion Protocol:
 
 ### Task 4.9 — forRootAsync()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: S
 - **Depends on**: 4.4
@@ -747,8 +747,8 @@ Async module configuration (useFactory/useClass/useExisting) with wiring parity 
 
 #### Acceptance criteria
 
-- [ ] All three async styles boot the fixture app; provider-set parity with `forRoot()` (snapshot-compared)
-- [ ] Factory rejection → clean bootstrap failure with `AI_TOKENS_INVALID_CONFIG`
+- [x] All three async styles boot the fixture app; provider-set parity with `forRoot()` (snapshot-compared)
+- [x] Factory rejection → clean bootstrap failure with `AI_TOKENS_INVALID_CONFIG`
 
 #### Files to create / modify
 
@@ -1041,3 +1041,4 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 - 4.6 ✅ 2026-07-03 — BudgetGuard hold mode (@RequireBudget.estimate) + MeteringInterceptor (capture-or-record, release on error, x-ai-tokens-* decimal-string headers); rxjs added as a required peer for the interceptor.
 - 4.7 ✅ 2026-07-03 — TelemetryEmitter: gen_ai.* usage attributes on every posted record + duration on meter() paths; no-content, zero-allocation no-op without a sink; imports nothing from @opentelemetry/api.
 - 4.8 ✅ 2026-07-03 — UsageReportService: summarize() across 12 groupBy dims (day/week/month UTC, tag unnest, beneficiary, systemCostCategory) + cacheSavings from effective price; streaming CSV/ndjson export (§13.2 field set, decimal-string bigints, fx presentation columns, maxExportRows, audit).
+- 4.9 ✅ 2026-07-03 — forRootAsync() (useFactory/useClass/useExisting) sharing options-agnostic core providers with forRoot; async feature providers resolve null when disabled (services normalize null→absent); factory rejection/invalid options → AI_TOKENS_INVALID_CONFIG. rxjs peer added in 4.6.

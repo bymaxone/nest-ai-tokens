@@ -185,6 +185,10 @@ function baseColumns(
 export class MeteringService {
   private readonly logger = new Logger(MeteringService.name)
   private readonly effects: MeteringEffects
+  /** The wallet service, or `undefined` when the wallet feature is disabled. */
+  private readonly wallets: WalletService | undefined
+  /** The budget service, or `undefined` when the budget feature is disabled. */
+  private readonly budgets: BudgetService | undefined
   /** The wallet overdraft headroom (0 when wallets are disabled). */
   private readonly overdraftNanoUsd: bigint
 
@@ -205,12 +209,14 @@ export class MeteringService {
     private readonly markup: MarkupResolver,
     private readonly options: MeteringServiceOptions,
     private readonly events: MeteringEventHooks = NOOP_EVENT_HOOKS,
-    private readonly wallets?: WalletService,
-    private readonly budgets?: BudgetService,
+    wallets?: WalletService | null,
+    budgets?: BudgetService | null,
     private readonly now: () => Date = (): Date => new Date(),
     private readonly telemetry: TelemetryEmitter = NO_OP_TELEMETRY,
   ) {
-    this.effects = new MeteringEffects(wallets, budgets)
+    this.wallets = wallets ?? undefined
+    this.budgets = budgets ?? undefined
+    this.effects = new MeteringEffects(this.wallets, this.budgets)
     this.overdraftNanoUsd = options.wallets?.enabled === true ? options.wallets.overdraftNanoUsd : 0n
   }
 

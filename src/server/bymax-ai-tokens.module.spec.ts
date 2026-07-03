@@ -1,3 +1,4 @@
+import { Module } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import {
   applyMarkup,
@@ -5,16 +6,19 @@ import {
   normalizeOpenAiChatUsage,
   normalizeOpenAiCompatibleUsage,
 } from '../shared'
-import type { AiTokensEvent } from '../shared'
+import type { AiTokensEvent, AiTokensErrorResponse } from '../shared'
+import { AiTokensException } from './errors'
 import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
 import {
   BYMAX_AI_TOKENS_BUDGET_COUNTER,
   BYMAX_AI_TOKENS_BUDGET_STORE,
   BYMAX_AI_TOKENS_CONTENT_STORE,
+  BYMAX_AI_TOKENS_EVENT_SINK,
   BYMAX_AI_TOKENS_OPTIONS,
   BYMAX_AI_TOKENS_PRICING_STORE,
   BYMAX_AI_TOKENS_TELEMETRY,
+  BYMAX_AI_TOKENS_TOKENIZER,
   BYMAX_AI_TOKENS_WALLET_STORE,
 } from './bymax-ai-tokens.constants'
 import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
@@ -22,7 +26,7 @@ import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
 import { BudgetGuard } from './enforcement'
 import type { IAiTokensStore } from './interfaces'
-import { BudgetService, LedgerService, MeteringService, PricingService, WalletService } from './services'
+import { BudgetService, LedgerService, MeteringService, PricingService, UsageReportService, WalletService } from './services'
 
 /** A store passing validation for every feature: real pricing, stubbed ledger/wallet/budget. */
 function makeStore(): IAiTokensStore {
@@ -218,6 +222,17 @@ describe('BymaxAiTokensModule', () => {
     expect(rate?.inputNanoUsdPerMillion).toBe(7n)
   })
 
+  /** The report service is wired with an audit hook that fires on export. */
+  it('wires the report service audit hook', async () => {
+    const delivered: AiTokensEvent[] = []
+    const sink = { deliver: (event: AiTokensEvent): Promise<void> => (delivered.push(event), Promise.resolve()) }
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRoot({ store: makeLiveStore(), pricing: { seedFromSnapshot: false }, events: { emitter: false, sink } })],
+    }).compile()
+    await moduleRef.get(UsageReportService).export({ tenantId: 't1', from: new Date(0), to: new Date() }, 'json')
+    expect(delivered.some((e) => e.type === 'ai_tokens.audit')).toBe(true)
+  })
+
   /** onModuleInit seeds the price registry from the snapshot. */
   it('seeds the price registry on module init', async () => {
     const moduleRef = await Test.createTestingModule({
@@ -289,5 +304,113 @@ describe('BymaxAiTokensModule', () => {
 
     expect(rawCostNanoUsd).toBe(6_025_000n)
     expect(billedCostNanoUsd).toBe(24_100_000n)
+  })
+})
+
+/** A factory class supplying the module options (useClass/useExisting). */
+class OptionsFactory {
+  createAiTokensOptions(): { store: IAiTokensStore; wallets: Record<string, never>; budgets: Record<string, never>; scopeResolver: () => { tenantId: string; scope: { type: 'user'; id: string }; feature: string }; pricing: { seedFromSnapshot: false } } {
+    return { store: makeStore(), wallets: {}, budgets: {}, scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }), pricing: { seedFromSnapshot: false } }
+  }
+}
+
+/** A module exporting the options factory for the useExisting path. */
+@Module({ providers: [OptionsFactory], exports: [OptionsFactory] })
+class FactoryModule {}
+
+/** A module exporting a config token for the async-factory inject path. */
+@Module({ providers: [{ provide: 'CONFIG_STORE', useFactory: () => makeStore() }], exports: ['CONFIG_STORE'] })
+class ConfigModule {}
+
+describe('BymaxAiTokensModule.forRootAsync', () => {
+  /** useFactory resolves the options and boots the full service set (parity with forRoot). */
+  it('boots via useFactory with provider parity', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRootAsync({
+          useFactory: () => ({ store: makeStore(), wallets: {}, budgets: {}, scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }), pricing: { seedFromSnapshot: false } }),
+        }),
+      ],
+    }).compile()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+    expect(moduleRef.get(WalletService)).toBeInstanceOf(WalletService)
+    expect(moduleRef.get(BudgetService)).toBeInstanceOf(BudgetService)
+    expect(moduleRef.get(BudgetGuard)).toBeInstanceOf(BudgetGuard)
+    expect(moduleRef.get(PricingService)).toBeInstanceOf(PricingService)
+  })
+
+  /** useFactory resolves its injected dependencies (from asyncOptions.imports). */
+  it('injects dependencies into the async factory', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRootAsync({
+          imports: [ConfigModule],
+          inject: ['CONFIG_STORE'],
+          useFactory: (store: unknown) => ({ store: store as IAiTokensStore, pricing: { seedFromSnapshot: false } }),
+        }),
+      ],
+    }).compile()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /** A disabled feature resolves to null (async cannot gate at definition time); optional ports resolve too. */
+  it('resolves feature services to null when disabled', async () => {
+    const tokenizer = { countTokens: () => 1 }
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeStore(), tokenizer, pricing: { seedFromSnapshot: false } }) })],
+    }).compile()
+    expect(moduleRef.get(WalletService, { strict: false })).toBeNull()
+    expect(moduleRef.get(BudgetGuard, { strict: false })).toBeNull()
+    expect(moduleRef.get(BYMAX_AI_TOKENS_TOKENIZER, { strict: false })).toBe(tokenizer)
+    expect(moduleRef.get(BYMAX_AI_TOKENS_CONTENT_STORE, { strict: false })).toBeNull()
+    expect(moduleRef.get(BYMAX_AI_TOKENS_EVENT_SINK, { strict: false })).toBeNull()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /** useClass boots via the factory class. */
+  it('boots via useClass', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useClass: OptionsFactory })],
+    }).compile()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+    expect(moduleRef.get(WalletService)).toBeInstanceOf(WalletService)
+  })
+
+  /** useExisting boots via a factory exported from an imported module. */
+  it('boots via useExisting', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ imports: [FactoryModule], useExisting: OptionsFactory })],
+    }).compile()
+    expect(moduleRef.get(BudgetService)).toBeInstanceOf(BudgetService)
+  })
+
+  /** A rejecting async factory fails bootstrap with AI_TOKENS_INVALID_CONFIG. */
+  it('fails bootstrap with INVALID_CONFIG on a rejecting factory', async () => {
+    const boot = Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => Promise.reject(new Error('config source down')) })],
+    }).compile()
+    const error = await boot.catch((e: unknown) => e)
+    expect((error as { getResponse?: () => { error: { code: string } } }).getResponse?.().error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** An async factory producing invalid options fails with INVALID_CONFIG. */
+  it('fails bootstrap when the factory returns invalid options', async () => {
+    const boot = Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeStore(), markup: -1, pricing: { seedFromSnapshot: false } }) })],
+    }).compile()
+    await expect(boot).rejects.toBeInstanceOf(Object)
+  })
+
+  /** No async style supplied is an INVALID_CONFIG configuration error. */
+  it('rejects a descriptor with no async style', () => {
+    const error = (() => {
+      try {
+        BymaxAiTokensModule.forRootAsync({})
+        return undefined
+      } catch (e) {
+        return e
+      }
+    })()
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 })
