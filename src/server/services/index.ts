@@ -8,4 +8,6 @@
 export { PricingService } from './pricing.service'
 export type { ResolveRateInput } from './pricing.service'
 export { LedgerService } from './ledger.service'
-export type { LedgerAppendInput } from './ledger.service'
+export type { LedgerAppendInput, LedgerServiceOptions, LedgerAuditHook } from './ledger.service'
+export { MarkupResolver } from './markup.resolver'
+export type { MarkupContext, ResolvedMarkup } from './markup.resolver'

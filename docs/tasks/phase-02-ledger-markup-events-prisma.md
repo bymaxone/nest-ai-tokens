@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 🔄 In Progress · **Progress**: 3 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 4 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -43,7 +43,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 | 2.1 | LedgerService — append, idempotency, query, sumCost | ✅ Done | P0 | L | 1.11 |
 | 2.2 | Ledger state machine + compensation (reverse, ledger-only) | ✅ Done | P0 | L | 2.1 |
 | 2.3 | Opt-in per-tenant hash chain + verifyChain | ✅ Done | P1 | M | 2.2 |
-| 2.4 | Markup engine wiring (number \| IMarkupPolicy) | 📋 ToDo | P0 | S | 1.11 |
+| 2.4 | Markup engine wiring (number \| IMarkupPolicy) | ✅ Done | P0 | S | 1.11 |
 | 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | 📋 ToDo | P0 | M | 2.1, 2.4 |
 | 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | 📋 ToDo | P0 | M | 2.5 |
 | 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | 📋 ToDo | P0 | L | 2.1–2.5 |
@@ -298,7 +298,7 @@ Completion Protocol:
 
 ### Task 2.4 — Markup engine wiring
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: S
 - **Depends on**: 1.11
@@ -309,10 +309,10 @@ The internal markup resolver: `number | IMarkupPolicy` → validated 4-dp multip
 
 #### Acceptance criteria
 
-- [ ] Static multiplier and async policy both resolve; policy receives the full context (incl. `serviceTier`)
-- [ ] Policy returning `1.23456` → applied as `1.2346` and persisted as such
-- [ ] Provider-reported mode: OpenRouter cost × markup verified
-- [ ] Policy throwing → the metering call fails (no silent 1.0 fallback), wrapped error
+- [x] Static multiplier and async policy both resolve; policy receives the full context (incl. `serviceTier`)
+- [x] Policy returning `1.23456` → applied as `1.2346` and persisted as such
+- [x] Provider-reported mode: OpenRouter cost × markup verified
+- [x] Policy throwing → the metering call fails (no silent 1.0 fallback), wrapped error
 
 #### Files to create / modify
 
@@ -641,3 +641,4 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 - 2.1 ✅ 2026-07-03 — LedgerService append (payload-hash replay-or-conflict), query matrix, sumCost, toJsonSafe, and the in-memory ledger fake; 100% coverage.
 - 2.2 ✅ 2026-07-03 — Ledger state machine (`transition` legality table + atomic claim) and `reverse()` compensation (negation property test, sum-to-zero, concurrent-claim race); added `ILedgerStore.findById`.
 - 2.3 ✅ 2026-07-03 — Opt-in per-tenant tamper-evident hash chain (`chainHash` util, store-serialized settlement hashing via a `hashChain` flag on append/transition) + `verifyChain` (off-by-default, tamper detection, pending-excluded); chain survives the annotation-only reversal.
+- 2.4 ✅ 2026-07-03 — Internal `MarkupResolver` (static 4-dp multiplier | `IMarkupPolicy`), per-call validation, bound `applyMarkup` for both rating modes; throwing/invalid policy → `AI_TOKENS_INVALID_CONFIG` (no silent 1.0).
