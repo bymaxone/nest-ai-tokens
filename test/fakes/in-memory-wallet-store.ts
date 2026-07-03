@@ -75,13 +75,19 @@ export class InMemoryWalletStore implements IWalletStore {
     return `${walletId}|${idempotencyKey}`
   }
 
-  /** The content hash used to tell a replay apart from a genuine conflict. */
+  /**
+   * The content hash that tells a matching replay apart from a genuine conflict.
+   * It covers only the stable business payload of an entry — amount, priority,
+   * expiry, usage link, and reason. `effectiveAt` is EXCLUDED: the service defaults
+   * it to the wall clock at call time, so including it would make a retry of the
+   * same logical grant/debit hash differently and spuriously conflict. This mirrors
+   * the ledger payload hash, which likewise excludes generated timestamps.
+   */
   private static hashOf(entry: NewWalletEntry): string {
     return deriveIdempotencyKey({
       type: entry.type,
       amountNanoUsd: entry.amountNanoUsd,
       priority: entry.priority,
-      effectiveAt: entry.effectiveAt,
       expiresAt: entry.expiresAt,
       usageRecordId: entry.usageRecordId,
       reason: entry.reason,

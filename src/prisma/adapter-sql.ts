@@ -489,13 +489,19 @@ export function walletBalanceDelta(entry: NewWalletEntry): bigint {
   return spendable ? entry.amountNanoUsd : 0n
 }
 
-/** Whether a stored entry has the same content as a replayed one (replay-or-conflict, §15.2). */
+/**
+ * Whether a stored entry has the same content as a replayed one (replay-or-conflict,
+ * §15.2). Compares only the stable business payload — type, amount, priority, expiry,
+ * usage link, and reason. `effectiveAt` is EXCLUDED because the service defaults it to
+ * the wall clock at call time, so a retry that omits it would otherwise mismatch and
+ * spuriously conflict; this mirrors the ledger payload hash, which excludes generated
+ * timestamps. Both wallet stores use this same field set so their replay semantics agree.
+ */
 export function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry): boolean {
   return (
     row.type === entry.type &&
     row.amountNanoUsd === entry.amountNanoUsd &&
     row.priority === entry.priority &&
-    row.effectiveAt.getTime() === entry.effectiveAt.getTime() &&
     (row.expiresAt?.getTime() ?? null) === (entry.expiresAt?.getTime() ?? null) &&
     (row.usageRecordId ?? null) === (entry.usageRecordId ?? null) &&
     (row.reason ?? null) === (entry.reason ?? null)
