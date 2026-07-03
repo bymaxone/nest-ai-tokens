@@ -80,23 +80,23 @@ describe('validateOptions', () => {
   /** A missing store is rejected. */
   it('rejects a missing store', () => {
     // Simulates a JS host passing no store.
-    const exception = caught(() => validateOptions({ store: undefined } as unknown as BymaxAiTokensModuleOptions))
+    const exception = caught(() => validateOptions({} as BymaxAiTokensModuleOptions))
     expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 
   /** A store missing a required ledger method is rejected. */
   it('rejects a store missing a ledger method', () => {
-    const store: Record<string, unknown> = { ...makeStore() }
+    const store: Partial<IAiTokensStore> = { ...makeStore() }
     delete store.append
-    const exception = caught(() => validateOptions(opts({ store: store as unknown as IAiTokensStore })))
+    const exception = caught(() => validateOptions(opts({ store: store as IAiTokensStore })))
     expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 
   /** A store missing a required pricing method is rejected. */
   it('rejects a store missing a pricing method', () => {
-    const store: Record<string, unknown> = { ...makeStore() }
+    const store: Partial<IAiTokensStore> = { ...makeStore() }
     delete store.resolveRate
-    const exception = caught(() => validateOptions(opts({ store: store as unknown as IAiTokensStore })))
+    const exception = caught(() => validateOptions(opts({ store: store as IAiTokensStore })))
     expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 
@@ -154,7 +154,7 @@ describe('validateOptions', () => {
   /** A markup policy without a resolve method is rejected. */
   it('rejects a markup policy without resolve', () => {
     // Simulates a JS host passing a malformed policy.
-    const exception = caught(() => validateOptions(opts({ markup: {} as unknown as IMarkupPolicy })))
+    const exception = caught(() => validateOptions(opts({ markup: {} as IMarkupPolicy })))
     expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 

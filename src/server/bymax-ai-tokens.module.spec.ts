@@ -176,8 +176,8 @@ describe('BymaxAiTokensModule', () => {
       },
     })
     const rate = await pricing.resolveRate({ provider: 'openai', model: 'gpt-5', operation: 'chat', at: new Date() })
-    expect(rate).not.toBeNull()
-    const rawCostNanoUsd = computeCostNanoUsd(usage, rate!).totalNanoUsd
+    if (rate === null) throw new Error('expected a resolved rate for gpt-5')
+    const rawCostNanoUsd = computeCostNanoUsd(usage, rate).totalNanoUsd
     const options = moduleRef.get<ResolvedAiTokensOptions>(BYMAX_AI_TOKENS_OPTIONS)
     const billedCostNanoUsd = applyMarkup(rawCostNanoUsd, options.markup as number)
 
