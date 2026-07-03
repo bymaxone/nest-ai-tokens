@@ -5,6 +5,8 @@ import {
   normalizeOpenAiChatUsage,
   normalizeOpenAiCompatibleUsage,
 } from '../shared'
+import type { AiTokensEvent } from '../shared'
+import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
 import {
   BYMAX_AI_TOKENS_BUDGET_COUNTER,
@@ -49,6 +51,40 @@ function makeStore(): IAiTokensStore {
   })
 }
 
+/** A store with working ledger + pricing halves (wallet/budget unused this phase). */
+function makeLiveStore(): IAiTokensStore {
+  const ledger = new InMemoryLedgerStore()
+  const pricing = new InMemoryPricingStore()
+  const reject = (): Promise<never> => Promise.reject(new Error('feature not enabled'))
+  return {
+    append: ledger.append.bind(ledger),
+    transition: ledger.transition.bind(ledger),
+    findByIdempotencyKey: ledger.findByIdempotencyKey.bind(ledger),
+    findById: ledger.findById.bind(ledger),
+    findExpiredHolds: ledger.findExpiredHolds.bind(ledger),
+    query: ledger.query.bind(ledger),
+    sumCost: ledger.sumCost.bind(ledger),
+    lastHash: ledger.lastHash.bind(ledger),
+    resolveRate: pricing.resolveRate.bind(pricing),
+    upsertPrice: pricing.upsertPrice.bind(pricing),
+    getPriceHistory: pricing.getPriceHistory.bind(pricing),
+    listModels: pricing.listModels.bind(pricing),
+    getWallet: reject,
+    appendEntry: reject,
+    conditionalDebit: reject,
+    openGrants: reject,
+    listEntries: reject,
+    reconcile: reject,
+    upsert: reject,
+    remove: reject,
+    findMatching: reject,
+    conditionalConsume: reject,
+    adjustWindow: reject,
+    getWindow: reject,
+    setWindowStart: reject,
+  }
+}
+
 describe('BymaxAiTokensModule', () => {
   /** A bare store boots the module with PricingService but no wallet/budget ports. */
   it('boots with only a store and gates wallet/budget ports', async () => {
@@ -68,6 +104,54 @@ describe('BymaxAiTokensModule', () => {
     }).compile()
     expect(moduleRef.get(LedgerService)).toBeInstanceOf(LedgerService)
     expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /**
+   * Phase definition of done: record() writes a correct, marked-up ledger entry
+   * and emits ai_tokens.usage.recorded (bigints as decimal strings) through the sink.
+   */
+  it('records a metered call end-to-end and emits usage.recorded', async () => {
+    const delivered: AiTokensEvent[] = []
+    const sink = {
+      deliver: (event: AiTokensEvent): Promise<void> => {
+        delivered.push(event)
+        return Promise.resolve()
+      },
+    }
+    const store = makeLiveStore()
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRoot({
+          store,
+          markup: 4,
+          pricing: { seedFromSnapshot: false },
+          events: { emitter: false, sink },
+        }),
+      ],
+    }).compile()
+    await moduleRef.init()
+
+    await moduleRef.get(PricingService).upsertPrice({
+      provider: 'openai',
+      model: 'gpt-5',
+      operation: 'chat',
+      inputNanoUsdPerMillion: 1_250_000_000n,
+      outputNanoUsdPerMillion: 10_000_000_000n,
+      effectiveFrom: new Date(0),
+    })
+
+    const record = await moduleRef.get(MeteringService).record({
+      usage: { model: 'gpt-5', usage: { prompt_tokens: 1000, completion_tokens: 500 } },
+      preset: providerPresets.openaiChat,
+      context: { tenantId: 't1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', idempotencyKey: 'k1' },
+    })
+
+    expect(record.billedCostNanoUsd).toBe(25_000_000n)
+    const event = delivered.find((e) => e.type === 'ai_tokens.usage.recorded')
+    expect(event).toMatchObject({
+      tenantId: 't1',
+      data: { usageRecordId: record.id, billedCostNanoUsd: '25000000', enforced: false },
+    })
   })
 
   /** Enabling wallets and budgets registers their fanned-out store tokens. */

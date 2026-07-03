@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 🔄 In Progress · **Progress**: 5 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -45,7 +45,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 | 2.3 | Opt-in per-tenant hash chain + verifyChain | ✅ Done | P1 | M | 2.2 |
 | 2.4 | Markup engine wiring (number \| IMarkupPolicy) | ✅ Done | P0 | S | 1.11 |
 | 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | ✅ Done | P0 | M | 2.1, 2.4 |
-| 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | 📋 ToDo | P0 | M | 2.5 |
+| 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | ✅ Done | P0 | M | 2.5 |
 | 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | 📋 ToDo | P0 | L | 2.1–2.5 |
 
 ---
@@ -458,7 +458,7 @@ Completion Protocol:
 
 ### Task 2.6 — Typed events
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 2.5
@@ -469,10 +469,10 @@ The event dispatcher: envelope construction, optional-peer `EventEmitter2` bridg
 
 #### Acceptance criteria
 
-- [ ] `record()` emits `ai_tokens.usage.recorded` with the documented payload
-- [ ] Emitter peer absent → no crash, sink still delivers
-- [ ] Sink throwing → error logged, metering unaffected
-- [ ] Envelope ids unique; `occurredAt` set; payload types exported from `./shared`
+- [x] `record()` emits `ai_tokens.usage.recorded` with the documented payload
+- [x] Emitter peer absent → no crash, sink still delivers
+- [x] Sink throwing → error logged, metering unaffected
+- [x] Envelope ids unique; `occurredAt` set; payload types exported from `./shared`
 
 #### Files to create / modify
 
@@ -643,3 +643,4 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 - 2.3 ✅ 2026-07-03 — Opt-in per-tenant tamper-evident hash chain (`chainHash` util, store-serialized settlement hashing via a `hashChain` flag on append/transition) + `verifyChain` (off-by-default, tamper detection, pending-excluded); chain survives the annotation-only reversal.
 - 2.4 ✅ 2026-07-03 — Internal `MarkupResolver` (static 4-dp multiplier | `IMarkupPolicy`), per-call validation, bound `applyMarkup` for both rating modes; throwing/invalid policy → `AI_TOKENS_INVALID_CONFIG` (no silent 1.0).
 - 2.5 ✅ 2026-07-03 — `MeteringService.record()` (normalize → rate both modes → markup → append → usage.recorded/price.missing hooks) + pure `estimateCost()`; deferred hold/capture/release/meter/reverse/getStatus throw `AI_TOKENS_NOT_CONFIGURED`, `enforce:true` → `AI_TOKENS_INVALID_CONFIG`; wired Ledger/Markup/Metering into the module.
+- 2.6 ✅ 2026-07-03 — Typed `EventDispatcher` (envelope + unique id), guarded optional `EventEmitter2` bridge (in-process bigints intact) + `IEventSink` (bigints→decimal strings via `toJsonSafe`), both never-throw; wired `record()`/ledger-audit hooks into the module (end-to-end usage.recorded emission test).

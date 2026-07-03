@@ -9,6 +9,7 @@
  */
 
 import { type DynamicModule, Global, Module, type Provider } from '@nestjs/common'
+import { ModuleRef } from '@nestjs/core'
 import {
   BYMAX_AI_TOKENS_BUDGET_COUNTER,
   BYMAX_AI_TOKENS_BUDGET_STORE,
@@ -24,6 +25,8 @@ import {
 } from './bymax-ai-tokens.constants'
 import { applyDefaults, validateOptions } from './config'
 import type { ResolvedAiTokensOptions } from './config'
+import { EventDispatcher } from './events/event-dispatcher'
+import { createLedgerAuditHook, createMeteringEventHooks } from './events/event-hooks'
 import type { BymaxAiTokensModuleOptions, ILedgerStore, IPricingStore } from './interfaces'
 import { LedgerService, MarkupResolver, MeteringService, PricingService } from './services'
 
@@ -57,10 +60,16 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
       inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_PRICING_STORE],
     },
     {
+      provide: EventDispatcher,
+      useFactory: (moduleRef: ModuleRef, options: ResolvedAiTokensOptions): EventDispatcher =>
+        new EventDispatcher(moduleRef, options),
+      inject: [ModuleRef, BYMAX_AI_TOKENS_OPTIONS],
+    },
+    {
       provide: LedgerService,
-      useFactory: (options: ResolvedAiTokensOptions, store: ILedgerStore): LedgerService =>
-        new LedgerService(store, options),
-      inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_LEDGER_STORE],
+      useFactory: (options: ResolvedAiTokensOptions, store: ILedgerStore, dispatcher: EventDispatcher): LedgerService =>
+        new LedgerService(store, options, createLedgerAuditHook(dispatcher)),
+      inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_LEDGER_STORE, EventDispatcher],
     },
     {
       provide: MarkupResolver,
@@ -74,8 +83,10 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         pricing: PricingService,
         markup: MarkupResolver,
         options: ResolvedAiTokensOptions,
-      ): MeteringService => new MeteringService(ledger, pricing, markup, options),
-      inject: [LedgerService, PricingService, MarkupResolver, BYMAX_AI_TOKENS_OPTIONS],
+        dispatcher: EventDispatcher,
+      ): MeteringService =>
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher)),
+      inject: [LedgerService, PricingService, MarkupResolver, BYMAX_AI_TOKENS_OPTIONS, EventDispatcher],
     },
   ]
 }
