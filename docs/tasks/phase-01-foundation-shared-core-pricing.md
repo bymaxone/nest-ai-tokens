@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 5 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 6 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -45,7 +45,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | ✅ Done | P0 | M | 1.2 |
 | 1.4 | Usage normalizers ×9 with reconciliation invariants | ✅ Done | P0 | L | 1.2, 1.3 |
 | 1.5 | Pure cost engine (computeCostNanoUsd + applyMarkup) | ✅ Done | P0 | L | 1.2 |
-| 1.6 | Price seed dataset (`./prices`) | 📋 ToDo | P0 | M | 1.2 |
+| 1.6 | Price seed dataset (`./prices`) | ✅ Done | P0 | M | 1.2 |
 | 1.7 | Error catalog (AiTokensException + maps) | 📋 ToDo | P0 | S | 1.2 |
 | 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | 📋 ToDo | P0 | M | 1.2, 1.7 |
 | 1.9 | DI tokens + options validation + defaults | 📋 ToDo | P0 | M | 1.7, 1.8 |
@@ -547,7 +547,7 @@ Completion Protocol:
 
 ### Task 1.6 — Price seed dataset (`./prices`)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.2
@@ -558,10 +558,10 @@ The pinned `MODEL_PRICES_SEED` snapshot in its own data-only subpath, converted 
 
 #### Acceptance criteria
 
-- [ ] Seed covers: current OpenAI GPT-5.x family + embeddings, Anthropic Opus/Sonnet/Haiku (cache rates 1.25×/2×/0.1× of input), Gemini Pro/Flash (incl. long-context tier rows), Mistral Large/Medium/Small, DeepSeek/xAI/Groq headline models
-- [ ] Every entry validates against the `PriceVersion` row schema (typed, no floats)
-- [ ] Snapshot date + source recorded in the file header (`source: 'snapshot'`)
-- [ ] `./shared` does NOT import `./prices`
+- [x] Seed covers: current OpenAI GPT-5.x family + embeddings, Anthropic Opus/Sonnet/Haiku (cache rates 1.25×/2×/0.1× of input), Gemini Pro/Flash (incl. long-context tier rows), Mistral Large/Medium/Small, DeepSeek/xAI/Groq headline models
+- [x] Every entry validates against the `PriceVersion` row schema (typed, no floats)
+- [x] Snapshot date + source recorded in the file header (`source: 'snapshot'`)
+- [x] `./shared` does NOT import `./prices`
 
 #### Files to create / modify
 
@@ -1058,3 +1058,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 - 1.3 ✅ 2026-07-02 — Added exact nano-USD money utilities (perMillion, floatUsdToNanoUsd round-half-up exact < $1,000, formatNanoUsd bigint presentation) and deriveIdempotencyKey over canonical JSON + a pure sync SHA-256 (no node:crypto); fast-check property suites + FIPS test vectors, 100% coverage on every file.
 - 1.4 ✅ 2026-07-02 — Implemented the nine pure provider normalizers (OpenAI chat/responses/compatible, Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter, Vercel v5+v6) over a shared field-reader helper; OpenAI/OpenRouter/Vercel subtract reasoning, Gemini maps thoughts directly, Anthropic keeps reasoning 0; fast-check tests assert both §5.5 invariants per adapter; 100% coverage, shared bundle 4.2 KB brotli, no provider SDK imports.
 - 1.5 ✅ 2026-07-02 — Implemented the pure cost engine: computeCostNanoUsd (all-or-nothing long-context tier, per-category perMillion math, unitRates surcharge intersection, separable {total,token,surcharge}) and applyMarkup + resolveMultiplier4dp (4-dp bigint, truncation-toward-zero, rejects non-finite/≤0); tier-boundary + surcharge + fast-check property suites, 100% coverage.
+- 1.6 ✅ 2026-07-02 — Authored the pinned MODEL_PRICES_SEED snapshot (OpenAI gpt-5 family + embeddings + batch, Anthropic Opus/Sonnet/Haiku with 0.1×/1.25×/2× cache rates + batch, Gemini Pro/Flash long-context tier rows, Mistral L/M/S, DeepSeek/xAI/Groq) in bigint nano-USD, plus the offline convert-litellm-prices.mjs provenance script; validation spec (shape, no duplicate keys, non-negative, coverage) at 100%; dist/prices has zero runtime imports and ./shared does not import ./prices.
