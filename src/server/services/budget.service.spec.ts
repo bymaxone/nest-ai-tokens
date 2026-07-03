@@ -505,6 +505,21 @@ describe('BudgetService — defaults & edge fractions', () => {
     const [status] = await service.status(TENANT, USER_SCOPE)
     expect(status?.features).toEqual(['workout.generate'])
   })
+
+  /**
+   * A nano-USD budget above `Number.MAX_SAFE_INTEGER` keeps full precision: a spend one
+   * nano below the limit reports just under 1, where a lossy `Number()` on the operands
+   * would round both to the same double and wrongly report the budget as 100% used.
+   */
+  it('computes usedFraction without nano-USD precision loss above 2^53', async () => {
+    const { service } = makeService()
+    const limit = 9_007_199_254_740_993n // 2^53 + 1 — beyond Number.MAX_SAFE_INTEGER
+    await service.upsertBudget(budgetInput({ policy: 'allow', limitNanoUsd: limit, softThresholds: [1] }))
+    await service.consume(context(), delta(limit - 1n)) // one nano below the cap
+    const [status] = await service.status(TENANT, USER_SCOPE)
+    expect(status?.usedFraction).toBeLessThan(1) // a lossy Number() ratio would report exactly 1
+    expect(status?.usedFraction).toBeGreaterThan(0.999)
+  })
 })
 
 /** An in-memory budget counter with configurable outage modes. */

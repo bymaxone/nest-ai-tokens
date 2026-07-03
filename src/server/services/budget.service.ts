@@ -596,19 +596,29 @@ function failingDimensionOrNull(
   return null
 }
 
+/** Fixed-point scale for the used fraction (six decimal digits) — see {@link ratio}. */
+const USED_FRACTION_SCALE = 1_000_000n
+
 /** The maximum used fraction across the limited dimensions (bounded float; 0 when unlimited). */
 function usedFraction(spend: BudgetWindowSpend, limits: BudgetLimits): number {
   const fractions: number[] = []
-  if (limits.nanoUsd !== undefined) fractions.push(ratio(Number(spend.spentNanoUsd), Number(limits.nanoUsd)))
-  if (limits.tokens !== undefined) fractions.push(ratio(spend.spentTokens, limits.tokens))
-  if (limits.count !== undefined) fractions.push(ratio(spend.spentCount, limits.count))
+  if (limits.nanoUsd !== undefined) fractions.push(ratio(spend.spentNanoUsd, limits.nanoUsd))
+  if (limits.tokens !== undefined) fractions.push(ratio(BigInt(spend.spentTokens), BigInt(limits.tokens)))
+  if (limits.count !== undefined) fractions.push(ratio(BigInt(spend.spentCount), BigInt(limits.count)))
   return fractions.length === 0 ? 0 : Math.max(...fractions)
 }
 
-/** Safe fraction: a zero limit is a hard block (§10.2) — fully used at zero spend, over beyond it. */
-function ratio(spent: number, limit: number): number {
-  if (limit === 0) return spent > 0 ? Number.POSITIVE_INFINITY : 1
-  return spent / limit
+/**
+ * The used fraction of one dimension, computed with bigint math so nano-USD spend/limits
+ * above `Number.MAX_SAFE_INTEGER` never lose precision — a raw `Number()` on either
+ * operand would round and could report a full or over-limit budget as under (or vice
+ * versa), corrupting thresholds, projection, and `status.usedFraction`. Scales by a fixed
+ * factor, divides as bigint, then converts the small scaled quotient to a float. A zero
+ * limit is a hard block (§10.2) — fully used at zero spend, over beyond it.
+ */
+function ratio(spent: bigint, limit: bigint): number {
+  if (limit === 0n) return spent > 0n ? Number.POSITIVE_INFINITY : 1
+  return Number((spent * USED_FRACTION_SCALE) / limit) / Number(USED_FRACTION_SCALE)
 }
 
 /** The limit snapshot (present dimensions only) for an event payload. */
