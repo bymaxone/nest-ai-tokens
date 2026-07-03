@@ -72,12 +72,16 @@ export interface FormatNanoUsdOptions {
  * @param nanoUsd The value in nano-USD.
  * @param opts Currency, FX, and precision options.
  * @returns The formatted string, e.g. `"$0.005000"`.
+ * @throws {RangeError} When `opts.decimals` is not an integer in `[0, 9]`.
  * @example
  * formatNanoUsd(5_000_000n)                               // '$0.005000'
  * formatNanoUsd(5_000_000n, { currency: 'BRL', fxRateNano: 5_000_000_000n }) // '0.025000 BRL'
  */
 export function formatNanoUsd(nanoUsd: bigint, opts?: FormatNanoUsdOptions): string {
   const decimals = opts?.decimals ?? DEFAULT_DISPLAY_DECIMALS
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) {
+    throw new RangeError(`formatNanoUsd: decimals must be an integer in [0, 9], received ${String(decimals)}`)
+  }
   const currency = opts?.currency ?? 'USD'
 
   const converted = opts?.fxRateNano == null ? nanoUsd : (nanoUsd * opts.fxRateNano) / NANO_PER_USD

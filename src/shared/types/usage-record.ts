@@ -46,7 +46,7 @@ export interface UsageRecord {
   imageInTokens: number
   imageOutTokens: number
   totalTokens: number
-  /** Non-token line items actually rated, e.g. `{ web_search_request: 2 }`. */
+  /** Non-token line items actually rated, e.g. `{ web_search_requests: 2 }`. */
   extraUnits?: Record<string, number>
   /** `null` for provider-reported mode or a priceMissing record. */
   priceVersionId: string | null

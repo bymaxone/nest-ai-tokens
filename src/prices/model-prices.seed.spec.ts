@@ -1,5 +1,9 @@
 import { SERVICE_TIERS } from '../shared/constants/service-tiers.constants'
 import { AI_OPERATIONS } from '../shared/constants/operations.constants'
+import { computeCostNanoUsd } from '../shared/pricing/compute-cost'
+import type { NormalizedUsage } from '../shared/types/normalized-usage'
+import type { PriceVersion } from '../shared/types/price-version'
+import type { SeedPriceRow } from './model-prices.seed'
 import { MODEL_PRICES_SEED } from './model-prices.seed'
 
 const RATE_FIELDS = [
@@ -95,5 +99,50 @@ describe('MODEL_PRICES_SEED', () => {
     )
     expect(geminiTiered.length).toBeGreaterThanOrEqual(2)
     for (const row of geminiTiered) expect(row.tierThresholdTokens).toBe(200_000)
+  })
+
+  /** Complete a seed row into a priceable {@link PriceVersion}. */
+  const toPriceVersion = (row: SeedPriceRow): PriceVersion => ({
+    ...row,
+    id: 'seed',
+    effectiveFrom: new Date(0),
+    effectiveTo: null,
+  })
+
+  /** A zeroed usage carrying only the given server-tool counts. */
+  const usageWithTools = (serverToolUse: Record<string, number>): NormalizedUsage => ({
+    provider: 'anthropic',
+    model: 'm',
+    operation: 'chat',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWrite5mTokens: 0,
+    cacheWrite1hTokens: 0,
+    reasoningTokens: 0,
+    audioInTokens: 0,
+    audioOutTokens: 0,
+    imageInTokens: 0,
+    imageOutTokens: 0,
+    serverToolUse,
+  })
+
+  /**
+   * Every seeded web-search surcharge is keyed on `web_search_requests` — the
+   * exact count key the normalizers emit — so it actually bills through the cost
+   * engine end-to-end (the OpenAI `web_search_call` mismatch was unreachable).
+   */
+  it('bills every seeded web-search surcharge through computeCostNanoUsd', () => {
+    const seeded = MODEL_PRICES_SEED.filter((row) => row.unitRates?.web_search_requests !== undefined)
+    expect(seeded.some((row) => row.provider === 'openai')).toBe(true)
+    expect(seeded.some((row) => row.provider === 'anthropic')).toBe(true)
+    for (const row of seeded) {
+      const rate = row.unitRates?.web_search_requests
+      expect(rate).toBeDefined()
+      if (rate === undefined) continue
+      const result = computeCostNanoUsd(usageWithTools({ web_search_requests: 3 }), toPriceVersion(row))
+      expect(result.surchargeNanoUsd).toBe(3n * rate)
+      expect(result.totalNanoUsd).toBe(3n * rate)
+    }
   })
 })

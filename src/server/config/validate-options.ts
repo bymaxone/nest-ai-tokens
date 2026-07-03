@@ -122,6 +122,22 @@ function validateHolds(options: BymaxAiTokensModuleOptions): void {
   }
 }
 
+/**
+ * Validate the pricing cache TTL. `PricingService.resolveRate()` divides the call
+ * timestamp by `cacheTtlMs` to compute the cache bucket, so a `0`, negative,
+ * non-integer, or non-finite value yields invalid buckets/expirations; reject it
+ * at init.
+ */
+function validatePricing(options: BymaxAiTokensModuleOptions): void {
+  const cacheTtlMs = options.pricing?.cacheTtlMs
+  if (cacheTtlMs === undefined) return
+  if (!Number.isInteger(cacheTtlMs) || cacheTtlMs <= 0) {
+    throw invalidConfig(
+      `pricing.cacheTtlMs must be a positive integer number of milliseconds, received ${String(cacheTtlMs)}`,
+    )
+  }
+}
+
 /** Validate wallet credit rate (> 0) and overdraft (>= 0). */
 function validateWallets(options: BymaxAiTokensModuleOptions): void {
   const wallets = options.wallets
@@ -149,4 +165,5 @@ export function validateOptions(options: BymaxAiTokensModuleOptions): void {
   validateBudgetThresholds(options)
   validateHolds(options)
   validateWallets(options)
+  validatePricing(options)
 }

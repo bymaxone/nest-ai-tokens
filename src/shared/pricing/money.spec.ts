@@ -98,6 +98,19 @@ describe('formatNanoUsd', () => {
     expect(formatNanoUsd(1_500_000_000n, { decimals: 0 })).toBe('$2')
   })
 
+  /** The documented `[0, 9]` boundary values render without throwing. */
+  it.each([0, 9])('accepts the boundary decimals value %p', (decimals) => {
+    expect(() => formatNanoUsd(1_500_000n, { decimals })).not.toThrow()
+  })
+
+  /** Out-of-range or non-integer decimals throw a clear RangeError, not an obscure bigint error. */
+  it.each([-1, 10, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'throws a RangeError on the invalid decimals %p',
+    (decimals) => {
+      expect(() => formatNanoUsd(1_500_000n, { decimals })).toThrow(RangeError)
+    },
+  )
+
   /** At nine decimals the render is lossless and round-trips back to the nano value. */
   it('round-trips losslessly at nine decimals', () => {
     fc.assert(

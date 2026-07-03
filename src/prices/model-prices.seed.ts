@@ -98,7 +98,7 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheReadNanoUsdPerMillion: 125_000_000n,
       reasoningNanoUsdPerMillion: 10_000_000_000n,
     },
-    unitRates: { web_search_call: 10_000_000n }, // VERIFY: $0.01 per built-in web-search call.
+    unitRates: { web_search_requests: 10_000_000n }, // VERIFY: $0.01 per built-in web-search call.
   }),
   // source: OpenAI pricing snapshot 2026-07 — Batch API ~50% of standard.
   makeRow({

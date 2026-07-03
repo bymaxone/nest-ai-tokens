@@ -200,6 +200,21 @@ describe('validateOptions', () => {
       validateOptions(opts({ wallets: { creditRateNanoUsd: 5_000_000_000n, overdraftNanoUsd: 0n } })),
     ).not.toThrow()
   })
+
+  /** A zero, negative, non-integer, or non-finite pricing.cacheTtlMs is rejected (divisor safety). */
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects the invalid pricing.cacheTtlMs %p',
+    (cacheTtlMs) => {
+      const exception = caught(() => validateOptions(opts({ pricing: { cacheTtlMs } })))
+      expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
+    },
+  )
+
+  /** A positive integer cacheTtlMs, and an absent pricing block, are accepted. */
+  it('accepts a positive integer cacheTtlMs and an absent pricing block', () => {
+    expect(() => validateOptions(opts({ pricing: { cacheTtlMs: 300_000 } }))).not.toThrow()
+    expect(() => validateOptions(opts({}))).not.toThrow()
+  })
 })
 
 describe('applyDefaults', () => {

@@ -134,8 +134,8 @@ describe('computeCostNanoUsd', () => {
     /** Units present in both serverToolUse and unitRates are billed. */
     it('bills units present in both maps', () => {
       const result = computeCostNanoUsd(
-        usage({ serverToolUse: { web_search_request: 2 } }),
-        price({ unitRates: { web_search_request: 10_000_000n } }),
+        usage({ serverToolUse: { web_search_requests: 2 } }),
+        price({ unitRates: { web_search_requests: 10_000_000n } }),
       )
       expect(result.surchargeNanoUsd).toBe(20_000_000n)
       expect(result.totalNanoUsd).toBe(20_000_000n)
@@ -145,20 +145,20 @@ describe('computeCostNanoUsd', () => {
     it('ignores a reported unit missing from unitRates', () => {
       const result = computeCostNanoUsd(
         usage({ serverToolUse: { unknown_unit: 5 } }),
-        price({ unitRates: { web_search_request: 10_000_000n } }),
+        price({ unitRates: { web_search_requests: 10_000_000n } }),
       )
       expect(result.surchargeNanoUsd).toBe(0n)
     })
 
     /** A priced unit not reported contributes nothing. */
     it('ignores a priced unit that was not reported', () => {
-      const result = computeCostNanoUsd(usage({}), price({ unitRates: { web_search_request: 10_000_000n } }))
+      const result = computeCostNanoUsd(usage({}), price({ unitRates: { web_search_requests: 10_000_000n } }))
       expect(result.surchargeNanoUsd).toBe(0n)
     })
 
     /** No unitRates at all leaves the surcharge at zero. */
     it('handles a missing unitRates map', () => {
-      const result = computeCostNanoUsd(usage({ serverToolUse: { web_search_request: 2 } }), price({}))
+      const result = computeCostNanoUsd(usage({ serverToolUse: { web_search_requests: 2 } }), price({}))
       expect(result.surchargeNanoUsd).toBe(0n)
     })
   })

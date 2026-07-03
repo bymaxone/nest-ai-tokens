@@ -42,8 +42,10 @@ export interface PriceVersion {
   tierOutputNanoUsdPerMillion?: bigint
   /**
    * Non-token line items in nano-USD PER UNIT, matched against
-   * `NormalizedUsage.serverToolUse` / `MeteringContext.extraUnits` — e.g.
-   * `{ web_search_request: 10_000_000n }` ($0.01 per web-search call).
+   * `NormalizedUsage.serverToolUse` / `MeteringContext.extraUnits` by EXACT key —
+   * so the key must equal the count key the normalizer emits (e.g. Anthropic's
+   * `usage.server_tool_use.web_search_requests`) — e.g.
+   * `{ web_search_requests: 10_000_000n }` ($0.01 per web-search call).
    */
   unitRates?: Record<string, bigint>
   currency: 'USD'
