@@ -32,7 +32,7 @@ import {
   createMeteringEventHooks,
   createWalletEventHooks,
 } from './events/event-hooks'
-import { BudgetGuard } from './enforcement'
+import { BudgetGuard, MeteringInterceptor } from './enforcement'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
@@ -113,6 +113,7 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         new HoldReaper(ledger, metering, options),
       inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS],
     },
+    MeteringInterceptor,
   ]
 }
 
@@ -172,7 +173,7 @@ export class BymaxAiTokensModule {
     return {
       module: BymaxAiTokensModule,
       providers: [...buildCoreProviders(resolved), ...buildFeatureProviders(resolved)],
-      exports: [...CORE_TOKENS, PricingService, LedgerService, MeteringService, ...buildFeatureExports(resolved)],
+      exports: [...CORE_TOKENS, PricingService, LedgerService, MeteringService, MeteringInterceptor, ...buildFeatureExports(resolved)],
     }
   }
 }

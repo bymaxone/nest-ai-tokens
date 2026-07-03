@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 🔄 In Progress · **Progress**: 5 / 12 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 6 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -44,7 +44,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 | 4.3 | Hold reaper (TTL sweep, multi-replica claim) | ✅ Done | P0 | M | 4.2 |
 | 4.4 | meter() + reverse() orchestrator + getStatus() | ✅ Done | P0 | L | 4.2, 3.6 |
 | 4.5 | StreamUsageCollector (abort-safe streaming capture) | ✅ Done | P0 | L | 4.2 |
-| 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | 📋 ToDo | P0 | L | 4.2, 3.8 |
+| 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | ✅ Done | P0 | L | 4.2, 3.8 |
 | 4.7 | OpenTelemetry gen_ai.* emission | 📋 ToDo | P1 | M | 4.4 |
 | 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | 📋 ToDo | P0 | L | 2.7 |
 | 4.9 | forRootAsync() | 📋 ToDo | P0 | S | 4.4 |
@@ -488,7 +488,7 @@ Completion Protocol:
 
 ### Task 4.6 — MeteringInterceptor + @Meter + guard hold mode + headers
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2, 3.8
@@ -499,11 +499,11 @@ The declarative capture path: interceptor extracts usage from the handler result
 
 #### Acceptance criteria
 
-- [ ] Guard(estimate) + interceptor: hold placed pre-handler, captured with the handler's usage, released when the handler throws
-- [ ] Interceptor without guard hold → `record({ enforce: true })`
-- [ ] Headers present and correct when `exposeHeaders: true` (decimal strings)
-- [ ] Handler returning no extractable usage → `AI_TOKENS_USAGE_MALFORMED` (not a silent skip)
-- [ ] Fixture controller e2e-lite (supertest against a Nest testing module)
+- [x] Guard(estimate) + interceptor: hold placed pre-handler, captured with the handler's usage, released when the handler throws
+- [x] Interceptor without guard hold → `record({ enforce: true })`
+- [x] Headers present and correct when `exposeHeaders: true` (decimal strings)
+- [x] Handler returning no extractable usage → `AI_TOKENS_USAGE_MALFORMED` (not a silent skip)
+- [x] Fixture controller e2e-lite (supertest against a Nest testing module)
 
 #### Files to create / modify
 
@@ -1038,3 +1038,4 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 - 4.3 ✅ 2026-07-03 — hold reaper: setInterval lifecycle sweep, atomic multi-replica claim, shared restore path, per-hold error isolation, unref'd (no open handles).
 - 4.4 ✅ 2026-07-03 — meter()/reverse()/getStatus() + record({enforce}) post-hoc consume; orchestrated reversal restores wallet+budget+count; AccessStatus blockedBy.
 - 4.5 ✅ 2026-07-03 — StreamUsageCollector: provider-final usage (OpenAI/Anthropic) vs tokenizer fallback on abort; capture collector overload with the §5.6 input fallback order.
+- 4.6 ✅ 2026-07-03 — BudgetGuard hold mode (@RequireBudget.estimate) + MeteringInterceptor (capture-or-record, release on error, x-ai-tokens-* decimal-string headers); rxjs added as a required peer for the interceptor.

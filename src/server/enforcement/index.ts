@@ -7,6 +7,8 @@
 
 export { BudgetGuard } from './budget.guard'
 export type { RequestAiTokens } from './budget.guard'
+export { MeteringInterceptor } from './metering.interceptor'
+export type { MeteringInterceptorOptions } from './metering.interceptor'
 export {
   Meter,
   RequireBudget,

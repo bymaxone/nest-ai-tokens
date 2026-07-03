@@ -30,6 +30,7 @@ export type { StreamUsageCollectorOptions } from './streaming/stream-usage-colle
 export { providerPresets } from './config/provider-presets'
 export {
   BudgetGuard,
+  MeteringInterceptor,
   Meter,
   RequireBudget,
   AiFeature,

@@ -1,7 +1,7 @@
 /**
  * @fileoverview The controller-level metering/enforcement decorators (spec §11.4).
- * `@Meter` marks a handler for the metering interceptor (not yet shipped) and is
- * metadata-only here; `@RequireBudget` marks it for the `BudgetGuard`; `@AiFeature`
+ * `@Meter` marks a handler for the `MeteringInterceptor` and is metadata-only
+ * here; `@RequireBudget` marks it for the `BudgetGuard`; `@AiFeature`
  * is a lightweight feature tag. Each stores its config under an exported symbol key
  * that the guard/interceptor read via the NestJS `Reflector`. Feature precedence is
  * `@RequireBudget.feature` > `@Meter.feature` > `@AiFeature` (§11.4). These are pure
@@ -21,7 +21,7 @@ export const REQUIRE_BUDGET_METADATA = 'bymax:ai-tokens:require-budget'
 /** Reflector key for {@link AiFeature} metadata. */
 export const AI_FEATURE_METADATA = 'bymax:ai-tokens:ai-feature'
 
-/** `@Meter` configuration — consumed by the metering interceptor (not yet shipped). */
+/** `@Meter` configuration — consumed by the `MeteringInterceptor`. */
 export interface MeterConfig {
   /** The logical operation, e.g. `'workout.generate'`. */
   feature: string
@@ -45,12 +45,12 @@ export interface RequireBudgetConfig {
   scope?: ScopeType
   /** Budget feature-filter matching; defaults to `@Meter`'s feature. */
   feature?: string
-  /** A static estimate → the guard places a hold (the hold lifecycle is not yet shipped). */
+  /** A static estimate → the guard places a hold the interceptor settles. */
   estimate?: HoldEstimate
 }
 
 /**
- * Mark a handler for post-hoc metering by the interceptor (not yet shipped). Metadata-only.
+ * Mark a handler for metering by the `MeteringInterceptor`. Metadata-only.
  *
  * @param config The metering configuration.
  * @returns The metadata decorator.
