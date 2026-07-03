@@ -8,11 +8,34 @@
 
 export { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 export * from './bymax-ai-tokens.constants'
-export { PricingService, LedgerService, MeteringService } from './services'
-export type { ResolveRateInput, LedgerAppendInput, RecordInput, EstimateCostInput } from './services'
+export { PricingService, LedgerService, MeteringService, WalletService, BudgetService } from './services'
+export type {
+  ResolveRateInput,
+  LedgerAppendInput,
+  RecordInput,
+  EstimateCostInput,
+  WalletServiceOptions,
+  WalletBalance,
+  GrantInput,
+  DebitInput,
+  RefundInput,
+  AdjustInput,
+  BudgetServiceOptions,
+  UpsertBudgetInput,
+} from './services'
 export { toJsonSafe } from './utils/to-json-safe'
 export type { JsonSafe } from './utils/to-json-safe'
 export { providerPresets } from './config/provider-presets'
+export {
+  BudgetGuard,
+  Meter,
+  RequireBudget,
+  AiFeature,
+  METER_METADATA,
+  REQUIRE_BUDGET_METADATA,
+  AI_FEATURE_METADATA,
+} from './enforcement'
+export type { RequestAiTokens, MeterConfig, RequireBudgetConfig } from './enforcement'
 export * from './errors'
 export type * from './interfaces'
 

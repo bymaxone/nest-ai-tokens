@@ -33,6 +33,7 @@ const WALLET_METHODS = [
 const BUDGET_METHODS = [
   'upsert',
   'remove',
+  'findBudgetById',
   'findMatching',
   'conditionalConsume',
   'adjustWindow',

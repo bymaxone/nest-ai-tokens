@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 10 tasks · **Last updated**: 2026-07-02
+> **Status**: 👀 Review · **Progress**: 10 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -42,16 +42,16 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 3.1 | WalletService core (balance, grant, debit, refund, adjust, entries) | 📋 ToDo | P0 | M | 2.7 |
-| 3.2 | Grant burn-down + allocations + lazy expiry | 📋 ToDo | P0 | L | 3.1 |
-| 3.3 | Race-safe conditional debit + reconcile + overdraft | 📋 ToDo | P0 | L | 3.2 |
-| 3.4 | Budget model + window anchoring + BudgetService CRUD | 📋 ToDo | P0 | L | 2.7 |
-| 3.5 | Enforcement predicate + multi-dimension conditional consume | 📋 ToDo | P0 | L | 3.4 |
-| 3.6 | Budget status API (BudgetStatus[]) | 📋 ToDo | P0 | M | 3.5 |
-| 3.7 | Soft thresholds + projections + throttle policy | 📋 ToDo | P1 | M | 3.5, 3.6 |
-| 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | 📋 ToDo | P0 | M | 3.6 |
-| 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | 📋 ToDo | P0 | M | 3.5 |
-| 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | 📋 ToDo | P0 | L | 3.3, 3.5, 2.7 |
+| 3.1 | WalletService core (balance, grant, debit, refund, adjust, entries) | ✅ Done | P0 | M | 2.7 |
+| 3.2 | Grant burn-down + allocations + lazy expiry | ✅ Done | P0 | L | 3.1 |
+| 3.3 | Race-safe conditional debit + reconcile + overdraft | ✅ Done | P0 | L | 3.2 |
+| 3.4 | Budget model + window anchoring + BudgetService CRUD | ✅ Done | P0 | L | 2.7 |
+| 3.5 | Enforcement predicate + multi-dimension conditional consume | ✅ Done | P0 | L | 3.4 |
+| 3.6 | Budget status API (BudgetStatus[]) | ✅ Done | P0 | M | 3.5 |
+| 3.7 | Soft thresholds + projections + throttle policy | ✅ Done | P1 | M | 3.5, 3.6 |
+| 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | ✅ Done | P0 | M | 3.6 |
+| 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | ✅ Done | P0 | M | 3.5 |
+| 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | ✅ Done | P0 | L | 3.3, 3.5, 2.7 |
 
 ---
 
@@ -59,7 +59,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 
 ### Task 3.1 — WalletService core
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 2.7
@@ -70,11 +70,11 @@ The full §9.2 service surface over `IWalletStore`: `getBalance`, `grant`, `debi
 
 #### Acceptance criteria
 
-- [ ] Grant/debit/refund/adjust each append entries with per-wallet idempotency (replay-or-conflict)
-- [ ] `getBalance` excludes future-`effectiveAt` and expired grants
-- [ ] Debit without `usageRecordId` and without `reason` → validation error
-- [ ] `getEntries` pagination + type/date filters
-- [ ] `grant`/`adjust` emit `ai_tokens.wallet.granted`/`ai_tokens.audit`
+- [x] Grant/debit/refund/adjust each append entries with per-wallet idempotency (replay-or-conflict)
+- [x] `getBalance` excludes future-`effectiveAt` and expired grants
+- [x] Debit without `usageRecordId` and without `reason` → validation error
+- [x] `getEntries` pagination + type/date filters
+- [x] `grant`/`adjust` emit `ai_tokens.wallet.granted`/`ai_tokens.audit`
 
 #### Files to create / modify
 
@@ -146,7 +146,7 @@ Completion Protocol:
 
 ### Task 3.2 — Grant burn-down + allocations + lazy expiry
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.1
@@ -157,10 +157,10 @@ Burn order (`expiry`/`priority`/`fifo`), the debit→grant allocation trail (`Ai
 
 #### Acceptance criteria
 
-- [ ] Two grants, different expiries: debit allocates to soonest-expiring first ('expiry'); 'priority' and 'fifo' verified
-- [ ] A debit spanning two grants creates two allocations summing to the debit
-- [ ] Expired grant with remainder: next debit writes the `expiry` entry negating exactly the unspent remainder and excludes it from allocation
-- [ ] Refund restores balance but never resurrects an expired grant
+- [x] Two grants, different expiries: debit allocates to soonest-expiring first ('expiry'); 'priority' and 'fifo' verified
+- [x] A debit spanning two grants creates two allocations summing to the debit
+- [x] Expired grant with remainder: next debit writes the `expiry` entry negating exactly the unspent remainder and excludes it from allocation
+- [x] Refund restores balance but never resurrects an expired grant
 
 #### Files to create / modify
 
@@ -224,7 +224,7 @@ Completion Protocol:
 
 ### Task 3.3 — Race-safe conditional debit + reconcile + overdraft
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.2
@@ -235,10 +235,10 @@ The §9.4 materialized-balance conditional debit (`UPDATE … WHERE balance − 
 
 #### Acceptance criteria
 
-- [ ] Two concurrent debits against balance for one → exactly one succeeds (contract test file, parameterized by store)
-- [ ] Overdraft honored: balance may reach exactly `−overdraft`, not below
-- [ ] `reconcile` detects and repairs a manually-skewed materialized balance
-- [ ] Depletion emits `ai_tokens.wallet.depleted`
+- [x] Two concurrent debits against balance for one → exactly one succeeds (contract test file, parameterized by store)
+- [x] Overdraft honored: balance may reach exactly `−overdraft`, not below
+- [x] `reconcile` detects and repairs a manually-skewed materialized balance
+- [x] Depletion emits `ai_tokens.wallet.depleted`
 
 #### Files to create / modify
 
@@ -309,7 +309,7 @@ Completion Protocol:
 
 ### Task 3.4 — Budget model + window anchoring + BudgetService CRUD
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.7
@@ -320,11 +320,11 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Window-anchor table tests: Jan 31 anchor → Feb 28/29 → Mar 31; week/day anchors; calendar-UTC defaults; `total` never rotates; `custom:86400`
-- [ ] `limit: 0` blocks; absent dimension = unlimited; negative rejected at validation
-- [ ] `rotateWindow` starts a fresh window now and re-anchors subsequent windows
-- [ ] Expired budgets ignored by enforcement and excluded from `findMatching`
-- [ ] `upsertBudget`/`removeBudget` emit `ai_tokens.audit`
+- [x] Window-anchor table tests: Jan 31 anchor → Feb 28/29 → Mar 31; week/day anchors; calendar-UTC defaults; `total` never rotates; `custom:86400`
+- [x] `limit: 0` blocks; absent dimension = unlimited; negative rejected at validation
+- [x] `rotateWindow` starts a fresh window now and re-anchors subsequent windows
+- [x] Expired budgets ignored by enforcement and excluded from `findMatching`
+- [x] `upsertBudget`/`removeBudget` emit `ai_tokens.audit`
 
 #### Files to create / modify
 
@@ -396,7 +396,7 @@ Completion Protocol:
 
 ### Task 3.5 — Enforcement predicate + multi-dimension conditional consume
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.4
@@ -407,11 +407,11 @@ The five-clause consumption predicate (spec §10.7), the multi-dimension atomic 
 
 #### Acceptance criteria
 
-- [ ] Predicate truth-table tests (each clause independently flips consumption)
-- [ ] Cost-, token-, and count-limited budgets each block on their own dimension with the right error code
-- [ ] Feature filter: `features: ['workout.generate']` consumes for that feature only; embeddings pass through
-- [ ] `reconcileWindow` recomputed from a seeded ledger equals live counters (including after a reversal)
-- [ ] Two concurrent consumes with headroom for one → exactly one passes (contract test)
+- [x] Predicate truth-table tests (each clause independently flips consumption)
+- [x] Cost-, token-, and count-limited budgets each block on their own dimension with the right error code
+- [x] Feature filter: `features: ['workout.generate']` consumes for that feature only; embeddings pass through
+- [x] `reconcileWindow` recomputed from a seeded ledger equals live counters (including after a reversal)
+- [x] Two concurrent consumes with headroom for one → exactly one passes (contract test)
 
 #### Files to create / modify
 
@@ -483,7 +483,7 @@ Completion Protocol:
 
 ### Task 3.6 — Budget status API
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.5
@@ -494,9 +494,9 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Status reflects live windows across all matching scopes; `resetsAt` correct for anchored/calendar/total windows
-- [ ] Unlimited dimensions absent from `remaining` (not zero)
-- [ ] `usedFraction` correct with mixed dimensions
+- [x] Status reflects live windows across all matching scopes; `resetsAt` correct for anchored/calendar/total windows
+- [x] Unlimited dimensions absent from `remaining` (not zero)
+- [x] `usedFraction` correct with mixed dimensions
 
 #### Files to create / modify
 
@@ -553,7 +553,7 @@ Completion Protocol:
 
 ### Task 3.7 — Soft thresholds + projections + throttle policy
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 3.5, 3.6
@@ -564,9 +564,9 @@ Threshold-crossing detection (once per threshold per window), projected-spend ev
 
 #### Acceptance criteria
 
-- [ ] Crossing 80% then 100% emits exactly one event per threshold per window (no re-fire per call)
-- [ ] `policy: 'throttle'` invokes the callback with `{ context, budget, status }`; absent callback → warn + allow
-- [ ] Projection event fires when burn rate projects crossing before `resetsAt`
+- [x] Crossing 80% then 100% emits exactly one event per threshold per window (no re-fire per call)
+- [x] `policy: 'throttle'` invokes the callback with `{ context, budget, status }`; absent callback → warn + allow
+- [x] Projection event fires when burn rate projects crossing before `resetsAt`
 
 #### Files to create / modify
 
@@ -633,7 +633,7 @@ Completion Protocol:
 
 ### Task 3.8 — BudgetGuard + @RequireBudget + @AiFeature (check-only)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.6
@@ -644,10 +644,10 @@ The `CanActivate` gate: `scopeResolver` → decorator-config merge → status ch
 
 #### Acceptance criteria
 
-- [ ] Guard blocks with 402/429 pre-handler when a hard budget is exhausted; passes otherwise
-- [ ] `request.aiTokens.status` populated on pass (fitness `AIGenerationGuard` parity)
-- [ ] Missing `scopeResolver` with guard in use → clear `AI_TOKENS_INVALID_CONFIG` at init
-- [ ] Decorator metadata merge precedence tested (`@Meter.feature` > `@AiFeature`)
+- [x] Guard blocks with 402/429 pre-handler when a hard budget is exhausted; passes otherwise
+- [x] `request.aiTokens.status` populated on pass (fitness `AIGenerationGuard` parity)
+- [x] Missing `scopeResolver` with guard in use → clear `AI_TOKENS_INVALID_CONFIG` at init
+- [x] Decorator metadata merge precedence tested (`@Meter.feature` > `@AiFeature`)
 
 #### Files to create / modify
 
@@ -715,7 +715,7 @@ Completion Protocol:
 
 ### Task 3.9 — RedisBudgetCounterStore + fail-closed fallback
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.5
@@ -726,9 +726,9 @@ The optional live cross-replica counter (`./redis` subpath, atomic Lua `incrIfBe
 
 #### Acceptance criteria
 
-- [ ] `incrIfBelow` atomic (single Lua script); unit-tested against ioredis-mock; real Redis in Phase 4 e2e
-- [ ] Counter unavailable + `failClosed: true` → falls back to DB conditional consume; DB also down → blocks
-- [ ] `decr`/`reset` used by release/rotate paths
+- [x] `incrIfBelow` atomic (single Lua script); unit-tested against ioredis-mock; real Redis in Phase 4 e2e
+- [x] Counter unavailable + `failClosed: true` → falls back to DB conditional consume; DB also down → blocks
+- [x] `decr`/`reset` used by release/rotate paths
 
 #### Files to create / modify
 
@@ -795,7 +795,7 @@ Completion Protocol:
 
 ### Task 3.10 — Prisma wallet + budget halves
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.3, 3.5, 2.7
@@ -806,9 +806,9 @@ Complete `PrismaAiTokensStore` with the `IWalletStore` + `IBudgetStore` halves a
 
 #### Acceptance criteria
 
-- [ ] The 3.3 and 3.5 contract suites pass against Testcontainers Postgres unchanged
-- [ ] Allocation queries (`openGrants` with remaining) correct under concurrent debits
-- [ ] All wallet/budget error-mapping rows from spec §15.2 verified
+- [x] The 3.3 and 3.5 contract suites pass against Testcontainers Postgres unchanged
+- [x] Allocation queries (`openGrants` with remaining) correct under concurrent debits
+- [x] All wallet/budget error-mapping rows from spec §15.2 verified
 
 #### Files to create / modify
 
@@ -884,3 +884,14 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
+- 3.1 ✅ 2026-07-03 — WalletService (balance/grant/debit/refund/adjust/entries/reconcile) + in-memory wallet fake with per-wallet idempotency, materialized balance, and event hooks.
+- 3.2 ✅ 2026-07-03 — Grant burn-down (expiry/priority/fifo), the debit→grant allocation trail, and lazy `expiry` entries negating unspent remainders, all inside the atomic store op.
+- 3.3 ✅ 2026-07-03 — Race-safe `conditionalDebit` (materialized-balance reserve, no check-then-write), overdraft boundary, `reconcile` repair, depletion event, and the store-parameterized wallet contract suite.
+- 3.4 ✅ 2026-07-03 — Pure window-anchor engine (calendar-UTC + per-subject anchorAt with month-end clamping, total, custom seconds), the in-memory budget fake, and BudgetService CRUD + rotateWindow with normative §10.2 validation.
+- 3.5 ✅ 2026-07-03 — §10.7 predicate (single source of truth), atomic multi-dimension conditionalConsume + rollback, consume/release/reconcileWindow, 402-vs-429 mapping, and the store-parameterized budget contract suite.
+- 3.6 ✅ 2026-07-03 — BudgetService.status → BudgetStatus[] (live windows, unlimited dims absent from remaining, bigint-safe usedFraction, correct resetsAt).
+- 3.7 ✅ 2026-07-03 — Soft thresholds (once-per-threshold-per-window dedupe), burn-rate projected_exceeded, and the throttle/allow policy branches with the onThrottle callback.
+- 3.8 ✅ 2026-07-03 — Check-only BudgetGuard (scopeResolver trusted input, decorator feature-precedence merge, 402/429 pre-handler block, request.aiTokens enrichment, fail-fast on a missing scopeResolver) plus the @Meter/@RequireBudget/@AiFeature decorators.
+- 3.9 ✅ 2026-07-03 — RedisBudgetCounterStore (./redis, single atomic Lua incrIfBelow, lazy dynamic ioredis import, masked URLs) and the BudgetService counter fast-path with fail-closed fallback (counter reject → block without DB; counter down → DB fallback; both down → failClosed blocks) plus release/rotate counter maintenance.
+- 3.10 ✅ 2026-07-03 — Prisma wallet + budget halves (raw-SQL conditional debit/consume, grant burn-down allocations, expiry sweep, spendable-balance reconcile, budget CRUD/windows) with the wallet+budget contract suites and two-connection race/allocation/error-mapping scenarios green on Testcontainers Postgres.

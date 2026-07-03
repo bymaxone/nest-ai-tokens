@@ -9,9 +9,25 @@
  * @layer server
  */
 
-import type { PriceMissingEventData, UsageRecord, UsageRecordedEventData } from '../../shared'
-import type { LedgerAuditHook, MeteringEventHooks } from '../services'
+import type {
+  BudgetExceededEventData,
+  BudgetProjectedExceededEventData,
+  BudgetThresholdCrossedEventData,
+  MeteringScope,
+  PriceMissingEventData,
+  UsageRecord,
+  UsageRecordedEventData,
+  WalletDepletedEventData,
+  WalletGrantedEventData,
+  WalletRef,
+} from '../../shared'
+import type { BudgetEventHooks, LedgerAuditHook, MeteringEventHooks, WalletEventHooks } from '../services'
 import type { EventDispatcher } from './event-dispatcher'
+
+/** Map a wallet owner reference to the metering scope its events carry. */
+function scopeOfWallet(ref: WalletRef): MeteringScope {
+  return { type: ref.ownerType, id: ref.ownerId }
+}
 
 /** Build the metering event hooks that fan a settled record out through the dispatcher. */
 export function createMeteringEventHooks(dispatcher: EventDispatcher): MeteringEventHooks {
@@ -48,5 +64,29 @@ export function createMeteringEventHooks(dispatcher: EventDispatcher): MeteringE
 export function createLedgerAuditHook(dispatcher: EventDispatcher): LedgerAuditHook {
   return (action: string, details: Record<string, unknown>): void => {
     void dispatcher.audit(action, details)
+  }
+}
+
+/** Build the wallet event hooks that fan grant/depletion/audit events through the dispatcher. */
+export function createWalletEventHooks(dispatcher: EventDispatcher): WalletEventHooks {
+  return {
+    granted: (ref: WalletRef, data: WalletGrantedEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.wallet.granted', ref.tenantId, scopeOfWallet(ref), data),
+    depleted: (ref: WalletRef, data: WalletDepletedEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.wallet.depleted', ref.tenantId, scopeOfWallet(ref), data),
+    audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
+  }
+}
+
+/** Build the budget event hooks that fan threshold/exceeded/projection/audit events through the dispatcher. */
+export function createBudgetEventHooks(dispatcher: EventDispatcher): BudgetEventHooks {
+  return {
+    thresholdCrossed: (tenantId: string, scope: MeteringScope, data: BudgetThresholdCrossedEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.threshold_crossed', tenantId, scope, data),
+    exceeded: (tenantId: string, scope: MeteringScope, data: BudgetExceededEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.exceeded', tenantId, scope, data),
+    projectedExceeded: (tenantId: string, scope: MeteringScope, data: BudgetProjectedExceededEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.projected_exceeded', tenantId, scope, data),
+    audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
   }
 }

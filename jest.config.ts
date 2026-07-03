@@ -34,7 +34,11 @@ const config: Config = {
   restoreMocks: true,
   passWithNoTests: true,
   maxWorkers: '50%',
-  collectCoverageFrom: ['src/**/*.ts', '!**/index.ts', '!**/*.spec.ts'],
+  // The Prisma adapter talks to PostgreSQL and is verified by the Testcontainers
+  // e2e suite rather than unit specs, so the whole `src/prisma` adapter (its
+  // `index.ts` store and the extracted `adapter-sql.ts` SQL builders) is excluded
+  // from the unit coverage gate; the e2e suite exercises it end to end.
+  collectCoverageFrom: ['src/**/*.ts', '!**/index.ts', '!**/*.spec.ts', '!src/prisma/**'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   coverageThreshold: {
     global: {

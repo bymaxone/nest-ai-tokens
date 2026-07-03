@@ -20,8 +20,9 @@ import {
 import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
+import { BudgetGuard } from './enforcement'
 import type { IAiTokensStore } from './interfaces'
-import { LedgerService, MeteringService, PricingService } from './services'
+import { BudgetService, LedgerService, MeteringService, PricingService, WalletService } from './services'
 
 /** A store passing validation for every feature: real pricing, stubbed ledger/wallet/budget. */
 function makeStore(): IAiTokensStore {
@@ -43,6 +44,7 @@ function makeStore(): IAiTokensStore {
     reconcile: noop,
     upsert: noop,
     remove: noop,
+    findBudgetById: noop,
     findMatching: noop,
     conditionalConsume: noop,
     adjustWindow: noop,
@@ -77,6 +79,7 @@ function makeLiveStore(): IAiTokensStore {
     reconcile: reject,
     upsert: reject,
     remove: reject,
+    findBudgetById: reject,
     findMatching: reject,
     conditionalConsume: reject,
     adjustWindow: reject,
@@ -154,17 +157,26 @@ describe('BymaxAiTokensModule', () => {
     })
   })
 
-  /** Enabling wallets and budgets registers their fanned-out store tokens. */
+  /** Enabling wallets and budgets registers their fanned-out store tokens, services, and the guard. */
   it('registers wallet/budget ports when enabled', async () => {
     const store = makeStore()
     const moduleRef = await Test.createTestingModule({
       imports: [
-        BymaxAiTokensModule.forRoot({ store, wallets: {}, budgets: {}, pricing: { seedFromSnapshot: false } }),
+        BymaxAiTokensModule.forRoot({
+          store,
+          wallets: {},
+          budgets: {},
+          scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }),
+          pricing: { seedFromSnapshot: false },
+        }),
       ],
     }).compile()
     expect(moduleRef.get(BYMAX_AI_TOKENS_WALLET_STORE)).toBe(store)
     expect(moduleRef.get(BYMAX_AI_TOKENS_BUDGET_STORE)).toBe(store)
     expect(moduleRef.get(BYMAX_AI_TOKENS_BUDGET_COUNTER)).toBeNull()
+    expect(moduleRef.get(WalletService)).toBeInstanceOf(WalletService)
+    expect(moduleRef.get(BudgetService)).toBeInstanceOf(BudgetService)
+    expect(moduleRef.get(BudgetGuard)).toBeInstanceOf(BudgetGuard)
   })
 
   /** Telemetry sink and content store bind to their tokens when configured. */

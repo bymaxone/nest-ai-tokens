@@ -28,6 +28,7 @@ function makeStore(): IAiTokensStore {
     reconcile: fn,
     upsert: fn,
     remove: fn,
+    findBudgetById: fn,
     findMatching: fn,
     conditionalConsume: fn,
     adjustWindow: fn,
