@@ -12,7 +12,7 @@
  * @layer server
  */
 
-import { Inject, Injectable } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import type { CallHandler, ExecutionContext, NestInterceptor } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import type { Observable } from 'rxjs'
@@ -39,6 +39,7 @@ export type MeteringInterceptorOptions = Pick<ResolvedAiTokensOptions, 'scopeRes
 
 @Injectable()
 export class MeteringInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(MeteringInterceptor.name)
   private readonly scopeResolver: ResolvedAiTokensOptions['scopeResolver']
 
   /**
@@ -106,7 +107,10 @@ export class MeteringInterceptor implements NestInterceptor {
   /** Release the guard's hold (if any) and rethrow the ORIGINAL handler error. */
   private onError(enrichment: RequestAiTokens | undefined, error: unknown): Observable<never> {
     if (enrichment?.hold === undefined) return throwError(() => error)
-    const released = this.metering.release(enrichment.hold, 'handler threw').catch(() => undefined)
+    const holdId = enrichment.hold.id
+    const released = this.metering.release(enrichment.hold, 'handler threw').catch(() => {
+      this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
+    })
     return from(released).pipe(mergeMap(() => throwError(() => error)))
   }
 

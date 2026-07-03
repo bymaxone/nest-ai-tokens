@@ -713,6 +713,26 @@ describe('MeteringService.meter', () => {
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
 
+  /** A capture failure releases the hold and rethrows (no stranded reservation). */
+  it('releases the hold when capture fails', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const error = await built.service.meter(() => Promise.resolve({ not: 'usable' }), context(), (r) => r, ESTIMATE_A).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+    expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
+  })
+
+  /** A release failure during capture cleanup is swallowed; the original error propagates. */
+  it('propagates the capture error even when the cleanup release fails', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    jest.spyOn(built.service, 'release').mockRejectedValue(new Error('release down'))
+    const error = await built.service.meter(() => Promise.resolve({ not: 'usable' }), context(), (r) => r, ESTIMATE_A).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+  })
+
   /** Without an estimate, meter runs record({ enforce: true }). */
   it('enforces post-hoc without an estimate', async () => {
     const built = build({ wallets: true })

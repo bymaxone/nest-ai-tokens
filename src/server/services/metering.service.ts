@@ -310,7 +310,13 @@ export class MeteringService {
    * Place an auth-hold: rate the estimate, apply markup, reserve budget + wallet
    * headroom (compensated on any step's failure), and write a `pending` ledger
    * record with a TTL (§2.2 step 1). A repeat with the same `idempotencyKey`
-   * returns the existing hold without re-reserving.
+   * returns the EXISTING hold without re-reserving — this prioritizes not
+   * double-consuming budget/wallet over parameter-conflict detection, so a replay
+   * with a CHANGED estimate silently keeps the original reservation (unlike
+   * `record()`, whose payload hash rejects a changed payload with 409); settlement
+   * still corrects to actuals at capture. Concurrent holds sharing one key can both
+   * pass the pre-check and reserve; the losing ledger insert compensates its
+   * reservation (a brief over-reserve window under high contention).
    *
    * @param context The metering context (payer scope, feature).
    * @param estimate One of the three {@link HoldEstimate} variants.
@@ -421,9 +427,17 @@ export class MeteringService {
       await this.release(hold, 'metered function threw')
       throw error
     }
-    const usage = await this.capture(hold, extract(result), context.preset)
-    this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
-    return { result, usage }
+    try {
+      const usage = await this.capture(hold, extract(result), context.preset)
+      this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
+      return { result, usage }
+    } catch (error) {
+      // Release the reservation so a capture failure (malformed usage, transient store
+      // error) does not strand wallet/budget headroom for the full TTL; a release on an
+      // already-posted hold is a safe no-op. Never mask the original error.
+      await this.release(hold, 'capture failed').catch(() => undefined)
+      throw error
+    }
   }
 
   /**

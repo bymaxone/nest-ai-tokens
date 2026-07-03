@@ -83,6 +83,11 @@ function fromOptions(token: symbol, factory: (options: ResolvedAiTokensOptions) 
  * differs — `useValue` vs `useFactory`).
  */
 function buildCoreProviders(): Provider[] {
+  return [...buildInfraProviders(), ...buildServiceProviders()]
+}
+
+/** The fanned-out store/port tokens plus the pricing/ledger/markup/dispatcher primitives. */
+function buildInfraProviders(): Provider[] {
   return [
     fromOptions(BYMAX_AI_TOKENS_LEDGER_STORE, (o) => o.store),
     fromOptions(BYMAX_AI_TOKENS_PRICING_STORE, (o) => o.store),
@@ -112,6 +117,12 @@ function buildCoreProviders(): Provider[] {
       useFactory: (options: ResolvedAiTokensOptions): MarkupResolver => new MarkupResolver(options),
       inject: [BYMAX_AI_TOKENS_OPTIONS],
     },
+  ]
+}
+
+/** The facade services + the hold reaper and interceptor (options-agnostic). */
+function buildServiceProviders(): Provider[] {
+  return [
     {
       provide: MeteringService,
       useFactory: (
@@ -124,18 +135,7 @@ function buildCoreProviders(): Provider[] {
         wallets?: WalletService | null,
         budgets?: BudgetService | null,
       ): MeteringService =>
-        new MeteringService(
-          ledger,
-          pricing,
-          markup,
-          options,
-          createMeteringEventHooks(dispatcher),
-          wallets,
-          budgets,
-          undefined,
-          new TelemetryEmitter(telemetrySink),
-          new ContentCapture(options.content),
-        ),
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets, undefined, new TelemetryEmitter(telemetrySink), new ContentCapture(options.content)),
       inject: [
         LedgerService,
         PricingService,
@@ -151,8 +151,7 @@ function buildCoreProviders(): Provider[] {
       // Registered unconditionally: hold() writes pending rows whenever it is used,
       // even without wallets/budgets, and a stranded hold must still be reclaimed.
       provide: HoldReaper,
-      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions): HoldReaper =>
-        new HoldReaper(ledger, metering, options),
+      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions): HoldReaper => new HoldReaper(ledger, metering, options),
       inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS],
     },
     {
