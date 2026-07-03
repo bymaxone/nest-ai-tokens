@@ -1579,15 +1579,28 @@ export interface LedgerFilter {
 export type NewUsageRecord = Omit<UsageRecord, 'id' | 'prevHash' | 'hash' | 'createdAt' | 'updatedAt'>
 
 export interface ILedgerStore {
-  /** Upsert on (tenantId, idempotencyKey) — replay returns the existing record iff the payload hash matches (§8.4). */
-  append(record: NewUsageRecord, payloadHash: string): Promise<UsageRecord>
+  /**
+   * Upsert on (tenantId, idempotencyKey) — replay returns the existing record iff the payload hash matches (§8.4).
+   * When `hashChain` is true and the appended record is `posted`, the store reads the tenant's last chain hash,
+   * computes this record's `prevHash`/`hash`, and persists them ATOMICALLY under a per-tenant lock (§8.6) — the
+   * read-compute-write must be one serialized operation so concurrent appends never fork the chain.
+   */
+  append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord>
   /**
    * State transitions only (§8.3): pending→posted (settle, amounts patched),
    * pending→released, posted→reversed (annotation only — amount fields rejected).
    * Atomic: returns null when the record was not in the expected source state
-   * (that is how exactly one reaper replica wins an expired hold).
+   * (that is how exactly one reaper replica wins an expired hold). When `hashChain`
+   * is true and `to` is `posted` (settlement), the store computes and persists the
+   * record's chain `prevHash`/`hash` under the same per-tenant lock (§8.6).
    */
-  transition(id: string, from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): Promise<UsageRecord | null>
+  transition(
+    id: string,
+    from: UsageStatus,
+    to: UsageStatus,
+    patch?: Partial<UsageRecord>,
+    hashChain?: boolean,
+  ): Promise<UsageRecord | null>
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
   /** Load one record by its global id — the reversal path loads the original to negate it (§8.5). */
   findById(id: string): Promise<UsageRecord | null>
