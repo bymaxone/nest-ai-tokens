@@ -1,4 +1,5 @@
-import type { AiTokensErrorResponse } from '../../shared'
+import fc from 'fast-check'
+import type { AiTokensErrorResponse, UsageStatus } from '../../shared'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { AiTokensException } from '../errors'
 import { LedgerService, type LedgerAppendInput } from './ledger.service'
@@ -42,6 +43,14 @@ function makeInput(over: Partial<LedgerAppendInput> = {}): LedgerAppendInput {
 /** Read the typed error code from a thrown `AiTokensException`. */
 function codeOf(error: AiTokensException): string {
   return (error.getResponse() as AiTokensErrorResponse).error.code
+}
+
+/** Assert a promise rejects with a 409 idempotency conflict. */
+async function expectConflict(promise: Promise<unknown>): Promise<void> {
+  const error = await promise.catch((caught: unknown) => caught)
+  expect(error).toBeInstanceOf(AiTokensException)
+  expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+  expect((error as AiTokensException).getStatus()).toBe(409)
 }
 
 describe('LedgerService.append', () => {
@@ -209,5 +218,207 @@ describe('LedgerService.sumCost', () => {
     expect(summary.surchargeNanoUsd).toBe(13n)
     expect(summary.totalTokens).toBe(3000)
     expect(summary.records).toBe(2)
+  })
+})
+
+describe('LedgerService.transition', () => {
+  /** Append a record in `status` and return the service + stored record. */
+  async function appendWith(
+    status: UsageStatus,
+    over: Partial<LedgerAppendInput> = {},
+  ): Promise<{ store: InMemoryLedgerStore; service: LedgerService; record: Awaited<ReturnType<LedgerService['append']>> }> {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const record = await service.append(makeInput({ status, ...over }), 'k')
+    return { store, service, record }
+  }
+
+  /** pending → posted settles the hold with actual amounts. */
+  it('settles a hold with actual amounts', async () => {
+    const { service, record } = await appendWith('pending')
+    const settled = await service.transition(record.id, 'pending', 'posted', { billedCostNanoUsd: 42n })
+    expect(settled?.status).toBe('posted')
+    expect(settled?.billedCostNanoUsd).toBe(42n)
+  })
+
+  /** pending → released voids the hold. */
+  it('voids a hold with no patch', async () => {
+    const { service, record } = await appendWith('pending')
+    expect((await service.transition(record.id, 'pending', 'released'))?.status).toBe('released')
+  })
+
+  /** pending → released tolerates a non-amount patch. */
+  it('allows a non-amount patch on release', async () => {
+    const { service, record } = await appendWith('pending')
+    const released = await service.transition(record.id, 'pending', 'released', { correlationId: 'corr-9' })
+    expect(released?.correlationId).toBe('corr-9')
+  })
+
+  /** posted → reversed annotates with reversedByRecordId. */
+  it('annotates a posted record as reversed', async () => {
+    const { service, record } = await appendWith('posted')
+    const reversed = await service.transition(record.id, 'posted', 'reversed', { reversedByRecordId: 'rec-2' })
+    expect(reversed?.status).toBe('reversed')
+    expect(reversed?.reversedByRecordId).toBe('rec-2')
+  })
+
+  /** posted → reversed with no patch is legal (bare flip). */
+  it('allows a bare posted → reversed flip', async () => {
+    const { service, record } = await appendWith('posted')
+    expect((await service.transition(record.id, 'posted', 'reversed'))?.status).toBe('reversed')
+  })
+
+  /** An amount patch on release is rejected. */
+  it('rejects an amount patch on release', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'released', { billedCostNanoUsd: 1n }))
+  })
+
+  /** A non-annotation patch on posted → reversed is rejected. */
+  it('rejects an amount patch on reversal', async () => {
+    const { service, record } = await appendWith('posted')
+    await expectConflict(service.transition(record.id, 'posted', 'reversed', { billedCostNanoUsd: 1n }))
+  })
+
+  /** An illegal (from, to) pair is a caller bug → conflict. */
+  it('rejects an illegal posted → pending transition', async () => {
+    const { service, record } = await appendWith('posted')
+    await expectConflict(service.transition(record.id, 'posted', 'pending'))
+  })
+
+  /** A legal pair whose record is in another state returns null (atomic claim). */
+  it('returns null on a from-state mismatch', async () => {
+    const { service, record } = await appendWith('posted')
+    expect(await service.transition(record.id, 'pending', 'posted', { billedCostNanoUsd: 1n })).toBeNull()
+  })
+
+  /** Two concurrent claims: exactly one wins, the other gets null. */
+  it('lets exactly one of two concurrent claims win', async () => {
+    const { service, record } = await appendWith('pending')
+    const results = await Promise.all([
+      service.transition(record.id, 'pending', 'posted', { billedCostNanoUsd: 1n }),
+      service.transition(record.id, 'pending', 'posted', { billedCostNanoUsd: 2n }),
+    ])
+    expect(results.filter((r) => r === null)).toHaveLength(1)
+    expect(results.filter((r) => r !== null)).toHaveLength(1)
+  })
+})
+
+describe('LedgerService.reverse', () => {
+  /** A reversal negates every amount, copies attribution, and annotates the original. */
+  it('negates amounts, copies attribution, and annotates the original', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(
+      makeInput({
+        beneficiary: { type: 'user', id: 'client-1' },
+        requestedBy: 'actor-1',
+        requestedModel: 'gpt-5-req',
+        extraUnits: { web_search_requests: 2 },
+        correlationId: 'corr-1',
+        requestId: 'req-1',
+        systemCostCategory: 'retry',
+        isSystemCost: true,
+        enforced: true,
+        rawCostNanoUsd: 6_025_000n,
+        surchargeNanoUsd: 20_000_000n,
+        billedCostNanoUsd: 24_100_000n,
+      }),
+      'orig-key',
+    )
+
+    const compensating = await service.reverse(original.id, 'provider outage')
+
+    expect(compensating.reversesRecordId).toBe(original.id)
+    expect(compensating.status).toBe('posted')
+    expect(compensating.idempotencyKey).toBe(`reverse:${original.id}`)
+    expect(compensating.rawCostNanoUsd).toBe(-6_025_000n)
+    expect(compensating.surchargeNanoUsd).toBe(-20_000_000n)
+    expect(compensating.billedCostNanoUsd).toBe(-24_100_000n)
+    expect(compensating.inputTokens).toBe(-1000)
+    expect(compensating.outputTokens).toBe(-500)
+    expect(compensating.extraUnits).toEqual({ web_search_requests: -2 })
+    expect(compensating.beneficiary).toEqual({ type: 'user', id: 'client-1' })
+    expect(compensating.requestedBy).toBe('actor-1')
+    expect(compensating.requestedModel).toBe('gpt-5-req')
+    expect(compensating.correlationId).toBe('corr-1')
+    expect(compensating.requestId).toBe('req-1')
+    expect(compensating.systemCostCategory).toBe('retry')
+    expect(compensating.isSystemCost).toBe(true)
+    expect(compensating.enforced).toBe(true)
+
+    const annotated = await service.findByIdempotencyKey('tenant-1', 'orig-key')
+    expect(annotated?.status).toBe('reversed')
+    expect(annotated?.reversedByRecordId).toBe(compensating.id)
+  })
+
+  /** After a reversal, sumCost nets to zero across the pair. */
+  it('nets sumCost to zero for the reversed pair', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(
+      makeInput({ rawCostNanoUsd: 100n, billedCostNanoUsd: 400n, surchargeNanoUsd: 10n }),
+      'k',
+    )
+    await service.reverse(original.id, 'refund')
+    const summary = await service.sumCost({ tenantId: 'tenant-1' })
+    expect(summary.rawCostNanoUsd).toBe(0n)
+    expect(summary.billedCostNanoUsd).toBe(0n)
+    expect(summary.surchargeNanoUsd).toBe(0n)
+    expect(summary.totalTokens).toBe(0)
+    expect(summary.records).toBe(2)
+  })
+
+  /** Reversing a missing record is a conflict. */
+  it('rejects reversing a missing record', async () => {
+    const service = new LedgerService(new InMemoryLedgerStore())
+    await expectConflict(service.reverse('absent', 'x'))
+  })
+
+  /** Reversing a non-posted record is a conflict. */
+  it('rejects reversing a pending record', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const hold = await service.append(makeInput({ status: 'pending' }), 'k')
+    await expectConflict(service.reverse(hold.id, 'x'))
+  })
+
+  /** A second reverse of the same record is blocked (already reversed). */
+  it('rejects a second reverse of the same record', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(makeInput(), 'k')
+    await service.reverse(original.id, 'first')
+    await expectConflict(service.reverse(original.id, 'second'))
+  })
+
+  /** For arbitrary amounts, the compensating record exactly negates the original. */
+  it('exactly negates arbitrary amounts and nets to zero (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.record({
+          inputTokens: fc.nat({ max: 1_000_000 }),
+          outputTokens: fc.nat({ max: 1_000_000 }),
+          rawCostNanoUsd: fc.bigInt({ min: 0n, max: 10n ** 18n }),
+          billedCostNanoUsd: fc.bigInt({ min: 0n, max: 10n ** 18n }),
+          surchargeNanoUsd: fc.bigInt({ min: 0n, max: 10n ** 15n }),
+        }),
+        async (amounts) => {
+          const store = new InMemoryLedgerStore()
+          const service = new LedgerService(store)
+          const original = await service.append(makeInput(amounts), 'k')
+          const compensating = await service.reverse(original.id, 'r')
+          expect(compensating.rawCostNanoUsd).toBe(-amounts.rawCostNanoUsd)
+          expect(compensating.billedCostNanoUsd).toBe(-amounts.billedCostNanoUsd)
+          expect(compensating.surchargeNanoUsd).toBe(-amounts.surchargeNanoUsd)
+          expect(compensating.inputTokens).toBe(-amounts.inputTokens)
+          expect(compensating.outputTokens).toBe(-amounts.outputTokens)
+          const summary = await service.sumCost({ tenantId: 'tenant-1' })
+          expect(summary.rawCostNanoUsd).toBe(0n)
+          expect(summary.billedCostNanoUsd).toBe(0n)
+          expect(summary.surchargeNanoUsd).toBe(0n)
+        },
+      ),
+    )
   })
 })

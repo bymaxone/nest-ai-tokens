@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 🔄 In Progress · **Progress**: 1 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 2 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -41,7 +41,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
 | 2.1 | LedgerService — append, idempotency, query, sumCost | ✅ Done | P0 | L | 1.11 |
-| 2.2 | Ledger state machine + compensation (reverse, ledger-only) | 📋 ToDo | P0 | L | 2.1 |
+| 2.2 | Ledger state machine + compensation (reverse, ledger-only) | ✅ Done | P0 | L | 2.1 |
 | 2.3 | Opt-in per-tenant hash chain + verifyChain | 📋 ToDo | P1 | M | 2.2 |
 | 2.4 | Markup engine wiring (number \| IMarkupPolicy) | 📋 ToDo | P0 | S | 1.11 |
 | 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | 📋 ToDo | P0 | M | 2.1, 2.4 |
@@ -139,7 +139,7 @@ Completion Protocol:
 
 ### Task 2.2 — Ledger state machine + compensation
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.1
@@ -150,10 +150,10 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Every legal transition tested; every illegal transition rejected (posted→pending, released→posted, amount patch on posted→reversed, …)
-- [ ] `reverse()` produces a compensating record whose amounts exactly negate the original (property test)
-- [ ] After reverse, `sumCost` nets to zero for that pair
-- [ ] `transition` from-state mismatch returns null (no throw) — race-claim contract verified with two concurrent calls on the fake
+- [x] Every legal transition tested; every illegal transition rejected (posted→pending, released→posted, amount patch on posted→reversed, …)
+- [x] `reverse()` produces a compensating record whose amounts exactly negate the original (property test)
+- [x] After reverse, `sumCost` nets to zero for that pair
+- [x] `transition` from-state mismatch returns null (no throw) — race-claim contract verified with two concurrent calls on the fake
 
 #### Files to create / modify
 
@@ -639,3 +639,4 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
 
 - 2.1 ✅ 2026-07-03 — LedgerService append (payload-hash replay-or-conflict), query matrix, sumCost, toJsonSafe, and the in-memory ledger fake; 100% coverage.
+- 2.2 ✅ 2026-07-03 — Ledger state machine (`transition` legality table + atomic claim) and `reverse()` compensation (negation property test, sum-to-zero, concurrent-claim race); added `ILedgerStore.findById`.

@@ -37,6 +37,11 @@ export interface ILedgerStore {
   ): Promise<UsageRecord | null>
   /** Look up a record by its per-tenant idempotency key. */
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
+  /**
+   * Load one record by its global id — the reversal path loads the original to
+   * negate it into a compensating record (§8.5). Returns `null` when absent.
+   */
+  findById(id: string): Promise<UsageRecord | null>
   /** Find pending holds older than `olderThan` for the reaper sweep. */
   findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]>
   /** Query records by filter. */

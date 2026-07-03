@@ -28,6 +28,7 @@ function makeStore(): IAiTokensStore {
     append: noop,
     transition: noop,
     findByIdempotencyKey: noop,
+    findById: noop,
     findExpiredHolds: noop,
     query: noop,
     sumCost: noop,
