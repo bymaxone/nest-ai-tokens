@@ -26,6 +26,16 @@ export type {
 export { toJsonSafe } from './utils/to-json-safe'
 export type { JsonSafe } from './utils/to-json-safe'
 export { providerPresets } from './config/provider-presets'
+export {
+  BudgetGuard,
+  Meter,
+  RequireBudget,
+  AiFeature,
+  METER_METADATA,
+  REQUIRE_BUDGET_METADATA,
+  AI_FEATURE_METADATA,
+} from './enforcement'
+export type { RequestAiTokens, MeterConfig, RequireBudgetConfig } from './enforcement'
 export * from './errors'
 export type * from './interfaces'
 

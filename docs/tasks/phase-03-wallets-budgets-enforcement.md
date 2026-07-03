@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 🔄 In Progress · **Progress**: 7 / 10 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 8 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -49,7 +49,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 | 3.5 | Enforcement predicate + multi-dimension conditional consume | ✅ Done | P0 | L | 3.4 |
 | 3.6 | Budget status API (BudgetStatus[]) | ✅ Done | P0 | M | 3.5 |
 | 3.7 | Soft thresholds + projections + throttle policy | ✅ Done | P1 | M | 3.5, 3.6 |
-| 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | 📋 ToDo | P0 | M | 3.6 |
+| 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | ✅ Done | P0 | M | 3.6 |
 | 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | 📋 ToDo | P0 | M | 3.5 |
 | 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | 📋 ToDo | P0 | L | 3.3, 3.5, 2.7 |
 
@@ -633,7 +633,7 @@ Completion Protocol:
 
 ### Task 3.8 — BudgetGuard + @RequireBudget + @AiFeature (check-only)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.6
@@ -644,10 +644,10 @@ The `CanActivate` gate: `scopeResolver` → decorator-config merge → status ch
 
 #### Acceptance criteria
 
-- [ ] Guard blocks with 402/429 pre-handler when a hard budget is exhausted; passes otherwise
-- [ ] `request.aiTokens.status` populated on pass (fitness `AIGenerationGuard` parity)
-- [ ] Missing `scopeResolver` with guard in use → clear `AI_TOKENS_INVALID_CONFIG` at init
-- [ ] Decorator metadata merge precedence tested (`@Meter.feature` > `@AiFeature`)
+- [x] Guard blocks with 402/429 pre-handler when a hard budget is exhausted; passes otherwise
+- [x] `request.aiTokens.status` populated on pass (fitness `AIGenerationGuard` parity)
+- [x] Missing `scopeResolver` with guard in use → clear `AI_TOKENS_INVALID_CONFIG` at init
+- [x] Decorator metadata merge precedence tested (`@Meter.feature` > `@AiFeature`)
 
 #### Files to create / modify
 
@@ -892,3 +892,4 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 - 3.5 ✅ 2026-07-03 — §10.7 predicate (single source of truth), atomic multi-dimension conditionalConsume + rollback, consume/release/reconcileWindow, 402-vs-429 mapping, and the store-parameterized budget contract suite.
 - 3.6 ✅ 2026-07-03 — BudgetService.status → BudgetStatus[] (live windows, unlimited dims absent from remaining, bigint-safe usedFraction, correct resetsAt).
 - 3.7 ✅ 2026-07-03 — Soft thresholds (once-per-threshold-per-window dedupe), burn-rate projected_exceeded, and the throttle/allow policy branches with the onThrottle callback.
+- 3.8 ✅ 2026-07-03 — Check-only BudgetGuard (scopeResolver trusted input, decorator feature-precedence merge, 402/429 pre-handler block, request.aiTokens enrichment, fail-fast on a missing scopeResolver) plus the @Meter/@RequireBudget/@AiFeature decorators.

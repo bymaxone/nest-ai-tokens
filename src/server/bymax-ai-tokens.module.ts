@@ -32,6 +32,7 @@ import {
   createMeteringEventHooks,
   createWalletEventHooks,
 } from './events/event-hooks'
+import { BudgetGuard } from './enforcement'
 import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
 
@@ -119,15 +120,18 @@ function buildFeatureProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         new BudgetService(store, ledger, budgetOptions, () => new Date(), createBudgetEventHooks(dispatcher)),
       inject: [BYMAX_AI_TOKENS_BUDGET_STORE, LedgerService, EventDispatcher],
     })
+    providers.push(BudgetGuard)
   }
   return providers
 }
 
 /** The tokens and services exported for each enabled feature. */
-function buildFeatureExports(resolved: ResolvedAiTokensOptions): (symbol | typeof WalletService | typeof BudgetService)[] {
-  const tokens: (symbol | typeof WalletService | typeof BudgetService)[] = []
+function buildFeatureExports(
+  resolved: ResolvedAiTokensOptions,
+): (symbol | typeof WalletService | typeof BudgetService | typeof BudgetGuard)[] {
+  const tokens: (symbol | typeof WalletService | typeof BudgetService | typeof BudgetGuard)[] = []
   if (resolved.wallets.enabled) tokens.push(BYMAX_AI_TOKENS_WALLET_STORE, WalletService)
-  if (resolved.budgets.enabled) tokens.push(BYMAX_AI_TOKENS_BUDGET_STORE, BYMAX_AI_TOKENS_BUDGET_COUNTER, BudgetService)
+  if (resolved.budgets.enabled) tokens.push(BYMAX_AI_TOKENS_BUDGET_STORE, BYMAX_AI_TOKENS_BUDGET_COUNTER, BudgetService, BudgetGuard)
   return tokens
 }
 
