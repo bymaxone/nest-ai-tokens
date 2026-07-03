@@ -107,6 +107,8 @@ interface GuardResult {
 const COUNTER_GRACE_SECONDS = 3_600
 /** The counter TTL for a `'total'` window that never resets (≈ 400 days). */
 const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
+/** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
+const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
 
 @Injectable()
 export class BudgetService {
@@ -237,6 +239,39 @@ export class BudgetService {
           await this.decrCounters(counter, [{ key: counterKey(located.budget.id, located.windowStart, dimension.name), amount: dimension.amount }])
         }
       }
+    }
+  }
+
+  /**
+   * Apply a SIGNED spend delta to every matching budget window WITHOUT enforcement
+   * — the capture settlement ±delta (§11.2). A positive delta records extra spend
+   * (actual above the hold estimate), a negative delta releases (actual below);
+   * capture NEVER re-blocks, so this never throws a budget/quota error. Keeps the
+   * live counter in sync (increment/decrement per dimension sign).
+   *
+   * @param context The metering context (payer scope, feature).
+   * @param delta The signed spend delta across the three dimensions.
+   */
+  async adjust(context: MeteringContext, delta: BudgetDelta): Promise<void> {
+    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+    const counter = this.options.counter
+    for (const located of windows) {
+      await this.store.adjustWindow(located.budget.id, located.windowStart, delta)
+      if (counter === undefined) continue
+      const ttl = counterTtlSeconds(located.windowStart, located.windowEnd)
+      for (const dimension of counterDimensions(delta, located.limits)) {
+        await this.adjustCounter(counter, counterKey(located.budget.id, located.windowStart, dimension.name), dimension.amount, ttl)
+      }
+    }
+  }
+
+  /** Unconditionally move a live counter by a signed amount (capture ±delta, never re-blocks). */
+  private async adjustCounter(counter: IBudgetCounterStore, key: string, amount: bigint, ttl: number): Promise<void> {
+    try {
+      if (amount >= 0n) await counter.incrIfBelow(key, amount, UNBOUNDED_COUNTER_LIMIT, ttl)
+      else await counter.decr(key, -amount)
+    } catch {
+      this.logger.warn(`failed to adjust budget counter ${key}`)
     }
   }
 

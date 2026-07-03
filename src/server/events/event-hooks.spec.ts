@@ -83,6 +83,25 @@ describe('createMeteringEventHooks', () => {
       usageRecordId: 'rec-9',
     })
   })
+
+  /** holdReleased maps the record + expiry flag to the documented hold.released payload. */
+  it('emits hold.released with the documented payload', async () => {
+    const emit = jest.fn(() => Promise.resolve())
+    const hooks = createMeteringEventHooks({ emit } as unknown as EventDispatcher)
+    await hooks.holdReleased(makeRecord({ id: 'hold-1', status: 'released' }), 'expired', true)
+    expect(emit).toHaveBeenCalledWith('ai_tokens.hold.released', 'tenant-1', expect.anything(), { holdId: 'hold-1', reason: 'expired', expired: true })
+  })
+
+  /** usageReversed maps the original + reversal id to the documented usage.reversed payload; audit passes through. */
+  it('emits usage.reversed and forwards audits', async () => {
+    const emit = jest.fn(() => Promise.resolve())
+    const audit = jest.fn(() => Promise.resolve())
+    const hooks = createMeteringEventHooks({ emit, audit } as unknown as EventDispatcher)
+    await hooks.usageReversed(makeRecord({ id: 'orig-1' }), 'comp-1', 'refund')
+    await hooks.audit('ai_tokens.usage.reversed', { tenantId: 'tenant-1' })
+    expect(emit).toHaveBeenCalledWith('ai_tokens.usage.reversed', 'tenant-1', expect.anything(), { usageRecordId: 'orig-1', reversalRecordId: 'comp-1', reason: 'refund' })
+    expect(audit).toHaveBeenCalledWith('ai_tokens.usage.reversed', { tenantId: 'tenant-1' })
+  })
 })
 
 describe('createLedgerAuditHook', () => {

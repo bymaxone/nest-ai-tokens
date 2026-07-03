@@ -563,6 +563,51 @@ function costKey(budgetId: string): string {
   return `ai_tokens:budget:${budgetId}:2026-06-01T00:00:00.000Z:cost`
 }
 
+describe('BudgetService.adjust (capture ±delta, §11.2)', () => {
+  /** A positive adjust records extra spend and increments the counter unconditionally. */
+  it('applies a positive delta to the window and counter', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(30n))
+    expect(counter.values.get(costKey(budget.id))).toBe(70n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(70n)
+  })
+
+  /** A negative adjust releases window spend and decrements the counter. */
+  it('applies a negative delta to the window and counter', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(-15n))
+    expect(counter.values.get(costKey(budget.id))).toBe(25n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(25n)
+  })
+
+  /** A counter outage during adjust is logged, never thrown; the DB window still moves. */
+  it('logs a counter failure without throwing', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    counter.failIncr = true
+    counter.failDecr = true
+    await service.adjust(context(), delta(10n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(50n)
+  })
+
+  /** Without a counter, adjust moves only the DB window. */
+  it('adjusts the window with no counter configured', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(-10n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(30n)
+  })
+})
+
 describe('BudgetService — live counter fast path (§10.8)', () => {
   /** The counter fast path increments within the limit, then the DB records the consume. */
   it('consumes through the counter and the database', async () => {

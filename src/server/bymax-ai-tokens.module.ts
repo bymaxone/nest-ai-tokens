@@ -33,6 +33,7 @@ import {
   createWalletEventHooks,
 } from './events/event-hooks'
 import { BudgetGuard } from './enforcement'
+import { HoldReaper } from './enforcement/hold-reaper'
 import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
 
@@ -90,9 +91,27 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         markup: MarkupResolver,
         options: ResolvedAiTokensOptions,
         dispatcher: EventDispatcher,
+        wallets?: WalletService,
+        budgets?: BudgetService,
       ): MeteringService =>
-        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher)),
-      inject: [LedgerService, PricingService, MarkupResolver, BYMAX_AI_TOKENS_OPTIONS, EventDispatcher],
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets),
+      inject: [
+        LedgerService,
+        PricingService,
+        MarkupResolver,
+        BYMAX_AI_TOKENS_OPTIONS,
+        EventDispatcher,
+        { token: WalletService, optional: true },
+        { token: BudgetService, optional: true },
+      ],
+    },
+    {
+      // Registered unconditionally: hold() writes pending rows whenever it is used,
+      // even without wallets/budgets, and a stranded hold must still be reclaimed.
+      provide: HoldReaper,
+      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions): HoldReaper =>
+        new HoldReaper(ledger, metering, options),
+      inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS],
     },
   ]
 }

@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 12 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 4 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -39,10 +39,10 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 4.1 | hold() — estimate, rate, reserve (compensated ordering) | 📋 ToDo | P0 | L | 3.10 |
-| 4.2 | capture() + release() (idempotency contracts, delta math) | 📋 ToDo | P0 | L | 4.1 |
-| 4.3 | Hold reaper (TTL sweep, multi-replica claim) | 📋 ToDo | P0 | M | 4.2 |
-| 4.4 | meter() + reverse() orchestrator + getStatus() | 📋 ToDo | P0 | L | 4.2, 3.6 |
+| 4.1 | hold() — estimate, rate, reserve (compensated ordering) | ✅ Done | P0 | L | 3.10 |
+| 4.2 | capture() + release() (idempotency contracts, delta math) | ✅ Done | P0 | L | 4.1 |
+| 4.3 | Hold reaper (TTL sweep, multi-replica claim) | ✅ Done | P0 | M | 4.2 |
+| 4.4 | meter() + reverse() orchestrator + getStatus() | ✅ Done | P0 | L | 4.2, 3.6 |
 | 4.5 | StreamUsageCollector (abort-safe streaming capture) | 📋 ToDo | P0 | L | 4.2 |
 | 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | 📋 ToDo | P0 | L | 4.2, 3.8 |
 | 4.7 | OpenTelemetry gen_ai.* emission | 📋 ToDo | P1 | M | 4.4 |
@@ -58,7 +58,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 
 ### Task 4.1 — hold() — estimate, rate, reserve
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.10
@@ -69,11 +69,11 @@ The auth-hold entry point: rate a `HoldEstimate` (three variants), consume count
 
 #### Acceptance criteria
 
-- [ ] All three `HoldEstimate` variants rate correctly (`{ tokens }` against the context preset's model; `{ amountNanoUsd }` as-is — the fitness-estimator path)
-- [ ] Failure injection at each step → all prior steps compensated, correct domain error
-- [ ] `Hold` is plain serializable (JSON round-trip preserves capture-ability)
-- [ ] `isSystemCost` holds skip wallet/budget/counter entirely
-- [ ] Multi-hold composition: two holds for one logical feature reserve independently
+- [x] All three `HoldEstimate` variants rate correctly (`{ tokens }` against the context preset's model; `{ amountNanoUsd }` as-is — the fitness-estimator path)
+- [x] Failure injection at each step → all prior steps compensated, correct domain error
+- [x] `Hold` is plain serializable (JSON round-trip preserves capture-ability)
+- [x] `isSystemCost` holds skip wallet/budget/counter entirely
+- [x] Multi-hold composition: two holds for one logical feature reserve independently
 
 #### Files to create / modify
 
@@ -144,7 +144,7 @@ Completion Protocol:
 
 ### Task 4.2 — capture() + release()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.1
@@ -155,11 +155,11 @@ Settlement with actuals + exact delta adjustment on wallet/budget/counter; void 
 
 #### Acceptance criteria
 
-- [ ] Capture below/above/equal the estimate adjusts wallet + window + counter by the exact delta (property test)
-- [ ] Double capture → same record, no double side effects; capture after release → 409; capture after reap → 410
-- [ ] Release restores in full; release twice → single restoration; release after capture → no-op warn
-- [ ] Hold from tenant A captured under tenant B → 404
-- [ ] Markup re-resolved at capture against actuals; `priceVersionId` from `occurredAt`
+- [x] Capture below/above/equal the estimate adjusts wallet + window + counter by the exact delta (property test)
+- [x] Double capture → same record, no double side effects; capture after release → 409; capture after reap → 410
+- [x] Release restores in full; release twice → single restoration; release after capture → no-op warn
+- [x] Hold from tenant A captured under tenant B → 404
+- [x] Markup re-resolved at capture against actuals; `priceVersionId` from `occurredAt`
 
 #### Files to create / modify
 
@@ -236,7 +236,7 @@ Completion Protocol:
 
 ### Task 4.3 — Hold reaper
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 4.2
@@ -247,10 +247,10 @@ The periodic sweep restoring expired pending holds — sharing `release()`'s res
 
 #### Acceptance criteria
 
-- [ ] Expired holds swept exactly once with two reaper instances racing
-- [ ] Sweep performs the same restoration as `release()` (shared code path)
-- [ ] Interval starts on module init, clears on shutdown (no open handles in Jest)
-- [ ] Non-expired pending holds untouched
+- [x] Expired holds swept exactly once with two reaper instances racing
+- [x] Sweep performs the same restoration as `release()` (shared code path)
+- [x] Interval starts on module init, clears on shutdown (no open handles in Jest)
+- [x] Non-expired pending holds untouched
 
 #### Files to create / modify
 
@@ -315,7 +315,7 @@ Completion Protocol:
 
 ### Task 4.4 — meter() + reverse() orchestrator + getStatus()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2, 3.6
@@ -326,11 +326,11 @@ The three remaining facade methods: the `meter()` wrapper (hold→fn→capture, 
 
 #### Acceptance criteria
 
-- [ ] `meter` happy path returns `{ result, usage }`; fn throwing → hold released, error re-thrown
-- [ ] `meter` without estimate → `record({ enforce: true })` semantics (Phase 2 stub removed)
-- [ ] `reverse` on an enforced record restores wallet + all three window dimensions + counter; non-enforced → ledger only
-- [ ] `getStatus` reflects wallet + budgets; `hasAccess: false` + `blockedBy` when either exhausted; wallet section absent when wallets disabled
-- [ ] `record({ enforce: true })` post-hoc consume can throw AFTER the ledger write — record persists, error propagates (documented trade-off verified)
+- [x] `meter` happy path returns `{ result, usage }`; fn throwing → hold released, error re-thrown
+- [x] `meter` without estimate → `record({ enforce: true })` semantics (Phase 2 stub removed)
+- [x] `reverse` on an enforced record restores wallet + all three window dimensions + counter; non-enforced → ledger only
+- [x] `getStatus` reflects wallet + budgets; `hasAccess: false` + `blockedBy` when either exhausted; wallet section absent when wallets disabled
+- [x] `record({ enforce: true })` post-hoc consume can throw AFTER the ledger write — record persists, error propagates (documented trade-off verified)
 
 #### Files to create / modify
 
@@ -1033,3 +1033,7 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+- 4.1 ✅ 2026-07-03 — hold(): three estimate variants rated + marked up, compensated budget→wallet→pending reservation, idempotent replay.
+- 4.2 ✅ 2026-07-03 — capture()/release(): idempotent settlement ±delta, cross-tenant HOLD_NOT_FOUND, 409/410 contracts, release restores in full and never bills.
+- 4.3 ✅ 2026-07-03 — hold reaper: setInterval lifecycle sweep, atomic multi-replica claim, shared restore path, per-hold error isolation, unref'd (no open handles).
+- 4.4 ✅ 2026-07-03 — meter()/reverse()/getStatus() + record({enforce}) post-hoc consume; orchestrated reversal restores wallet+budget+count; AccessStatus blockedBy.
