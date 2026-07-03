@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 🔄 In Progress · **Progress**: 10 / 12 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 11 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -49,7 +49,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 | 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | ✅ Done | P0 | L | 2.7 |
 | 4.9 | forRootAsync() | ✅ Done | P0 | S | 4.4 |
 | 4.10 | Content sidecar wiring (opt-in) | ✅ Done | P2 | S | 4.4 |
-| 4.11 | E2E suite — the ten scenarios (Testcontainers PG + Redis) | 📋 ToDo | P0 | L | 4.1–4.10 |
+| 4.11 | E2E suite — the ten scenarios (Testcontainers PG + Redis) | ✅ Done | P0 | L | 4.1–4.10 |
 | 4.12 | Phase-4 integration review (matrix audit + export surface) | 📋 ToDo | P0 | M | 4.11 |
 
 ---
@@ -876,7 +876,7 @@ Completion Protocol:
 
 ### Task 4.11 — E2E suite — the ten scenarios
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.1–4.10
@@ -887,9 +887,9 @@ The ten e2e scenarios from spec §19.2 against real PostgreSQL + Redis (Testcont
 
 #### Acceptance criteria
 
-- [ ] All ten scenarios green against Testcontainers Postgres; scenarios 1 and 10 also exercise the Redis counter path
-- [ ] Suite runs in CI's e2e job under 10 minutes
-- [ ] No test-order dependence (fresh schema per suite via migrations)
+- [x] All ten scenarios green against Testcontainers Postgres; scenarios 1 and 10 also exercise the Redis counter path
+- [x] Suite runs in CI's e2e job under 10 minutes
+- [x] No test-order dependence (fresh schema per suite via migrations)
 
 #### Files to create / modify
 
@@ -1043,3 +1043,4 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 - 4.8 ✅ 2026-07-03 — UsageReportService: summarize() across 12 groupBy dims (day/week/month UTC, tag unnest, beneficiary, systemCostCategory) + cacheSavings from effective price; streaming CSV/ndjson export (§13.2 field set, decimal-string bigints, fx presentation columns, maxExportRows, audit).
 - 4.9 ✅ 2026-07-03 — forRootAsync() (useFactory/useClass/useExisting) sharing options-agnostic core providers with forRoot; async feature providers resolve null when disabled (services normalize null→absent); factory rejection/invalid options → AI_TOKENS_INVALID_CONFIG. rxjs peer added in 4.6.
 - 4.10 ✅ 2026-07-03 — ContentCapture: opt-in masked+TTL sidecar via record()/capture() content param — the ONLY text path; OFF by default (no store calls), failures logged never break metering, ledger/events/telemetry stay text-free.
+- 4.11 ✅ 2026-07-03 — ten-scenario e2e suite + shared harness on Testcontainers PostgreSQL (+ Redis for scenarios 1/10): concurrency, idempotency, stream-abort, reversal, anchored-window, count-quota, alias-resolution, seed-idempotence, wallet-burndown, reaper — all green in ~90s (maxWorkers 1, one container set at a time).

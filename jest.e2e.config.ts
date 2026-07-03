@@ -19,7 +19,9 @@ const config: Config = {
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
   collectCoverageFrom: undefined,
   coverageThreshold: undefined,
-  testTimeout: 90_000,
+  testTimeout: 120_000,
+  // One Testcontainers set at a time (memory-safe; never fan out container sets).
+  maxWorkers: 1,
   passWithNoTests: true,
   // Testcontainers keeps a background reaper connection alive for the process;
   // force a clean exit once the suite (which stops the containers) has finished.
