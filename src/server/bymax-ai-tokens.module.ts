@@ -117,7 +117,7 @@ function buildFeatureProviders(resolved: ResolvedAiTokensOptions): Provider[] {
     providers.push({
       provide: BudgetService,
       useFactory: (store: IBudgetStore, ledger: LedgerService, dispatcher: EventDispatcher): BudgetService =>
-        new BudgetService(store, ledger, budgetOptions, () => new Date(), createBudgetEventHooks(dispatcher)),
+        new BudgetService(store, ledger, budgetOptions, undefined, createBudgetEventHooks(dispatcher)),
       inject: [BYMAX_AI_TOKENS_BUDGET_STORE, LedgerService, EventDispatcher],
     })
     providers.push(BudgetGuard)
