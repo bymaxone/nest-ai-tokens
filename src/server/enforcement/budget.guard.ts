@@ -36,6 +36,11 @@ export interface RequestAiTokens {
   hold?: Hold
 }
 
+/**
+ * NestJS guard that checks budget status before each request and enriches
+ * `request.aiTokens` with the scope's current usage. Optionally places a
+ * spend hold when `@RequireBudget.estimate` is configured (see file overview).
+ */
 @Injectable()
 export class BudgetGuard implements CanActivate {
   private readonly scopeResolver: (ctx: ExecutionContext) => MeteringContext | Promise<MeteringContext>

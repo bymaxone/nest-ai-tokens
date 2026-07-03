@@ -188,6 +188,12 @@ function baseColumns(
   }
 }
 
+/**
+ * The public metering facade — `record()`, `estimateCost()`, `hold()`,
+ * `capture()`, `release()`, and the `meter()` wrapper. Wires the pricing,
+ * ledger, wallet, and budget services together with the markup and event
+ * layers. See file overview for the full lifecycle description.
+ */
 @Injectable()
 export class MeteringService {
   private readonly logger = new Logger(MeteringService.name)

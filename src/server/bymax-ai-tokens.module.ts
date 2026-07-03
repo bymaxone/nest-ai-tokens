@@ -267,6 +267,11 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
   return descriptor.useClass !== undefined ? [optionsProvider, { provide: descriptor.useClass, useClass: descriptor.useClass }] : [optionsProvider]
 }
 
+/**
+ * The root NestJS dynamic module for `@bymax-one/nest-ai-tokens`. Register once
+ * at application root with `forRoot()` or `forRootAsync()`. Exports the metering,
+ * pricing, ledger, wallet, budget, report services and the enforcement primitives.
+ */
 @Global()
 @Module({})
 export class BymaxAiTokensModule {

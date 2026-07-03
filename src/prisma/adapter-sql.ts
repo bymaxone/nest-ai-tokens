@@ -30,6 +30,7 @@ import type {
 import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 import { AiTokensException } from '../server/errors'
 
+/** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
 export interface UsageRow {
   id: string
   tenantId: string

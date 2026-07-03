@@ -24,6 +24,11 @@ export interface CaptureContentInput {
 /** Identity mask used when the host configures none. */
 const IDENTITY = (text: string): string => text
 
+/**
+ * The ONLY path through which prompt/completion text may enter the library.
+ * Disabled by default; when enabled, masks and forwards text to the opt-in
+ * {@link IContentStore} sidecar. A sidecar failure is always non-fatal. Internal.
+ */
 export class ContentCapture {
   private readonly logger = new Logger(ContentCapture.name)
 

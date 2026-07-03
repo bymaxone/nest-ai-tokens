@@ -55,6 +55,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
 }
 
+/**
+ * Accumulates usage chunks from a streamed provider response and finalises
+ * into a {@link NormalizedUsage} object. Prefer the provider's own final
+ * usage block; fall back to tokenizer-estimated output tokens when the
+ * stream is aborted before the final chunk arrives.
+ *
+ * @example
+ * const collector = new StreamUsageCollector({ provider: 'openai-chat', model: 'gpt-4o' })
+ * // call collector.push(chunk) for each SSE chunk
+ * const usage = await collector.finalize()
+ */
 export class StreamUsageCollector {
   private readonly operation: AiOperation
   private outputText = ''

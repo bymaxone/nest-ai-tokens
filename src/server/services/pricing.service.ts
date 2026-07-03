@@ -37,6 +37,11 @@ const SEED_EFFECTIVE_FROM = new Date(0)
 /** The advisory-lock key guarding the one-time snapshot seed. */
 const SEED_LOCK_KEY = 'ai-tokens:model-prices'
 
+/**
+ * Effective-dated rate resolution with a six-step model-resolution chain, an
+ * in-memory TTL cache, price upserts, and idempotent snapshot seed. Past
+ * records are never re-rated (point-in-time pricing). See file overview.
+ */
 @Injectable()
 export class PricingService implements OnModuleInit {
   private readonly cache = new Map<string, { value: PriceVersion | null; expiresAt: number }>()

@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 7 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 2 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -38,8 +38,8 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 5.1 | JSDoc + file-header audit (examples compile) | 📋 ToDo | P0 | M | 4.12 |
-| 5.2 | README (badges, quick start, provider matrix, positioning) | 📋 ToDo | P0 | M | 5.1 |
+| 5.1 | JSDoc + file-header audit (examples compile) | ✅ Done | P0 | M | 4.12 |
+| 5.2 | README (badges, quick start, provider matrix, positioning) | ✅ Done | P0 | M | 5.1 |
 | 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | 📋 ToDo | P0 | M | 5.1 |
 | 5.4 | Bundle-size budgets final check | 📋 ToDo | P0 | S | 4.12 |
 | 5.5 | Mutation testing release gate (break 95) + docs | 📋 ToDo | P0 | M | 5.1–5.4 |
@@ -52,7 +52,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 
 ### Task 5.1 — JSDoc + file-header audit
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 4.12
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 4.12
 
 #### Description
 
@@ -60,9 +60,9 @@ Every export documented; every file carries `@fileoverview` + `@layer`; `@exampl
 
 #### Acceptance criteria
 
-- [ ] Doc-coverage sweep: no exported symbol without JSDoc (scripted check)
-- [ ] `@example` blocks compile via a docs-fixture tsconfig
-- [ ] No phase/task/TODO references in committed comments (timeless rule)
+- [x] Doc-coverage sweep: no exported symbol without JSDoc (scripted check)
+- [x] `@example` blocks compile via a docs-fixture tsconfig
+- [x] No phase/task/TODO references in committed comments (timeless rule)
 
 #### Agent prompt
 
@@ -111,7 +111,7 @@ Completion Protocol:
 
 ### Task 5.2 — README
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 5.1
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 5.1
 
 #### Description
 
@@ -119,9 +119,9 @@ The public front page in the family structure: badges → centered tagline → O
 
 #### Acceptance criteria
 
-- [ ] Every code sample compiles against the built package (README-fixture test)
-- [ ] Badge URLs point at bymaxone/nest-ai-tokens
-- [ ] Provider matrix (condensed spec §5.3), 60-second quick start (record + meter + guard), markup positioning, bigint/JSON note, migration pointer to spec §22
+- [x] Every code sample compiles against the built package (README-fixture test)
+- [x] Badge URLs point at bymaxone/nest-ai-tokens
+- [x] Provider matrix (condensed spec §5.3), 60-second quick start (record + meter + guard), markup positioning, bigint/JSON note, migration pointer to spec §22
 
 #### Agent prompt
 
@@ -485,3 +485,5 @@ set Phase 5 ✅ — the PROJECT dashboard reaches 5/5. 5. Update docs/developmen
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+- 5.1 ✅ 2026-07-03 — JSDoc audit: check-jsdoc.mjs + 14 class/interface doc fixes + examples.spec-d.ts compilation fixture; docs:check wired to CI
+- 5.2 ✅ 2026-07-03 — README.md with badge block, provider matrix, markup positioning, BigInt note, migration pointer + readme.spec-d.ts fixture

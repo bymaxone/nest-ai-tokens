@@ -127,6 +127,11 @@ const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
 /** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
 const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
 
+/**
+ * Multi-dimension budget CRUD, enforcement, and read-side status queries.
+ * Budgets cap spend/tokens/operation-count per scope per window; unlimited
+ * semantics are NORMATIVE (no row = no budget; 0 = block all). See file overview.
+ */
 @Injectable()
 export class BudgetService {
   private readonly logger = new Logger(BudgetService.name)

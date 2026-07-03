@@ -94,6 +94,11 @@ const NOOP_WALLET_HOOKS: WalletEventHooks = {
   audit: (): void => undefined,
 }
 
+/**
+ * Prepaid-credit facade over {@link IWalletStore}. Wallets hold nano-USD
+ * balances as append-only entries (grant/debit/refund/adjust) with a
+ * materialized balance column for atomic debits. See file overview.
+ */
 @Injectable()
 export class WalletService {
   /**

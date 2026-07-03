@@ -25,6 +25,11 @@ const MS_PER_SECOND = 1_000
 /** The resolved-options subset the reaper consumes. */
 export type HoldReaperOptions = Pick<ResolvedAiTokensOptions, 'holds'>
 
+/**
+ * Periodic sweep that reclaims expired spend-holds, restoring wallet balance
+ * and budget headroom so the capacity is not permanently stranded after a
+ * crash between `hold()` and `capture()` (see file overview).
+ */
 @Injectable()
 export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(HoldReaper.name)

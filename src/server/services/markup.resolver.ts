@@ -33,6 +33,11 @@ function buildResolvedMarkup(multiplier: number): ResolvedMarkup {
   return { multiplier, apply: (rawCostNanoUsd: bigint): bigint => applyMarkup(rawCostNanoUsd, multiplier) }
 }
 
+/**
+ * Resolves the effective markup multiplier for a metering context, delegating
+ * to a host-supplied {@link IMarkupPolicy} when configured, or using the fixed
+ * module-level `options.markup` value as the default.
+ */
 @Injectable()
 export class MarkupResolver {
   /**

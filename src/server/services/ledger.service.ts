@@ -73,6 +73,11 @@ function sumTokens(counts: TokenCounts): number {
   )
 }
 
+/**
+ * Append-only usage ledger over {@link ILedgerStore}. Provides exactly-once
+ * append (content-derived idempotency), lifecycle transitions, filtered queries,
+ * cost aggregation, and the ledger-only compensation primitive. See file overview.
+ */
 @Injectable()
 export class LedgerService {
   /**

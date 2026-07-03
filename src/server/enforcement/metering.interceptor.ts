@@ -37,6 +37,11 @@ interface HeaderSink {
 /** The resolved-options subset the interceptor consumes. */
 export type MeteringInterceptorOptions = Pick<ResolvedAiTokensOptions, 'scopeResolver'>
 
+/**
+ * NestJS interceptor that captures the handler's actual usage (from the return
+ * value) and either settles the guard's hold or records a post-hoc enforcing
+ * charge. Reads `@Meter` metadata set by the {@link Meter} decorator.
+ */
 @Injectable()
 export class MeteringInterceptor implements NestInterceptor {
   private readonly logger = new Logger(MeteringInterceptor.name)

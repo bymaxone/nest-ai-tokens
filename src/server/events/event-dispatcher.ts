@@ -19,6 +19,11 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { toJsonSafe } from '../utils/to-json-safe'
 import { resolveEmitterChannel, type EmitterChannel } from './event-emitter.bridge'
 
+/**
+ * Internal fan-out bridge between the domain event hooks and the optional
+ * `@nestjs/event-emitter` peer. Discovers the emitter lazily at startup so
+ * the feature degrades gracefully when the peer is absent.
+ */
 @Injectable()
 export class EventDispatcher implements OnModuleInit {
   private readonly logger = new Logger(EventDispatcher.name)
