@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 9 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 10 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -49,7 +49,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | 1.7 | Error catalog (AiTokensException + maps) | ✅ Done | P0 | S | 1.2 |
 | 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | ✅ Done | P0 | M | 1.2, 1.7 |
 | 1.9 | DI tokens + options validation + defaults | ✅ Done | P0 | M | 1.7, 1.8 |
-| 1.10 | PricingService (resolution chain + cache + idempotent seed) | 📋 ToDo | P0 | L | 1.5, 1.6, 1.8, 1.9 |
+| 1.10 | PricingService (resolution chain + cache + idempotent seed) | ✅ Done | P0 | L | 1.5, 1.6, 1.8, 1.9 |
 | 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | 📋 ToDo | P0 | M | 1.4, 1.9, 1.10 |
 
 ---
@@ -870,7 +870,7 @@ Completion Protocol:
 
 ### Task 1.10 — PricingService (resolution chain + cache + idempotent seed)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.5, 1.6, 1.8, 1.9
@@ -881,11 +881,11 @@ Effective-dated rate resolution with the six-step model-resolution chain (exact 
 
 #### Acceptance criteria
 
-- [ ] Resolution-chain tests: exact; `baseModel`; alias map; date-suffix strip (`gpt-5.2-2026-03-14`); `models/` prefix strip; Bedrock region strip; longest-`startsWith`; strict miss throws / non-strict null
-- [ ] Tier resolution: `flex` with no flex row → strict miss (never standard rates); `standard` resolves standard
-- [ ] `upsertPrice` closes the open row and inserts a new one; history returns both
-- [ ] Cache: hit within TTL, refresh after, keyed by the full resolution tuple
-- [ ] Seed runs once across two concurrent module inits (fake store records lock acquisitions)
+- [x] Resolution-chain tests: exact; `baseModel`; alias map; date-suffix strip (`gpt-5.2-2026-03-14`); `models/` prefix strip; Bedrock region strip; longest-`startsWith`; strict miss throws / non-strict null
+- [x] Tier resolution: `flex` with no flex row → strict miss (never standard rates); `standard` resolves standard
+- [x] `upsertPrice` closes the open row and inserts a new one; history returns both
+- [x] Cache: hit within TTL, refresh after, keyed by the full resolution tuple
+- [x] Seed runs once across two concurrent module inits (fake store records lock acquisitions)
 
 #### Files to create / modify
 
@@ -1062,3 +1062,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 - 1.7 ✅ 2026-07-02 — Implemented AiTokensException (extends HttpException, canonical { error: { code, message, details? } } body) plus the internal exhaustive code→message and code→HttpStatus maps (compiler-enforced via Record<AiTokensErrorCode, …>); one-throw-per-code spec asserting the §16.2 statuses (402/429/404/410/409/422/400/500/502/503), 100% coverage.
 - 1.8 ✅ 2026-07-02 — Transcribed all 14 port/options interfaces (ILedgerStore/IPricingStore/IWalletStore/IBudgetStore/IBudgetCounterStore + IAiTokensStore bundle, ITokenizer, ITelemetrySink, IEventSink, IContentStore, IMarkupPolicy, MeteringContext/MeterResult, Hold/HoldEstimate union, BymaxAiTokensModuleOptions + async options/factory); also fixed a spec defect by defining the previously-unspecified ITokenizer port (docs(spec)). Typecheck/lint/build clean, zero any.
 - 1.9 ✅ 2026-07-02 — Implemented the 11 Symbol DI tokens, validateOptions (store presence + always-required ledger/pricing ports, feature-gated wallet/budget port checks, FX_REQUIRED for non-USD without fx, markup/threshold/holds/wallet validation → INVALID_CONFIG with actionable reason) and applyDefaults → frozen ResolvedAiTokensOptions with { enabled } discriminated unions matching §4.2; 32-case config spec, 100% coverage.
+- 1.10 ✅ 2026-07-02 — Implemented normalizeModelId (models/ + region + date strip, lowercase) and PricingService: the six-step resolution chain (exact → baseModel → alias → normalized → longest-startsWith → miss), tier-exact resolution (no batch/flex fallback), TTL cache keyed by the resolution tuple with an injected clock, cache-invalidating upsertPrice/getPriceHistory, and an advisory-locked idempotent seedFromSnapshot (lazy ./prices import) run from onModuleInit; faithful in-memory fake store; 100% coverage.
