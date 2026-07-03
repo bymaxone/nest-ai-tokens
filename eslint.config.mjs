@@ -55,6 +55,9 @@ export default tseslint.config(
       '@typescript-eslint/no-extraneous-class': 'off',
       '@typescript-eslint/no-empty-function': 'off',
       '@typescript-eslint/no-magic-numbers': 'off',
+      // Test doubles legitimately return void and are declared async for signature parity.
+      '@typescript-eslint/no-confusing-void-expression': 'off',
+      '@typescript-eslint/require-await': 'off',
     },
   },
   prettier,

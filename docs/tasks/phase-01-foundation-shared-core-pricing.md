@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 8 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 9 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -48,7 +48,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | 1.6 | Price seed dataset (`./prices`) | ✅ Done | P0 | M | 1.2 |
 | 1.7 | Error catalog (AiTokensException + maps) | ✅ Done | P0 | S | 1.2 |
 | 1.8 | Port interfaces (storage, counter, tokenizer, telemetry, events, content, markup) | ✅ Done | P0 | M | 1.2, 1.7 |
-| 1.9 | DI tokens + options validation + defaults | 📋 ToDo | P0 | M | 1.7, 1.8 |
+| 1.9 | DI tokens + options validation + defaults | ✅ Done | P0 | M | 1.7, 1.8 |
 | 1.10 | PricingService (resolution chain + cache + idempotent seed) | 📋 ToDo | P0 | L | 1.5, 1.6, 1.8, 1.9 |
 | 1.11 | BymaxAiTokensModule.forRoot() + provider presets + fixture demo | 📋 ToDo | P0 | M | 1.4, 1.9, 1.10 |
 
@@ -791,7 +791,7 @@ Completion Protocol:
 
 ### Task 1.9 — DI tokens + options validation + defaults
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 1.7, 1.8
@@ -802,9 +802,9 @@ The `Symbol()` injection tokens, `validateOptions()` (every §4.6 rule → `AI_T
 
 #### Acceptance criteria
 
-- [ ] Every invalid-config case from spec §4.6 throws with an actionable `details.reason`
-- [ ] `wallets: {}` with a store missing `conditionalDebit` fails at init (feature-port validation)
-- [ ] Defaults exactly match spec §4.2 (holds TTL 3600, reaper 300, thresholds [0.8, 1.0], burnOrder 'expiry', failClosed true, …)
+- [x] Every invalid-config case from spec §4.6 throws with an actionable `details.reason`
+- [x] `wallets: {}` with a store missing `conditionalDebit` fails at init (feature-port validation)
+- [x] Defaults exactly match spec §4.2 (holds TTL 3600, reaper 300, thresholds [0.8, 1.0], burnOrder 'expiry', failClosed true, …)
 
 #### Files to create / modify
 
@@ -1061,3 +1061,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 - 1.6 ✅ 2026-07-02 — Authored the pinned MODEL_PRICES_SEED snapshot (OpenAI gpt-5 family + embeddings + batch, Anthropic Opus/Sonnet/Haiku with 0.1×/1.25×/2× cache rates + batch, Gemini Pro/Flash long-context tier rows, Mistral L/M/S, DeepSeek/xAI/Groq) in bigint nano-USD, plus the offline convert-litellm-prices.mjs provenance script; validation spec (shape, no duplicate keys, non-negative, coverage) at 100%; dist/prices has zero runtime imports and ./shared does not import ./prices.
 - 1.7 ✅ 2026-07-02 — Implemented AiTokensException (extends HttpException, canonical { error: { code, message, details? } } body) plus the internal exhaustive code→message and code→HttpStatus maps (compiler-enforced via Record<AiTokensErrorCode, …>); one-throw-per-code spec asserting the §16.2 statuses (402/429/404/410/409/422/400/500/502/503), 100% coverage.
 - 1.8 ✅ 2026-07-02 — Transcribed all 14 port/options interfaces (ILedgerStore/IPricingStore/IWalletStore/IBudgetStore/IBudgetCounterStore + IAiTokensStore bundle, ITokenizer, ITelemetrySink, IEventSink, IContentStore, IMarkupPolicy, MeteringContext/MeterResult, Hold/HoldEstimate union, BymaxAiTokensModuleOptions + async options/factory); also fixed a spec defect by defining the previously-unspecified ITokenizer port (docs(spec)). Typecheck/lint/build clean, zero any.
+- 1.9 ✅ 2026-07-02 — Implemented the 11 Symbol DI tokens, validateOptions (store presence + always-required ledger/pricing ports, feature-gated wallet/budget port checks, FX_REQUIRED for non-USD without fx, markup/threshold/holds/wallet validation → INVALID_CONFIG with actionable reason) and applyDefaults → frozen ResolvedAiTokensOptions with { enabled } discriminated unions matching §4.2; 32-case config spec, 100% coverage.
