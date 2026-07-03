@@ -21,22 +21,35 @@ import type { PrismaClient } from '@prisma/client'
 import { isLegalTransitionPatchKey } from '../shared'
 import type {
   AiOperation,
+  Budget,
+  BudgetWindowKind,
   LedgerFilter,
+  MeteringScope,
   NewPriceVersion,
   NewUsageRecord,
+  NewWalletEntry,
   PriceVersion,
   ProviderId,
   ServiceTier,
   UsageRecord,
   UsageStatus,
+  Wallet,
+  WalletEntry,
+  WalletRef,
 } from '../shared'
 import type {
+  BudgetDelta,
+  BudgetLimits,
+  BudgetWindowSpend,
   IAiTokensStore,
   LedgerCostSummary,
+  OpenGrant,
   PricedModel,
+  WalletEntryFilter,
+  WalletEntryPage,
 } from '../server'
 import { AiTokensException } from '../server/errors'
-import { LedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
+import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 
 /** A SQL executor — either the client or an interactive-transaction client. */
@@ -293,10 +306,18 @@ const USAGE_COLUMNS_SQL = Prisma.raw(USAGE_COLUMNS.map((column) => `"${column}"`
  * (the host's schema must include the shipped models, §15.3).
  */
 export class PrismaAiTokensStore implements IAiTokensStore {
+  private readonly burnOrder: 'expiry' | 'priority' | 'fifo'
+
   /**
    * @param prisma The host's Prisma client (talks to PostgreSQL).
+   * @param options Optional wallet grant burn order (must match the module's `wallets.burnOrder`; default `'expiry'`).
    */
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    options: { burnOrder?: 'expiry' | 'priority' | 'fifo' } = {},
+  ) {
+    this.burnOrder = options.burnOrder ?? 'expiry'
+  }
 
   async append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord> {
     try {
@@ -510,67 +531,315 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return rows[0]?.hash ?? null
   }
 
-  getWallet(): Promise<never> {
-    return this.notImplemented()
+  async getWallet(ref: WalletRef): Promise<Wallet | null> {
+    const rows = await this.prisma.$queryRaw<WalletRow[]>(Prisma.sql`
+      SELECT * FROM "ai_wallets"
+      WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId} LIMIT 1
+    `)
+    return rows[0] === undefined ? null : mapWalletRow(rows[0])
   }
 
-  appendEntry(): Promise<never> {
-    return this.notImplemented()
+  async appendEntry(
+    ref: WalletRef,
+    entry: NewWalletEntry,
+    allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
+  ): Promise<WalletEntry> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const wallet = await this.ensureWallet(tx, ref, walletAutoCreatable(entry))
+        if (wallet === null) throw new WalletMissingError()
+        const stored = await this.insertWalletEntry(tx, wallet.id, entry)
+        await this.insertAllocations(tx, stored.id, allocations)
+        await this.applyBalanceDelta(tx, wallet.id, walletBalanceDelta(entry))
+        return stored
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) return this.replayOrConflictWallet(ref, entry)
+      if (isWalletMissing(error)) throw error
+      throw storeError(error)
+    }
   }
 
-  conditionalDebit(): Promise<never> {
-    return this.notImplemented()
+  async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const wallet = (await this.getWalletWithin(tx, ref)) ?? null
+        if (wallet === null) return null
+        const replay = await this.walletReplay(tx, wallet.id, ref, entry)
+        if (replay !== undefined) return replay
+        await this.sweepExpiredGrants(tx, wallet.id)
+        const cost = -entry.amountNanoUsd
+        const reserved = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+          UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" - ${cost}, "updatedAt" = CURRENT_TIMESTAMP
+          WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${cost} >= ${-overdraftNanoUsd} RETURNING *
+        `)
+        if (reserved[0] === undefined) return null
+        const debit = await this.insertWalletEntry(tx, wallet.id, entry)
+        await this.insertAllocations(tx, debit.id, await this.burnDown(tx, wallet.id, cost))
+        return debit
+      })
+    } catch (error) {
+      if (isLedgerIdempotencyConflict(error)) throw error
+      if (isUniqueViolation(error)) return this.replayOrConflictWallet(ref, entry)
+      throw storeError(error)
+    }
   }
 
-  openGrants(): Promise<never> {
-    return this.notImplemented()
+  async openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo'): Promise<OpenGrant[]> {
+    const wallet = await this.getWallet(ref)
+    if (wallet === null) return []
+    const rows = await this.prisma.$queryRaw<OpenGrantRow[]>(this.openGrantsSql(wallet.id, order))
+    return rows.map(mapOpenGrantRow)
   }
 
-  listEntries(): Promise<never> {
-    return this.notImplemented()
+  async listEntries(ref: WalletRef, filter: WalletEntryFilter = {}): Promise<WalletEntryPage> {
+    const wallet = await this.getWallet(ref)
+    if (wallet === null) return { entries: [], total: 0 }
+    const where = walletEntryWhere(wallet.id, filter)
+    const limit = filter.limit === undefined ? Prisma.empty : Prisma.sql`LIMIT ${filter.limit}`
+    const offset = filter.offset === undefined ? Prisma.empty : Prisma.sql`OFFSET ${filter.offset}`
+    const [entries, counts] = await Promise.all([
+      this.prisma.$queryRaw<WalletEntryRow[]>(
+        Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC ${limit} ${offset}`,
+      ),
+      this.prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
+    ])
+    return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
   }
 
-  reconcile(): Promise<never> {
-    return this.notImplemented()
+  async reconcile(ref: WalletRef): Promise<Wallet> {
+    const wallet = await this.getWallet(ref)
+    if (wallet === null) throw new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, { reason: 'wallet does not exist' })
+    const now = new Date()
+    const rows = await this.prisma.$queryRaw<WalletRow[]>(Prisma.sql`
+      UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${spendableBalanceSql(now)}, "updatedAt" = CURRENT_TIMESTAMP
+      WHERE w."id" = ${wallet.id} RETURNING *
+    `)
+    return mapWalletRow(firstOrThrow(rows))
   }
 
-  upsert(): Promise<never> {
-    return this.notImplemented()
+  async upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
+    const id = input.id ?? randomUUID()
+    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`
+      INSERT INTO "ai_budgets" (${BUDGET_COLUMNS_SQL}) VALUES (${Prisma.join(budgetValues(id, input))})
+      ON CONFLICT ("id") DO UPDATE SET ${budgetUpdateAssignments(input)} RETURNING *
+    `)
+    return mapBudgetRow(firstOrThrow(rows))
   }
 
-  remove(): Promise<never> {
-    return this.notImplemented()
+  async remove(budgetId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.$executeRaw`DELETE FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId}`,
+      this.prisma.$executeRaw`DELETE FROM "ai_budgets" WHERE "id" = ${budgetId}`,
+    ])
   }
 
-  findBudgetById(): Promise<never> {
-    return this.notImplemented()
+  async findBudgetById(budgetId: string): Promise<Budget | null> {
+    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`SELECT * FROM "ai_budgets" WHERE "id" = ${budgetId} LIMIT 1`)
+    return rows[0] === undefined ? null : mapBudgetRow(rows[0])
   }
 
-  findMatching(): Promise<never> {
-    return this.notImplemented()
+  async findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
+    const now = new Date()
+    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`
+      SELECT * FROM "ai_budgets"
+      WHERE "tenantId" = ${tenantId}
+        AND ("scopeType" = 'tenant' OR ("scopeType" = ${scope.type} AND "scopeId" = ${scope.id}))
+        AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
+    `)
+    return rows.map(mapBudgetRow)
   }
 
-  conditionalConsume(): Promise<never> {
-    return this.notImplemented()
+  async conditionalConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureWindow(tx, budgetId, windowStart)
+      const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        UPDATE "ai_budget_windows"
+        SET "spentNanoUsd" = "spentNanoUsd" + ${delta.nanoUsd},
+            "spentTokens" = "spentTokens" + ${BigInt(delta.tokens)},
+            "spentCount" = "spentCount" + ${delta.count},
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
+          AND (${limits.nanoUsd ?? null}::bigint IS NULL OR "spentNanoUsd" + ${delta.nanoUsd} <= ${limits.nanoUsd ?? null})
+          AND (${limits.tokens === undefined ? null : BigInt(limits.tokens)}::bigint IS NULL OR "spentTokens" + ${BigInt(delta.tokens)} <= ${limits.tokens === undefined ? null : BigInt(limits.tokens)})
+          AND (${limits.count ?? null}::int IS NULL OR "spentCount" + ${delta.count} <= ${limits.count ?? null})
+        RETURNING "id"
+      `)
+      return rows[0] !== undefined
+    })
   }
 
-  adjustWindow(): Promise<never> {
-    return this.notImplemented()
+  async adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.ensureWindow(tx, budgetId, windowStart)
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "ai_budget_windows"
+        SET "spentNanoUsd" = GREATEST(0, "spentNanoUsd" + ${delta.nanoUsd}),
+            "spentTokens" = GREATEST(0, "spentTokens" + ${BigInt(delta.tokens)}),
+            "spentCount" = GREATEST(0, "spentCount" + ${delta.count}),
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
+      `)
+    })
   }
 
-  getWindow(): Promise<never> {
-    return this.notImplemented()
-  }
-
-  setWindowStart(): Promise<never> {
-    return this.notImplemented()
-  }
-
-  /** Reject a wallet/budget call until those halves are implemented. */
-  private notImplemented(): Promise<never> {
-    return Promise.reject(
-      new AiTokensException('AI_TOKENS_NOT_CONFIGURED', undefined, { reason: 'the wallet/budget store is not yet implemented' }),
+  async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
+    const rows = await this.prisma.$queryRaw<BudgetWindowRow[]>(
+      Prisma.sql`SELECT * FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart} LIMIT 1`,
     )
+    return rows[0] === undefined ? null : mapBudgetWindowRow(rows[0])
+  }
+
+  async setWindowStart(budgetId: string, windowStart: Date): Promise<void> {
+    await this.prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
+      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, CURRENT_TIMESTAMP)
+      ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = CURRENT_TIMESTAMP
+    `)
+  }
+
+  /** Load the wallet within a transaction (existence + id for the conditional debit). */
+  private async getWalletWithin(tx: SqlExecutor, ref: WalletRef): Promise<WalletRow | undefined> {
+    const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+      SELECT * FROM "ai_wallets"
+      WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId} LIMIT 1
+    `)
+    return rows[0]
+  }
+
+  /** Fetch or (optionally) create the wallet for a ref within a transaction. */
+  private async ensureWallet(tx: SqlExecutor, ref: WalletRef, autoCreate: boolean): Promise<WalletRow | null> {
+    const existing = await this.getWalletWithin(tx, ref)
+    if (existing !== undefined) return existing
+    if (!autoCreate) return null
+    const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+      INSERT INTO "ai_wallets" ("id", "tenantId", "ownerType", "ownerId", "balanceNanoUsd", "createdAt", "updatedAt")
+      VALUES (${randomUUID()}, ${ref.tenantId}, ${ref.ownerType}, ${ref.ownerId}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT ("tenantId", "ownerType", "ownerId") DO UPDATE SET "updatedAt" = "ai_wallets"."updatedAt" RETURNING *
+    `)
+    return firstOrThrow(rows)
+  }
+
+  /** Insert a wallet entry, returning the stored row. */
+  private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry): Promise<WalletEntry> {
+    const rows = await tx.$queryRaw<WalletEntryRow[]>(Prisma.sql`
+      INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
+      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, CURRENT_TIMESTAMP)
+      RETURNING *
+    `)
+    return mapWalletEntryRow(firstOrThrow(rows))
+  }
+
+  /** Insert the debit→grant allocation trail. */
+  private async insertAllocations(
+    tx: SqlExecutor,
+    debitEntryId: string,
+    allocations: { grantEntryId: string; amountNanoUsd: bigint }[],
+  ): Promise<void> {
+    for (const allocation of allocations) {
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "ai_wallet_debit_allocations" ("id", "debitEntryId", "grantEntryId", "amountNanoUsd")
+        VALUES (${randomUUID()}, ${debitEntryId}, ${allocation.grantEntryId}, ${allocation.amountNanoUsd})
+      `)
+    }
+  }
+
+  /** Apply a signed delta to the materialized balance. */
+  private async applyBalanceDelta(tx: SqlExecutor, walletId: string, delta: bigint): Promise<void> {
+    if (delta === 0n) return
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" + ${delta}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${walletId}
+    `)
+  }
+
+  /** Write an `expiry` entry (with its allocation) for each expired grant with a remainder. */
+  private async sweepExpiredGrants(tx: SqlExecutor, walletId: string): Promise<void> {
+    const now = new Date()
+    const grants = await tx.$queryRaw<{ id: string; priority: number; remaining: bigint }[]>(Prisma.sql`
+      SELECT g."id", g."priority", (g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))::bigint AS "remaining"
+      FROM "ai_wallet_entries" g
+      WHERE g."walletId" = ${walletId} AND g."type" = 'grant'
+        AND g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt")
+        AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${now}
+    `)
+    for (const grant of grants) {
+      if (grant.remaining <= 0n) continue
+      const expiry = await this.insertWalletEntry(tx, walletId, {
+        walletId,
+        type: 'expiry',
+        amountNanoUsd: -grant.remaining,
+        priority: grant.priority,
+        effectiveAt: now,
+        idempotencyKey: `expiry:${grant.id}`,
+        reason: 'grant expired',
+      })
+      await this.insertAllocations(tx, expiry.id, [{ grantEntryId: grant.id, amountNanoUsd: grant.remaining }])
+      await this.applyBalanceDelta(tx, walletId, -grant.remaining)
+    }
+  }
+
+  /** Greedily allocate a debit of `cost` across the open grants in burn order. */
+  private async burnDown(tx: SqlExecutor, walletId: string, cost: bigint): Promise<{ grantEntryId: string; amountNanoUsd: bigint }[]> {
+    const grants = await tx.$queryRaw<OpenGrantRow[]>(this.openGrantsSql(walletId, this.burnOrder))
+    const trail: { grantEntryId: string; amountNanoUsd: bigint }[] = []
+    let remaining = cost
+    for (const grant of grants) {
+      if (remaining <= 0n) break
+      const take = grant.remaining < remaining ? grant.remaining : remaining
+      trail.push({ grantEntryId: grant.id, amountNanoUsd: take })
+      remaining -= take
+    }
+    return trail
+  }
+
+  /** The open-grants query (remaining > 0, effective, not expired) ordered per burn order. */
+  private openGrantsSql(walletId: string, order: 'expiry' | 'priority' | 'fifo'): Prisma.Sql {
+    const now = new Date()
+    const orderBy =
+      order === 'priority'
+        ? Prisma.sql`g."priority" ASC, g."createdAt" ASC`
+        : order === 'fifo'
+          ? Prisma.sql`g."createdAt" ASC`
+          : Prisma.sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
+    return Prisma.sql`
+      SELECT g.*, (g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))::bigint AS "remaining"
+      FROM "ai_wallet_entries" g
+      WHERE g."walletId" = ${walletId} AND g."type" = 'grant'
+        AND g."effectiveAt" <= ${now} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${now})
+        AND (g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0)) > 0
+      ORDER BY ${orderBy}
+    `
+  }
+
+  /** Return the existing entry on a matching replay, throw the conflict, or `undefined` when new. */
+  private async walletReplay(tx: SqlExecutor, walletId: string, ref: WalletRef, entry: NewWalletEntry): Promise<WalletEntry | undefined> {
+    const rows = await tx.$queryRaw<WalletEntryRow[]>(
+      Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
+    )
+    if (rows[0] === undefined) return undefined
+    if (walletEntryMatches(rows[0], entry)) return mapWalletEntryRow(rows[0])
+    throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
+  }
+
+  /** Ensure a (zeroed) window row exists for first-touch consumption. */
+  private async ensureWindow(tx: SqlExecutor, budgetId: string, windowStart: Date): Promise<void> {
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
+      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, CURRENT_TIMESTAMP)
+      ON CONFLICT ("budgetId", "windowStart") DO NOTHING
+    `)
+  }
+
+  /** Map the P2002 replay-or-conflict path for a wallet entry (§15.2). */
+  private async replayOrConflictWallet(ref: WalletRef, entry: NewWalletEntry): Promise<WalletEntry> {
+    const wallet = await this.getWallet(ref)
+    if (wallet !== null) {
+      const rows = await this.prisma.$queryRaw<WalletEntryRow[]>(
+        Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
+      )
+      if (rows[0] !== undefined && walletEntryMatches(rows[0], entry)) return mapWalletEntryRow(rows[0])
+    }
+    throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
   }
 
   /** Return the existing record on a matching payload replay, else raise the conflict (§15.2). */
@@ -668,4 +937,244 @@ function buildWhere(filter: LedgerFilter): Prisma.Sql {
   if (filter.from !== undefined) parts.push(Prisma.sql`"occurredAt" >= ${filter.from}`)
   if (filter.to !== undefined) parts.push(Prisma.sql`"occurredAt" <= ${filter.to}`)
   return Prisma.join(parts, ' AND ')
+}
+
+// ---------------------------------------------------------------------------
+// Wallet + budget rows, mappers, and SQL helpers (§15.1–15.3).
+// ---------------------------------------------------------------------------
+
+/** One row of `ai_wallets`. */
+interface WalletRow {
+  id: string
+  tenantId: string
+  ownerType: string
+  ownerId: string
+  balanceNanoUsd: bigint
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** One row of `ai_wallet_entries`. */
+interface WalletEntryRow {
+  id: string
+  walletId: string
+  type: string
+  amountNanoUsd: bigint
+  priority: number
+  effectiveAt: Date
+  expiresAt: Date | null
+  usageRecordId: string | null
+  idempotencyKey: string
+  reason: string | null
+  createdAt: Date
+}
+
+/** An open-grant row: a wallet entry plus its computed remaining value. */
+interface OpenGrantRow extends WalletEntryRow {
+  remaining: bigint
+}
+
+/** One row of `ai_budgets`. */
+interface BudgetRow {
+  id: string
+  tenantId: string
+  scopeType: string
+  scopeId: string
+  features: string[]
+  limitNanoUsd: bigint | null
+  limitTokens: bigint | null
+  limitCount: number | null
+  window: string
+  anchorAt: Date | null
+  expiresAt: Date | null
+  softThresholds: number[]
+  policy: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** One row of `ai_budget_windows`. */
+interface BudgetWindowRow {
+  id: string
+  budgetId: string
+  windowStart: Date
+  spentNanoUsd: bigint
+  spentTokens: bigint
+  spentCount: number
+  updatedAt: Date
+}
+
+/** Signal that a wallet does not exist for a non-creating entry (structurally branded, §15.2). */
+class WalletMissingError extends Error {
+  readonly isWalletMissing = true
+  constructor() {
+    super('wallet does not exist')
+    this.name = 'WalletMissingError'
+  }
+}
+
+/** Narrow an unknown thrown value to the wallet-missing signal. */
+function isWalletMissing(error: unknown): error is { isWalletMissing: true } {
+  if (typeof error !== 'object' || error === null) return false
+  return (error as Record<string, unknown>).isWalletMissing === true
+}
+
+/** Convert a `WalletRow` to the canonical {@link Wallet}. */
+function mapWalletRow(row: WalletRow): Wallet {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    ownerType: row.ownerType as 'tenant' | 'team' | 'user',
+    ownerId: row.ownerId,
+    balanceNanoUsd: row.balanceNanoUsd,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+/** Convert a `WalletEntryRow` to the canonical {@link WalletEntry} (nulls → absent). */
+function mapWalletEntryRow(row: WalletEntryRow): WalletEntry {
+  return {
+    id: row.id,
+    walletId: row.walletId,
+    type: row.type as WalletEntry['type'],
+    amountNanoUsd: row.amountNanoUsd,
+    priority: row.priority,
+    effectiveAt: row.effectiveAt,
+    ...(row.expiresAt !== null ? { expiresAt: row.expiresAt } : {}),
+    ...(row.usageRecordId !== null ? { usageRecordId: row.usageRecordId } : {}),
+    idempotencyKey: row.idempotencyKey,
+    ...(row.reason !== null ? { reason: row.reason } : {}),
+    createdAt: row.createdAt,
+  }
+}
+
+/** Convert an `OpenGrantRow` to an {@link OpenGrant}. */
+function mapOpenGrantRow(row: OpenGrantRow): OpenGrant {
+  return { ...mapWalletEntryRow(row), remainingNanoUsd: row.remaining }
+}
+
+/** Whether an entry auto-creates a missing wallet (grant, or a positive adjustment). */
+function walletAutoCreatable(entry: NewWalletEntry): boolean {
+  return entry.type === 'grant' || (entry.type === 'adjustment' && entry.amountNanoUsd > 0n)
+}
+
+/** The materialized-balance delta for an entry (a grant counts only while spendable at insert). */
+function walletBalanceDelta(entry: NewWalletEntry): bigint {
+  if (entry.type !== 'grant') return entry.amountNanoUsd
+  const now = new Date()
+  const spendable = entry.effectiveAt <= now && (entry.expiresAt === undefined || entry.expiresAt > now)
+  return spendable ? entry.amountNanoUsd : 0n
+}
+
+/** Whether a stored entry has the same content as a replayed one (replay-or-conflict, §15.2). */
+function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry): boolean {
+  return (
+    row.type === entry.type &&
+    row.amountNanoUsd === entry.amountNanoUsd &&
+    row.priority === entry.priority &&
+    row.effectiveAt.getTime() === entry.effectiveAt.getTime() &&
+    (row.expiresAt?.getTime() ?? null) === (entry.expiresAt?.getTime() ?? null) &&
+    (row.usageRecordId ?? null) === (entry.usageRecordId ?? null) &&
+    (row.reason ?? null) === (entry.reason ?? null)
+  )
+}
+
+/** Build the parameterized `WHERE` clause for a wallet-entry filter. */
+function walletEntryWhere(walletId: string, filter: WalletEntryFilter): Prisma.Sql {
+  const parts: Prisma.Sql[] = [Prisma.sql`"walletId" = ${walletId}`]
+  if (filter.type !== undefined) parts.push(Prisma.sql`"type" = ${filter.type}`)
+  if (filter.from !== undefined) parts.push(Prisma.sql`"createdAt" >= ${filter.from}`)
+  if (filter.to !== undefined) parts.push(Prisma.sql`"createdAt" <= ${filter.to}`)
+  return Prisma.join(parts, ' AND ')
+}
+
+/** The time-aware spendable-balance expression for `reconcile` (over the outer `w` alias). */
+function spendableBalanceSql(now: Date): Prisma.Sql {
+  return Prisma.sql`(
+    SELECT COALESCE(SUM(CASE WHEN e."type" = 'grant'
+                             THEN (CASE WHEN e."effectiveAt" <= ${now} THEN e."amountNanoUsd" ELSE 0 END)
+                             ELSE e."amountNanoUsd" END), 0)
+    FROM "ai_wallet_entries" e WHERE e."walletId" = w."id"
+  ) - (
+    SELECT COALESCE(SUM(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0)), 0)
+    FROM "ai_wallet_entries" g
+    WHERE g."walletId" = w."id" AND g."type" = 'grant' AND g."effectiveAt" <= ${now}
+      AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${now}
+  )`
+}
+
+/** Serialize a budget window kind to its stored text form. */
+function serializeWindow(window: BudgetWindowKind): string {
+  return typeof window === 'object' ? `custom:${window.customSeconds.toString()}` : window
+}
+
+/** Parse a stored window text back to a {@link BudgetWindowKind}. */
+function parseWindow(value: string): BudgetWindowKind {
+  if (value.startsWith('custom:')) return { customSeconds: Number(value.slice('custom:'.length)) }
+  return value as 'day' | 'week' | 'month' | 'total'
+}
+
+/** Convert a `BudgetRow` to the canonical {@link Budget} (nulls → absent). */
+function mapBudgetRow(row: BudgetRow): Budget {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    scope: { type: row.scopeType as MeteringScope['type'], id: row.scopeId },
+    ...(row.features.length > 0 ? { features: row.features } : {}),
+    ...(row.limitNanoUsd !== null ? { limitNanoUsd: row.limitNanoUsd } : {}),
+    ...(row.limitTokens !== null ? { limitTokens: Number(row.limitTokens) } : {}),
+    ...(row.limitCount !== null ? { limitCount: row.limitCount } : {}),
+    window: parseWindow(row.window),
+    ...(row.anchorAt !== null ? { anchorAt: row.anchorAt } : {}),
+    ...(row.expiresAt !== null ? { expiresAt: row.expiresAt } : {}),
+    softThresholds: row.softThresholds,
+    policy: row.policy as Budget['policy'],
+    createdAt: row.createdAt,
+  }
+}
+
+/** Convert a `BudgetWindowRow` to a {@link BudgetWindowSpend}. */
+function mapBudgetWindowRow(row: BudgetWindowRow): BudgetWindowSpend {
+  return { spentNanoUsd: row.spentNanoUsd, spentTokens: Number(row.spentTokens), spentCount: row.spentCount }
+}
+
+/** The ordered column list for a budget insert (identifiers are trusted constants). */
+const BUDGET_COLUMNS = [
+  'id', 'tenantId', 'scopeType', 'scopeId', 'features', 'limitNanoUsd', 'limitTokens', 'limitCount',
+  'window', 'anchorAt', 'expiresAt', 'softThresholds', 'policy',
+] as const
+
+/** The identifier list for a budget insert. */
+const BUDGET_COLUMNS_SQL = Prisma.raw(BUDGET_COLUMNS.map((column) => `"${column}"`).join(', '))
+
+/** The nullable BigInt for a token limit (a `number` at the boundary). */
+function tokenLimitSql(limit: number | undefined): bigint | null {
+  return limit === undefined ? null : BigInt(limit)
+}
+
+/** Build the ordered value fragments for a budget insert (aligned with {@link BUDGET_COLUMNS}). */
+function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>): Prisma.Sql[] {
+  return [
+    Prisma.sql`${id}`, Prisma.sql`${input.tenantId}`, Prisma.sql`${input.scope.type}`, Prisma.sql`${input.scope.id}`,
+    Prisma.sql`${input.features ?? []}::text[]`, Prisma.sql`${input.limitNanoUsd ?? null}`,
+    Prisma.sql`${tokenLimitSql(input.limitTokens)}`, Prisma.sql`${input.limitCount ?? null}`,
+    Prisma.sql`${serializeWindow(input.window)}`, Prisma.sql`${input.anchorAt ?? null}`, Prisma.sql`${input.expiresAt ?? null}`,
+    Prisma.sql`${JSON.stringify(input.softThresholds)}::jsonb`, Prisma.sql`${input.policy}`,
+  ]
+}
+
+/** Build the `SET` clause for an upsert conflict (every mutable column + updatedAt). */
+function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>): Prisma.Sql {
+  return Prisma.join(
+    [
+      Prisma.sql`"scopeType" = ${input.scope.type}`, Prisma.sql`"scopeId" = ${input.scope.id}`,
+      Prisma.sql`"features" = ${input.features ?? []}::text[]`, Prisma.sql`"limitNanoUsd" = ${input.limitNanoUsd ?? null}`,
+      Prisma.sql`"limitTokens" = ${tokenLimitSql(input.limitTokens)}`, Prisma.sql`"limitCount" = ${input.limitCount ?? null}`,
+      Prisma.sql`"window" = ${serializeWindow(input.window)}`, Prisma.sql`"anchorAt" = ${input.anchorAt ?? null}`,
+      Prisma.sql`"expiresAt" = ${input.expiresAt ?? null}`, Prisma.sql`"softThresholds" = ${JSON.stringify(input.softThresholds)}::jsonb`,
+      Prisma.sql`"policy" = ${input.policy}`, Prisma.sql`"updatedAt" = CURRENT_TIMESTAMP`,
+    ],
+    ', ',
+  )
 }

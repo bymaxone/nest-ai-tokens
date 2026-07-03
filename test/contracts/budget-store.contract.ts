@@ -16,6 +16,11 @@ export function delta(nanoUsd: bigint, tokens = 0, count = 0): BudgetDelta {
   return { nanoUsd, tokens, count }
 }
 
+/** Seed a minimal budget row with a fixed id so window inserts satisfy the FK on real Postgres. */
+async function seedBudget(store: IBudgetStore, id: string): Promise<void> {
+  await store.upsert({ id, tenantId: 'budget-contract', scope: { type: 'tenant', id: 'budget-contract' }, window: 'total', softThresholds: [], policy: 'block' })
+}
+
 /**
  * Register the shared budget-store contract against a store factory.
  *
@@ -29,6 +34,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** Two concurrent consumes against a window with headroom for one: exactly one wins. */
     it('lets exactly one of two concurrent consumes win', async () => {
       const store = await make()
+      await seedBudget(store, 'b1')
       const limits: BudgetLimits = { nanoUsd: 100n }
       const [a, b] = await Promise.all([
         store.conditionalConsume('b1', windowStart, delta(80n), limits),
@@ -42,6 +48,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** The cost dimension blocks at its exact limit; the window is created on first touch. */
     it('enforces the cost dimension boundary and first-touch creation', async () => {
       const store = await make()
+      await seedBudget(store, 'cost')
       expect(await store.getWindow('cost', windowStart)).toBeNull()
       expect(await store.conditionalConsume('cost', windowStart, delta(100n), { nanoUsd: 100n })).toBe(true)
       expect(await store.conditionalConsume('cost', windowStart, delta(1n), { nanoUsd: 100n })).toBe(false)
@@ -51,6 +58,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** The token dimension blocks independently of cost. */
     it('enforces the token dimension boundary', async () => {
       const store = await make()
+      await seedBudget(store, 'tok')
       expect(await store.conditionalConsume('tok', windowStart, delta(0n, 100), { tokens: 100 })).toBe(true)
       expect(await store.conditionalConsume('tok', windowStart, delta(0n, 1), { tokens: 100 })).toBe(false)
     })
@@ -58,6 +66,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** The count dimension blocks independently. */
     it('enforces the count dimension boundary', async () => {
       const store = await make()
+      await seedBudget(store, 'cnt')
       expect(await store.conditionalConsume('cnt', windowStart, delta(0n, 0, 2), { count: 2 })).toBe(true)
       expect(await store.conditionalConsume('cnt', windowStart, delta(0n, 0, 1), { count: 2 })).toBe(false)
     })
@@ -65,6 +74,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** A consume that passes cost but exceeds another dimension moves nothing (spend stays zero). */
     it('moves nothing when any single dimension is over', async () => {
       const store = await make()
+      await seedBudget(store, 'multi')
       const ok = await store.conditionalConsume('multi', windowStart, delta(10n, 60), { nanoUsd: 100n, tokens: 50 })
       expect(ok).toBe(false)
       const window = await store.getWindow('multi', windowStart)
@@ -75,6 +85,7 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
     /** adjustWindow applies a signed delta and floors each dimension at zero. */
     it('floors adjustWindow at zero', async () => {
       const store = await make()
+      await seedBudget(store, 'adj')
       await store.conditionalConsume('adj', windowStart, delta(30n, 5, 1), {})
       await store.adjustWindow('adj', windowStart, delta(-50n, -10, -5))
       const window = await store.getWindow('adj', windowStart)

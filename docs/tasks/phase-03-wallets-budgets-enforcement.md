@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 🔄 In Progress · **Progress**: 9 / 10 tasks · **Last updated**: 2026-07-03
+> **Status**: 👀 Review · **Progress**: 10 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -51,7 +51,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 | 3.7 | Soft thresholds + projections + throttle policy | ✅ Done | P1 | M | 3.5, 3.6 |
 | 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | ✅ Done | P0 | M | 3.6 |
 | 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | ✅ Done | P0 | M | 3.5 |
-| 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | 📋 ToDo | P0 | L | 3.3, 3.5, 2.7 |
+| 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | ✅ Done | P0 | L | 3.3, 3.5, 2.7 |
 
 ---
 
@@ -795,7 +795,7 @@ Completion Protocol:
 
 ### Task 3.10 — Prisma wallet + budget halves
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.3, 3.5, 2.7
@@ -806,9 +806,9 @@ Complete `PrismaAiTokensStore` with the `IWalletStore` + `IBudgetStore` halves a
 
 #### Acceptance criteria
 
-- [ ] The 3.3 and 3.5 contract suites pass against Testcontainers Postgres unchanged
-- [ ] Allocation queries (`openGrants` with remaining) correct under concurrent debits
-- [ ] All wallet/budget error-mapping rows from spec §15.2 verified
+- [x] The 3.3 and 3.5 contract suites pass against Testcontainers Postgres unchanged
+- [x] Allocation queries (`openGrants` with remaining) correct under concurrent debits
+- [x] All wallet/budget error-mapping rows from spec §15.2 verified
 
 #### Files to create / modify
 
@@ -894,3 +894,4 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 - 3.7 ✅ 2026-07-03 — Soft thresholds (once-per-threshold-per-window dedupe), burn-rate projected_exceeded, and the throttle/allow policy branches with the onThrottle callback.
 - 3.8 ✅ 2026-07-03 — Check-only BudgetGuard (scopeResolver trusted input, decorator feature-precedence merge, 402/429 pre-handler block, request.aiTokens enrichment, fail-fast on a missing scopeResolver) plus the @Meter/@RequireBudget/@AiFeature decorators.
 - 3.9 ✅ 2026-07-03 — RedisBudgetCounterStore (./redis, single atomic Lua incrIfBelow, lazy dynamic ioredis import, masked URLs) and the BudgetService counter fast-path with fail-closed fallback (counter reject → block without DB; counter down → DB fallback; both down → failClosed blocks) plus release/rotate counter maintenance.
+- 3.10 ✅ 2026-07-03 — Prisma wallet + budget halves (raw-SQL conditional debit/consume, grant burn-down allocations, expiry sweep, spendable-balance reconcile, budget CRUD/windows) with the wallet+budget contract suites and two-connection race/allocation/error-mapping scenarios green on Testcontainers Postgres.
