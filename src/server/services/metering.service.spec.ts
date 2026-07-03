@@ -5,9 +5,10 @@ import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-stor
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import type { ResolvedAiTokensOptions } from '../config'
-import type { Hold, HoldEstimate, ITokenizer, MeteringContext } from '../interfaces'
+import type { Hold, HoldEstimate, ITelemetrySink, ITokenizer, MeteringContext } from '../interfaces'
 import { providerPresets } from '../config/provider-presets'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
+import { TelemetryEmitter } from '../telemetry/otel-emitter'
 import { AiTokensException } from '../errors'
 import { BudgetService } from './budget.service'
 import { LedgerService } from './ledger.service'
@@ -83,6 +84,7 @@ function build(
     overdraft?: bigint
     ttlSeconds?: number
     clock?: () => Date
+    telemetry?: ITelemetrySink
   } = {},
 ): Built {
   const now = opts.clock ?? ((): Date => new Date())
@@ -111,7 +113,8 @@ function build(
     usageReversed: jest.fn(() => Promise.resolve()),
     audit: jest.fn(() => Promise.resolve()),
   }
-  const service = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, budgets, now)
+  const telemetry = new TelemetryEmitter(opts.telemetry ?? null)
+  const service = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, budgets, now, telemetry)
   return { service, ledgerStore, pricingStore, walletStore, budgetStore, wallets, budgets, events, now }
 }
 
@@ -1158,6 +1161,48 @@ describe('MeteringService.capture — streaming collector', () => {
     const record = await built.service.capture(hold, collector)
     expect(record.inputTokens).toBe(800)
     expect(record.outputTokens).toBe(400)
+  })
+})
+
+describe('MeteringService telemetry (§14.1)', () => {
+  /** record() emits gen_ai.* usage through the sink. */
+  it('records usage telemetry on record()', async () => {
+    const sink: ITelemetrySink = { recordUsage: jest.fn(), recordDuration: jest.fn() }
+    const built = build({ telemetry: sink })
+    await seedGpt5(built.pricingStore)
+    const record = await built.service.record({ usage: normalized(), context: context() })
+    expect(sink.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ 'gen_ai.provider.name': 'openai', 'gen_ai.usage.input_tokens': 1000 }), record)
+  })
+
+  /** capture() emits usage telemetry for the settled record. */
+  it('records usage telemetry on capture()', async () => {
+    const sink: ITelemetrySink = { recordUsage: jest.fn() }
+    const built = build({ telemetry: sink, wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    await built.service.capture(hold, normalized())
+    expect(sink.recordUsage).toHaveBeenCalledTimes(1)
+  })
+
+  /** meter() records the operation duration when the sink supports it. */
+  it('records duration on meter()', async () => {
+    const sink: ITelemetrySink = { recordUsage: jest.fn(), recordDuration: jest.fn() }
+    const built = build({ telemetry: sink, wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    await built.service.meter(() => Promise.resolve({ usage: normalized() }), context(), (r) => r.usage, ESTIMATE_A)
+    expect(sink.recordDuration).toHaveBeenCalledWith(expect.objectContaining({ 'gen_ai.operation.name': 'chat' }), expect.any(Number))
+  })
+
+  /** meter() without an estimate still records duration. */
+  it('records duration on the post-hoc meter path', async () => {
+    const sink: ITelemetrySink = { recordUsage: jest.fn(), recordDuration: jest.fn() }
+    const built = build({ telemetry: sink, wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    await built.service.meter(() => Promise.resolve({ usage: normalized() }), context(), (r) => r.usage)
+    expect(sink.recordDuration).toHaveBeenCalled()
   })
 })
 

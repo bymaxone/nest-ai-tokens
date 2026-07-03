@@ -38,6 +38,8 @@ import { MarkupResolver, type ResolvedMarkup } from './markup.resolver'
 import { MeteringEffects } from './metering-effects'
 import { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
+import { TelemetryEmitter } from '../telemetry/otel-emitter'
+import { NO_OP_TELEMETRY } from '../telemetry/no-op-telemetry'
 import type { TokenCounts } from './hold-support'
 import {
   isNormalizedUsage,
@@ -195,6 +197,7 @@ export class MeteringService {
    * @param wallets The wallet service, when the wallet feature is enabled.
    * @param budgets The budget service, when the budget feature is enabled.
    * @param now The injected clock (hold expiry).
+   * @param telemetry The GenAI telemetry emitter (no-op by default).
    */
   constructor(
     private readonly ledger: LedgerService,
@@ -205,6 +208,7 @@ export class MeteringService {
     private readonly wallets?: WalletService,
     private readonly budgets?: BudgetService,
     private readonly now: () => Date = (): Date => new Date(),
+    private readonly telemetry: TelemetryEmitter = NO_OP_TELEMETRY,
   ) {
     this.effects = new MeteringEffects(wallets, budgets)
     this.overdraftNanoUsd = options.wallets?.enabled === true ? options.wallets.overdraftNanoUsd : 0n
@@ -244,6 +248,7 @@ export class MeteringService {
     )
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
+    this.telemetry.recordUsage(record)
     if (enforcing) await this.effects.enforceRecord(record)
     return record
   }
@@ -347,6 +352,7 @@ export class MeteringService {
     const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch)
     if (settled === null) return this.settledOrConflict(await this.reload(record.id))
     await this.events.usageRecorded(settled)
+    this.telemetry.recordUsage(settled)
     await this.effects.settleCapture(settled, reservedBilled, reservedTokens, settled.billedCostNanoUsd, settled.totalTokens)
     return settled
   }
@@ -383,9 +389,11 @@ export class MeteringService {
    * @returns The function result and its settled usage record.
    */
   async meter<T>(fn: () => Promise<T>, context: MeteringContext, extract: (result: T) => unknown, estimate?: HoldEstimate): Promise<MeterResult<T>> {
+    const startedAt = this.now().getTime()
     if (estimate === undefined) {
       const result = await fn()
       const usage = await this.record({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
+      this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     }
     const hold = await this.hold(context, estimate)
@@ -397,6 +405,7 @@ export class MeteringService {
       throw error
     }
     const usage = await this.capture(hold, extract(result), context.preset)
+    this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
     return { result, usage }
   }
 

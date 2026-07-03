@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 🔄 In Progress · **Progress**: 6 / 12 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 7 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -45,7 +45,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 | 4.4 | meter() + reverse() orchestrator + getStatus() | ✅ Done | P0 | L | 4.2, 3.6 |
 | 4.5 | StreamUsageCollector (abort-safe streaming capture) | ✅ Done | P0 | L | 4.2 |
 | 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | ✅ Done | P0 | L | 4.2, 3.8 |
-| 4.7 | OpenTelemetry gen_ai.* emission | 📋 ToDo | P1 | M | 4.4 |
+| 4.7 | OpenTelemetry gen_ai.* emission | ✅ Done | P1 | M | 4.4 |
 | 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | 📋 ToDo | P0 | L | 2.7 |
 | 4.9 | forRootAsync() | 📋 ToDo | P0 | S | 4.4 |
 | 4.10 | Content sidecar wiring (opt-in) | 📋 ToDo | P2 | S | 4.4 |
@@ -574,7 +574,7 @@ Completion Protocol:
 
 ### Task 4.7 — OpenTelemetry gen_ai.* emission
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 4.4
@@ -585,9 +585,9 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Every posted record triggers `recordUsage` with the documented attributes; duration on `meter()` paths
-- [ ] No sink → no-op (no attribute objects built)
-- [ ] No prompt/completion text in any attribute
+- [x] Every posted record triggers `recordUsage` with the documented attributes; duration on `meter()` paths
+- [x] No sink → no-op (no attribute objects built)
+- [x] No prompt/completion text in any attribute
 
 #### Files to create / modify
 
@@ -1039,3 +1039,4 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 - 4.4 ✅ 2026-07-03 — meter()/reverse()/getStatus() + record({enforce}) post-hoc consume; orchestrated reversal restores wallet+budget+count; AccessStatus blockedBy.
 - 4.5 ✅ 2026-07-03 — StreamUsageCollector: provider-final usage (OpenAI/Anthropic) vs tokenizer fallback on abort; capture collector overload with the §5.6 input fallback order.
 - 4.6 ✅ 2026-07-03 — BudgetGuard hold mode (@RequireBudget.estimate) + MeteringInterceptor (capture-or-record, release on error, x-ai-tokens-* decimal-string headers); rxjs added as a required peer for the interceptor.
+- 4.7 ✅ 2026-07-03 — TelemetryEmitter: gen_ai.* usage attributes on every posted record + duration on meter() paths; no-content, zero-allocation no-op without a sink; imports nothing from @opentelemetry/api.

@@ -34,7 +34,8 @@ import {
 } from './events/event-hooks'
 import { BudgetGuard, MeteringInterceptor } from './enforcement'
 import { HoldReaper } from './enforcement/hold-reaper'
-import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
+import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, ITelemetrySink, IWalletStore } from './interfaces'
+import { TelemetryEmitter } from './telemetry/otel-emitter'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
@@ -91,16 +92,18 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
         markup: MarkupResolver,
         options: ResolvedAiTokensOptions,
         dispatcher: EventDispatcher,
+        telemetrySink: ITelemetrySink | null,
         wallets?: WalletService,
         budgets?: BudgetService,
       ): MeteringService =>
-        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets),
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets, undefined, new TelemetryEmitter(telemetrySink)),
       inject: [
         LedgerService,
         PricingService,
         MarkupResolver,
         BYMAX_AI_TOKENS_OPTIONS,
         EventDispatcher,
+        BYMAX_AI_TOKENS_TELEMETRY,
         { token: WalletService, optional: true },
         { token: BudgetService, optional: true },
       ],
