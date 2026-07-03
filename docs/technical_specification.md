@@ -1522,6 +1522,17 @@ export interface IContentStore {
 
 `content.mask` runs before persistence; `purge()` supports erasure requests independently of the ledger.
 
+#### 14.2.1 Token estimation port (`ITokenizer`)
+
+`hold()` pre-flight estimation (when the caller supplies text instead of counts) and the aborted-stream fallback (§5.6) count tokens from text via a host-plugged tokenizer. The library ships none (§17):
+
+```typescript
+export interface ITokenizer {
+  /** Count the tokens `text` consumes for the given model/provider (sync or async). */
+  countTokens(input: { text: string; model?: string; provider?: ProviderId }): number | Promise<number>
+}
+```
+
 ### 14.3 GDPR / LGPD
 
 An immutable ledger structurally conflicts with the right to erasure and data minimization — resolved by keeping PII **out** of the ledger:
