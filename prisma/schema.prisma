@@ -1,0 +1,19 @@
+// Development-only Prisma schema. It exists solely so `prisma generate` can build
+// the base `@prisma/client` (which the `./prisma` adapter and the Testcontainers
+// e2e suite consume) and is NOT shipped. The library ships its models as
+// `src/prisma/schema.prisma.fragment` for hosts to merge into their own schema;
+// the adapter itself talks to PostgreSQL exclusively through parameterized raw SQL,
+// so it never depends on generated model delegates.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Generate-time placeholder only: `prisma generate` never opens a connection, so a
+  // hard-coded URL lets it run out-of-the-box with no DATABASE_URL or .env present.
+  // This value is never used at runtime — the adapter receives its PrismaClient from
+  // the host application.
+  url      = "postgresql://localhost:5432/ai_tokens_dev?schema=public"
+}

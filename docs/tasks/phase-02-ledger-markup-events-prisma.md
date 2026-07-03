@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 7 tasks · **Last updated**: 2026-07-02
+> **Status**: 👀 Review · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -40,13 +40,13 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 2.1 | LedgerService — append, idempotency, query, sumCost | 📋 ToDo | P0 | L | 1.11 |
-| 2.2 | Ledger state machine + compensation (reverse, ledger-only) | 📋 ToDo | P0 | L | 2.1 |
-| 2.3 | Opt-in per-tenant hash chain + verifyChain | 📋 ToDo | P1 | M | 2.2 |
-| 2.4 | Markup engine wiring (number \| IMarkupPolicy) | 📋 ToDo | P0 | S | 1.11 |
-| 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | 📋 ToDo | P0 | M | 2.1, 2.4 |
-| 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | 📋 ToDo | P0 | M | 2.5 |
-| 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | 📋 ToDo | P0 | L | 2.1–2.5 |
+| 2.1 | LedgerService — append, idempotency, query, sumCost | ✅ Done | P0 | L | 1.11 |
+| 2.2 | Ledger state machine + compensation (reverse, ledger-only) | ✅ Done | P0 | L | 2.1 |
+| 2.3 | Opt-in per-tenant hash chain + verifyChain | ✅ Done | P1 | M | 2.2 |
+| 2.4 | Markup engine wiring (number \| IMarkupPolicy) | ✅ Done | P0 | S | 1.11 |
+| 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | ✅ Done | P0 | M | 2.1, 2.4 |
+| 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | ✅ Done | P0 | M | 2.5 |
+| 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | ✅ Done | P0 | L | 2.1–2.5 |
 
 ---
 
@@ -54,7 +54,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 
 ### Task 2.1 — LedgerService — append, idempotency, query, sumCost
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.11
@@ -65,11 +65,11 @@ The append/replay/query core over `ILedgerStore`: payload-hash computation, exac
 
 #### Acceptance criteria
 
-- [ ] Replay with same key + same payload returns the identical record (same `id`), writes nothing
-- [ ] Same key + different payload → 409 `AI_TOKENS_IDEMPOTENCY_CONFLICT`
-- [ ] `sumCost` over a seeded fixture matches hand-computed totals (posted + reversed only)
-- [ ] `query` honors every `LedgerFilter` field
-- [ ] `toJsonSafe()` serializes every bigint as a decimal string, round-trip tested
+- [x] Replay with same key + same payload returns the identical record (same `id`), writes nothing
+- [x] Same key + different payload → 409 `AI_TOKENS_IDEMPOTENCY_CONFLICT`
+- [x] `sumCost` over a seeded fixture matches hand-computed totals (posted + reversed only)
+- [x] `query` honors every `LedgerFilter` field
+- [x] `toJsonSafe()` serializes every bigint as a decimal string, round-trip tested
 
 #### Files to create / modify
 
@@ -139,7 +139,7 @@ Completion Protocol:
 
 ### Task 2.2 — Ledger state machine + compensation
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.1
@@ -150,10 +150,10 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Every legal transition tested; every illegal transition rejected (posted→pending, released→posted, amount patch on posted→reversed, …)
-- [ ] `reverse()` produces a compensating record whose amounts exactly negate the original (property test)
-- [ ] After reverse, `sumCost` nets to zero for that pair
-- [ ] `transition` from-state mismatch returns null (no throw) — race-claim contract verified with two concurrent calls on the fake
+- [x] Every legal transition tested; every illegal transition rejected (posted→pending, released→posted, amount patch on posted→reversed, …)
+- [x] `reverse()` produces a compensating record whose amounts exactly negate the original (property test)
+- [x] After reverse, `sumCost` nets to zero for that pair
+- [x] `transition` from-state mismatch returns null (no throw) — race-claim contract verified with two concurrent calls on the fake
 
 #### Files to create / modify
 
@@ -220,7 +220,7 @@ Completion Protocol:
 
 ### Task 2.3 — Opt-in per-tenant hash chain + verifyChain
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 2.2
@@ -231,9 +231,9 @@ Tamper-evident per-tenant hash chain over settled records (`ledger.hashChain: tr
 
 #### Acceptance criteria
 
-- [ ] Chain off by default — zero hash computation when disabled (no `lastHash` store calls)
-- [ ] Enabled: `record → capture-style settle → reverse` yields a verifiable chain; tampering any posted row makes `verifyChain` report exactly that row
-- [ ] Settling a hold does not invalidate the chain (pending excluded)
+- [x] Chain off by default — zero hash computation when disabled (no `lastHash` store calls)
+- [x] Enabled: `record → capture-style settle → reverse` yields a verifiable chain; tampering any posted row makes `verifyChain` report exactly that row
+- [x] Settling a hold does not invalidate the chain (pending excluded)
 
 #### Files to create / modify
 
@@ -298,7 +298,7 @@ Completion Protocol:
 
 ### Task 2.4 — Markup engine wiring
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: S
 - **Depends on**: 1.11
@@ -309,10 +309,10 @@ The internal markup resolver: `number | IMarkupPolicy` → validated 4-dp multip
 
 #### Acceptance criteria
 
-- [ ] Static multiplier and async policy both resolve; policy receives the full context (incl. `serviceTier`)
-- [ ] Policy returning `1.23456` → applied as `1.2346` and persisted as such
-- [ ] Provider-reported mode: OpenRouter cost × markup verified
-- [ ] Policy throwing → the metering call fails (no silent 1.0 fallback), wrapped error
+- [x] Static multiplier and async policy both resolve; policy receives the full context (incl. `serviceTier`)
+- [x] Policy returning `1.23456` → applied as `1.2346` and persisted as such
+- [x] Provider-reported mode: OpenRouter cost × markup verified
+- [x] Policy throwing → the metering call fails (no silent 1.0 fallback), wrapped error
 
 #### Files to create / modify
 
@@ -371,7 +371,7 @@ Completion Protocol:
 
 ### Task 2.5 — MeteringService.record() + estimateCost()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 2.1, 2.4
@@ -382,12 +382,12 @@ The observe-only metering facade path: normalize (preset/normalizer/already-norm
 
 #### Acceptance criteria
 
-- [ ] Raw usage + preset → posted record with correct provider/model/tier/tokens/costs/markup/`enforced: false`
-- [ ] Already-`NormalizedUsage` input accepted without preset
-- [ ] Raw input without preset → 400 `AI_TOKENS_UNKNOWN_PROVIDER`
-- [ ] `isSystemCost` + `systemCostCategory` + `beneficiary` + `requestedBy` + `tags` + `extraUnits` all land on the record
-- [ ] `priceMissing` path (non-strict) records cost 0 + flag + `ai_tokens.price.missing` event hook
-- [ ] `estimateCost()` returns raw+billed with zero side effects
+- [x] Raw usage + preset → posted record with correct provider/model/tier/tokens/costs/markup/`enforced: false`
+- [x] Already-`NormalizedUsage` input accepted without preset
+- [x] Raw input without preset → 400 `AI_TOKENS_UNKNOWN_PROVIDER`
+- [x] `isSystemCost` + `systemCostCategory` + `beneficiary` + `requestedBy` + `tags` + `extraUnits` all land on the record
+- [x] `priceMissing` path (non-strict) records cost 0 + flag + `ai_tokens.price.missing` event hook
+- [x] `estimateCost()` returns raw+billed with zero side effects
 
 #### Files to create / modify
 
@@ -458,7 +458,7 @@ Completion Protocol:
 
 ### Task 2.6 — Typed events
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 2.5
@@ -469,10 +469,10 @@ The event dispatcher: envelope construction, optional-peer `EventEmitter2` bridg
 
 #### Acceptance criteria
 
-- [ ] `record()` emits `ai_tokens.usage.recorded` with the documented payload
-- [ ] Emitter peer absent → no crash, sink still delivers
-- [ ] Sink throwing → error logged, metering unaffected
-- [ ] Envelope ids unique; `occurredAt` set; payload types exported from `./shared`
+- [x] `record()` emits `ai_tokens.usage.recorded` with the documented payload
+- [x] Emitter peer absent → no crash, sink still delivers
+- [x] Sink throwing → error logged, metering unaffected
+- [x] Envelope ids unique; `occurredAt` set; payload types exported from `./shared`
 
 #### Files to create / modify
 
@@ -537,7 +537,7 @@ Completion Protocol:
 
 ### Task 2.7 — PrismaAiTokensStore (ledger + pricing) + schema + migrations
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.1–2.5
@@ -548,11 +548,11 @@ The official adapter's ledger + pricing halves, the full 7-table schema fragment
 
 #### Acceptance criteria
 
-- [ ] Migrations apply cleanly on a fresh Postgres container; both partial indexes verified via `pg_indexes`
-- [ ] `append` + replay + conflict + `transition` race (two connections) behave per spec §15.2 against the real database
-- [ ] `resolveRate`/`upsertPrice` honor the open-row unique index (concurrent upsert test)
-- [ ] Advisory-locked seed: two concurrent seeds → one seed pass
-- [ ] `unitRates` JSON round-trips bigint-as-decimal-string correctly
+- [x] Migrations apply cleanly on a fresh Postgres container; both partial indexes verified via `pg_indexes`
+- [x] `append` + replay + conflict + `transition` race (two connections) behave per spec §15.2 against the real database
+- [x] `resolveRate`/`upsertPrice` honor the open-row unique index (concurrent upsert test)
+- [x] Advisory-locked seed: two concurrent seeds → one seed pass
+- [x] `unitRates` JSON round-trips bigint-as-decimal-string correctly
 
 #### Files to create / modify
 
@@ -637,3 +637,11 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
+- 2.1 ✅ 2026-07-03 — LedgerService append (payload-hash replay-or-conflict), query matrix, sumCost, toJsonSafe, and the in-memory ledger fake; 100% coverage.
+- 2.2 ✅ 2026-07-03 — Ledger state machine (`transition` legality table + atomic claim) and `reverse()` compensation (negation property test, sum-to-zero, concurrent-claim race); added `ILedgerStore.findById`.
+- 2.3 ✅ 2026-07-03 — Opt-in per-tenant tamper-evident hash chain (`chainHash` util, store-serialized settlement hashing via a `hashChain` flag on append/transition) + `verifyChain` (off-by-default, tamper detection, pending-excluded); chain survives the annotation-only reversal.
+- 2.4 ✅ 2026-07-03 — Internal `MarkupResolver` (static 4-dp multiplier | `IMarkupPolicy`), per-call validation, bound `applyMarkup` for both rating modes; throwing/invalid policy → `AI_TOKENS_INVALID_CONFIG` (no silent 1.0).
+- 2.5 ✅ 2026-07-03 — `MeteringService.record()` (normalize → rate both modes → markup → append → usage.recorded/price.missing hooks) + pure `estimateCost()`; deferred hold/capture/release/meter/reverse/getStatus throw `AI_TOKENS_NOT_CONFIGURED`, `enforce:true` → `AI_TOKENS_INVALID_CONFIG`; wired Ledger/Markup/Metering into the module.
+- 2.6 ✅ 2026-07-03 — Typed `EventDispatcher` (envelope + unique id), guarded optional `EventEmitter2` bridge (in-process bigints intact) + `IEventSink` (bigints→decimal strings via `toJsonSafe`), both never-throw; wired `record()`/ledger-audit hooks into the module (end-to-end usage.recorded emission test).
+- 2.7 ✅ 2026-07-03 — `PrismaAiTokensStore` (ledger + pricing halves over parameterized raw SQL), 7-table `schema.prisma.fragment` + `0001_init.sql` (both partial indexes), advisory-locked chain append + effective-dated upsert + seed lock; Testcontainers PostgreSQL smoke (8 tests) validates migrations, replay/conflict, transition race, open-row race, seed lock, unitRates round-trip, and the hash chain.

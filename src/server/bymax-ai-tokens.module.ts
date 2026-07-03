@@ -9,6 +9,7 @@
  */
 
 import { type DynamicModule, Global, Module, type Provider } from '@nestjs/common'
+import { ModuleRef } from '@nestjs/core'
 import {
   BYMAX_AI_TOKENS_BUDGET_COUNTER,
   BYMAX_AI_TOKENS_BUDGET_STORE,
@@ -24,8 +25,10 @@ import {
 } from './bymax-ai-tokens.constants'
 import { applyDefaults, validateOptions } from './config'
 import type { ResolvedAiTokensOptions } from './config'
-import type { BymaxAiTokensModuleOptions, IPricingStore } from './interfaces'
-import { PricingService } from './services'
+import { EventDispatcher } from './events/event-dispatcher'
+import { createLedgerAuditHook, createMeteringEventHooks } from './events/event-hooks'
+import type { BymaxAiTokensModuleOptions, ILedgerStore, IPricingStore } from './interfaces'
+import { LedgerService, MarkupResolver, MeteringService, PricingService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
 const CORE_TOKENS = [
@@ -55,6 +58,35 @@ function buildCoreProviders(resolved: ResolvedAiTokensOptions): Provider[] {
       useFactory: (options: ResolvedAiTokensOptions, store: IPricingStore): PricingService =>
         new PricingService(options, store),
       inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_PRICING_STORE],
+    },
+    {
+      provide: EventDispatcher,
+      useFactory: (moduleRef: ModuleRef, options: ResolvedAiTokensOptions): EventDispatcher =>
+        new EventDispatcher(moduleRef, options),
+      inject: [ModuleRef, BYMAX_AI_TOKENS_OPTIONS],
+    },
+    {
+      provide: LedgerService,
+      useFactory: (options: ResolvedAiTokensOptions, store: ILedgerStore, dispatcher: EventDispatcher): LedgerService =>
+        new LedgerService(store, options, createLedgerAuditHook(dispatcher)),
+      inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_LEDGER_STORE, EventDispatcher],
+    },
+    {
+      provide: MarkupResolver,
+      useFactory: (options: ResolvedAiTokensOptions): MarkupResolver => new MarkupResolver(options),
+      inject: [BYMAX_AI_TOKENS_OPTIONS],
+    },
+    {
+      provide: MeteringService,
+      useFactory: (
+        ledger: LedgerService,
+        pricing: PricingService,
+        markup: MarkupResolver,
+        options: ResolvedAiTokensOptions,
+        dispatcher: EventDispatcher,
+      ): MeteringService =>
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher)),
+      inject: [LedgerService, PricingService, MarkupResolver, BYMAX_AI_TOKENS_OPTIONS, EventDispatcher],
     },
   ]
 }
@@ -98,7 +130,7 @@ export class BymaxAiTokensModule {
     return {
       module: BymaxAiTokensModule,
       providers: [...buildCoreProviders(resolved), ...buildFeatureProviders(resolved)],
-      exports: [...CORE_TOKENS, PricingService, ...buildFeatureExports(resolved)],
+      exports: [...CORE_TOKENS, PricingService, LedgerService, MeteringService, ...buildFeatureExports(resolved)],
     }
   }
 }

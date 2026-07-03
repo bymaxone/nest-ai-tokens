@@ -15,6 +15,7 @@ const LEDGER_METHODS = [
   'append',
   'transition',
   'findByIdempotencyKey',
+  'findById',
   'findExpiredHolds',
   'query',
   'sumCost',

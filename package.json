@@ -48,6 +48,8 @@
     }
   },
   "scripts": {
+    "prepare": "prisma generate",
+    "db:generate": "prisma generate",
     "build": "pnpm clean && tsup",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -62,7 +64,7 @@
     "mutation:dry-run": "stryker run --dryRunOnly",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "size": "node scripts/check-size.mjs",
-    "clean": "rm -rf dist coverage",
+    "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",
     "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build",
     "release": "pnpm publish --provenance"
   },

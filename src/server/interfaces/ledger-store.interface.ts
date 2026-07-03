@@ -20,29 +20,48 @@ export interface LedgerCostSummary {
 export interface ILedgerStore {
   /**
    * Upsert on `(tenantId, idempotencyKey)` — a replay returns the existing record
-   * iff the payload hash matches; a different hash is a conflict (§8.4).
+   * iff the payload hash matches; a different hash is a conflict (§8.4). When
+   * `hashChain` is true and the record is `posted`, the store reads the tenant's
+   * last chain hash, computes this record's `prevHash`/`hash`, and persists them
+   * ATOMICALLY under a per-tenant lock (§8.6) — the read-compute-write is one
+   * serialized operation so concurrent appends never fork the chain. When false
+   * (the default), no chain lookup or hashing occurs.
    */
-  append(record: NewUsageRecord, payloadHash: string): Promise<UsageRecord>
+  append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord>
   /**
    * State transitions only (§8.3): `pending→posted` (settle, amounts patched),
    * `pending→released`, `posted→reversed` (annotation only — amount fields
    * rejected). Atomic: returns `null` when the record was not in the expected
-   * source state (how exactly one reaper replica wins an expired hold).
+   * source state (how exactly one reaper replica wins an expired hold). When
+   * `hashChain` is true and `to` is `posted` (settlement), the store computes and
+   * persists the record's chain `prevHash`/`hash` under the same per-tenant lock (§8.6).
    */
   transition(
     id: string,
     from: UsageStatus,
     to: UsageStatus,
     patch?: Partial<UsageRecord>,
+    hashChain?: boolean,
   ): Promise<UsageRecord | null>
   /** Look up a record by its per-tenant idempotency key. */
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
+  /**
+   * Load one record by its global id — the reversal path loads the original to
+   * negate it into a compensating record (§8.5). Returns `null` when absent.
+   */
+  findById(id: string): Promise<UsageRecord | null>
   /** Find pending holds older than `olderThan` for the reaper sweep. */
   findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]>
   /** Query records by filter. */
   query(filter: LedgerFilter): Promise<UsageRecord[]>
   /** Aggregate cost/token totals for a filter. */
   sumCost(filter: LedgerFilter): Promise<LedgerCostSummary>
-  /** The last posted record's hash for a tenant (hash-chain continuation). */
+  /**
+   * The last posted record's hash for a tenant (hash-chain continuation, §8.6).
+   * The chain is serialized per tenant: the official Prisma adapter takes a
+   * Postgres advisory lock so the last-hash read and the chained append/settle run
+   * as one atomic operation; an in-memory store simulates this with a per-tenant
+   * mutex. Returns `null` before the tenant's first chained record.
+   */
   lastHash(tenantId: string): Promise<string | null>
 }
