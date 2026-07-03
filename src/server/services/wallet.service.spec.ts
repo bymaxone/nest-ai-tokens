@@ -301,6 +301,31 @@ describe('WalletService', () => {
   })
 })
 
+describe('WalletService.settleAdjustment (capture ±delta, §11.2)', () => {
+  /** A positive settlement adjustment credits the balance (refund of an over-reservation). */
+  it('credits the balance on a positive adjustment', async () => {
+    const { service } = makeService()
+    await service.grant(REF, { amountNanoUsd: 1_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const entry = await service.settleAdjustment(REF, { amountNanoUsd: 500n, usageRecordId: 'rec-1', idempotencyKey: 'capture:rec-1', reason: 'refund' })
+    expect(entry.type).toBe('adjustment')
+    expect((await service.getBalance(REF)).nanoUsd).toBe(1_500n)
+  })
+
+  /** A negative settlement adjustment debits the balance unconditionally (past zero). */
+  it('debits the balance on a negative adjustment without a guard', async () => {
+    const { service } = makeService()
+    await service.grant(REF, { amountNanoUsd: 1_000n, idempotencyKey: 'g1', reason: 'seed' })
+    await service.settleAdjustment(REF, { amountNanoUsd: -2_000n, idempotencyKey: 'capture:rec-2', reason: 'top-up' })
+    expect((await service.getBalance(REF)).nanoUsd).toBe(-1_000n)
+  })
+
+  /** A zero settlement adjustment is rejected. */
+  it('rejects a zero settlement adjustment', async () => {
+    const { service } = makeService()
+    await expectRejectCode(service.settleAdjustment(REF, { amountNanoUsd: 0n, idempotencyKey: 'z', reason: 'noop' }), 'AI_TOKENS_INVALID_CONFIG')
+  })
+})
+
 describe('WalletService — grant burn-down (§9.3)', () => {
   /** With 'expiry' order, a debit draws from the soonest-expiring grant first. */
   it("allocates soonest-expiring first ('expiry')", async () => {

@@ -68,6 +68,15 @@ export interface AdjustInput {
   reason: string
 }
 
+/** Input to {@link WalletService.settleAdjustment}: the signed capture ±delta. */
+export interface SettleAdjustmentInput {
+  /** The signed adjustment amount (`!= 0`): `+` credits, `−` debits. */
+  amountNanoUsd: bigint
+  usageRecordId?: string
+  idempotencyKey: string
+  reason: string
+}
+
 /**
  * The event hooks `WalletService` fires; the module wires them to the dispatcher
  * (default no-op so the service has no dependency cycle on the event dispatcher).
@@ -240,6 +249,33 @@ export class WalletService {
       reason: input.reason,
     })
     return entry
+  }
+
+  /**
+   * Apply an unconditional signed settlement adjustment — the capture ±delta vs a
+   * hold (§11.2). Unlike {@link debit} it NEVER blocks on the balance (capture must
+   * settle actuals even into overdraft) and unlike {@link adjust} it emits NO admin
+   * audit (it is a system settlement, not a manual correction). Appends an
+   * `adjustment` entry; a positive amount credits (refund of an over-reservation), a
+   * negative amount debits (top-up when actuals exceeded the estimate).
+   *
+   * @param ref The wallet owner.
+   * @param input The signed amount (`!= 0`), optional `usageRecordId`, key, and reason.
+   * @returns The appended adjustment entry.
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a zero amount / `'key'` owner.
+   */
+  async settleAdjustment(ref: WalletRef, input: SettleAdjustmentInput): Promise<WalletEntry> {
+    this.assertOwner(ref)
+    if (input.amountNanoUsd === 0n) throw this.invalid('settlement adjustment amount must not be 0')
+    return this.append(ref, {
+      type: 'adjustment',
+      amountNanoUsd: input.amountNanoUsd,
+      priority: 0,
+      effectiveAt: new Date(),
+      ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
+      idempotencyKey: input.idempotencyKey,
+      reason: input.reason,
+    })
   }
 
   /**

@@ -97,16 +97,35 @@ interface Consumed {
   increments: CounterIncrement[]
 }
 
-/** The result of a guarded consume: whether it passed and the live counter increments it made. */
+/** A budget dimension over its limit, carrying the typed §16 block code (spend → 402, tokens/count → 429). */
+interface FailingDimension {
+  dimension: 'cost' | 'tokens' | 'count'
+  code: 'AI_TOKENS_BUDGET_EXCEEDED' | 'AI_TOKENS_QUOTA_EXCEEDED'
+}
+
+/** The counter fast-path outcome: a hard reject (with its failing dimension) or a pass to the DB. */
+type FastPathResult =
+  | { rejected: true; failing: FailingDimension }
+  | { rejected: false; increments: CounterIncrement[]; available: boolean }
+
+/**
+ * The result of a guarded consume: whether it passed, the live counter increments
+ * it made, and — when a counter fast-path reject decided the block — the failing
+ * dimension so the caller raises the correct §16 code (the DB path defers to
+ * {@link failingDimension} instead).
+ */
 interface GuardResult {
   ok: boolean
   increments: CounterIncrement[]
+  failing?: FailingDimension
 }
 
 /** The window-length grace (seconds) added to a counter key's TTL (§10.8). */
 const COUNTER_GRACE_SECONDS = 3_600
 /** The counter TTL for a `'total'` window that never resets (≈ 400 days). */
 const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
+/** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
+const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
 
 @Injectable()
 export class BudgetService {
@@ -241,6 +260,64 @@ export class BudgetService {
   }
 
   /**
+   * Apply a SIGNED spend delta to every matching budget window WITHOUT enforcement
+   * — the capture settlement ±delta (§11.2). A positive delta records extra spend
+   * (actual above the hold estimate), a negative delta releases (actual below);
+   * capture NEVER re-blocks, so this never throws a budget/quota error. Keeps the
+   * live counter in sync (increment/decrement per dimension sign).
+   *
+   * @param context The metering context (payer scope, feature).
+   * @param delta The signed spend delta across the three dimensions.
+   */
+  async adjust(context: MeteringContext, delta: BudgetDelta): Promise<void> {
+    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+    const counter = this.options.counter
+    for (const located of windows) {
+      const before = (await this.store.getWindow(located.budget.id, located.windowStart)) ?? ZERO_SPEND
+      await this.store.adjustWindow(located.budget.id, located.windowStart, delta)
+      if (counter === undefined) continue
+      const spends = dimensionSpends(addSpend(before, delta))
+      const ttl = counterTtlSeconds(located.windowStart, located.windowEnd)
+      for (const dimension of counterDimensions(delta, located.limits)) {
+        const key = counterKey(located.budget.id, located.windowStart, dimension.name)
+        await this.adjustCounter(counter, key, dimension.amount, spends[dimension.name], ttl)
+      }
+    }
+  }
+
+  /**
+   * Unconditionally move a live counter by a signed capture ±delta (never re-blocks).
+   * A positive move uses `incrIfBelow` against the int64 ceiling; a `false` result
+   * means the increment would overflow int64 (or the backend treats the ceiling as a
+   * hard cap), so the counter has DIVERGED from the authoritative DB window — it is
+   * then resynced to `authoritative` (the post-adjust window spend) rather than left
+   * holding a stale value the fast path would trust. A negative move decrements.
+   */
+  private async adjustCounter(counter: IBudgetCounterStore, key: string, amount: bigint, authoritative: bigint, ttl: number): Promise<void> {
+    try {
+      if (amount < 0n) {
+        await counter.decr(key, -amount)
+        return
+      }
+      if (await counter.incrIfBelow(key, amount, UNBOUNDED_COUNTER_LIMIT, ttl)) return
+      await this.resyncCounter(counter, key, authoritative, ttl)
+    } catch {
+      this.logger.warn(`failed to adjust budget counter ${key}`)
+    }
+  }
+
+  /** Discard a diverged counter and reseed it to the authoritative DB window spend (§10.8). */
+  private async resyncCounter(counter: IBudgetCounterStore, key: string, authoritative: bigint, ttl: number): Promise<void> {
+    await counter.reset(key)
+    // The reset cleared the key to zero and the authoritative window spend is a real accumulated
+    // value always within the int64 counter range, so this seed can never be rejected — its boolean
+    // is intentionally not checked (unlike the overflowing increment that got us here). It restores
+    // counter == DB-window instead of trusting the overflowed fast-path value.
+    await counter.incrIfBelow(key, authoritative, UNBOUNDED_COUNTER_LIMIT, ttl)
+    this.logger.warn(`budget counter ${key} overflowed the int64 ceiling; resynced to the database window spend`)
+  }
+
+  /**
    * Recompute a window's counters from the ledger using the §10.7 predicate — the
    * ledger is the reconcilable source of truth; the window row is a cache.
    *
@@ -303,7 +380,7 @@ export class BudgetService {
       const result = await this.guardedConsume(located, delta)
       if (!result.ok) {
         await this.rollback(consumed)
-        await this.blockExceeded(context, located, before, delta)
+        await this.blockExceeded(context, located, before, delta, result.failing)
       }
       increments = result.increments
     } else {
@@ -329,16 +406,22 @@ export class BudgetService {
       return { ok: await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits), increments: [] }
     }
     const fast = await this.counterFastPath(counter, located, delta)
-    if (fast.rejected) return { ok: false, increments: [] }
+    if (fast.rejected) return { ok: false, increments: [], failing: fast.failing }
     return this.databaseConsume(counter, located, delta, fast.increments, fast.available)
   }
 
-  /** Try the live-counter fast path; report a hard reject, the increments made, and availability. */
+  /**
+   * Try the live-counter fast path. On a hard reject it reports the FAILING dimension
+   * (whose `incrIfBelow` returned `false`) so the block raises the correct §16 code
+   * — a count/token quota is a 429, not the spend 402 the DB-window default would
+   * infer when the counter is ahead of the window row. Otherwise it reports the
+   * increments made and whether the counter was available (an outage falls back to DB).
+   */
   private async counterFastPath(
     counter: IBudgetCounterStore,
     located: LocatedWindow,
     delta: BudgetDelta,
-  ): Promise<{ rejected: boolean; increments: CounterIncrement[]; available: boolean }> {
+  ): Promise<FastPathResult> {
     const ttl = counterTtlSeconds(located.windowStart, located.windowEnd)
     const increments: CounterIncrement[] = []
     try {
@@ -349,7 +432,7 @@ export class BudgetService {
           continue
         }
         await this.decrCounters(counter, increments)
-        return { rejected: true, increments: [], available: true }
+        return { rejected: true, failing: dimensionCode(dimension.name) }
       }
       return { rejected: false, increments, available: true }
     } catch {
@@ -393,14 +476,19 @@ export class BudgetService {
     }
   }
 
-  /** Emit `exceeded` and throw the dimension's typed error for a blocked budget. */
+  /**
+   * Emit `exceeded` and throw the dimension's typed error for a blocked budget. The
+   * failing dimension is threaded from the counter fast-path reject when it decided
+   * the block; the DB conditional-consume path passes none, so it defaults to the
+   * over-limit dimension of the DB window spend — both routes map to the same §16 code.
+   */
   private async blockExceeded(
     context: MeteringContext,
     located: LocatedWindow,
     before: BudgetWindowSpend,
     delta: BudgetDelta,
+    failing: FailingDimension = failingDimension(addSpend(before, delta), located.limits),
   ): Promise<never> {
-    const failing = failingDimension(addSpend(before, delta), located.limits)
     await this.events.exceeded(context.tenantId, located.budget.scope, {
       budgetId: located.budget.id,
       policy: 'block',
@@ -580,19 +668,21 @@ function addSpend(spend: BudgetWindowSpend, delta: BudgetDelta): BudgetWindowSpe
   }
 }
 
-/** The first dimension whose spend exceeds its limit, with the typed error code. */
-function failingDimension(spend: BudgetWindowSpend, limits: BudgetLimits): { dimension: 'cost' | 'tokens' | 'count'; code: 'AI_TOKENS_BUDGET_EXCEEDED' | 'AI_TOKENS_QUOTA_EXCEEDED' } {
-  return failingDimensionOrNull(spend, limits) ?? { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' }
+/** Map a limited budget/counter dimension to its typed §16 block code: spend → 402, tokens/count → 429. */
+function dimensionCode(name: 'cost' | 'tokens' | 'count'): FailingDimension {
+  return name === 'cost' ? { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' } : { dimension: name, code: 'AI_TOKENS_QUOTA_EXCEEDED' }
+}
+
+/** The first dimension whose spend exceeds its limit, with the typed error code (spend fallback). */
+function failingDimension(spend: BudgetWindowSpend, limits: BudgetLimits): FailingDimension {
+  return failingDimensionOrNull(spend, limits) ?? dimensionCode('cost')
 }
 
 /** The first over-limit dimension, or `null` when every dimension is within its limit. */
-function failingDimensionOrNull(
-  spend: BudgetWindowSpend,
-  limits: BudgetLimits,
-): { dimension: 'cost' | 'tokens' | 'count'; code: 'AI_TOKENS_BUDGET_EXCEEDED' | 'AI_TOKENS_QUOTA_EXCEEDED' } | null {
-  if (limits.nanoUsd !== undefined && spend.spentNanoUsd > limits.nanoUsd) return { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' }
-  if (limits.tokens !== undefined && spend.spentTokens > limits.tokens) return { dimension: 'tokens', code: 'AI_TOKENS_QUOTA_EXCEEDED' }
-  if (limits.count !== undefined && spend.spentCount > limits.count) return { dimension: 'count', code: 'AI_TOKENS_QUOTA_EXCEEDED' }
+function failingDimensionOrNull(spend: BudgetWindowSpend, limits: BudgetLimits): FailingDimension | null {
+  if (limits.nanoUsd !== undefined && spend.spentNanoUsd > limits.nanoUsd) return dimensionCode('cost')
+  if (limits.tokens !== undefined && spend.spentTokens > limits.tokens) return dimensionCode('tokens')
+  if (limits.count !== undefined && spend.spentCount > limits.count) return dimensionCode('count')
   return null
 }
 
@@ -675,6 +765,11 @@ function counterKey(budgetId: string, windowStart: Date, dimension: 'cost' | 'to
 function counterTtlSeconds(windowStart: Date, windowEnd: Date | null): number {
   if (windowEnd === null) return TOTAL_WINDOW_TTL_SECONDS
   return Math.ceil((windowEnd.getTime() - windowStart.getTime()) / 1_000) + COUNTER_GRACE_SECONDS
+}
+
+/** The authoritative window spend per counter dimension, as int64 counter values (resync source). */
+function dimensionSpends(spend: BudgetWindowSpend): Record<'cost' | 'tokens' | 'count', bigint> {
+  return { cost: spend.spentNanoUsd, tokens: BigInt(spend.spentTokens), count: BigInt(spend.spentCount) }
 }
 
 /** The limited dimensions a delta touches, as int64 counter amounts/limits. */

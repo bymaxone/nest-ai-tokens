@@ -563,6 +563,84 @@ function costKey(budgetId: string): string {
   return `ai_tokens:budget:${budgetId}:2026-06-01T00:00:00.000Z:cost`
 }
 
+/** The count counter key for a budget's current (calendar-month) window under the fixed clock. */
+function countKey(budgetId: string): string {
+  return `ai_tokens:budget:${budgetId}:2026-06-01T00:00:00.000Z:count`
+}
+
+describe('BudgetService.adjust (capture ±delta, §11.2)', () => {
+  /** A positive adjust records extra spend and increments the counter unconditionally. */
+  it('applies a positive delta to the window and counter', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(30n))
+    expect(counter.values.get(costKey(budget.id))).toBe(70n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(70n)
+  })
+
+  /** A negative adjust releases window spend and decrements the counter. */
+  it('applies a negative delta to the window and counter', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(-15n))
+    expect(counter.values.get(costKey(budget.id))).toBe(25n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(25n)
+  })
+
+  /** A counter outage during adjust is logged, never thrown; the DB window still moves. */
+  it('logs a counter failure without throwing', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    counter.failIncr = true
+    counter.failDecr = true
+    await service.adjust(context(), delta(10n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(50n)
+  })
+
+  /** A first-ever adjust (no window row yet) seeds the counter from a zero baseline. */
+  it('adjusts from a zero window baseline when none exists yet', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.adjust(context(), delta(30n)) // no prior consume → the window read is null → ZERO_SPEND
+    expect(counter.values.get(costKey(budget.id))).toBe(30n)
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(30n)
+  })
+
+  /**
+   * When incrIfBelow returns false at the int64 ceiling (no throw), the increment cannot
+   * land and would leave the counter BELOW the authoritative DB window; adjust discards the
+   * diverged value and reseeds it to the window spend so the fast path never trusts a stale
+   * number.
+   */
+  it('resyncs the counter to the database window when incrIfBelow overflows the int64 ceiling', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n)) // window = counter = 40
+    counter.values.set(costKey(budget.id), 9_223_372_036_854_775_807n) // counter driven to the int64 ceiling
+    await service.adjust(context(), delta(10n)) // DB window → 50; the increment cannot land
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(50n)
+    expect(counter.values.get(costKey(budget.id))).toBe(50n) // resynced to the window, not left at the ceiling
+    expect(counter.resetKeys).toContain(costKey(budget.id)) // the diverged value was invalidated first
+  })
+
+  /** Without a counter, adjust moves only the DB window. */
+  it('adjusts the window with no counter configured', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n))
+    await service.adjust(context(), delta(-10n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(30n)
+  })
+})
+
 describe('BudgetService — live counter fast path (§10.8)', () => {
   /** The counter fast path increments within the limit, then the DB records the consume. */
   it('consumes through the counter and the database', async () => {
@@ -581,6 +659,20 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
     counter.values.set(costKey(budget.id), 100n) // counter already full
     await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'))).toBeNull() // DB untouched
+  })
+
+  /**
+   * A count-quota block detected on the counter fast path reports the QUOTA code (429), not
+   * the spend code — even though the DB window (still zero) would otherwise infer a spend
+   * block. The failing dimension is threaded from the fast-path reject into the exception.
+   */
+  it('reports the quota code for a count block on the counter fast path (429)', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: undefined, limitCount: 1 }))
+    counter.values.set(countKey(budget.id), 1n) // count counter already at the limit
+    await expectRejectCode(service.consume(context(), delta(0n, 0, 1)), 'AI_TOKENS_QUOTA_EXCEEDED')
     expect(await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'))).toBeNull() // DB untouched
   })
 

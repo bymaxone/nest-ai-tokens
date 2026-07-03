@@ -1,6 +1,6 @@
 # Phase 4 — Metering Lifecycle + Streaming + Telemetry + Reporting + E2E
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 12 tasks · **Last updated**: 2026-07-02
+> **Status**: 👀 Review · **Progress**: 12 / 12 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 5
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -39,18 +39,18 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 4.1 | hold() — estimate, rate, reserve (compensated ordering) | 📋 ToDo | P0 | L | 3.10 |
-| 4.2 | capture() + release() (idempotency contracts, delta math) | 📋 ToDo | P0 | L | 4.1 |
-| 4.3 | Hold reaper (TTL sweep, multi-replica claim) | 📋 ToDo | P0 | M | 4.2 |
-| 4.4 | meter() + reverse() orchestrator + getStatus() | 📋 ToDo | P0 | L | 4.2, 3.6 |
-| 4.5 | StreamUsageCollector (abort-safe streaming capture) | 📋 ToDo | P0 | L | 4.2 |
-| 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | 📋 ToDo | P0 | L | 4.2, 3.8 |
-| 4.7 | OpenTelemetry gen_ai.* emission | 📋 ToDo | P1 | M | 4.4 |
-| 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | 📋 ToDo | P0 | L | 2.7 |
-| 4.9 | forRootAsync() | 📋 ToDo | P0 | S | 4.4 |
-| 4.10 | Content sidecar wiring (opt-in) | 📋 ToDo | P2 | S | 4.4 |
-| 4.11 | E2E suite — the ten scenarios (Testcontainers PG + Redis) | 📋 ToDo | P0 | L | 4.1–4.10 |
-| 4.12 | Phase-4 integration review (matrix audit + export surface) | 📋 ToDo | P0 | M | 4.11 |
+| 4.1 | hold() — estimate, rate, reserve (compensated ordering) | ✅ Done | P0 | L | 3.10 |
+| 4.2 | capture() + release() (idempotency contracts, delta math) | ✅ Done | P0 | L | 4.1 |
+| 4.3 | Hold reaper (TTL sweep, multi-replica claim) | ✅ Done | P0 | M | 4.2 |
+| 4.4 | meter() + reverse() orchestrator + getStatus() | ✅ Done | P0 | L | 4.2, 3.6 |
+| 4.5 | StreamUsageCollector (abort-safe streaming capture) | ✅ Done | P0 | L | 4.2 |
+| 4.6 | MeteringInterceptor + @Meter + guard hold mode + headers | ✅ Done | P0 | L | 4.2, 3.8 |
+| 4.7 | OpenTelemetry gen_ai.* emission | ✅ Done | P1 | M | 4.4 |
+| 4.8 | UsageReportService (summarize, cache savings, CSV/JSON export) | ✅ Done | P0 | L | 2.7 |
+| 4.9 | forRootAsync() | ✅ Done | P0 | S | 4.4 |
+| 4.10 | Content sidecar wiring (opt-in) | ✅ Done | P2 | S | 4.4 |
+| 4.11 | E2E suite — the ten scenarios (Testcontainers PG + Redis) | ✅ Done | P0 | L | 4.1–4.10 |
+| 4.12 | Phase-4 integration review (matrix audit + export surface) | ✅ Done | P0 | M | 4.11 |
 
 ---
 
@@ -58,7 +58,7 @@ Phases 1–3 delivered rating, the persisted ledger, and race-safe wallets/budge
 
 ### Task 4.1 — hold() — estimate, rate, reserve
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.10
@@ -69,11 +69,11 @@ The auth-hold entry point: rate a `HoldEstimate` (three variants), consume count
 
 #### Acceptance criteria
 
-- [ ] All three `HoldEstimate` variants rate correctly (`{ tokens }` against the context preset's model; `{ amountNanoUsd }` as-is — the fitness-estimator path)
-- [ ] Failure injection at each step → all prior steps compensated, correct domain error
-- [ ] `Hold` is plain serializable (JSON round-trip preserves capture-ability)
-- [ ] `isSystemCost` holds skip wallet/budget/counter entirely
-- [ ] Multi-hold composition: two holds for one logical feature reserve independently
+- [x] All three `HoldEstimate` variants rate correctly (`{ tokens }` against the context preset's model; `{ amountNanoUsd }` as-is — the fitness-estimator path)
+- [x] Failure injection at each step → all prior steps compensated, correct domain error
+- [x] `Hold` is plain serializable (JSON round-trip preserves capture-ability)
+- [x] `isSystemCost` holds skip wallet/budget/counter entirely
+- [x] Multi-hold composition: two holds for one logical feature reserve independently
 
 #### Files to create / modify
 
@@ -144,7 +144,7 @@ Completion Protocol:
 
 ### Task 4.2 — capture() + release()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.1
@@ -155,11 +155,11 @@ Settlement with actuals + exact delta adjustment on wallet/budget/counter; void 
 
 #### Acceptance criteria
 
-- [ ] Capture below/above/equal the estimate adjusts wallet + window + counter by the exact delta (property test)
-- [ ] Double capture → same record, no double side effects; capture after release → 409; capture after reap → 410
-- [ ] Release restores in full; release twice → single restoration; release after capture → no-op warn
-- [ ] Hold from tenant A captured under tenant B → 404
-- [ ] Markup re-resolved at capture against actuals; `priceVersionId` from `occurredAt`
+- [x] Capture below/above/equal the estimate adjusts wallet + window + counter by the exact delta (property test)
+- [x] Double capture → same record, no double side effects; capture after release → 409; capture after reap → 410
+- [x] Release restores in full; release twice → single restoration; release after capture → no-op warn
+- [x] Hold from tenant A captured under tenant B → 404
+- [x] Markup re-resolved at capture against actuals; `priceVersionId` from `occurredAt`
 
 #### Files to create / modify
 
@@ -236,7 +236,7 @@ Completion Protocol:
 
 ### Task 4.3 — Hold reaper
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 4.2
@@ -247,10 +247,10 @@ The periodic sweep restoring expired pending holds — sharing `release()`'s res
 
 #### Acceptance criteria
 
-- [ ] Expired holds swept exactly once with two reaper instances racing
-- [ ] Sweep performs the same restoration as `release()` (shared code path)
-- [ ] Interval starts on module init, clears on shutdown (no open handles in Jest)
-- [ ] Non-expired pending holds untouched
+- [x] Expired holds swept exactly once with two reaper instances racing
+- [x] Sweep performs the same restoration as `release()` (shared code path)
+- [x] Interval starts on module init, clears on shutdown (no open handles in Jest)
+- [x] Non-expired pending holds untouched
 
 #### Files to create / modify
 
@@ -315,7 +315,7 @@ Completion Protocol:
 
 ### Task 4.4 — meter() + reverse() orchestrator + getStatus()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2, 3.6
@@ -326,11 +326,11 @@ The three remaining facade methods: the `meter()` wrapper (hold→fn→capture, 
 
 #### Acceptance criteria
 
-- [ ] `meter` happy path returns `{ result, usage }`; fn throwing → hold released, error re-thrown
-- [ ] `meter` without estimate → `record({ enforce: true })` semantics (Phase 2 stub removed)
-- [ ] `reverse` on an enforced record restores wallet + all three window dimensions + counter; non-enforced → ledger only
-- [ ] `getStatus` reflects wallet + budgets; `hasAccess: false` + `blockedBy` when either exhausted; wallet section absent when wallets disabled
-- [ ] `record({ enforce: true })` post-hoc consume can throw AFTER the ledger write — record persists, error propagates (documented trade-off verified)
+- [x] `meter` happy path returns `{ result, usage }`; fn throwing → hold released, error re-thrown
+- [x] `meter` without estimate → `record({ enforce: true })` semantics (Phase 2 stub removed)
+- [x] `reverse` on an enforced record restores wallet + all three window dimensions + counter; non-enforced → ledger only
+- [x] `getStatus` reflects wallet + budgets; `hasAccess: false` + `blockedBy` when either exhausted; wallet section absent when wallets disabled
+- [x] `record({ enforce: true })` post-hoc consume can throw AFTER the ledger write — record persists, error propagates (documented trade-off verified)
 
 #### Files to create / modify
 
@@ -404,7 +404,7 @@ Completion Protocol:
 
 ### Task 4.5 — StreamUsageCollector
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2
@@ -415,11 +415,11 @@ Streaming-safe usage capture: prefer the provider's final usage chunk; fall back
 
 #### Acceptance criteria
 
-- [ ] OpenAI stream fixture (final chunk with `include_usage`) → provider-final usage wins
-- [ ] Anthropic fixture (cumulative `message_delta` + `message_stop`) → finalized correctly
-- [ ] Aborted stream + tokenizer → partial output billed; input per the fallback order (collector prompt count → hold estimate → 0)
-- [ ] No tokenizer + no final usage → 422 `AI_TOKENS_STREAM_USAGE_MISSING`
-- [ ] Exported from the server entry (public class)
+- [x] OpenAI stream fixture (final chunk with `include_usage`) → provider-final usage wins
+- [x] Anthropic fixture (cumulative `message_delta` + `message_stop`) → finalized correctly
+- [x] Aborted stream + tokenizer → partial output billed; input per the fallback order (collector prompt count → hold estimate → 0)
+- [x] No tokenizer + no final usage → 422 `AI_TOKENS_STREAM_USAGE_MISSING`
+- [x] Exported from the server entry (public class)
 
 #### Files to create / modify
 
@@ -488,7 +488,7 @@ Completion Protocol:
 
 ### Task 4.6 — MeteringInterceptor + @Meter + guard hold mode + headers
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.2, 3.8
@@ -499,11 +499,11 @@ The declarative capture path: interceptor extracts usage from the handler result
 
 #### Acceptance criteria
 
-- [ ] Guard(estimate) + interceptor: hold placed pre-handler, captured with the handler's usage, released when the handler throws
-- [ ] Interceptor without guard hold → `record({ enforce: true })`
-- [ ] Headers present and correct when `exposeHeaders: true` (decimal strings)
-- [ ] Handler returning no extractable usage → `AI_TOKENS_USAGE_MALFORMED` (not a silent skip)
-- [ ] Fixture controller e2e-lite (supertest against a Nest testing module)
+- [x] Guard(estimate) + interceptor: hold placed pre-handler, captured with the handler's usage, released when the handler throws
+- [x] Interceptor without guard hold → `record({ enforce: true })`
+- [x] Headers present and correct when `exposeHeaders: true` (decimal strings)
+- [x] Handler returning no extractable usage → `AI_TOKENS_USAGE_MALFORMED` (not a silent skip)
+- [x] Fixture controller e2e-lite (supertest against a Nest testing module)
 
 #### Files to create / modify
 
@@ -574,7 +574,7 @@ Completion Protocol:
 
 ### Task 4.7 — OpenTelemetry gen_ai.* emission
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 4.4
@@ -585,9 +585,9 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Every posted record triggers `recordUsage` with the documented attributes; duration on `meter()` paths
-- [ ] No sink → no-op (no attribute objects built)
-- [ ] No prompt/completion text in any attribute
+- [x] Every posted record triggers `recordUsage` with the documented attributes; duration on `meter()` paths
+- [x] No sink → no-op (no attribute objects built)
+- [x] No prompt/completion text in any attribute
 
 #### Files to create / modify
 
@@ -647,7 +647,7 @@ Completion Protocol:
 
 ### Task 4.8 — UsageReportService
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.7
@@ -658,12 +658,12 @@ SQL aggregation (`summarize` across 12 groupBy dimensions incl. `cacheSavingsNan
 
 #### Acceptance criteria
 
-- [ ] `summarize` groupBy tests per dimension incl. `day` (UTC), `tag` (unnest), `beneficiary`, `systemCostCategory`; grand-total on empty groupBy
-- [ ] `cacheSavingsNanoUsd = Σ cacheReadTokens × (inputRate − cacheReadRate)` verified against seeded records with known price versions
-- [ ] CSV export streams (`Readable`), full §13.2 field set, bigints as decimal strings; JSON line-delimited
-- [ ] `isSystemCost`/`systemCostCategory` filtering (the fitness admin reports)
-- [ ] Export emits an audit event; `maxExportRows` enforced
-- [ ] Non-USD `currency` + `fx` adds converted presentation columns
+- [x] `summarize` groupBy tests per dimension incl. `day` (UTC), `tag` (unnest), `beneficiary`, `systemCostCategory`; grand-total on empty groupBy
+- [x] `cacheSavingsNanoUsd = Σ cacheReadTokens × (inputRate − cacheReadRate)` verified against seeded records with known price versions
+- [x] CSV export streams (`Readable`), full §13.2 field set, bigints as decimal strings; JSON line-delimited
+- [x] `isSystemCost`/`systemCostCategory` filtering (the fitness admin reports)
+- [x] Export emits an audit event; `maxExportRows` enforced
+- [x] Non-USD `currency` + `fx` adds converted presentation columns
 
 #### Files to create / modify
 
@@ -736,7 +736,7 @@ Completion Protocol:
 
 ### Task 4.9 — forRootAsync()
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: S
 - **Depends on**: 4.4
@@ -747,8 +747,8 @@ Async module configuration (useFactory/useClass/useExisting) with wiring parity 
 
 #### Acceptance criteria
 
-- [ ] All three async styles boot the fixture app; provider-set parity with `forRoot()` (snapshot-compared)
-- [ ] Factory rejection → clean bootstrap failure with `AI_TOKENS_INVALID_CONFIG`
+- [x] All three async styles boot the fixture app; provider-set parity with `forRoot()` (snapshot-compared)
+- [x] Factory rejection → clean bootstrap failure with `AI_TOKENS_INVALID_CONFIG`
 
 #### Files to create / modify
 
@@ -804,7 +804,7 @@ Completion Protocol:
 
 ### Task 4.10 — Content sidecar wiring (opt-in)
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P2
 - **Size**: S
 - **Depends on**: 4.4
@@ -815,9 +815,9 @@ The `content` option: masked, TTL'd prompt/completion capture through `IContentS
 
 #### Acceptance criteria
 
-- [ ] Disabled (default): no content-store calls ever (spy assertion)
-- [ ] Enabled: mask applied before `put`; TTL propagated; failures logged, never break metering
-- [ ] Ledger row contains zero text either way
+- [x] Disabled (default): no content-store calls ever (spy assertion)
+- [x] Enabled: mask applied before `put`; TTL propagated; failures logged, never break metering
+- [x] Ledger row contains zero text either way
 
 #### Files to create / modify
 
@@ -876,7 +876,7 @@ Completion Protocol:
 
 ### Task 4.11 — E2E suite — the ten scenarios
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 4.1–4.10
@@ -887,9 +887,9 @@ The ten e2e scenarios from spec §19.2 against real PostgreSQL + Redis (Testcont
 
 #### Acceptance criteria
 
-- [ ] All ten scenarios green against Testcontainers Postgres; scenarios 1 and 10 also exercise the Redis counter path
-- [ ] Suite runs in CI's e2e job under 10 minutes
-- [ ] No test-order dependence (fresh schema per suite via migrations)
+- [x] All ten scenarios green against Testcontainers Postgres; scenarios 1 and 10 also exercise the Redis counter path
+- [x] Suite runs in CI's e2e job under 10 minutes
+- [x] No test-order dependence (fresh schema per suite via migrations)
 
 #### Files to create / modify
 
@@ -959,7 +959,7 @@ Completion Protocol:
 
 ### Task 4.12 — Phase-4 integration review
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 4.11
@@ -970,9 +970,9 @@ Cross-cutting verification before release: the §11.2 side-effect matrix audited
 
 #### Acceptance criteria
 
-- [ ] Matrix audit documented in the PR description (each cell → test reference)
-- [ ] `/bymax-quality:code-review` + `/security-review` clean (0 CRITICAL/HIGH)
-- [ ] Export surface exactly matches spec §3.3 (nothing missing, nothing extra)
+- [x] Matrix audit documented in the PR description (each cell → test reference)
+- [x] `/bymax-quality:code-review` + `/security-review` clean (0 CRITICAL/HIGH)
+- [x] Export surface exactly matches spec §3.3 (nothing missing, nothing extra)
 
 #### Files to create / modify
 
@@ -1033,3 +1033,15 @@ checklist passes end-to-end). 5. Update the Phase 4 row in docs/development_plan
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+- 4.1 ✅ 2026-07-03 — hold(): three estimate variants rated + marked up, compensated budget→wallet→pending reservation, idempotent replay.
+- 4.2 ✅ 2026-07-03 — capture()/release(): idempotent settlement ±delta, cross-tenant HOLD_NOT_FOUND, 409/410 contracts, release restores in full and never bills.
+- 4.3 ✅ 2026-07-03 — hold reaper: setInterval lifecycle sweep, atomic multi-replica claim, shared restore path, per-hold error isolation, unref'd (no open handles).
+- 4.4 ✅ 2026-07-03 — meter()/reverse()/getStatus() + record({enforce}) post-hoc consume; orchestrated reversal restores wallet+budget+count; AccessStatus blockedBy.
+- 4.5 ✅ 2026-07-03 — StreamUsageCollector: provider-final usage (OpenAI/Anthropic) vs tokenizer fallback on abort; capture collector overload with the §5.6 input fallback order.
+- 4.6 ✅ 2026-07-03 — BudgetGuard hold mode (@RequireBudget.estimate) + MeteringInterceptor (capture-or-record, release on error, x-ai-tokens-* decimal-string headers); rxjs added as a required peer for the interceptor.
+- 4.7 ✅ 2026-07-03 — TelemetryEmitter: gen_ai.* usage attributes on every posted record + duration on meter() paths; no-content, zero-allocation no-op without a sink; imports nothing from @opentelemetry/api.
+- 4.8 ✅ 2026-07-03 — UsageReportService: summarize() across 12 groupBy dims (day/week/month UTC, tag unnest, beneficiary, systemCostCategory) + cacheSavings from effective price; streaming CSV/ndjson export (§13.2 field set, decimal-string bigints, fx presentation columns, maxExportRows, audit).
+- 4.9 ✅ 2026-07-03 — forRootAsync() (useFactory/useClass/useExisting) sharing options-agnostic core providers with forRoot; async feature providers resolve null when disabled (services normalize null→absent); factory rejection/invalid options → AI_TOKENS_INVALID_CONFIG. rxjs peer added in 4.6.
+- 4.10 ✅ 2026-07-03 — ContentCapture: opt-in masked+TTL sidecar via record()/capture() content param — the ONLY text path; OFF by default (no store calls), failures logged never break metering, ledger/events/telemetry stay text-free.
+- 4.11 ✅ 2026-07-03 — ten-scenario e2e suite + shared harness on Testcontainers PostgreSQL (+ Redis for scenarios 1/10): concurrency, idempotency, stream-abort, reversal, anchored-window, count-quota, alias-resolution, seed-idempotence, wallet-burndown, reaper — all green in ~90s (maxWorkers 1, one container set at a time).
+- 4.12 ✅ 2026-07-03 — integration review: §11.2 matrix audited cell→test in the PR body, §1.10 rule sweep, export surface verified against §3.3, all STEP-2 gates green (100% cov / 648 unit + 44 e2e, size within budget, invariant greps clean); code-review + security-review run.

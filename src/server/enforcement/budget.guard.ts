@@ -9,9 +9,10 @@
  * it enriches the request with `request.aiTokens = { status, context }` and returns
  * true. This is CHECK-ONLY — it performs NO consumption; the §10.8 atomic consume
  * still protects the actual charge at record/capture time (the documented gate
- * race). A missing `scopeResolver` fails fast at guard construction. The
- * hold-placing `@RequireBudget.estimate` branch arrives with the hold lifecycle,
- * which is not yet shipped.
+ * race). A missing `scopeResolver` fails fast at guard construction. When
+ * `@RequireBudget.estimate` is present the guard additionally places a hold and
+ * attaches it to `request.aiTokens.hold` so the `MeteringInterceptor` settles it
+ * with the handler's actual usage (spec §11.3).
  * @layer server
  */
 
@@ -22,8 +23,8 @@ import type { BudgetStatus } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { MeteringContext } from '../interfaces'
-import { BudgetService } from '../services'
+import type { Hold, MeteringContext } from '../interfaces'
+import { BudgetService, MeteringService } from '../services'
 import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA } from './decorators'
 import type { MeterConfig, RequireBudgetConfig } from './decorators'
 
@@ -31,6 +32,8 @@ import type { MeterConfig, RequireBudgetConfig } from './decorators'
 export interface RequestAiTokens {
   status: BudgetStatus[]
   context: MeteringContext
+  /** Present when `@RequireBudget.estimate` placed a hold; the interceptor settles it. */
+  hold?: Hold
 }
 
 @Injectable()
@@ -39,12 +42,14 @@ export class BudgetGuard implements CanActivate {
 
   /**
    * @param budgets The budget service (status check).
+   * @param metering The metering facade (hold placement in `@RequireBudget.estimate` mode).
    * @param reflector The NestJS reflector (decorator metadata).
    * @param options The resolved options carrying the required `scopeResolver`.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `scopeResolver` is absent (fail-fast at init).
    */
   constructor(
     private readonly budgets: BudgetService,
+    private readonly metering: MeteringService,
     private readonly reflector: Reflector,
     @Inject(BYMAX_AI_TOKENS_OPTIONS) options: Pick<ResolvedAiTokensOptions, 'scopeResolver'>,
   ) {
@@ -62,7 +67,7 @@ export class BudgetGuard implements CanActivate {
    *
    * @param executionContext The request execution context.
    * @returns `true` when the request may proceed.
-   * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `AI_TOKENS_QUOTA_EXCEEDED` when a hard budget is exhausted; `AI_TOKENS_NOT_CONFIGURED` for the not-yet-available hold estimate branch.
+   * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `AI_TOKENS_QUOTA_EXCEEDED` when a hard budget is exhausted (or an estimate shortfall from the placed hold).
    */
   async canActivate(executionContext: ExecutionContext): Promise<boolean> {
     const context = await this.scopeResolver(executionContext)
@@ -70,17 +75,16 @@ export class BudgetGuard implements CanActivate {
     const meter = this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets)
     const requireBudget = this.reflector.getAllAndOverride<RequireBudgetConfig | undefined>(REQUIRE_BUDGET_METADATA, targets)
     const aiFeature = this.reflector.getAllAndOverride<string | undefined>(AI_FEATURE_METADATA, targets)
-    if (requireBudget?.estimate !== undefined) {
-      throw new AiTokensException('AI_TOKENS_NOT_CONFIGURED', undefined, { reason: 'hold estimates arrive with the hold lifecycle' })
-    }
     const feature = requireBudget?.feature ?? meter?.feature ?? aiFeature ?? context.feature
     const statuses = await this.budgets.status(context.tenantId, context.scope)
     for (const status of statuses) {
       const error = exhaustedError(status, feature)
       if (error !== null) throw error
     }
+    const meterContext: MeteringContext = { ...context, feature, ...(meter?.preset !== undefined ? { preset: meter.preset } : {}) }
+    const hold = requireBudget?.estimate !== undefined ? await this.metering.hold(meterContext, requireBudget.estimate) : undefined
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
-    request.aiTokens = { status: statuses, context: { ...context, feature } }
+    request.aiTokens = { status: statuses, context: meterContext, ...(hold !== undefined ? { hold } : {}) }
     return true
   }
 }

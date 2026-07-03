@@ -116,6 +116,31 @@ describe('LedgerService.findByIdempotencyKey', () => {
   })
 })
 
+describe('LedgerService.findById', () => {
+  /** A stored record is found by its global id; a miss returns null. */
+  it('finds a stored record by id and returns null on a miss', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const record = await service.append(makeInput(), 'key-1')
+    expect((await service.findById(record.id))?.id).toBe(record.id)
+    expect(await service.findById('absent')).toBeNull()
+  })
+})
+
+describe('LedgerService.findExpiredHolds', () => {
+  /** Pending records older than the cutoff are returned, bounded by the limit. */
+  it('returns expired pending holds up to the limit', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    await service.append(makeInput({ status: 'pending' }), 'h1')
+    await service.append(makeInput({ status: 'pending' }), 'h2')
+    await service.append(makeInput({ status: 'posted' }), 'p1')
+    const expired = await service.findExpiredHolds(new Date(Date.now() + 60_000), 10)
+    expect(expired).toHaveLength(2)
+    expect(await service.findExpiredHolds(new Date(Date.now() + 60_000), 1)).toHaveLength(1)
+  })
+})
+
 describe('LedgerService.query', () => {
   /** Seed a diverse fixture used by the filter matrix. */
   async function seedFixture(): Promise<{ store: InMemoryLedgerStore; service: LedgerService }> {

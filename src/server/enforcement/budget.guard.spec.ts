@@ -2,13 +2,23 @@ import type { ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import type { AiTokensErrorResponse, MeteringScope } from '../../shared'
 import type { MeteringContext } from '../interfaces'
+import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import { BudgetService, type BudgetServiceOptions } from '../services'
+import { BudgetService, type BudgetServiceOptions, MarkupResolver, MeteringService, PricingService } from '../services'
 import { LedgerService } from '../services/ledger.service'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
+import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
+import { providerPresets } from '../config/provider-presets'
+import type { RequestAiTokens } from './budget.guard'
 import { BudgetGuard } from './budget.guard'
 import { AiFeature, Meter, RequireBudget } from './decorators'
+
+/** A MeteringService over the shared ledger + the budget service (no wallets). */
+function makeMetering(ledger: LedgerService, budgets: BudgetService, now: () => Date): MeteringService {
+  const options = { ratingMode: 'rate-table', markup: 1, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 }, wallets: { enabled: false }, pricing: { strict: false, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} } } as ResolvedAiTokensOptions
+  return new MeteringService(ledger, new PricingService(options, new InMemoryPricingStore()), new MarkupResolver(options), options, undefined, undefined, budgets, now)
+}
 
 const TENANT = 't1'
 const USER_SCOPE: MeteringScope = { type: 'user', id: 'u1' }
@@ -33,9 +43,15 @@ class FixtureController {
     return 'bare'
   }
 
-  @RequireBudget({ estimate: { tokens: 10 } })
+  @RequireBudget({ estimate: { amountNanoUsd: 5_000_000n } })
   withEstimate(): string {
     return 'estimate'
+  }
+
+  @RequireBudget({ estimate: { tokens: 2_000 } })
+  @Meter({ feature: 'meter.feat', preset: providerPresets.openaiChat })
+  withPresetEstimate(): string {
+    return 'preset-estimate'
   }
 
   plain(): string {
@@ -77,13 +93,14 @@ function executionContext(handler: () => unknown, request: Record<string, unknow
 }
 
 /** A guard + budget service over in-memory fakes; the scope resolver returns `ctx`. */
-function makeGuard(ctx: MeteringContext = context()): { guard: BudgetGuard; service: BudgetService } {
+function makeGuard(ctx: MeteringContext = context()): { guard: BudgetGuard; service: BudgetService; ledgerStore: InMemoryLedgerStore } {
   const store = new InMemoryBudgetStore({ now: () => NOW })
-  const ledger = new LedgerService(new InMemoryLedgerStore())
+  const ledgerStore = new InMemoryLedgerStore()
+  const ledger = new LedgerService(ledgerStore)
   const options: BudgetServiceOptions = { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true }
   const service = new BudgetService(store, ledger, options, () => NOW)
-  const guard = new BudgetGuard(service, new Reflector(), { scopeResolver: () => ctx })
-  return { guard, service }
+  const guard = new BudgetGuard(service, makeMetering(ledger, service, () => NOW), new Reflector(), { scopeResolver: () => ctx })
+  return { guard, service, ledgerStore }
 }
 
 describe('BudgetGuard', () => {
@@ -94,7 +111,8 @@ describe('BudgetGuard', () => {
       new LedgerService(new InMemoryLedgerStore()),
       { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true },
     )
-    expect(() => new BudgetGuard(service, new Reflector(), {})).toThrow(AiTokensException)
+    const ledger = new LedgerService(new InMemoryLedgerStore())
+    expect(() => new BudgetGuard(service, makeMetering(ledger, service, () => NOW), new Reflector(), {})).toThrow(AiTokensException)
   })
 
   /** An exhausted hard cost budget blocks with 402 before the handler runs. */
@@ -172,9 +190,21 @@ describe('BudgetGuard', () => {
     await expect(guard.canActivate(executionContext(fixture.bare))).resolves.toBe(true)
   })
 
-  /** A @RequireBudget with an estimate is not yet supported (holds arrive in Phase 4). */
-  it('rejects a hold estimate as not configured', async () => {
+  /** A @RequireBudget with an estimate places a hold and attaches it to the request. */
+  it('places a hold for a @RequireBudget estimate', async () => {
+    const { guard, ledgerStore } = makeGuard()
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture.withEstimate, request))
+    expect(request.aiTokens?.hold?.estimatedCostNanoUsd).toBe(5_000_000n)
+    expect(ledgerStore.all().filter((r) => r.status === 'pending')).toHaveLength(1)
+  })
+
+  /** A @Meter preset flows into the hold context for a { tokens } estimate. */
+  it('carries the @Meter preset into the placed hold', async () => {
     const { guard } = makeGuard()
-    await expectRejectCode(guard.canActivate(executionContext(fixture.withEstimate)), 'AI_TOKENS_NOT_CONFIGURED')
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture.withPresetEstimate, request))
+    expect(request.aiTokens?.hold).toBeDefined()
+    expect(request.aiTokens?.context.preset?.provider).toBe('openai')
   })
 })

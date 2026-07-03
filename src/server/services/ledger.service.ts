@@ -136,6 +136,30 @@ export class LedgerService {
   }
 
   /**
+   * Load one record by its global id. The metering lifecycle loads a pending hold
+   * by its id to settle or void it, and the orchestrated reversal loads the
+   * (now-annotated) original to restore its wallet/budget effects (§8.5).
+   *
+   * @param id The record id.
+   * @returns The record, or `null` when none exists.
+   */
+  findById(id: string): Promise<UsageRecord | null> {
+    return this.store.findById(id)
+  }
+
+  /**
+   * Find pending holds whose TTL has elapsed — the reaper's sweep source (§8.3).
+   * Returns at most `limit` records so the reaper reclaims in bounded batches.
+   *
+   * @param olderThan The cutoff instant (records created at or before are expired).
+   * @param limit The maximum batch size.
+   * @returns The expired pending records.
+   */
+  findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]> {
+    return this.store.findExpiredHolds(olderThan, limit)
+  }
+
+  /**
    * Query records. When the filter omits `status`, it defaults to the
    * balance-contributing statuses (`posted`, `reversed`) so callers see settled
    * spend without special-casing (§8.3).

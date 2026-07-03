@@ -13,10 +13,12 @@ import type {
   BudgetExceededEventData,
   BudgetProjectedExceededEventData,
   BudgetThresholdCrossedEventData,
+  HoldReleasedEventData,
   MeteringScope,
   PriceMissingEventData,
   UsageRecord,
   UsageRecordedEventData,
+  UsageReversedEventData,
   WalletDepletedEventData,
   WalletGrantedEventData,
   WalletRef,
@@ -57,6 +59,15 @@ export function createMeteringEventHooks(dispatcher: EventDispatcher): MeteringE
       }
       return dispatcher.emit('ai_tokens.price.missing', record.tenantId, record.scope, data)
     },
+    holdReleased: (record: UsageRecord, reason: string, expired: boolean): Promise<void> => {
+      const data: HoldReleasedEventData = { holdId: record.id, reason, expired }
+      return dispatcher.emit('ai_tokens.hold.released', record.tenantId, record.scope, data)
+    },
+    usageReversed: (original: UsageRecord, reversalRecordId: string, reason: string): Promise<void> => {
+      const data: UsageReversedEventData = { usageRecordId: original.id, reversalRecordId, reason }
+      return dispatcher.emit('ai_tokens.usage.reversed', original.tenantId, original.scope, data)
+    },
+    audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
   }
 }
 

@@ -14,6 +14,7 @@ import { defineConfig, type Options } from 'tsup'
 const external = [
   /^@nestjs\//,
   'reflect-metadata',
+  /^rxjs/,
   '@prisma/client',
   'ioredis',
   '@nestjs/event-emitter',

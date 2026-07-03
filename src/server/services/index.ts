@@ -22,6 +22,9 @@ export type {
   DebitInput,
   RefundInput,
   AdjustInput,
+  SettleAdjustmentInput,
 } from './wallet.service'
 export { BudgetService } from './budget.service'
 export type { BudgetServiceOptions, BudgetEventHooks, UpsertBudgetInput } from './budget.service'
+export { UsageReportService } from './usage-report.service'
+export type { UsageReportOptions, SummarizeInput, ReportExportFormat, ReportAuditHook } from './usage-report.service'
