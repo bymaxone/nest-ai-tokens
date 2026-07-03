@@ -333,7 +333,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         if (wallet === null) throw new WalletMissingError()
         const stored = await this.insertWalletEntry(tx, wallet.id, entry)
         await this.insertAllocations(tx, stored.id, allocations)
-        await this.applyBalanceDelta(tx, wallet.id, walletBalanceDelta(entry))
+        await this.applyBalanceDelta(tx, wallet.id, walletBalanceDelta(stored))
         return stored
       })
     } catch (error) {

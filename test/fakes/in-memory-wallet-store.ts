@@ -223,20 +223,17 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /**
-   * The materialized-column delta for an entry. A grant contributes only while it
-   * is spendable at insert (effective and not yet expired) — future-dated and
-   * born-expired grants add nothing; every other entry contributes its full signed
-   * amount. Expiry of an initially-spendable grant is applied lazily as an `expiry`
-   * entry by {@link sweepExpiredGrants}.
+   * The materialized-column delta for an entry. A grant contributes only while it is
+   * spendable at its PERSISTED append instant (the stamped `createdAt`, not a fresh
+   * clock read) — future-dated and born-expired grants add nothing; every other entry
+   * contributes its full signed amount. This uses the SAME {@link wasCountedAtAppend}
+   * rule as {@link sweepExpiredGrants}, so the fake stays internally consistent and
+   * matches the Prisma adapter's persisted-instant balance decision. Expiry of an
+   * initially-spendable grant is applied lazily as an `expiry` entry by the sweep.
    */
   private balanceDelta(entry: WalletEntry): bigint {
     if (entry.type !== 'grant') return entry.amountNanoUsd
-    return this.spendableAt(entry, this.now()) ? entry.amountNanoUsd : 0n
-  }
-
-  /** Whether a grant is currently effective and not expired. */
-  private spendableAt(grant: WalletEntry, at: Date): boolean {
-    return grant.effectiveAt <= at && (grant.expiresAt === undefined || grant.expiresAt > at)
+    return this.wasCountedAtAppend(entry) ? entry.amountNanoUsd : 0n
   }
 
   /** Whether a grant contributed to the materialized column when it was appended. */

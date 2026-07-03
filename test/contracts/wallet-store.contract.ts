@@ -107,6 +107,33 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       ).rejects.toMatchObject({ isAiTokensLedgerConflict: true })
     })
 
+    /**
+     * A grant that is not spendable at its PERSISTED append instant — future-effective or
+     * born already expired — contributes nothing to the materialized balance, while a
+     * normal grant contributes in full. The decision keys off the append instant (the
+     * stored `createdAt` / `CURRENT_TIMESTAMP`), so it is identical and deterministic on
+     * every store regardless of the read-time clock.
+     */
+    it('excludes a future-effective or born-expired grant from the materialized balance', async () => {
+      const { store } = await make()
+      await store.appendEntry(
+        ref,
+        grantEntry({ idempotencyKey: 'future', amountNanoUsd: 500n, effectiveAt: new Date('2999-01-01T00:00:00.000Z') }),
+      )
+      await store.appendEntry(
+        ref,
+        grantEntry({
+          idempotencyKey: 'born-expired',
+          amountNanoUsd: 500n,
+          effectiveAt: new Date('2000-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2000-02-01T00:00:00.000Z'),
+        }),
+      )
+      expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(0n) // neither grant is spendable at append
+      await store.appendEntry(ref, grantEntry({ idempotencyKey: 'live', amountNanoUsd: 100n }))
+      expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n) // only the spendable grant counts
+    })
+
     /** `reconcile` recomputes and repairs a materialized balance skewed out of band. */
     it('reconciles a skewed materialized balance', async () => {
       const { store, skew } = await make()

@@ -481,11 +481,17 @@ export function walletAutoCreatable(entry: NewWalletEntry): boolean {
   return entry.type === 'grant' || (entry.type === 'adjustment' && entry.amountNanoUsd > 0n)
 }
 
-/** The materialized-balance delta for an entry (a grant counts only while spendable at insert). */
-export function walletBalanceDelta(entry: NewWalletEntry): bigint {
+/**
+ * The materialized-balance delta for a STORED entry. A grant contributes only while it
+ * is spendable at its PERSISTED append instant — the row's `createdAt` (`CURRENT_TIMESTAMP`),
+ * never a fresh application-clock read that would depend on clock skew and could miscount
+ * grants around their `effectiveAt`/`expiresAt` boundaries. This mirrors the append-instant
+ * rule `sweepExpiredGrants` applies (it compares `effectiveAt`/`expiresAt` against the
+ * grant's `createdAt`), so the balance stays anchored to the persisted instant.
+ */
+export function walletBalanceDelta(entry: WalletEntry): bigint {
   if (entry.type !== 'grant') return entry.amountNanoUsd
-  const now = new Date()
-  const spendable = entry.effectiveAt <= now && (entry.expiresAt === undefined || entry.expiresAt > now)
+  const spendable = entry.effectiveAt <= entry.createdAt && (entry.expiresAt === undefined || entry.expiresAt > entry.createdAt)
   return spendable ? entry.amountNanoUsd : 0n
 }
 
