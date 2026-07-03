@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 10 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 3 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -42,9 +42,9 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 3.1 | WalletService core (balance, grant, debit, refund, adjust, entries) | 📋 ToDo | P0 | M | 2.7 |
-| 3.2 | Grant burn-down + allocations + lazy expiry | 📋 ToDo | P0 | L | 3.1 |
-| 3.3 | Race-safe conditional debit + reconcile + overdraft | 📋 ToDo | P0 | L | 3.2 |
+| 3.1 | WalletService core (balance, grant, debit, refund, adjust, entries) | ✅ Done | P0 | M | 2.7 |
+| 3.2 | Grant burn-down + allocations + lazy expiry | ✅ Done | P0 | L | 3.1 |
+| 3.3 | Race-safe conditional debit + reconcile + overdraft | ✅ Done | P0 | L | 3.2 |
 | 3.4 | Budget model + window anchoring + BudgetService CRUD | 📋 ToDo | P0 | L | 2.7 |
 | 3.5 | Enforcement predicate + multi-dimension conditional consume | 📋 ToDo | P0 | L | 3.4 |
 | 3.6 | Budget status API (BudgetStatus[]) | 📋 ToDo | P0 | M | 3.5 |
@@ -59,7 +59,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 
 ### Task 3.1 — WalletService core
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 2.7
@@ -70,11 +70,11 @@ The full §9.2 service surface over `IWalletStore`: `getBalance`, `grant`, `debi
 
 #### Acceptance criteria
 
-- [ ] Grant/debit/refund/adjust each append entries with per-wallet idempotency (replay-or-conflict)
-- [ ] `getBalance` excludes future-`effectiveAt` and expired grants
-- [ ] Debit without `usageRecordId` and without `reason` → validation error
-- [ ] `getEntries` pagination + type/date filters
-- [ ] `grant`/`adjust` emit `ai_tokens.wallet.granted`/`ai_tokens.audit`
+- [x] Grant/debit/refund/adjust each append entries with per-wallet idempotency (replay-or-conflict)
+- [x] `getBalance` excludes future-`effectiveAt` and expired grants
+- [x] Debit without `usageRecordId` and without `reason` → validation error
+- [x] `getEntries` pagination + type/date filters
+- [x] `grant`/`adjust` emit `ai_tokens.wallet.granted`/`ai_tokens.audit`
 
 #### Files to create / modify
 
@@ -146,7 +146,7 @@ Completion Protocol:
 
 ### Task 3.2 — Grant burn-down + allocations + lazy expiry
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.1
@@ -157,10 +157,10 @@ Burn order (`expiry`/`priority`/`fifo`), the debit→grant allocation trail (`Ai
 
 #### Acceptance criteria
 
-- [ ] Two grants, different expiries: debit allocates to soonest-expiring first ('expiry'); 'priority' and 'fifo' verified
-- [ ] A debit spanning two grants creates two allocations summing to the debit
-- [ ] Expired grant with remainder: next debit writes the `expiry` entry negating exactly the unspent remainder and excludes it from allocation
-- [ ] Refund restores balance but never resurrects an expired grant
+- [x] Two grants, different expiries: debit allocates to soonest-expiring first ('expiry'); 'priority' and 'fifo' verified
+- [x] A debit spanning two grants creates two allocations summing to the debit
+- [x] Expired grant with remainder: next debit writes the `expiry` entry negating exactly the unspent remainder and excludes it from allocation
+- [x] Refund restores balance but never resurrects an expired grant
 
 #### Files to create / modify
 
@@ -224,7 +224,7 @@ Completion Protocol:
 
 ### Task 3.3 — Race-safe conditional debit + reconcile + overdraft
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.2
@@ -235,10 +235,10 @@ The §9.4 materialized-balance conditional debit (`UPDATE … WHERE balance − 
 
 #### Acceptance criteria
 
-- [ ] Two concurrent debits against balance for one → exactly one succeeds (contract test file, parameterized by store)
-- [ ] Overdraft honored: balance may reach exactly `−overdraft`, not below
-- [ ] `reconcile` detects and repairs a manually-skewed materialized balance
-- [ ] Depletion emits `ai_tokens.wallet.depleted`
+- [x] Two concurrent debits against balance for one → exactly one succeeds (contract test file, parameterized by store)
+- [x] Overdraft honored: balance may reach exactly `−overdraft`, not below
+- [x] `reconcile` detects and repairs a manually-skewed materialized balance
+- [x] Depletion emits `ai_tokens.wallet.depleted`
 
 #### Files to create / modify
 
@@ -884,3 +884,7 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
+- 3.1 ✅ 2026-07-03 — WalletService (balance/grant/debit/refund/adjust/entries/reconcile) + in-memory wallet fake with per-wallet idempotency, materialized balance, and event hooks.
+- 3.2 ✅ 2026-07-03 — Grant burn-down (expiry/priority/fifo), the debit→grant allocation trail, and lazy `expiry` entries negating unspent remainders, all inside the atomic store op.
+- 3.3 ✅ 2026-07-03 — Race-safe `conditionalDebit` (materialized-balance reserve, no check-then-write), overdraft boundary, `reconcile` repair, depletion event, and the store-parameterized wallet contract suite.
