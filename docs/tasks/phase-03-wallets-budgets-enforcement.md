@@ -1,6 +1,6 @@
 # Phase 3 — Wallets + Budgets + Enforcement
 
-> **Status**: 🔄 In Progress · **Progress**: 3 / 10 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 7 / 10 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 4
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -45,10 +45,10 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 | 3.1 | WalletService core (balance, grant, debit, refund, adjust, entries) | ✅ Done | P0 | M | 2.7 |
 | 3.2 | Grant burn-down + allocations + lazy expiry | ✅ Done | P0 | L | 3.1 |
 | 3.3 | Race-safe conditional debit + reconcile + overdraft | ✅ Done | P0 | L | 3.2 |
-| 3.4 | Budget model + window anchoring + BudgetService CRUD | 📋 ToDo | P0 | L | 2.7 |
-| 3.5 | Enforcement predicate + multi-dimension conditional consume | 📋 ToDo | P0 | L | 3.4 |
-| 3.6 | Budget status API (BudgetStatus[]) | 📋 ToDo | P0 | M | 3.5 |
-| 3.7 | Soft thresholds + projections + throttle policy | 📋 ToDo | P1 | M | 3.5, 3.6 |
+| 3.4 | Budget model + window anchoring + BudgetService CRUD | ✅ Done | P0 | L | 2.7 |
+| 3.5 | Enforcement predicate + multi-dimension conditional consume | ✅ Done | P0 | L | 3.4 |
+| 3.6 | Budget status API (BudgetStatus[]) | ✅ Done | P0 | M | 3.5 |
+| 3.7 | Soft thresholds + projections + throttle policy | ✅ Done | P1 | M | 3.5, 3.6 |
 | 3.8 | BudgetGuard + @RequireBudget + @AiFeature (check-only) | 📋 ToDo | P0 | M | 3.6 |
 | 3.9 | RedisBudgetCounterStore (./redis) + fail-closed fallback | 📋 ToDo | P0 | M | 3.5 |
 | 3.10 | Prisma wallet + budget halves (contract tests on real Postgres) | 📋 ToDo | P0 | L | 3.3, 3.5, 2.7 |
@@ -309,7 +309,7 @@ Completion Protocol:
 
 ### Task 3.4 — Budget model + window anchoring + BudgetService CRUD
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.7
@@ -320,11 +320,11 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Window-anchor table tests: Jan 31 anchor → Feb 28/29 → Mar 31; week/day anchors; calendar-UTC defaults; `total` never rotates; `custom:86400`
-- [ ] `limit: 0` blocks; absent dimension = unlimited; negative rejected at validation
-- [ ] `rotateWindow` starts a fresh window now and re-anchors subsequent windows
-- [ ] Expired budgets ignored by enforcement and excluded from `findMatching`
-- [ ] `upsertBudget`/`removeBudget` emit `ai_tokens.audit`
+- [x] Window-anchor table tests: Jan 31 anchor → Feb 28/29 → Mar 31; week/day anchors; calendar-UTC defaults; `total` never rotates; `custom:86400`
+- [x] `limit: 0` blocks; absent dimension = unlimited; negative rejected at validation
+- [x] `rotateWindow` starts a fresh window now and re-anchors subsequent windows
+- [x] Expired budgets ignored by enforcement and excluded from `findMatching`
+- [x] `upsertBudget`/`removeBudget` emit `ai_tokens.audit`
 
 #### Files to create / modify
 
@@ -396,7 +396,7 @@ Completion Protocol:
 
 ### Task 3.5 — Enforcement predicate + multi-dimension conditional consume
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 3.4
@@ -407,11 +407,11 @@ The five-clause consumption predicate (spec §10.7), the multi-dimension atomic 
 
 #### Acceptance criteria
 
-- [ ] Predicate truth-table tests (each clause independently flips consumption)
-- [ ] Cost-, token-, and count-limited budgets each block on their own dimension with the right error code
-- [ ] Feature filter: `features: ['workout.generate']` consumes for that feature only; embeddings pass through
-- [ ] `reconcileWindow` recomputed from a seeded ledger equals live counters (including after a reversal)
-- [ ] Two concurrent consumes with headroom for one → exactly one passes (contract test)
+- [x] Predicate truth-table tests (each clause independently flips consumption)
+- [x] Cost-, token-, and count-limited budgets each block on their own dimension with the right error code
+- [x] Feature filter: `features: ['workout.generate']` consumes for that feature only; embeddings pass through
+- [x] `reconcileWindow` recomputed from a seeded ledger equals live counters (including after a reversal)
+- [x] Two concurrent consumes with headroom for one → exactly one passes (contract test)
 
 #### Files to create / modify
 
@@ -483,7 +483,7 @@ Completion Protocol:
 
 ### Task 3.6 — Budget status API
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: M
 - **Depends on**: 3.5
@@ -494,9 +494,9 @@ Completion Protocol:
 
 #### Acceptance criteria
 
-- [ ] Status reflects live windows across all matching scopes; `resetsAt` correct for anchored/calendar/total windows
-- [ ] Unlimited dimensions absent from `remaining` (not zero)
-- [ ] `usedFraction` correct with mixed dimensions
+- [x] Status reflects live windows across all matching scopes; `resetsAt` correct for anchored/calendar/total windows
+- [x] Unlimited dimensions absent from `remaining` (not zero)
+- [x] `usedFraction` correct with mixed dimensions
 
 #### Files to create / modify
 
@@ -553,7 +553,7 @@ Completion Protocol:
 
 ### Task 3.7 — Soft thresholds + projections + throttle policy
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P1
 - **Size**: M
 - **Depends on**: 3.5, 3.6
@@ -564,9 +564,9 @@ Threshold-crossing detection (once per threshold per window), projected-spend ev
 
 #### Acceptance criteria
 
-- [ ] Crossing 80% then 100% emits exactly one event per threshold per window (no re-fire per call)
-- [ ] `policy: 'throttle'` invokes the callback with `{ context, budget, status }`; absent callback → warn + allow
-- [ ] Projection event fires when burn rate projects crossing before `resetsAt`
+- [x] Crossing 80% then 100% emits exactly one event per threshold per window (no re-fire per call)
+- [x] `policy: 'throttle'` invokes the callback with `{ context, budget, status }`; absent callback → warn + allow
+- [x] Projection event fires when burn rate projects crossing before `resetsAt`
 
 #### Files to create / modify
 
@@ -888,3 +888,7 @@ docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6. Appen
 - 3.1 ✅ 2026-07-03 — WalletService (balance/grant/debit/refund/adjust/entries/reconcile) + in-memory wallet fake with per-wallet idempotency, materialized balance, and event hooks.
 - 3.2 ✅ 2026-07-03 — Grant burn-down (expiry/priority/fifo), the debit→grant allocation trail, and lazy `expiry` entries negating unspent remainders, all inside the atomic store op.
 - 3.3 ✅ 2026-07-03 — Race-safe `conditionalDebit` (materialized-balance reserve, no check-then-write), overdraft boundary, `reconcile` repair, depletion event, and the store-parameterized wallet contract suite.
+- 3.4 ✅ 2026-07-03 — Pure window-anchor engine (calendar-UTC + per-subject anchorAt with month-end clamping, total, custom seconds), the in-memory budget fake, and BudgetService CRUD + rotateWindow with normative §10.2 validation.
+- 3.5 ✅ 2026-07-03 — §10.7 predicate (single source of truth), atomic multi-dimension conditionalConsume + rollback, consume/release/reconcileWindow, 402-vs-429 mapping, and the store-parameterized budget contract suite.
+- 3.6 ✅ 2026-07-03 — BudgetService.status → BudgetStatus[] (live windows, unlimited dims absent from remaining, bigint-safe usedFraction, correct resetsAt).
+- 3.7 ✅ 2026-07-03 — Soft thresholds (once-per-threshold-per-window dedupe), burn-rate projected_exceeded, and the throttle/allow policy branches with the onThrottle callback.

@@ -16,6 +16,9 @@ import type { Budget } from '../../shared'
 /** The budget fields the anchoring math reads. */
 export type WindowAnchorBudget = Pick<Budget, 'window' | 'anchorAt' | 'createdAt'>
 
+/** A fixed-length (non-calendar-month) window kind. */
+type FixedWindow = 'day' | 'week' | { customSeconds: number }
+
 /** Milliseconds in one day. */
 const DAY_MS = 86_400_000
 /** Milliseconds in one week. */
@@ -37,7 +40,7 @@ function startOfUtcMonth(at: Date): Date {
   return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1))
 }
 
-/** Number of days in a UTC month (month is a 0-based index that may over/underflow). */
+/** Days in a UTC month (a 0-based month index that may over/underflow the year). */
 function daysInUtcMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
 }
@@ -53,32 +56,28 @@ function addMonthsClamped(anchor: Date, months: number): Date {
   )
 }
 
-/** Whole-month count from `anchor` to `windowStart` (both anchored, so it is exact). */
+/** Whole-month count from `anchor` to a same-anchored `windowStart`. */
 function monthsBetween(anchor: Date, windowStart: Date): number {
   return (windowStart.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + (windowStart.getUTCMonth() - anchor.getUTCMonth())
 }
 
-/** The fixed-length period (ms) for a `'day'`/`'week'` or custom window. */
-function fixedPeriodMs(budget: WindowAnchorBudget): number | null {
-  if (budget.window === 'day') return DAY_MS
-  if (budget.window === 'week') return WEEK_MS
-  if (typeof budget.window === 'object') return budget.window.customSeconds * 1_000
-  return null
+/** The month index `k` such that `addMonthsClamped(anchor, k)` is the window containing `at`. */
+function anchoredMonthIndex(anchor: Date, at: Date): number {
+  const estimate = monthsBetween(anchor, at)
+  return addMonthsClamped(anchor, estimate).getTime() <= at.getTime() ? estimate : estimate - 1
+}
+
+/** The fixed period (ms) of a `'day'`/`'week'`/custom window. */
+function periodMsOf(window: FixedWindow): number {
+  if (window === 'day') return DAY_MS
+  if (window === 'week') return WEEK_MS
+  return window.customSeconds * 1_000
 }
 
 /** The epoch-aligned start of a fixed-length window containing `at`, anchored at `anchor`. */
 function fixedWindowStart(anchor: Date, periodMs: number, at: Date): Date {
-  const elapsed = at.getTime() - anchor.getTime()
-  const k = Math.floor(elapsed / periodMs)
+  const k = Math.floor((at.getTime() - anchor.getTime()) / periodMs)
   return new Date(anchor.getTime() + k * periodMs)
-}
-
-/** Find `k` such that `addMonthsClamped(anchor, k) <= at < addMonthsClamped(anchor, k + 1)`. */
-function anchoredMonthIndex(anchor: Date, at: Date): number {
-  let k = monthsBetween(anchor, at)
-  while (addMonthsClamped(anchor, k).getTime() > at.getTime()) k -= 1
-  while (addMonthsClamped(anchor, k + 1).getTime() <= at.getTime()) k += 1
-  return k
 }
 
 /**
@@ -94,12 +93,10 @@ export function windowStartFor(budget: WindowAnchorBudget, at: Date): Date {
     if (budget.anchorAt === undefined) return startOfUtcMonth(at)
     return addMonthsClamped(budget.anchorAt, anchoredMonthIndex(budget.anchorAt, at))
   }
-  const periodMs = fixedPeriodMs(budget)
-  if (periodMs === null) return startOfUtcMonth(at)
-  if (budget.anchorAt !== undefined) return fixedWindowStart(budget.anchorAt, periodMs, at)
-  if (typeof budget.window === 'object') return fixedWindowStart(budget.createdAt, periodMs, at)
+  if (budget.anchorAt !== undefined) return fixedWindowStart(budget.anchorAt, periodMsOf(budget.window), at)
+  if (budget.window === 'day') return startOfUtcDay(at)
   if (budget.window === 'week') return startOfUtcWeek(at)
-  return startOfUtcDay(at)
+  return fixedWindowStart(budget.createdAt, periodMsOf(budget.window), at)
 }
 
 /**
@@ -117,7 +114,5 @@ export function resetsAtFor(budget: WindowAnchorBudget, windowStart: Date): Date
     }
     return addMonthsClamped(budget.anchorAt, monthsBetween(budget.anchorAt, windowStart) + 1)
   }
-  const periodMs = fixedPeriodMs(budget)
-  if (periodMs === null) return new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth() + 1, 1))
-  return new Date(windowStart.getTime() + periodMs)
+  return new Date(windowStart.getTime() + periodMsOf(budget.window))
 }

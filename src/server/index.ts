@@ -8,7 +8,7 @@
 
 export { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 export * from './bymax-ai-tokens.constants'
-export { PricingService, LedgerService, MeteringService, WalletService } from './services'
+export { PricingService, LedgerService, MeteringService, WalletService, BudgetService } from './services'
 export type {
   ResolveRateInput,
   LedgerAppendInput,
@@ -20,6 +20,8 @@ export type {
   DebitInput,
   RefundInput,
   AdjustInput,
+  BudgetServiceOptions,
+  UpsertBudgetInput,
 } from './services'
 export { toJsonSafe } from './utils/to-json-safe'
 export type { JsonSafe } from './utils/to-json-safe'

@@ -26,9 +26,14 @@ import {
 import { applyDefaults, validateOptions } from './config'
 import type { ResolvedAiTokensOptions } from './config'
 import { EventDispatcher } from './events/event-dispatcher'
-import { createLedgerAuditHook, createMeteringEventHooks, createWalletEventHooks } from './events/event-hooks'
-import type { BymaxAiTokensModuleOptions, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
-import { LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
+import {
+  createBudgetEventHooks,
+  createLedgerAuditHook,
+  createMeteringEventHooks,
+  createWalletEventHooks,
+} from './events/event-hooks'
+import type { BymaxAiTokensModuleOptions, IBudgetStore, ILedgerStore, IPricingStore, IWalletStore } from './interfaces'
+import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
 const CORE_TOKENS = [
@@ -105,17 +110,24 @@ function buildFeatureProviders(resolved: ResolvedAiTokensOptions): Provider[] {
     })
   }
   if (resolved.budgets.enabled) {
+    const budgetOptions = resolved.budgets
     providers.push({ provide: BYMAX_AI_TOKENS_BUDGET_STORE, useValue: resolved.store })
     providers.push({ provide: BYMAX_AI_TOKENS_BUDGET_COUNTER, useValue: resolved.budgets.counter ?? null })
+    providers.push({
+      provide: BudgetService,
+      useFactory: (store: IBudgetStore, ledger: LedgerService, dispatcher: EventDispatcher): BudgetService =>
+        new BudgetService(store, ledger, budgetOptions, () => new Date(), createBudgetEventHooks(dispatcher)),
+      inject: [BYMAX_AI_TOKENS_BUDGET_STORE, LedgerService, EventDispatcher],
+    })
   }
   return providers
 }
 
 /** The tokens and services exported for each enabled feature. */
-function buildFeatureExports(resolved: ResolvedAiTokensOptions): (symbol | typeof WalletService)[] {
-  const tokens: (symbol | typeof WalletService)[] = []
+function buildFeatureExports(resolved: ResolvedAiTokensOptions): (symbol | typeof WalletService | typeof BudgetService)[] {
+  const tokens: (symbol | typeof WalletService | typeof BudgetService)[] = []
   if (resolved.wallets.enabled) tokens.push(BYMAX_AI_TOKENS_WALLET_STORE, WalletService)
-  if (resolved.budgets.enabled) tokens.push(BYMAX_AI_TOKENS_BUDGET_STORE, BYMAX_AI_TOKENS_BUDGET_COUNTER)
+  if (resolved.budgets.enabled) tokens.push(BYMAX_AI_TOKENS_BUDGET_STORE, BYMAX_AI_TOKENS_BUDGET_COUNTER, BudgetService)
   return tokens
 }
 

@@ -10,6 +10,9 @@
  */
 
 import type {
+  BudgetExceededEventData,
+  BudgetProjectedExceededEventData,
+  BudgetThresholdCrossedEventData,
   MeteringScope,
   PriceMissingEventData,
   UsageRecord,
@@ -18,7 +21,7 @@ import type {
   WalletGrantedEventData,
   WalletRef,
 } from '../../shared'
-import type { LedgerAuditHook, MeteringEventHooks, WalletEventHooks } from '../services'
+import type { BudgetEventHooks, LedgerAuditHook, MeteringEventHooks, WalletEventHooks } from '../services'
 import type { EventDispatcher } from './event-dispatcher'
 
 /** Map a wallet owner reference to the metering scope its events carry. */
@@ -71,6 +74,19 @@ export function createWalletEventHooks(dispatcher: EventDispatcher): WalletEvent
       dispatcher.emit('ai_tokens.wallet.granted', ref.tenantId, scopeOfWallet(ref), data),
     depleted: (ref: WalletRef, data: WalletDepletedEventData): Promise<void> =>
       dispatcher.emit('ai_tokens.wallet.depleted', ref.tenantId, scopeOfWallet(ref), data),
+    audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
+  }
+}
+
+/** Build the budget event hooks that fan threshold/exceeded/projection/audit events through the dispatcher. */
+export function createBudgetEventHooks(dispatcher: EventDispatcher): BudgetEventHooks {
+  return {
+    thresholdCrossed: (tenantId: string, scope: MeteringScope, data: BudgetThresholdCrossedEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.threshold_crossed', tenantId, scope, data),
+    exceeded: (tenantId: string, scope: MeteringScope, data: BudgetExceededEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.exceeded', tenantId, scope, data),
+    projectedExceeded: (tenantId: string, scope: MeteringScope, data: BudgetProjectedExceededEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.budget.projected_exceeded', tenantId, scope, data),
     audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
   }
 }
