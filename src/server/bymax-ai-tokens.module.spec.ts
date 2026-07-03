@@ -19,7 +19,7 @@ import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
 import type { IAiTokensStore } from './interfaces'
-import { PricingService } from './services'
+import { LedgerService, MeteringService, PricingService } from './services'
 
 /** A store passing validation for every feature: real pricing, stubbed ledger/wallet/budget. */
 function makeStore(): IAiTokensStore {
@@ -59,6 +59,15 @@ describe('BymaxAiTokensModule', () => {
     expect(() => {
       moduleRef.get(BYMAX_AI_TOKENS_WALLET_STORE)
     }).toThrow()
+  })
+
+  /** The ledger and metering services are provided (wiring the Ledger/Markup/Metering factories). */
+  it('provides the ledger and metering services', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRoot({ store: makeStore(), pricing: { seedFromSnapshot: false } })],
+    }).compile()
+    expect(moduleRef.get(LedgerService)).toBeInstanceOf(LedgerService)
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
   })
 
   /** Enabling wallets and budgets registers their fanned-out store tokens. */
