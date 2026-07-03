@@ -40,6 +40,7 @@ import { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import { TelemetryEmitter } from '../telemetry/otel-emitter'
 import { NO_OP_TELEMETRY } from '../telemetry/no-op-telemetry'
+import { ContentCapture, NO_OP_CONTENT_CAPTURE } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
   isNormalizedUsage,
@@ -63,6 +64,12 @@ export interface RecordInput {
   context: MeteringContext
   /** When the call happened; defaults to now (backfills pass the original time). */
   occurredAt?: Date
+  /**
+   * The ONLY path prompt/completion text enters the library (spec §14.2): masked +
+   * TTL'd into the opt-in content sidecar, dropped entirely when the feature is off.
+   * Never persisted to the ledger, events, telemetry, or logs.
+   */
+  content?: { prompt?: string; completion?: string }
 }
 
 /** Input to {@link MeteringService.estimateCost}. */
@@ -213,6 +220,7 @@ export class MeteringService {
     budgets?: BudgetService | null,
     private readonly now: () => Date = (): Date => new Date(),
     private readonly telemetry: TelemetryEmitter = NO_OP_TELEMETRY,
+    private readonly content: ContentCapture = NO_OP_CONTENT_CAPTURE,
   ) {
     this.wallets = wallets ?? undefined
     this.budgets = budgets ?? undefined
@@ -255,6 +263,7 @@ export class MeteringService {
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
+    await this.captureContent(record.id, context.tenantId, input.content)
     if (enforcing) await this.effects.enforceRecord(record)
     return record
   }
@@ -333,10 +342,11 @@ export class MeteringService {
    * @param hold The hold to settle (revalidated against the store + caller tenant).
    * @param usage The raw provider usage or an already-normalized usage.
    * @param preset The preset normalizing the usage (or provider-reported mode).
+   * @param content Optional prompt/completion text for the sidecar (§14.2) — the ONLY text path.
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` (cross-tenant/missing), `_HOLD_EXPIRED` (reaped), `_HOLD_ALREADY_SETTLED` (released).
    */
-  async capture(hold: Hold, usage: unknown, preset?: ProviderPreset): Promise<UsageRecord> {
+  async capture(hold: Hold, usage: unknown, preset?: ProviderPreset, content?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
     const record = await this.loadHoldRecord(hold)
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const normalized = await this.finalizeCaptureUsage(usage, hold, preset)
@@ -359,6 +369,7 @@ export class MeteringService {
     if (settled === null) return this.settledOrConflict(await this.reload(record.id))
     await this.events.usageRecorded(settled)
     this.telemetry.recordUsage(settled)
+    await this.captureContent(settled.id, settled.tenantId, content)
     await this.effects.settleCapture(settled, reservedBilled, reservedTokens, settled.billedCostNanoUsd, settled.totalTokens)
     return settled
   }
@@ -507,6 +518,12 @@ export class MeteringService {
       if (!isSystemCost) await this.effects.compensateHold(context, delta, ledgerKey)
       throw error
     }
+  }
+
+  /** Forward host-supplied prompt/completion text to the opt-in content sidecar (§14.2). */
+  private captureContent(usageRecordId: string, tenantId: string, content?: { prompt?: string; completion?: string }): Promise<void> {
+    if (content === undefined) return Promise.resolve()
+    return this.content.capture({ usageRecordId, tenantId, prompt: content.prompt, completion: content.completion })
   }
 
   /** Build the {@link Hold} view of a pending (or replayed) ledger record. */

@@ -5,7 +5,8 @@ import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-stor
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import type { ResolvedAiTokensOptions } from '../config'
-import type { Hold, HoldEstimate, ITelemetrySink, ITokenizer, MeteringContext } from '../interfaces'
+import type { Hold, HoldEstimate, IContentStore, ITelemetrySink, ITokenizer, MeteringContext } from '../interfaces'
+import { ContentCapture } from './content-capture'
 import { providerPresets } from '../config/provider-presets'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import { TelemetryEmitter } from '../telemetry/otel-emitter'
@@ -85,6 +86,7 @@ function build(
     ttlSeconds?: number
     clock?: () => Date
     telemetry?: ITelemetrySink
+    content?: IContentStore
   } = {},
 ): Built {
   const now = opts.clock ?? ((): Date => new Date())
@@ -114,7 +116,8 @@ function build(
     audit: jest.fn(() => Promise.resolve()),
   }
   const telemetry = new TelemetryEmitter(opts.telemetry ?? null)
-  const service = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, budgets, now, telemetry)
+  const content = new ContentCapture(opts.content !== undefined ? { enabled: true, store: opts.content, ttlSeconds: 3_600 } : { enabled: false })
+  const service = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, budgets, now, telemetry, content)
   return { service, ledgerStore, pricingStore, walletStore, budgetStore, wallets, budgets, events, now }
 }
 
@@ -1203,6 +1206,40 @@ describe('MeteringService telemetry (§14.1)', () => {
     await grant(built, 100_000_000n)
     await built.service.meter(() => Promise.resolve({ usage: normalized() }), context(), (r) => r.usage)
     expect(sink.recordDuration).toHaveBeenCalled()
+  })
+})
+
+describe('MeteringService content sidecar (§14.2)', () => {
+  /** With content configured, record() forwards masked text to the sidecar and the ledger stays text-free. */
+  it('captures record content into the sidecar', async () => {
+    const puts: { role: string; text: string }[] = []
+    const store: IContentStore = { put: (i) => (puts.push({ role: i.role, text: i.text }), Promise.resolve()), purge: () => Promise.resolve(0) }
+    const built = build({ content: store })
+    await seedGpt5(built.pricingStore)
+    const record = await built.service.record({ usage: normalized(), context: context(), content: { prompt: 'question', completion: 'answer' } })
+    expect(puts).toEqual([{ role: 'prompt', text: 'question' }, { role: 'completion', text: 'answer' }])
+    expect(JSON.stringify(record, (_k: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toContain('question')
+  })
+
+  /** With the sidecar disabled, content is silently dropped and the ledger stays text-free. */
+  it('drops content when the sidecar is disabled', async () => {
+    const built = build()
+    await seedGpt5(built.pricingStore)
+    const record = await built.service.record({ usage: normalized(), context: context(), content: { prompt: 'secret' } })
+    expect(record.status).toBe('posted')
+    expect(JSON.stringify(record, (_k: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toContain('secret')
+  })
+
+  /** capture() forwards content to the sidecar. */
+  it('captures capture content into the sidecar', async () => {
+    const puts: string[] = []
+    const store: IContentStore = { put: (i) => (puts.push(i.role), Promise.resolve()), purge: () => Promise.resolve(0) }
+    const built = build({ content: store, wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    await built.service.capture(hold, normalized(), undefined, { completion: 'streamed reply' })
+    expect(puts).toEqual(['completion'])
   })
 })
 

@@ -81,7 +81,7 @@ The phase order respects the dependency graph (Appendix A): shared types before 
 | 1 | [Foundation + Shared Core + Pricing](./tasks/phase-01-foundation-shared-core-pricing.md) | ✅ Done | 11/11 | MEDIUM | 2026-07-03 |
 | 2 | [Ledger + Markup + Events + Prisma Store](./tasks/phase-02-ledger-markup-events-prisma.md) | ✅ Done | 7/7 | HIGH | 2026-07-03 |
 | 3 | [Wallets + Budgets + Enforcement](./tasks/phase-03-wallets-budgets-enforcement.md) | ✅ Done | 10/10 | HIGH | 2026-07-03 |
-| 4 | [Metering Lifecycle + Streaming + Telemetry + Reporting + E2E](./tasks/phase-04-metering-streaming-telemetry-reporting.md) | 🔄 In Progress | 9/12 | HIGH | 2026-07-03 |
+| 4 | [Metering Lifecycle + Streaming + Telemetry + Reporting + E2E](./tasks/phase-04-metering-streaming-telemetry-reporting.md) | 🔄 In Progress | 10/12 | HIGH | 2026-07-03 |
 | 5 | [Release v0.1.0](./tasks/phase-05-release.md) | 📋 ToDo | 0/7 | LOW | 2026-07-02 |
 | | **Total** | 🔄 **3 / 5 phases** | **28 / 47 sub-steps** | — | — |
 

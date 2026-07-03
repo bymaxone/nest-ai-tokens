@@ -50,6 +50,7 @@ import type {
   IWalletStore,
 } from './interfaces'
 import { TelemetryEmitter } from './telemetry/otel-emitter'
+import { ContentCapture } from './services/content-capture'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, UsageReportService, WalletService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
@@ -123,7 +124,18 @@ function buildCoreProviders(): Provider[] {
         wallets?: WalletService | null,
         budgets?: BudgetService | null,
       ): MeteringService =>
-        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets, undefined, new TelemetryEmitter(telemetrySink)),
+        new MeteringService(
+          ledger,
+          pricing,
+          markup,
+          options,
+          createMeteringEventHooks(dispatcher),
+          wallets,
+          budgets,
+          undefined,
+          new TelemetryEmitter(telemetrySink),
+          new ContentCapture(options.content),
+        ),
       inject: [
         LedgerService,
         PricingService,
