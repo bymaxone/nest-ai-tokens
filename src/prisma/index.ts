@@ -542,6 +542,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return this.notImplemented()
   }
 
+  findBudgetById(): Promise<never> {
+    return this.notImplemented()
+  }
+
   findMatching(): Promise<never> {
     return this.notImplemented()
   }

@@ -34,6 +34,8 @@ export interface IBudgetStore {
   upsert(budget: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget>
   /** Delete a budget. */
   remove(budgetId: string): Promise<void>
+  /** Load one budget by id — the rotateWindow/reconcileWindow paths read it by id (§10.5). */
+  findBudgetById(budgetId: string): Promise<Budget | null>
   /** Every budget matching the scope AND all ancestor scopes (§10.3) for the tenant. */
   findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]>
   /**
