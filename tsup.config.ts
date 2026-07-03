@@ -40,6 +40,13 @@ export default defineConfig([
   { ...base, entry: { 'server/index': 'src/server/index.ts' } },
   { ...base, entry: { 'shared/index': 'src/shared/index.ts' } },
   { ...base, entry: { 'prices/index': 'src/prices/index.ts' } },
-  { ...base, entry: { 'prisma/index': 'src/prisma/index.ts' } },
+  {
+    ...base,
+    entry: { 'prisma/index': 'src/prisma/index.ts' },
+    // Ship the schema fragment + SQL migrations alongside the adapter so hosts can
+    // merge/apply them from `dist/prisma/` (they are data, not bundled code).
+    onSuccess:
+      'cp src/prisma/schema.prisma.fragment dist/prisma/schema.prisma.fragment && cp -R src/prisma/migrations dist/prisma/migrations',
+  },
   { ...base, entry: { 'redis/index': 'src/redis/index.ts' } },
 ])

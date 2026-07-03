@@ -1,0 +1,197 @@
+// @bymax-one/nest-ai-tokens — Prisma schema fragment (spec §15.3).
+//
+// The library owns its tables but not your ORM. The supported merge path is
+// Prisma's MULTI-FILE SCHEMA (requires Prisma >= 6):
+//
+//   1. Copy this file into your host schema folder, e.g.
+//      `prisma/schema/ai-tokens.prisma` (keep your `datasource`/`generator`
+//      blocks in your main `prisma/schema/schema.prisma`).
+//   2. Run `prisma migrate dev` — Prisma diffs these seven models and emits the
+//      migration for you.
+//
+// Hosts that manage SQL by hand instead apply the shipped
+// `migrations/0001_init.sql` (which additionally creates the two PostgreSQL
+// PARTIAL indexes that Prisma cannot express). Library upgrades that change the
+// models ship new incremental SQL files plus a documented fragment diff.
+//
+// All money is `BigInt` nano-USD; every table carries `tenantId`. Table names are
+// snake_case (via `@@map`); columns keep their camelCase field names — the
+// official `PrismaAiTokensStore` adapter references them exactly as written here.
+
+model AiUsageRecord {
+  id                  String    @id @default(uuid())
+  tenantId            String
+  scopeType           String // tenant | team | user | key   (the payer)
+  scopeId             String
+  beneficiaryType     String?
+  beneficiaryId       String?
+  requestedBy         String?
+  provider            String
+  model               String
+  requestedModel      String?
+  operation           String
+  serviceTier         String    @default("standard")
+  feature             String
+  tags                String[]  @default([])
+  inputTokens         Int       @default(0)
+  outputTokens        Int       @default(0)
+  cacheReadTokens     Int       @default(0)
+  cacheWrite5mTokens  Int       @default(0)
+  cacheWrite1hTokens  Int       @default(0)
+  reasoningTokens     Int       @default(0)
+  audioInTokens       Int       @default(0)
+  audioOutTokens      Int       @default(0)
+  imageInTokens       Int       @default(0)
+  imageOutTokens      Int       @default(0)
+  totalTokens         Int
+  extraUnits          Json? // Record<string, number>
+  priceVersionId      String? // no FK by design: records outlive price-row lifecycle; see index below
+  rawCostNanoUsd      BigInt
+  surchargeNanoUsd    BigInt    @default(0)
+  billedCostNanoUsd   BigInt
+  markupMultiplier    Decimal   @db.Decimal(10, 4)
+  currency            String    @default("USD")
+  priceMissing        Boolean   @default(false)
+  status              String    @default("posted") // record() fast path; holds insert 'pending'
+  reversedByRecordId  String?
+  reversesRecordId    String?
+  idempotencyKey      String
+  payloadHash         String
+  correlationId       String?
+  requestId           String?
+  isSystemCost        Boolean   @default(false)
+  systemCostCategory  String?
+  enforced            Boolean   @default(false)
+  prevHash            String?
+  hash                String?
+  occurredAt          DateTime
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, scopeType, scopeId, occurredAt])
+  @@index([tenantId, feature, occurredAt])
+  @@index([tenantId, provider, model])
+  @@index([tenantId, systemCostCategory])
+  @@index([tenantId, beneficiaryType, beneficiaryId])
+  @@index([priceVersionId])
+  @@index([status, createdAt]) // reaper scan; Postgres partial index (WHERE status = 'pending') in the shipped SQL
+  @@map("ai_usage_records")
+}
+
+model AiModelPrice {
+  id                            String    @id @default(uuid())
+  provider                      String
+  model                         String
+  operation                     String
+  serviceTier                   String    @default("standard")
+  inputNanoUsdPerMillion        BigInt    @default(0)
+  outputNanoUsdPerMillion       BigInt    @default(0)
+  cacheReadNanoUsdPerMillion    BigInt    @default(0)
+  cacheWrite5mNanoUsdPerMillion BigInt    @default(0)
+  cacheWrite1hNanoUsdPerMillion BigInt    @default(0)
+  reasoningNanoUsdPerMillion    BigInt    @default(0)
+  audioInNanoUsdPerMillion      BigInt    @default(0)
+  audioOutNanoUsdPerMillion     BigInt    @default(0)
+  imageInNanoUsdPerMillion      BigInt    @default(0)
+  imageOutNanoUsdPerMillion     BigInt    @default(0)
+  tierThresholdTokens           Int?
+  tierInputNanoUsdPerMillion    BigInt?
+  tierOutputNanoUsdPerMillion   BigInt?
+  unitRates                     Json? // Record<string, string> — nano-USD per unit as decimal strings
+  currency                      String    @default("USD")
+  effectiveFrom                 DateTime  @default(now())
+  effectiveTo                   DateTime?
+  source                        String    @default("snapshot")
+
+  @@index([provider, model, operation, serviceTier, effectiveFrom])
+  // Shipped SQL adds: CREATE UNIQUE INDEX ... ON ai_model_prices ("provider", "model", "operation", "serviceTier")
+  //                   WHERE "effectiveTo" IS NULL;   -- exactly one open row per key (seed/upsert race guard)
+  @@map("ai_model_prices")
+}
+
+model AiWallet {
+  id             String   @id @default(uuid())
+  tenantId       String
+  ownerType      String // tenant | team | user
+  ownerId        String
+  balanceNanoUsd BigInt   @default(0) // materialized; source of truth = Σ entries (§9.4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  entries        AiWalletEntry[]
+
+  @@unique([tenantId, ownerType, ownerId])
+  @@map("ai_wallets")
+}
+
+model AiWalletEntry {
+  id                 String    @id @default(uuid())
+  walletId           String
+  type               String // grant | debit | refund | adjustment | expiry
+  amountNanoUsd      BigInt
+  priority           Int       @default(0)
+  effectiveAt        DateTime  @default(now())
+  expiresAt          DateTime?
+  usageRecordId      String?
+  idempotencyKey     String
+  reason             String?
+  createdAt          DateTime  @default(now())
+  wallet             AiWallet  @relation(fields: [walletId], references: [id])
+  allocationsAsDebit AiWalletDebitAllocation[] @relation("debit")
+  allocationsAsGrant AiWalletDebitAllocation[] @relation("grant")
+
+  @@unique([walletId, idempotencyKey])
+  @@index([walletId, effectiveAt])
+  @@index([walletId, type, expiresAt])
+  @@map("ai_wallet_entries")
+}
+
+model AiWalletDebitAllocation {
+  id            String        @id @default(uuid())
+  debitEntryId  String
+  grantEntryId  String
+  amountNanoUsd BigInt
+  debitEntry    AiWalletEntry @relation("debit", fields: [debitEntryId], references: [id])
+  grantEntry    AiWalletEntry @relation("grant", fields: [grantEntryId], references: [id])
+
+  @@index([grantEntryId])
+  @@index([debitEntryId])
+  @@map("ai_wallet_debit_allocations")
+}
+
+model AiBudget {
+  id             String   @id @default(uuid())
+  tenantId       String
+  scopeType      String
+  scopeId        String
+  features       String[] @default([])
+  limitNanoUsd   BigInt?
+  limitTokens    BigInt?
+  limitCount     Int?
+  window         String // day | week | month | total | custom:<seconds>
+  anchorAt       DateTime?
+  expiresAt      DateTime?
+  softThresholds Json // number[]
+  policy         String   @default("block")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  windows        AiBudgetWindow[]
+
+  @@index([tenantId, scopeType, scopeId])
+  @@map("ai_budgets")
+}
+
+model AiBudgetWindow {
+  id           String   @id @default(uuid())
+  budgetId     String
+  windowStart  DateTime
+  spentNanoUsd BigInt   @default(0)
+  spentTokens  BigInt   @default(0) // BigInt: 'total' windows on busy tenants exceed int4
+  spentCount   Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  budget       AiBudget @relation(fields: [budgetId], references: [id])
+
+  @@unique([budgetId, windowStart])
+  @@map("ai_budget_windows")
+}

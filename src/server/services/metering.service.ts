@@ -6,7 +6,7 @@
  * `enforced: false` and emits `ai_tokens.usage.recorded` only — it never touches a
  * wallet, budget, or counter. `enforce: true` needs wallets/budgets and is
  * rejected here. The hold/capture/release/meter/reverse lifecycle and `getStatus`
- * are later-phase surfaces: they are declared so the class matches the spec but
+ * are not yet implemented: they are declared so the class matches the spec but
  * throw `AI_TOKENS_NOT_CONFIGURED` until their features land. No prompt/response
  * text ever reaches the ledger, events, or logs.
  * @layer server
@@ -178,7 +178,7 @@ export class MeteringService {
     const { context } = input
     if (context.enforce === true) {
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        reason: 'enforce requires wallets/budgets (Phase 3)',
+        reason: 'enforce requires the wallets/budgets features, which are not yet available',
       })
     }
     const normalized = this.resolveNormalizedUsage(input)
@@ -259,32 +259,32 @@ export class MeteringService {
     _extract: (result: T) => unknown,
     _estimate?: HoldEstimate,
   ): Promise<MeterResult<T>> {
-    return Promise.reject(this.notConfigured('meter() arrives with the hold lifecycle (Phase 4)'))
+    return Promise.reject(this.notConfigured('meter() requires the hold lifecycle, which is not yet available'))
   }
 
   /** Place an auth-hold (§11.1). Arrives with the hold lifecycle. */
   hold(_context: MeteringContext, _estimate: HoldEstimate): Promise<Hold> {
-    return Promise.reject(this.notConfigured('hold() arrives with the hold lifecycle (Phase 4)'))
+    return Promise.reject(this.notConfigured('hold() requires the hold lifecycle, which is not yet available'))
   }
 
   /** Settle a hold with actuals (§11.1). Arrives with the hold lifecycle. */
   capture(_hold: Hold, _usage: unknown): Promise<UsageRecord> {
-    return Promise.reject(this.notConfigured('capture() arrives with the hold lifecycle (Phase 4)'))
+    return Promise.reject(this.notConfigured('capture() requires the hold lifecycle, which is not yet available'))
   }
 
   /** Void a hold (§11.1). Arrives with the hold lifecycle. */
   release(_hold: Hold, _reason: string): Promise<void> {
-    return Promise.reject(this.notConfigured('release() arrives with the hold lifecycle (Phase 4)'))
+    return Promise.reject(this.notConfigured('release() requires the hold lifecycle, which is not yet available'))
   }
 
   /** Orchestrated compensation (§8.5 step 3). Arrives with wallets/budgets. */
   reverse(_usageRecordId: string, _reason: string): Promise<UsageRecord> {
-    return Promise.reject(this.notConfigured('reverse() arrives with wallets/budgets (Phase 4)'))
+    return Promise.reject(this.notConfigured('reverse() requires the wallet/budget features, which are not yet available'))
   }
 
   /** Combined wallet + budget status (§10.6). Arrives with wallets/budgets. */
   getStatus(_tenantId: string, _scope: MeteringScope): Promise<AccessStatus> {
-    return Promise.reject(this.notConfigured('getStatus() arrives with wallets/budgets (Phase 3)'))
+    return Promise.reject(this.notConfigured('getStatus() requires the wallet/budget features, which are not yet available'))
   }
 
   /** Resolve the normalizer chain and produce the normalized usage. */

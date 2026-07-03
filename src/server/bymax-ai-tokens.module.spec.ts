@@ -25,7 +25,7 @@ import { LedgerService, MeteringService, PricingService } from './services'
 
 /** A store passing validation for every feature: real pricing, stubbed ledger/wallet/budget. */
 function makeStore(): IAiTokensStore {
-  const noop = (): Promise<never> => Promise.reject(new Error('not used in phase 1'))
+  const noop = (): Promise<never> => Promise.reject(new Error('not used in this test'))
   return Object.assign(new InMemoryPricingStore(), {
     append: noop,
     transition: noop,

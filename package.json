@@ -48,6 +48,8 @@
     }
   },
   "scripts": {
+    "prepare": "prisma generate",
+    "db:generate": "prisma generate",
     "build": "pnpm clean && tsup",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",

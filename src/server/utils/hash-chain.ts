@@ -19,7 +19,7 @@
  * @layer server
  */
 
-import type { UsageRecord } from '../../shared'
+import type { NewUsageRecord } from '../../shared'
 import { deriveIdempotencyKey } from '../../shared'
 import { computePayloadHash } from './payload-hash'
 
@@ -29,13 +29,15 @@ export type ChainVerification = { valid: true } | { valid: false; brokenAtRecord
 /**
  * Compute a settled record's position in its tenant's tamper-evident chain:
  * a canonical SHA-256 over the previous hash, the record id, and the record's
- * content hash (§8.6). Pure and deterministic.
+ * content hash (§8.6). Pure and deterministic. Accepts any record carrying its
+ * content plus an `id`, so a store can hash a row before it holds a full
+ * {@link UsageRecord}.
  *
  * @param prevHash The previous settled record's hash, or `null` for the genesis record.
- * @param record The settled record being hashed.
+ * @param record The settled record being hashed (content fields + `id`).
  * @returns The 64-character lowercase hex chain hash.
  */
-export function chainHash(prevHash: string | null, record: UsageRecord): string {
+export function chainHash(prevHash: string | null, record: NewUsageRecord & { id: string }): string {
   return deriveIdempotencyKey({
     prevHash: prevHash ?? '',
     id: record.id,

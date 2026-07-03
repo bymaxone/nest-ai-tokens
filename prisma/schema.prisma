@@ -1,0 +1,15 @@
+// Development-only Prisma schema. It exists solely so `prisma generate` can build
+// the base `@prisma/client` (which the `./prisma` adapter and the Testcontainers
+// e2e suite consume) and is NOT shipped. The library ships its models as
+// `src/prisma/schema.prisma.fragment` for hosts to merge into their own schema;
+// the adapter itself talks to PostgreSQL exclusively through parameterized raw SQL,
+// so it never depends on generated model delegates.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

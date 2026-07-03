@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 👀 Review · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
@@ -46,7 +46,7 @@ Phase 1 delivered the shared core, pricing, and the module skeleton — any prov
 | 2.4 | Markup engine wiring (number \| IMarkupPolicy) | ✅ Done | P0 | S | 1.11 |
 | 2.5 | MeteringService.record() (post-hoc path) + estimateCost() | ✅ Done | P0 | M | 2.1, 2.4 |
 | 2.6 | Typed events (catalog, EventEmitter2 bridge, IEventSink) | ✅ Done | P0 | M | 2.5 |
-| 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | 📋 ToDo | P0 | L | 2.1–2.5 |
+| 2.7 | PrismaAiTokensStore (ledger+pricing) + schema + migrations | ✅ Done | P0 | L | 2.1–2.5 |
 
 ---
 
@@ -537,7 +537,7 @@ Completion Protocol:
 
 ### Task 2.7 — PrismaAiTokensStore (ledger + pricing) + schema + migrations
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 2.1–2.5
@@ -548,11 +548,11 @@ The official adapter's ledger + pricing halves, the full 7-table schema fragment
 
 #### Acceptance criteria
 
-- [ ] Migrations apply cleanly on a fresh Postgres container; both partial indexes verified via `pg_indexes`
-- [ ] `append` + replay + conflict + `transition` race (two connections) behave per spec §15.2 against the real database
-- [ ] `resolveRate`/`upsertPrice` honor the open-row unique index (concurrent upsert test)
-- [ ] Advisory-locked seed: two concurrent seeds → one seed pass
-- [ ] `unitRates` JSON round-trips bigint-as-decimal-string correctly
+- [x] Migrations apply cleanly on a fresh Postgres container; both partial indexes verified via `pg_indexes`
+- [x] `append` + replay + conflict + `transition` race (two connections) behave per spec §15.2 against the real database
+- [x] `resolveRate`/`upsertPrice` honor the open-row unique index (concurrent upsert test)
+- [x] Advisory-locked seed: two concurrent seeds → one seed pass
+- [x] `unitRates` JSON round-trips bigint-as-decimal-string correctly
 
 #### Files to create / modify
 
@@ -644,3 +644,4 @@ row in docs/development_plan.md §1.5 (+§1.4; advance Active phase when ✅). 6
 - 2.4 ✅ 2026-07-03 — Internal `MarkupResolver` (static 4-dp multiplier | `IMarkupPolicy`), per-call validation, bound `applyMarkup` for both rating modes; throwing/invalid policy → `AI_TOKENS_INVALID_CONFIG` (no silent 1.0).
 - 2.5 ✅ 2026-07-03 — `MeteringService.record()` (normalize → rate both modes → markup → append → usage.recorded/price.missing hooks) + pure `estimateCost()`; deferred hold/capture/release/meter/reverse/getStatus throw `AI_TOKENS_NOT_CONFIGURED`, `enforce:true` → `AI_TOKENS_INVALID_CONFIG`; wired Ledger/Markup/Metering into the module.
 - 2.6 ✅ 2026-07-03 — Typed `EventDispatcher` (envelope + unique id), guarded optional `EventEmitter2` bridge (in-process bigints intact) + `IEventSink` (bigints→decimal strings via `toJsonSafe`), both never-throw; wired `record()`/ledger-audit hooks into the module (end-to-end usage.recorded emission test).
+- 2.7 ✅ 2026-07-03 — `PrismaAiTokensStore` (ledger + pricing halves over parameterized raw SQL), 7-table `schema.prisma.fragment` + `0001_init.sql` (both partial indexes), advisory-locked chain append + effective-dated upsert + seed lock; Testcontainers PostgreSQL smoke (8 tests) validates migrations, replay/conflict, transition race, open-row race, seed lock, unitRates round-trip, and the hash chain.
