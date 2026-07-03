@@ -14,6 +14,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
+import { AMOUNT_FIELDS, REVERSAL_LINKAGE_FIELD, SETTLEMENT_FIELDS } from '../../shared'
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
@@ -25,23 +26,13 @@ import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 /** The statuses that contribute to balance/spend sums (§8.3). */
 const BALANCE_STATUSES: readonly UsageStatus[] = ['posted', 'reversed']
 
-/** The amount fields a `posted → reversed` annotation or a `released` void may never patch (§8.5). */
-const AMOUNT_FIELDS: readonly (keyof UsageRecord)[] = [
-  'inputTokens',
-  'outputTokens',
-  'cacheReadTokens',
-  'cacheWrite5mTokens',
-  'cacheWrite1hTokens',
-  'reasoningTokens',
-  'audioInTokens',
-  'audioOutTokens',
-  'imageInTokens',
-  'imageOutTokens',
-  'totalTokens',
-  'rawCostNanoUsd',
-  'surchargeNanoUsd',
-  'billedCostNanoUsd',
-]
+/**
+ * The only patch keys a settlement (`pending → posted`) may set — the settlement
+ * amount/cost columns plus the reversal-linkage field. Sourced from the shared
+ * whitelist so the service layer and the store adapters can never drift; any key
+ * outside it (notably an immutable `id`/`tenantId`/`idempotencyKey`) is rejected.
+ */
+const SETTLEMENT_PATCH_KEYS: ReadonlySet<string> = new Set<string>([...SETTLEMENT_FIELDS, REVERSAL_LINKAGE_FIELD])
 
 /** The token categories summed into a record's `totalTokens`. */
 type TokenCounts = Pick<
@@ -182,10 +173,12 @@ export class LedgerService {
 
   /**
    * Move a record between lifecycle states (§8.3). Only three transitions are
-   * legal — `pending → posted` (settlement, amounts patched), `pending → released`
-   * (void, no amount patch), and `posted → reversed` (annotation with
-   * `reversedByRecordId` only). An illegal `(from, to)` pair or an out-of-contract
-   * patch is a caller bug and throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A legal
+   * legal — `pending → posted` (settlement; only the settlement amount/cost fields
+   * may be patched), `pending → released` (void, no amount patch), and
+   * `posted → reversed` (annotation with `reversedByRecordId` only). An illegal
+   * `(from, to)` pair or an out-of-contract patch — including any attempt to mutate
+   * an immutable field such as `id`/`tenantId`/`idempotencyKey` — is a caller bug
+   * and throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A legal
    * transition whose record is NOT currently in `from` returns `null` — the atomic
    * claim that lets exactly one reaper replica win an expired hold (§8.3).
    *
@@ -275,18 +268,38 @@ export class LedgerService {
 
   /** Enforce the legality table and per-transition patch contract (§8.3/§8.5). */
   private assertLegalTransition(from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): void {
-    if (from === 'pending' && to === 'posted') return
+    if (from === 'pending' && to === 'posted') {
+      this.assertOnlySettlementPatch(patch, `${from} → ${to}`)
+      return
+    }
     if (from === 'pending' && to === 'released') {
       this.assertNoAmountPatch(patch, `${from} → ${to}`)
       return
     }
     if (from === 'posted' && to === 'reversed') {
-      this.assertOnlyKeys(patch, 'reversedByRecordId', `${from} → ${to}`)
+      this.assertOnlyKeys(patch, REVERSAL_LINKAGE_FIELD, `${from} → ${to}`)
       return
     }
     throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
       reason: `illegal transition ${from} → ${to}`,
     })
+  }
+
+  /**
+   * Reject a settlement patch that sets any key outside the append-only
+   * settlement whitelist (§8.3). Store-agnostic: it runs before the store applies
+   * the patch, so even a store that assigns patches broadly can never mutate an
+   * immutable field (`id`, `tenantId`, `idempotencyKey`) on a `pending → posted`.
+   */
+  private assertOnlySettlementPatch(patch: Partial<UsageRecord> | undefined, label: string): void {
+    if (patch === undefined) return
+    for (const key of Object.keys(patch)) {
+      if (!SETTLEMENT_PATCH_KEYS.has(key)) {
+        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
+          reason: `${label} may only patch settlement fields`,
+        })
+      }
+    }
   }
 
   /** Reject a patch that mutates any amount field. */

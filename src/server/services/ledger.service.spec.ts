@@ -241,6 +241,60 @@ describe('LedgerService.transition', () => {
     expect(settled?.billedCostNanoUsd).toBe(42n)
   })
 
+  /** pending → posted with the full settlement whitelist (amounts, pricing, reversal linkage) applies every field. */
+  it('settles with the entire settlement whitelist', async () => {
+    const { service, record } = await appendWith('pending')
+    const settled = await service.transition(record.id, 'pending', 'posted', {
+      inputTokens: 42,
+      billedCostNanoUsd: 99n,
+      priceVersionId: 'pv-settled',
+      priceMissing: false,
+      markupMultiplier: 2,
+      reversedByRecordId: 'rec-link',
+    })
+    expect(settled?.status).toBe('posted')
+    expect(settled?.inputTokens).toBe(42)
+    expect(settled?.billedCostNanoUsd).toBe(99n)
+    expect(settled?.priceVersionId).toBe('pv-settled')
+    expect(settled?.markupMultiplier).toBe(2)
+    expect(settled?.reversedByRecordId).toBe('rec-link')
+  })
+
+  /** pending → posted with no patch is a legal bare settlement. */
+  it('settles a hold with no patch', async () => {
+    const { service, record } = await appendWith('pending')
+    expect((await service.transition(record.id, 'pending', 'posted'))?.status).toBe('posted')
+  })
+
+  /** A settlement patch that mutates an immutable identity field is rejected at the service layer. */
+  it('rejects a settlement patch that mutates the immutable tenantId', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'posted', { tenantId: 'hijacked-tenant' }))
+  })
+
+  /** The immutable idempotencyKey is likewise off-limits to a settlement patch. */
+  it('rejects a settlement patch that mutates the immutable idempotencyKey', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'posted', { idempotencyKey: 'hijacked-key' }))
+  })
+
+  /** The immutable record id is off-limits to a settlement patch. */
+  it('rejects a settlement patch that mutates the immutable id', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'posted', { id: 'hijacked-id' }))
+  })
+
+  /**
+   * The service-layer guard runs BEFORE the store, so a store that applies patches
+   * broadly (the in-memory fake) never mutates the immutable field or the status.
+   */
+  it('leaves the record and its identity intact when an illegal settlement patch is rejected', async () => {
+    const { service, record } = await appendWith('pending')
+    await expectConflict(service.transition(record.id, 'pending', 'posted', { tenantId: 'evil' }))
+    expect(record.tenantId).toBe('tenant-1')
+    expect(record.status).toBe('pending')
+  })
+
   /** pending → released voids the hold. */
   it('voids a hold with no patch', async () => {
     const { service, record } = await appendWith('pending')

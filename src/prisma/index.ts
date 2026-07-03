@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import type { PrismaClient } from '@prisma/client'
+import { REVERSAL_LINKAGE_FIELD, SETTLEMENT_FIELDS } from '../shared'
 import type {
   AiOperation,
   LedgerFilter,
@@ -607,12 +608,12 @@ function priceValues(input: NewPriceVersion, serviceTier: ServiceTier, effective
   ]
 }
 
-/** The amount/cost columns a settlement (`pending → posted`) replaces with actuals. */
-const AMOUNT_COLUMNS = new Set<string>([
-  'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWrite5mTokens', 'cacheWrite1hTokens', 'reasoningTokens',
-  'audioInTokens', 'audioOutTokens', 'imageInTokens', 'imageOutTokens', 'totalTokens', 'rawCostNanoUsd',
-  'surchargeNanoUsd', 'billedCostNanoUsd', 'priceVersionId', 'priceMissing', 'markupMultiplier',
-])
+/**
+ * The amount/cost columns a settlement (`pending → posted`) replaces with actuals.
+ * Sourced from the shared whitelist so this store boundary and the service-layer
+ * transition guard can never drift.
+ */
+const AMOUNT_COLUMNS = new Set<string>(SETTLEMENT_FIELDS)
 
 /**
  * Whether a patch column may be set on a transition FROM `from`. Enforces
@@ -621,7 +622,7 @@ const AMOUNT_COLUMNS = new Set<string>([
  * `reversedByRecordId`. Raw identifiers are whitelisted, guarding against injection.
  */
 function isPatchable(column: string, from: UsageStatus): boolean {
-  if (column === 'reversedByRecordId') return true
+  if (column === REVERSAL_LINKAGE_FIELD) return true
   return from === 'pending' && AMOUNT_COLUMNS.has(column)
 }
 
