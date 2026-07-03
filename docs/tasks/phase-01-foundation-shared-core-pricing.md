@@ -1,6 +1,6 @@
 # Phase 1 — Foundation + Shared Core + Pricing
 
-> **Status**: 🔄 In Progress · **Progress**: 3 / 11 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 4 / 11 tasks · **Last updated**: 2026-07-02
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 2
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: MEDIUM
@@ -43,7 +43,7 @@ The repository is empty (only `docs/`). This phase creates the full scaffold wit
 | 1.1 | Project scaffold + 4 CI workflows (5-subpath build) | ✅ Done | P0 | M | — |
 | 1.2 | Shared catalogs and canonical types | ✅ Done | P0 | M | 1.1 |
 | 1.3 | Money + idempotency utilities (nano-USD, deriveIdempotencyKey) | ✅ Done | P0 | M | 1.2 |
-| 1.4 | Usage normalizers ×9 with reconciliation invariants | 📋 ToDo | P0 | L | 1.2, 1.3 |
+| 1.4 | Usage normalizers ×9 with reconciliation invariants | ✅ Done | P0 | L | 1.2, 1.3 |
 | 1.5 | Pure cost engine (computeCostNanoUsd + applyMarkup) | 📋 ToDo | P0 | L | 1.2 |
 | 1.6 | Price seed dataset (`./prices`) | 📋 ToDo | P0 | M | 1.2 |
 | 1.7 | Error catalog (AiTokensException + maps) | 📋 ToDo | P0 | S | 1.2 |
@@ -347,7 +347,7 @@ Completion Protocol:
 
 ### Task 1.4 — Usage normalizers ×9 with reconciliation invariants
 
-- **Status**: 📋 ToDo
+- **Status**: ✅ Done
 - **Priority**: P0
 - **Size**: L
 - **Depends on**: 1.2, 1.3
@@ -358,11 +358,11 @@ One pure normalizer per provider shape (OpenAI Chat, OpenAI Responses, OpenAI-co
 
 #### Acceptance criteria
 
-- [ ] Each normalizer has fixture tests with realistic payloads (streaming-final and non-streaming where shapes differ)
-- [ ] Property tests assert both spec §5.5 invariants per adapter
-- [ ] Malformed input throws a plain `Error` (server layer wraps later); shared code never imports the exception class
-- [ ] `serviceTier` read from the response where reported (OpenAI `service_tier`, Anthropic `usage.service_tier`)
-- [ ] Unknown fields preserved in `raw`
+- [x] Each normalizer has fixture tests with realistic payloads (streaming-final and non-streaming where shapes differ)
+- [x] Property tests assert both spec §5.5 invariants per adapter
+- [x] Malformed input throws a plain `Error` (server layer wraps later); shared code never imports the exception class
+- [x] `serviceTier` read from the response where reported (OpenAI `service_tier`, Anthropic `usage.service_tier`)
+- [x] Unknown fields preserved in `raw`
 
 #### Files to create / modify
 
@@ -1056,3 +1056,4 @@ the Phase 1 row in docs/development_plan.md §1.5 (+§1.4; set Active phase to P
 - 1.1 ✅ 2026-07-02 — Scaffolded the five-subpath peer-only package (tsup dual-format, 5 tsconfig/jest variants, eslint flat v9, Stryker, brotli size budgets) and the four CI workflows (ci/codeql/scorecard/release); typecheck, lint, build (all 5 subpaths mjs+cjs+d.ts), size, and passWithNoTests all green with `dependencies: {}`.
 - 1.2 ✅ 2026-07-02 — Implemented the full zero-dependency shared surface: 6 as-const catalog constants (+ derived unions) and the canonical types (NormalizedUsage, PriceVersion, UsageRecord, wallet/budget/report/event/error types, plus New* insert aliases and LedgerFilter), all barrel-exported; typecheck, lint, and the src/shared zero-dep grep clean.
 - 1.3 ✅ 2026-07-02 — Added exact nano-USD money utilities (perMillion, floatUsdToNanoUsd round-half-up exact < $1,000, formatNanoUsd bigint presentation) and deriveIdempotencyKey over canonical JSON + a pure sync SHA-256 (no node:crypto); fast-check property suites + FIPS test vectors, 100% coverage on every file.
+- 1.4 ✅ 2026-07-02 — Implemented the nine pure provider normalizers (OpenAI chat/responses/compatible, Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter, Vercel v5+v6) over a shared field-reader helper; OpenAI/OpenRouter/Vercel subtract reasoning, Gemini maps thoughts directly, Anthropic keeps reasoning 0; fast-check tests assert both §5.5 invariants per adapter; 100% coverage, shared bundle 4.2 KB brotli, no provider SDK imports.
