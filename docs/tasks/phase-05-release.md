@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 3 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 4 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -41,7 +41,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 | 5.1 | JSDoc + file-header audit (examples compile) | ✅ Done | P0 | M | 4.12 |
 | 5.2 | README (badges, quick start, provider matrix, positioning) | ✅ Done | P0 | M | 5.1 |
 | 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done | P0 | M | 5.1 |
-| 5.4 | Bundle-size budgets final check | 📋 ToDo | P0 | S | 4.12 |
+| 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
 | 5.5 | Mutation testing release gate (break 95) + docs | 📋 ToDo | P0 | M | 5.1–5.4 |
 | 5.6 | Publish v0.1.0 (prepare; human fires the tag) | 📋 ToDo | P0 | S | 5.5 |
 | 5.7 | nest-ai-tokens-example skeleton | 📋 ToDo | P1 | M | 5.6 |
@@ -246,7 +246,7 @@ Completion Protocol:
 
 ### Task 5.4 — Bundle-size budgets final check
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: S · **Depends on**: 4.12
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: S · **Depends on**: 4.12
 
 #### Description
 
@@ -488,3 +488,4 @@ set Phase 5 ✅ — the PROJECT dashboard reaches 5/5. 5. Update docs/developmen
 - 5.1 ✅ 2026-07-03 — JSDoc audit: check-jsdoc.mjs + 14 class/interface doc fixes + examples.spec-d.ts compilation fixture; docs:check wired to CI
 - 5.2 ✅ 2026-07-03 — README.md with badge block, provider matrix, markup positioning, BigInt note, migration pointer + readme.spec-d.ts fixture
 - 5.3 ✅ 2026-07-03 — SECURITY.md (threat model, admin/data plane, hash-chain, disclosure), CLAUDE.md (critical rules, side-effect matrix), AGENTS.md (architecture deep-dive, port map, DI tokens), CHANGELOG.md (0.1.0 entry), LICENSE (MIT)
+- 5.4 ✅ 2026-07-03 — All five bundles within budget: server 37 KB (< 40 KB), shared 5 KB (< 10 KB), prisma 10 KB (< 15 KB), redis 1.1 KB (< 5 KB), prices 1.3 KB (exempt); sizes recorded in README

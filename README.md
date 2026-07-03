@@ -72,13 +72,13 @@ This library provides all of it in-process:
 
 ### Artifact sizes (brotli)
 
-| Artifact | Brotli size |
-|---|---|
-| server (`@bymax-one/nest-ai-tokens`) | < 40 KB |
-| shared (`@bymax-one/nest-ai-tokens/shared`) | < 10 KB |
-| prisma (`@bymax-one/nest-ai-tokens/prisma`) | < 15 KB |
-| redis (`@bymax-one/nest-ai-tokens/redis`) | < 5 KB |
-| prices (data-only, exempt from budget) | reported only |
+| Artifact | Brotli size | Budget |
+|---|---|---|
+| server (`@bymax-one/nest-ai-tokens`) | 37 KB | < 40 KB |
+| shared (`@bymax-one/nest-ai-tokens/shared`) | 5 KB | < 10 KB |
+| prisma (`@bymax-one/nest-ai-tokens/prisma`) | 10 KB | < 15 KB |
+| redis (`@bymax-one/nest-ai-tokens/redis`) | 1.1 KB | < 5 KB |
+| prices (data-only, exempt from budget) | 1.3 KB | exempt |
 
 ---
 
