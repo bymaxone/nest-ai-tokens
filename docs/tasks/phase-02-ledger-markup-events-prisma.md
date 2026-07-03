@@ -1,6 +1,6 @@
 # Phase 2 — Ledger + Markup + Events + Prisma Store
 
-> **Status**: 👀 Review · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: ✅ Done · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-03
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 3
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: HIGH
