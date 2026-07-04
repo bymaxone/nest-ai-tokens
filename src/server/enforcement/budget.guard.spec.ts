@@ -159,6 +159,19 @@ describe('BudgetGuard', () => {
     await expect(guard.canActivate(executionContext(fixture.plain))).resolves.toBe(true)
   })
 
+  /**
+   * A hard budget with an EMPTY features array applies to every feature (empty = all).
+   * Kills CE→false on the `features.length === 0` operand of `featureMatches`: with it
+   * forced false, an empty-features budget would be treated as non-matching and ignored
+   * instead of blocking, so the guard would wrongly allow the exhausted call.
+   */
+  it('blocks on an exhausted budget with an empty features filter', async () => {
+    const { guard, service } = makeGuard()
+    await service.upsertBudget({ tenantId: TENANT, scope: USER_SCOPE, features: [], limitNanoUsd: 100n, window: 'month' })
+    await service.consume(context(), { nanoUsd: 100n, tokens: 0, count: 0 })
+    await expectRejectCode(guard.canActivate(executionContext(fixture.plain)), 'AI_TOKENS_BUDGET_EXCEEDED')
+  })
+
   /** A budget whose feature filter excludes the request feature is ignored. */
   it('ignores a budget for another feature', async () => {
     const { guard, service } = makeGuard(context({ feature: 'other.feat' }))

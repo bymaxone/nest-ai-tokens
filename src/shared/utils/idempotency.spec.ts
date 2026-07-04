@@ -88,6 +88,40 @@ describe('deriveIdempotencyKey', () => {
     expect(deriveIdempotencyKey(Symbol('x'))).toBe(deriveIdempotencyKey(undefined))
   })
 
+  /** null and undefined both canonicalize to 'null' but must NOT match a real string. */
+  it('distinguishes null from the string null', () => {
+    // CE→false on the null/undefined guard would throw (null falls into the object branch);
+    // this test catches the failure as an unhandled TypeError.
+    expect(() => deriveIdempotencyKey({ v: null })).not.toThrow()
+    // The canonical form of null must differ from the string "null".
+    expect(deriveIdempotencyKey({ v: null })).not.toBe(deriveIdempotencyKey({ v: 'null' }))
+  })
+
+  /** Strings produce distinct hashes from null (kills CE→false on the string/boolean guard). */
+  it('distinguishes a string value from null', () => {
+    expect(deriveIdempotencyKey({ s: 'hello' })).not.toBe(deriveIdempotencyKey({ s: null }))
+    expect(deriveIdempotencyKey({ s: '' })).not.toBe(deriveIdempotencyKey({ s: null }))
+  })
+
+  /**
+   * A boolean value must canonicalize distinctly from null and from the other boolean.
+   * Kills the surviving CE `typeof value === 'boolean' → false` on the string/boolean guard:
+   * dropping the boolean operand makes a boolean fall through to the final `return 'null'`,
+   * so `true`, `false`, and `null` would all collapse to the same canonical form and collide.
+   */
+  it('distinguishes boolean values from null and from each other', () => {
+    expect(deriveIdempotencyKey({ flag: true })).not.toBe(deriveIdempotencyKey({ flag: null }))
+    expect(deriveIdempotencyKey({ flag: true })).not.toBe(deriveIdempotencyKey({ flag: false }))
+  })
+
+  /** Array and object delimiters must be present so items cannot be confused with their joined form. */
+  it('distinguishes multi-element arrays from single concatenated-string elements', () => {
+    // If the comma separator in arrays is dropped, [1, 2] → "12" which could equal [12].
+    expect(deriveIdempotencyKey([1, 2])).not.toBe(deriveIdempotencyKey([12]))
+    // If the comma separator in objects is dropped, { a:1, b:2 } merges into an ambiguous form.
+    expect(deriveIdempotencyKey({ a: 1, b: 2 })).not.toBe(deriveIdempotencyKey({ ab: '12' }))
+  })
+
   /** Shuffling object keys never changes the key, for any generated JSON object. */
   it('is invariant to key order for arbitrary objects', () => {
     fc.assert(

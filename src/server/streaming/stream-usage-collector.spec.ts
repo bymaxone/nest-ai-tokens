@@ -185,4 +185,54 @@ describe('StreamUsageCollector', () => {
     const usage = await collector.finalize()
     expect(usage.outputTokens).toBe(1)
   })
+
+  /**
+   * A textless OpenAI chunk must NOT append anything to the accumulated output. Kills
+   * the L150 ConditionalExpression → true on `if (text !== undefined)`: with the guard
+   * forced true, `outputText += undefined` appends the literal string 'undefined'. The
+   * intentional trailing space on the first chunk makes that a separate token, so the
+   * tokenizer fallback would count 2 instead of 1.
+   */
+  it('does not append output for a textless OpenAI chunk', async () => {
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
+    collector.push({ choices: [{ delta: { content: 'hi ' } }] }) // trailing space is intentional
+    collector.push({ choices: [{}] }) // no delta content → text is undefined
+    const usage = await collector.finalize()
+    expect(collector.usedFallback).toBe(true)
+    expect(usage.outputTokens).toBe(1)
+  })
+
+  /**
+   * A textless Anthropic content_block_delta must NOT append anything to the output.
+   * Kills the L166 ConditionalExpression → true on `if (text !== undefined)`: forcing
+   * the guard true appends the literal 'undefined' via `outputText += undefined`. The
+   * abort (no message_stop) routes through the tokenizer fallback so the accumulated
+   * text is what gets counted — 1 token, not 2.
+   */
+  it('does not append output for a textless Anthropic delta', async () => {
+    const collector = new StreamUsageCollector({ provider: 'anthropic', model: 'claude-x', tokenizer: wordTokenizer })
+    collector.push({ type: 'content_block_delta', delta: { text: 'hi ' } }) // trailing space is intentional
+    collector.push({ type: 'content_block_delta', delta: {} }) // no text → text is undefined
+    const usage = await collector.finalize()
+    expect(collector.usedFallback).toBe(true)
+    expect(usage.outputTokens).toBe(1)
+  })
+
+  /**
+   * Only a `message_stop` event finalizes the Anthropic response. Kills the L170
+   * ConditionalExpression → true on `else if (type === 'message_stop')`: forcing it true
+   * makes any non-terminal event (here a `ping`) synthesize a provider-final response
+   * from the partial state, so finalize() would report the provider counts (input 50,
+   * output 3) with no fallback instead of the tokenizer-counted partial output.
+   */
+  it('does not finalize on a non-message_stop Anthropic event', async () => {
+    const collector = new StreamUsageCollector({ provider: 'anthropic', model: 'claude-x', tokenizer: wordTokenizer })
+    collector.push({ type: 'message_start', message: { model: 'claude-y', usage: { input_tokens: 50, output_tokens: 3 } } })
+    collector.push({ type: 'content_block_delta', delta: { text: 'partial' } })
+    collector.push({ type: 'ping' }) // not message_stop → must not finalize
+    const usage = await collector.finalize()
+    expect(collector.usedFallback).toBe(true)
+    expect(usage.inputTokens).toBe(0)
+    expect(usage.outputTokens).toBe(1)
+  })
 })

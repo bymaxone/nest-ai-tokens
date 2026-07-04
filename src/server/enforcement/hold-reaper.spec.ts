@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import type { NormalizedUsage } from '../../shared'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
@@ -82,6 +83,19 @@ describe('HoldReaper', () => {
     expect(() => build().reaper().onApplicationShutdown()).not.toThrow()
   })
 
+  /**
+   * Shutdown before bootstrap must NOT call clearInterval (the timer is still undefined).
+   * Kills ConditionalExpression→true on the `this.timer !== undefined` guard, which would
+   * unconditionally invoke clearInterval(undefined) even when no interval was ever started.
+   */
+  it('does not call clearInterval when no timer is running', () => {
+    const clearSpy = jest.spyOn(globalThis, 'clearInterval')
+    const before = clearSpy.mock.calls.length
+    build().reaper().onApplicationShutdown()
+    expect(clearSpy.mock.calls.length).toBe(before)
+    clearSpy.mockRestore()
+  })
+
   /** An expired hold is swept once, restoring the wallet; capture afterwards is 410. */
   it('reclaims an expired hold and restores the wallet', async () => {
     const built = build(60)
@@ -111,6 +125,8 @@ describe('HoldReaper', () => {
     const two = new HoldReaper(built.ledger, built.service, built.options, () => later)
     await Promise.all([one.sweep(), two.sweep()])
     expect(restoreSpy).toHaveBeenCalledTimes(1)
+    // The reaper always flags the release as `expired = true` — kills BooleanLiteral→false on the third argument:
+    expect(restoreSpy).toHaveBeenCalledWith(expect.anything(), 'expired', true)
     expect((await wallets.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
 
@@ -141,8 +157,12 @@ describe('HoldReaper', () => {
     await built.service.hold(context({ idempotencyKey: 'b' }), ESTIMATE)
     const later = new Date(built.now().getTime() + 3_600_000)
     jest.spyOn(built.service, 'restoreReleasedHold').mockRejectedValueOnce(new Error('restore down')).mockResolvedValue()
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     const reaper = new HoldReaper(built.ledger, built.service, built.options, () => later)
     await reaper.sweep()
+    // The failed hold was logged — kills BlockStatement→{} which would empty the catch and skip the warning:
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('failed to reap expired hold'))
+    warnSpy.mockRestore()
     // The batch continued: exactly one hold remains released-but-unrestored is acceptable; both were transitioned.
     expect(built.ledgerStore.all().filter((r) => r.status === 'released')).toHaveLength(2)
   })

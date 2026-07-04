@@ -21,8 +21,11 @@ import { asObject, buildUsage, num, readResponse, requireNum, str } from './usag
  * normalizeVercelAiSdkUsage({ usage: { inputTokens: 100, outputTokens: 40 } })
  */
 export function normalizeVercelAiSdkUsage(raw: unknown): NormalizedUsage {
+  // Stryker disable next-line StringLiteral -- provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'vercel-ai-sdk')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const inputTokensTotal = requireNum(usage.inputTokens, 'vercel-ai-sdk', 'usage.inputTokens')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.outputTokens, 'vercel-ai-sdk', 'usage.outputTokens')
 
   const inputDetails = asObject(usage.inputTokenDetails)

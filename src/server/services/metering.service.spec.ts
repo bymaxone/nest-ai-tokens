@@ -1,11 +1,12 @@
 import fc from 'fast-check'
+import { Logger } from '@nestjs/common'
 import type { AiTokensErrorResponse, Budget, NormalizedUsage } from '../../shared'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import type { ResolvedAiTokensOptions } from '../config'
-import type { Hold, HoldEstimate, IContentStore, ITelemetrySink, ITokenizer, MeteringContext } from '../interfaces'
+import type { Hold, HoldEstimate, IContentStore, IMarkupPolicy, ITelemetrySink, ITokenizer, MeteringContext } from '../interfaces'
 import { ContentCapture } from './content-capture'
 import { providerPresets } from '../config/provider-presets'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
@@ -156,6 +157,23 @@ function upsertBudget(built: Built, over: Partial<Budget> = {}): Promise<Budget>
 /** The variant-A estimate for a 1000-in / 500-out gpt-5 chat call. */
 const ESTIMATE_A: HoldEstimate = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 }
 
+/** Build a MeteringService whose markup is a host policy sensitive to the scope id / feature it receives. */
+function buildPolicyService(policy: IMarkupPolicy): { service: MeteringService; pricingStore: InMemoryPricingStore } {
+  const options = {
+    ratingMode: 'rate-table',
+    markup: 1,
+    ledger: { hashChain: false },
+    pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
+  } as ResolvedAiTokensOptions
+  const ledgerStore = new InMemoryLedgerStore()
+  const pricingStore = new InMemoryPricingStore()
+  const ledger = new LedgerService(ledgerStore, options)
+  const pricing = new PricingService(options, pricingStore)
+  const markup = new MarkupResolver({ markup: policy })
+  const service = new MeteringService(ledger, pricing, markup, options)
+  return { service, pricingStore }
+}
+
 describe('MeteringService.record', () => {
   /** Raw usage + preset → a correct posted, observe-only record. */
   it('records raw usage via a preset with markup applied', async () => {
@@ -173,12 +191,18 @@ describe('MeteringService.record', () => {
     expect(built.events.usageRecorded).toHaveBeenCalledWith(record)
   })
 
-  /** An already-normalized usage is accepted with no preset. */
+  /** An already-normalized usage is accepted with no preset; the currency, priceMissing flag, and no-op price-missing hook are pinned. */
   it('accepts an already-normalized usage without a preset', async () => {
     const built = build()
     await seedGpt5(built.pricingStore)
     const record = await built.service.record({ usage: normalized({ serviceTier: 'standard' }), context: context() })
     expect(record.rawCostNanoUsd).toBe(6_250_000n)
+    // A posted record always carries USD (kills the currency StringLiteral mutation).
+    expect(record.currency).toBe('USD')
+    // A found rate-table price sets priceMissing false (kills the BooleanLiteral mutation on the rate-table branch)...
+    expect(record.priceMissing).toBe(false)
+    // ...and MUST NOT fire the price-missing hook (kills the `if (rating.priceMissing)` → true ConditionalExpression mutation).
+    expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
   /** Un-normalizable input is rejected as UNKNOWN_PROVIDER. */
@@ -213,6 +237,14 @@ describe('MeteringService.record', () => {
     expect(codeOf(error)).toBe('AI_TOKENS_UNKNOWN_PROVIDER')
   })
 
+  /** When no tags are provided, the record's tags defaults to [] — kills ArrayDeclaration mutation. */
+  it('defaults tags to an empty array when context has no tags', async () => {
+    const built = build()
+    await seedGpt5(built.pricingStore)
+    const record = await built.service.record({ usage: normalized(), context: context() }) // no tags
+    expect(record.tags).toEqual([])
+  })
+
   /** All attribution fields land on the record. */
   it('persists every attribution field', async () => {
     const built = build()
@@ -235,6 +267,9 @@ describe('MeteringService.record', () => {
     expect(record.extraUnits).toEqual({ web_search_requests: 2 })
     expect(record.isSystemCost).toBe(true)
     expect(record.systemCostCategory).toBe('retry')
+    // A supplied correlationId must land on the record — kills the EqualityOperator (!== → ===) and
+    // ObjectLiteral ({...} → {}) mutations on the correlationId spread, both of which drop it when defined.
+    expect(record.correlationId).toBe('corr-1')
   })
 
   /** A non-strict rate miss records zero cost + priceMissing + fires the hook. */
@@ -254,12 +289,16 @@ describe('MeteringService.record', () => {
 
   /** Provider-reported mode uses the reported cost and applies markup. */
   it('rates in provider-reported mode with markup', async () => {
-    const record = await build({ markup: 4, ratingMode: 'provider-reported' }).service.record({
+    const built = build({ markup: 4, ratingMode: 'provider-reported' })
+    const record = await built.service.record({
       usage: normalized({ provider: 'openrouter', providerReportedCostNanoUsd: 5_000_000n }),
       context: context(),
     })
     expect(record.rawCostNanoUsd).toBe(5_000_000n)
     expect(record.billedCostNanoUsd).toBe(20_000_000n)
+    // Provider-reported rating is never price-missing — kills the BooleanLiteral mutation on that branch.
+    expect(record.priceMissing).toBe(false)
+    expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
   /** Provider-reported mode without a reported cost is malformed. */
@@ -375,6 +414,30 @@ describe('MeteringService.estimateCost', () => {
     const estimate = await build({ strict: false }).service.estimateCost({ provider: 'openai', model: 'unseeded', operation: 'chat', inputTokens: 10, maxOutputTokens: 10 })
     expect(estimate.rawCostNanoUsd).toBe(0n)
   })
+
+  /** With no scope, the neutral ESTIMATE_SCOPE carries an EMPTY id — a markup policy sees `''`, not a placeholder string. */
+  it('resolves markup against the empty neutral scope id when no scope is given', async () => {
+    const seen: string[] = []
+    const policy: IMarkupPolicy = { resolve: (ctx): number => (seen.push(ctx.scope.id), ctx.scope.id === '' ? 2 : 5) }
+    const { service, pricingStore } = buildPolicyService(policy)
+    await seedGpt5(pricingStore)
+    const estimate = await service.estimateCost({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 })
+    // ESTIMATE_SCOPE.id === '' → policy multiplier 2 → 6_250_000 × 2. Mutating '' to any other literal → ×5.
+    expect(seen).toContain('')
+    expect(estimate.billedCostNanoUsd).toBe(12_500_000n)
+  })
+
+  /** A supplied feature reaches the markup policy on the estimate path; omitting the spread would drop it to undefined. */
+  it('forwards a provided feature to the markup policy when estimating', async () => {
+    const seen: (string | undefined)[] = []
+    const policy: IMarkupPolicy = { resolve: (ctx): number => (seen.push(ctx.feature), ctx.feature === 'chat.reply' ? 2 : 5) }
+    const { service, pricingStore } = buildPolicyService(policy)
+    await seedGpt5(pricingStore)
+    const estimate = await service.estimateCost({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500, scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' })
+    // feature 'chat.reply' reaches the policy → ×2 → 12_500_000n. EqualityOperator (=== undefined) or ObjectLiteral ({}) → feature dropped → undefined → ×5.
+    expect(seen).toContain('chat.reply')
+    expect(estimate.billedCostNanoUsd).toBe(12_500_000n)
+  })
 })
 
 describe('MeteringService.hold', () => {
@@ -393,6 +456,9 @@ describe('MeteringService.hold', () => {
     const pending = built.ledgerStore.all()[0]
     expect(pending?.status).toBe('pending')
     expect(pending?.enforced).toBe(true)
+    // A pending hold row is always USD and never price-missing — kills the currency StringLiteral and the priceMissing BooleanLiteral mutations in appendPending.
+    expect(pending?.currency).toBe('USD')
+    expect(pending?.priceMissing).toBe(false)
   })
 
   /** Variant B ({ tokens }) requires a preset and rates against baseModel's input rate. */
@@ -460,8 +526,12 @@ describe('MeteringService.hold', () => {
   it('does not compensate an isSystemCost hold on a failed insert', async () => {
     const built = build({ wallets: true, budgets: true })
     await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
     jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('insert down'))
     await expect(built.service.hold(context({ isSystemCost: true }), ESTIMATE_A)).rejects.toThrow('insert down')
+    // isSystemCost never reserved, so it must not compensate. The `if (!isSystemCost)` guard → true (CE) would
+    // wrongly refund the wallet, inflating the balance above the granted amount.
+    expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
 
   /** A wallet shortfall compensates the budget consumption and throws. */
@@ -577,6 +647,19 @@ describe('MeteringService.capture', () => {
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
   })
 
+  /** A repeat capture short-circuits at the status guard and NEVER reads the second usage (even malformed). */
+  it('returns the settled record on a repeat capture without reading the second usage', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    const first = await built.service.capture(hold, normalized())
+    // With the `status !== 'pending'` guard → false (CE), the repeat would fall through and throw on this malformed usage.
+    const second = await built.service.capture(hold, { not: 'usage' })
+    expect(second.id).toBe(first.id)
+    expect(second.status).toBe('posted')
+  })
+
   /** Capture after release is a 409 conflict. */
   it('rejects capture after release with HOLD_ALREADY_SETTLED', async () => {
     const built = build({ wallets: true })
@@ -586,6 +669,23 @@ describe('MeteringService.capture', () => {
     await built.service.release(hold, 'abort')
     const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
+  })
+
+  /** hold.expiresAt must be createdAt + ttlSeconds × 1000ms (not ÷ 1000ms) — kills ArithmeticOperator × vs ÷ mutation. */
+  it('sets hold expiresAt to ttlSeconds × 1000 ms after creation — not ÷ 1000', async () => {
+    const ttlSeconds = 60
+    const built = build({ wallets: true, ttlSeconds })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const beforeMs = Date.now()
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    const afterMs = Date.now()
+    const expectedMin = beforeMs + ttlSeconds * 1_000
+    const expectedMax = afterMs + ttlSeconds * 1_000
+    // With * mutation: expiresAt ≈ now + 60000ms (≥ 59 s in the future)
+    // With / mutation: expiresAt ≈ now + 0.06ms (far less than 59 s)
+    expect(hold.expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin)
+    expect(hold.expiresAt.getTime()).toBeLessThanOrEqual(expectedMax)
   })
 
   /** Capture of an expired-then-reclaimed hold is a 410. */
@@ -599,6 +699,44 @@ describe('MeteringService.capture', () => {
     await built.service.release(hold, 'expired')
     const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
+  })
+
+  /** A released hold captured WITHIN its TTL is a 409, not a 410 — pins ttlSeconds × 1000 (not ÷ 1000). */
+  it('reports an unexpired released hold as already-settled, not expired', async () => {
+    // Freeze the injected clock an hour ahead of real time so the wallet grant (whose effectiveAt is stamped from
+    // the real clock) is always already-effective — otherwise the hold's conditionalDebit flakes under load.
+    let clock = new Date(Date.now() + 3_600_000)
+    const built = build({ wallets: true, ttlSeconds: 60, clock: () => clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    const record = await built.ledgerStore.findById(hold.id)
+    await built.service.release(hold, 'abort')
+    // Inject a clock 30 s past the record's real createdAt — inside the 60 s TTL. With `× 1000` the hold has NOT
+    // expired (expiry = createdAt + 60_000 ms); a `÷ 1000` mutation collapses the TTL to ~0.06 ms → false expiry.
+    clock = new Date(record!.createdAt.getTime() + 30_000)
+    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
+  })
+
+  /** A reversed hold record is already-settled (409), never routed through the released-branch expiry check. */
+  it('treats a reversed hold record as already-settled rather than expired', async () => {
+    // Freeze the injected clock an hour ahead of real time so the wallet grant (whose effectiveAt is stamped from
+    // the real clock) is always already-effective — otherwise the hold's conditionalDebit flakes under load.
+    let clock = new Date(Date.now() + 3_600_000)
+    const built = build({ wallets: true, ttlSeconds: 60, clock: () => clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    await built.service.capture(hold, normalized())
+    const record = await built.ledgerStore.findById(hold.id)
+    await built.service.reverse(hold.id, 'refund') // posted → reversed
+    // Move the injected clock far past the (real-clock) TTL. A 'released' record would read as expired here;
+    // a 'reversed' one must NOT enter that branch. The `status === 'released'` → true (CE) mutation would
+    // reclassify this as HOLD_EXPIRED.
+    clock = new Date(record!.createdAt.getTime() + 3_600_000)
+    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
   /** A hold from another tenant captured under the caller's tenant is 404. */
@@ -676,7 +814,12 @@ describe('MeteringService.release', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     await built.service.capture(hold, normalized())
+    // The posted-hold branch fires a warn and returns; the `record.status === 'posted'` → false (CE)
+    // mutation would skip that branch (no warn), so we assert the warn is emitted.
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await built.service.release(hold, 'late')
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
     expect(built.events.holdReleased).not.toHaveBeenCalled()
   })
@@ -689,6 +832,32 @@ describe('MeteringService.release', () => {
     const hold = await built.service.hold(context(), ESTIMATE_A)
     const error = await built.service.release({ ...hold, scope: { type: 'user', id: 'other' } }, 'x').catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
+  })
+
+  /** A hold whose scope id matches but whose scope TYPE differs is a 404 — pins the scope-type comparison. */
+  it('rejects a same-id different-type scope hold', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A) // scope { type: 'user', id: 'u1' }
+    // Same id 'u1', different type 'key': sameScope must be false. The `a.type === b.type` → true (CE) mutation
+    // would ignore the type mismatch and let the release proceed instead of throwing.
+    const error = await built.service.release({ ...hold, scope: { type: 'key', id: 'u1' } }, 'x').catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
+  })
+
+  /** A repeat release of an already-released hold does NOT re-issue a ledger transition (the `!== 'pending'` guard returns early). */
+  it('does not re-transition an already-released hold on a repeat release', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    await built.service.release(hold, 'first')
+    const transitionSpy = jest.spyOn(built.ledgerStore, 'transition')
+    // With the `record.status !== 'pending'` guard → false (CE), the second release would fall through and call
+    // transition(pending → released) again on the already-released record.
+    await built.service.release(hold, 'second')
+    expect(transitionSpy).not.toHaveBeenCalled()
   })
 })
 
@@ -711,6 +880,8 @@ describe('MeteringService.meter', () => {
     const boom = new Error('llm failed')
     await expect(built.service.meter(() => Promise.reject(boom), context(), (r: { usage: unknown }) => r.usage, ESTIMATE_A)).rejects.toBe(boom)
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
+    // The release carries the fixed 'metered function threw' reason — kills the StringLiteral → "" mutation.
+    expect(built.events.holdReleased).toHaveBeenCalledWith(expect.anything(), 'metered function threw', false)
   })
 
   /** A capture failure releases the hold and rethrows (no stranded reservation). */
@@ -721,6 +892,8 @@ describe('MeteringService.meter', () => {
     const error = await built.service.meter(() => Promise.resolve({ not: 'usable' }), context(), (r) => r, ESTIMATE_A).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
+    // The cleanup release carries the fixed 'capture failed' reason — kills the StringLiteral → "" mutation.
+    expect(built.events.holdReleased).toHaveBeenCalledWith(expect.anything(), 'capture failed', false)
   })
 
   /** A release failure during capture cleanup is swallowed; the original error propagates. */
@@ -829,6 +1002,74 @@ describe('MeteringService.getStatus', () => {
     const built = build({ wallets: true })
     const status = await built.service.getStatus('tenant-1', { type: 'key', id: 'k1' })
     expect(status.wallet).toBeUndefined()
+  })
+
+  /** With remaining overdraft the wallet is not blocked — kills balance+overdraft vs balance-overdraft ArithOp mutation. */
+  it('allows access when balance is zero but overdraft is available', async () => {
+    const built = build({ wallets: true, overdraft: 5_000_000n })
+    // Grant exactly what we spend so balance = 0 after debit, but overdraft = 5M still available.
+    await grant(built, 10_000_000n)
+    await built.wallets!.debit({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, {
+      amountNanoUsd: 10_000_000n,
+      idempotencyKey: 'spend-all',
+      reason: 'deplete-grant',
+    })
+    const status = await built.service.getStatus('tenant-1', { type: 'user', id: 'u1' })
+    // balance = 0, overdraftRemaining = 5M; balance + overdraftRemaining = 5M > 0 → not blocked.
+    // With the - mutation: 0 - 5M = -5M <= 0 → wrongly blocked.
+    expect(status.hasAccess).toBe(true)
+    expect(status.wallet?.balanceNanoUsd).toBe(0n)
+    expect(status.wallet?.overdraftRemainingNanoUsd).toBe(5_000_000n)
+  })
+
+  /** budgets.some (not .every) is used — blocks when ONE budget exhausted out of two. */
+  it('blocks when at least one hard budget is exhausted even if another has headroom', async () => {
+    const built = build({ wallets: true, budgets: true })
+    await grant(built, 100_000_000n)
+    await seedGpt5(built.pricingStore)
+    // First budget: count limit 1 (will be exhausted after one record)
+    await built.budgets!.upsertBudget({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, window: 'month', limitCount: 1 })
+    // Second budget: very high cost limit (still has headroom)
+    await built.budgets!.upsertBudget({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, window: 'month', limitNanoUsd: 1_000_000_000_000n })
+    await built.service.record({ usage: normalized(), context: context({ enforce: true }) })
+    const status = await built.service.getStatus('tenant-1', { type: 'user', id: 'u1' })
+    // some(): true because first budget is exhausted; every() would be false (second still has headroom)
+    expect(status.hasAccess).toBe(false)
+    expect(status.blockedBy).toBe('budget')
+  })
+
+  /** An EXHAUSTED soft (allow) budget never hard-blocks — the `policy !== 'block'` early return must stand. */
+  it('does not block on an exhausted soft budget', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { policy: 'allow', limitCount: 1 })
+    await built.service.record({ usage: normalized(), context: context({ enforce: true }) }) // spent.count → 1 (== limit)
+    const status = await built.service.getStatus('tenant-1', { type: 'user', id: 'u1' })
+    // Original: `policy !== 'block'` → return false (allow never hard-blocks). CE → false skips it and, seeing
+    // spent.count 1 >= limit 1, would wrongly report a hard block.
+    expect(status.hasAccess).toBe(true)
+  })
+
+  /** A block budget with TOKEN headroom is not hard-exhausted — pins the `spent.tokens >= limit.tokens` check. */
+  it('does not hard-block a block budget that still has token headroom', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitTokens: 100_000 })
+    await built.service.record({ usage: normalized(), context: context({ enforce: true }) }) // 1500 tokens ≪ 100_000
+    const status = await built.service.getStatus('tenant-1', { type: 'user', id: 'u1' })
+    // Original: 1500 >= 100_000 is false → not exhausted. The token-clause → true (CE) would wrongly hard-block.
+    expect(status.hasAccess).toBe(true)
+  })
+
+  /** A block budget with COUNT headroom is not hard-exhausted — pins the `spent.count >= limit.count` check. */
+  it('does not hard-block a block budget that still has count headroom', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitCount: 100 })
+    await built.service.record({ usage: normalized(), context: context({ enforce: true }) }) // count 1 ≪ 100
+    const status = await built.service.getStatus('tenant-1', { type: 'user', id: 'u1' })
+    // Original: 1 >= 100 is false → not exhausted. The count-clause → true (CE) would wrongly hard-block.
+    expect(status.hasAccess).toBe(true)
   })
 })
 
@@ -1185,6 +1426,37 @@ describe('MeteringService.capture — streaming collector', () => {
     expect(record.inputTokens).toBe(800)
     expect(record.outputTokens).toBe(400)
   })
+
+  /** A NON-fallback stream that reports zero prompt tokens keeps input at 0 — the estimate fallback must NOT trigger. */
+  it('keeps zero input tokens when a non-fallback stream reports zero prompt tokens', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A) // estimatedTokens 1500
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
+    collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 0, completion_tokens: 400 } })
+    const record = await built.service.capture(hold, collector)
+    // usedFallback is false, so `usedFallback && inputTokens === 0` is false. The LogicalOperator (&& → ||) and the
+    // `usedFallback` → true (CE) mutations would flip the guard and overwrite input with the 1500-token estimate.
+    expect(record.inputTokens).toBe(0)
+    expect(record.outputTokens).toBe(400)
+  })
+
+  /** A fallback stream that DID count prompt tokens keeps that count — the estimate must not override a non-zero input. */
+  it('keeps the fallback prompt-token count over the hold estimate when input tokens are non-zero', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A) // estimatedTokens 1500
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
+    collector.setPromptTokens(700)
+    collector.push({ choices: [{ delta: { content: 'one two three' } }] })
+    const record = await built.service.capture(hold, collector, providerPresets.openaiChat)
+    // usedFallback is true but finalized.inputTokens is 700 (≠ 0), so the guard stays false. The `inputTokens === 0`
+    // → true (CE) mutation would overwrite the real 700 count with the 1500-token estimate.
+    expect(record.inputTokens).toBe(700)
+    expect(record.outputTokens).toBe(3)
+  })
 })
 
 describe('MeteringService telemetry (§14.1)', () => {
@@ -1216,6 +1488,11 @@ describe('MeteringService telemetry (§14.1)', () => {
     await grant(built, 100_000_000n)
     await built.service.meter(() => Promise.resolve({ usage: normalized() }), context(), (r) => r.usage, ESTIMATE_A)
     expect(sink.recordDuration).toHaveBeenCalledWith(expect.objectContaining({ 'gen_ai.operation.name': 'chat' }), expect.any(Number))
+    // duration = now() - startedAt: the real clock gives a small positive value (~1ms).
+    // The ArithmeticOperator mutation (now() + startedAt) would produce ≈ 3.5×10¹² — far above 1000.
+    const [[, duration]] = (sink.recordDuration as jest.Mock<unknown[], unknown[]>).mock.calls as [[unknown, number]]
+    expect(duration).toBeGreaterThanOrEqual(0)
+    expect(duration).toBeLessThan(1_000)
   })
 
   /** meter() without an estimate still records duration. */
@@ -1225,7 +1502,10 @@ describe('MeteringService telemetry (§14.1)', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     await built.service.meter(() => Promise.resolve({ usage: normalized() }), context(), (r) => r.usage)
-    expect(sink.recordDuration).toHaveBeenCalled()
+    // The ArithmeticOperator mutation (now() + startedAt) would produce ≈ 3.5×10¹² — far above 1000.
+    const [[, duration]] = (sink.recordDuration as jest.Mock<unknown[], unknown[]>).mock.calls as [[unknown, number]]
+    expect(duration).toBeGreaterThanOrEqual(0)
+    expect(duration).toBeLessThan(1_000)
   })
 })
 

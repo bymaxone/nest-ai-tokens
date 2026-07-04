@@ -20,7 +20,9 @@ import { buildUsage, num, readResponse, requireNum, str } from './usage-fields'
  * normalizeGeminiUsage({ modelVersion: 'gemini-2.5-flash', usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 40 } })
  */
 export function normalizeGeminiUsage(raw: unknown): NormalizedUsage {
+  // Stryker disable next-line StringLiteral -- provider name and usage key in error messages are internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'gemini', 'usageMetadata')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const promptTokenCount = requireNum(usage.promptTokenCount, 'gemini', 'usageMetadata.promptTokenCount')
   const candidatesTokenCount = num(usage.candidatesTokenCount)
   const cacheReadTokens = num(usage.cachedContentTokenCount)

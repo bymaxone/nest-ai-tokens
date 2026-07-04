@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 4 / 7 tasks · **Last updated**: 2026-07-03
+> **Status**: 🔄 In Progress · **Progress**: 5 / 7 tasks · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -42,7 +42,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 | 5.2 | README (badges, quick start, provider matrix, positioning) | ✅ Done | P0 | M | 5.1 |
 | 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done | P0 | M | 5.1 |
 | 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
-| 5.5 | Mutation testing release gate (break 95) + docs | 📋 ToDo | P0 | M | 5.1–5.4 |
+| 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
 | 5.6 | Publish v0.1.0 (prepare; human fires the tag) | 📋 ToDo | P0 | S | 5.5 |
 | 5.7 | nest-ai-tokens-example skeleton | 📋 ToDo | P1 | M | 5.6 |
 
@@ -301,7 +301,7 @@ Completion Protocol:
 
 ### Task 5.5 — Mutation testing release gate
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 5.1–5.4
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 5.1–5.4
 
 #### Description
 
@@ -309,8 +309,8 @@ Full Stryker run — high 100 / low 95 / **break 95** — plus `docs/mutation_te
 
 #### Acceptance criteria
 
-- [ ] Score ≥ 95%; surviving equivalent mutants documented with `// Stryker disable next-line` + justification
-- [ ] `docs/mutation_testing_plan.md` + `docs/mutation_testing_results.md` committed
+- [x] Score ≥ 95%; surviving equivalent mutants documented with `// Stryker disable next-line` + justification — **100.00%, 0 survivors** (all killed or justified-equivalent)
+- [x] `docs/mutation_testing_plan.md` + `docs/mutation_testing_results.md` committed
 
 #### Agent prompt
 

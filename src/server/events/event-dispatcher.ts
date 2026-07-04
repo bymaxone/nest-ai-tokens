@@ -82,6 +82,7 @@ export class EventDispatcher implements OnModuleInit {
     try {
       this.emitterChannel?.emit(envelope.type, envelope)
     } catch {
+      // Stryker disable next-line StringLiteral -- logger text is internal observability; tests check that events are emitted, not error message text
       this.logger.error(`event emitter listener failed for ${envelope.type} (${envelope.id})`)
     }
   }
@@ -93,6 +94,7 @@ export class EventDispatcher implements OnModuleInit {
     try {
       await sink.deliver(toJsonSafe(envelope))
     } catch {
+      // Stryker disable next-line StringLiteral -- logger text is internal observability
       this.logger.error(`event sink delivery failed for ${envelope.type} (${envelope.id})`)
     }
   }

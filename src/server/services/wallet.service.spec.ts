@@ -157,6 +157,25 @@ describe('WalletService', () => {
     expect(event.balanceNanoUsd).toBe(0n)
   })
 
+  /** A partial debit leaving a positive balance does NOT emit depleted — kills CE→true on the whole guard condition. */
+  it('does not emit depleted when the balance remains positive', async () => {
+    const { service, depleted } = makeService()
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g1', reason: 'seed' })
+    await service.debit(REF, { amountNanoUsd: 40n, idempotencyKey: 'd1', reason: 'partial' })
+    expect(depleted).toHaveLength(0)
+    expect((await service.getBalance(REF)).nanoUsd).toBe(60n)
+  })
+
+  /** A debit leaving exactly balance=0 DOES emit depleted — kills EQ mutation (<= → <). */
+  it('emits depleted when the balance lands exactly at zero', async () => {
+    const { service, depleted } = makeService()
+    await service.grant(REF, { amountNanoUsd: 50n, idempotencyKey: 'g1', reason: 'seed' })
+    await service.debit(REF, { amountNanoUsd: 50n, idempotencyKey: 'd1', reason: 'drain-exact' })
+    expect(depleted).toHaveLength(1)
+    const event = depleted[0] as { balanceNanoUsd: bigint }
+    expect(event.balanceNanoUsd).toBe(0n)
+  })
+
   /** A debit beyond the balance (no overdraft) throws insufficient credits. */
   it('throws insufficient credits past the balance', async () => {
     const { service } = makeService()
@@ -185,6 +204,8 @@ describe('WalletService', () => {
     await service.debit(REF, { amountNanoUsd: 40n, usageRecordId: 'ur1', idempotencyKey: 'd1' })
     const refund = await service.refund(REF, { amountNanoUsd: 40n, usageRecordId: 'ur1', idempotencyKey: 'r1', reason: 'refund' })
     expect(refund.type).toBe('refund')
+    // Kills CE→false and EqualityOperator on the usageRecordId conditional spread:
+    expect(refund.usageRecordId).toBe('ur1')
     expect((await service.getBalance(REF)).nanoUsd).toBe(100n)
   })
 
@@ -278,6 +299,17 @@ describe('WalletService', () => {
     await expectRejectCode(service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }), 'AI_TOKENS_STORE_ERROR')
   })
 
+  /**
+   * A store that throws `null` must be caught as STORE_ERROR — not a TypeError.
+   * Kills LogicalOperator (||→&&) and CE→false on `error === null` in isWalletMissing:
+   * without the null guard, `null.isWalletMissing` throws a TypeError which is NOT caught
+   * and leaks as an unhandled rejection, not a typed AiTokensException.
+   */
+  it('maps a null store throw to a store error', async () => {
+    const service = new WalletService(throwingStore('appendEntry', null), OPTIONS)
+    await expectRejectCode(service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }), 'AI_TOKENS_STORE_ERROR')
+  })
+
   /** A store that already throws an AiTokensException passes it through unchanged. */
   it('passes a store AiTokensException through', async () => {
     const thrown = new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, {})
@@ -308,6 +340,8 @@ describe('WalletService.settleAdjustment (capture ±delta, §11.2)', () => {
     await service.grant(REF, { amountNanoUsd: 1_000n, idempotencyKey: 'g1', reason: 'seed' })
     const entry = await service.settleAdjustment(REF, { amountNanoUsd: 500n, usageRecordId: 'rec-1', idempotencyKey: 'capture:rec-1', reason: 'refund' })
     expect(entry.type).toBe('adjustment')
+    // Kills CE→false and EqualityOperator on the usageRecordId conditional spread:
+    expect(entry.usageRecordId).toBe('rec-1')
     expect((await service.getBalance(REF)).nanoUsd).toBe(1_500n)
   })
 

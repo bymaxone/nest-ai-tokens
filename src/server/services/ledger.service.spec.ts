@@ -65,6 +65,29 @@ describe('LedgerService.append', () => {
     expect(store.all()).toHaveLength(1)
   })
 
+  /** totalTokens is the exact sum of all 10 token categories — kills every ArithmeticOperator mutation on the sumTokens formula. */
+  it('sums all 10 token categories into totalTokens', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const record = await service.append(
+      makeInput({
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheReadTokens: 10,
+        cacheWrite5mTokens: 20,
+        cacheWrite1hTokens: 30,
+        reasoningTokens: 40,
+        audioInTokens: 50,
+        audioOutTokens: 60,
+        imageInTokens: 70,
+        imageOutTokens: 80,
+      }),
+      'sum-key',
+    )
+    // 100+200+10+20+30+40+50+60+70+80 = 660
+    expect(record.totalTokens).toBe(660)
+  })
+
   /** A replay with the same key and same payload returns the identical record. */
   it('returns the identical record on a matching replay and writes nothing', async () => {
     const store = new InMemoryLedgerStore()
@@ -435,6 +458,34 @@ describe('LedgerService.reverse', () => {
     const annotated = await service.findByIdempotencyKey('tenant-1', 'orig-key')
     expect(annotated?.status).toBe('reversed')
     expect(annotated?.reversedByRecordId).toBe(compensating.id)
+  })
+
+  /** The compensating record negates all non-zero token categories — kills UnaryOperator mutations on each negation. */
+  it('negates all non-zero token categories in the compensating record', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(
+      makeInput({
+        cacheReadTokens: 10,
+        cacheWrite5mTokens: 20,
+        cacheWrite1hTokens: 30,
+        reasoningTokens: 40,
+        audioInTokens: 50,
+        audioOutTokens: 60,
+        imageInTokens: 70,
+        imageOutTokens: 80,
+      }),
+      'tok-neg-key',
+    )
+    const compensating = await service.reverse(original.id, 'negate-test')
+    expect(compensating.cacheReadTokens).toBe(-10)
+    expect(compensating.cacheWrite5mTokens).toBe(-20)
+    expect(compensating.cacheWrite1hTokens).toBe(-30)
+    expect(compensating.reasoningTokens).toBe(-40)
+    expect(compensating.audioInTokens).toBe(-50)
+    expect(compensating.audioOutTokens).toBe(-60)
+    expect(compensating.imageInTokens).toBe(-70)
+    expect(compensating.imageOutTokens).toBe(-80)
   })
 
   /** After a reversal, sumCost nets to zero across the pair. */

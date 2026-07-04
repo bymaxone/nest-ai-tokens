@@ -15,10 +15,13 @@ import type { ProviderPreset, ScopeType } from '../../shared'
 import type { HoldEstimate } from '../interfaces'
 
 /** Reflector key for {@link Meter} metadata. */
+// Stryker disable next-line StringLiteral -- metadata key is used symmetrically (SetMetadata + getAllAndOverride); any unique string is equivalent
 export const METER_METADATA = 'bymax:ai-tokens:meter'
 /** Reflector key for {@link RequireBudget} metadata. */
+// Stryker disable next-line StringLiteral -- metadata key is used symmetrically
 export const REQUIRE_BUDGET_METADATA = 'bymax:ai-tokens:require-budget'
 /** Reflector key for {@link AiFeature} metadata. */
+// Stryker disable next-line StringLiteral -- metadata key is used symmetrically
 export const AI_FEATURE_METADATA = 'bymax:ai-tokens:ai-feature'
 
 /** `@Meter` configuration — consumed by the `MeteringInterceptor`. */

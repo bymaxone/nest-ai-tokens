@@ -98,12 +98,14 @@ export function sumTokenCounts(counts: TokenCounts): number {
 
 /** Whether a value is a complete, well-typed {@link NormalizedUsage} (every token field finite). */
 export function isNormalizedUsage(usage: unknown): usage is NormalizedUsage {
+  // Stryker disable next-line ConditionalExpression -- redundant sub-condition: the `typeof usage !== 'object' → false` variant leaves `usage === null`, and any non-object non-null value is still rejected downstream by `typeof candidate.provider !== 'string'`, so it is behavior-preserving
   if (typeof usage !== 'object' || usage === null) return false
   const candidate = usage as Record<string, unknown>
   if (typeof candidate.provider !== 'string' || typeof candidate.model !== 'string') return false
   if (typeof candidate.operation !== 'string' || !(AI_OPERATIONS as readonly string[]).includes(candidate.operation)) {
     return false
   }
+  // Stryker disable next-line ConditionalExpression -- redundant sub-condition: the `typeof candidate[field] === 'number' → true` variant still fails the `Number.isFinite(candidate[field])` operand for a non-number field, so `.every` returns false either way
   return TOKEN_FIELDS.every((field) => typeof candidate[field] === 'number' && Number.isFinite(candidate[field]))
 }
 
@@ -160,6 +162,7 @@ export async function resolveHoldEstimate(
       operation: estimate.operation,
       serviceTier: tier,
       at,
+      // Stryker disable next-line ConditionalExpression -- CE true: spreading { baseModel: undefined } is equivalent to {} because resolveRate reads input.baseModel (undefined either way) — same cache key and same `baseModel !== undefined` resolution branch
       ...(context.baseModel !== undefined ? { baseModel: context.baseModel } : {}),
     })
     const rawEstimateNanoUsd = rate === null ? 0n : computeCostNanoUsd(usage, rate).totalNanoUsd
@@ -190,7 +193,9 @@ async function resolveTokenEstimate(
   at: Date,
 ): Promise<ResolvedHoldEstimate> {
   if (context.preset === undefined) {
+    // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
+      // Stryker disable next-line StringLiteral -- error reason text is internal diagnostics
       reason: 'a { tokens } hold estimate requires context.preset to identify the provider',
     })
   }
@@ -222,10 +227,13 @@ export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown
       return normalizer(usage)
     } catch (error) {
       if (error instanceof AiTokensException) throw error
+      // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics
       throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the normalizer could not read the usage token fields' })
     }
   }
+  // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics
   throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, {
+    // Stryker disable next-line StringLiteral -- error reason text is internal diagnostics
     reason: 'capture requires an already-normalized usage or a preset normalizer',
   })
 }

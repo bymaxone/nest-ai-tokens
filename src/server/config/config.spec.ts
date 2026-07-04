@@ -172,12 +172,25 @@ describe('validateOptions', () => {
     expect(() => validateOptions(opts({ budgets: { alertThresholds: [0.8, 1.0] } }))).not.toThrow()
   })
 
+  /** A null store (JS caller omitting the field) is rejected — the guard covers both undefined and null. */
+  it('rejects a null store', () => {
+    const exception = caught(() => validateOptions({ store: null as unknown as IAiTokensStore }))
+    expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
   /** Non-positive hold TTL or reaper interval is rejected. */
   it('rejects non-positive hold timings', () => {
     expect(codeOf(caught(() => validateOptions(opts({ holds: { ttlSeconds: 0 } }))))).toBe(
       'AI_TOKENS_INVALID_CONFIG',
     )
     expect(codeOf(caught(() => validateOptions(opts({ holds: { reaperIntervalSeconds: -1 } }))))).toBe(
+      'AI_TOKENS_INVALID_CONFIG',
+    )
+  })
+
+  /** Zero reaperIntervalSeconds is rejected (boundary: the condition is <= 0, not < 0). */
+  it('rejects reaperIntervalSeconds of exactly 0', () => {
+    expect(codeOf(caught(() => validateOptions(opts({ holds: { reaperIntervalSeconds: 0 } }))))).toBe(
       'AI_TOKENS_INVALID_CONFIG',
     )
   })

@@ -66,6 +66,32 @@ describe('windowStartFor / resetsAtFor', () => {
     expect(windowStartFor(jun15, d('2026-06-10T00:00:00.000Z'))).toEqual(d('2026-05-15T00:00:00.000Z'))
   })
 
+  /**
+   * A monthly anchor whose window rolls into the NEXT calendar year exercises both
+   * the year-carry term `+ Math.floor(targetIndex / 12)` (addMonthsClamped) and the
+   * `* 12` year-weighting in monthsBetween. A Nov 15 2026 anchor queried in Jan 2027
+   * spans a non-zero year delta AND a non-zero month delta, so any arithmetic-operator
+   * mutation on those terms (e.g. `+`→`-`, `* 12`→`/ 12`) moves the located window off
+   * the expected 2027-01-15 / reset 2027-02-15 pair.
+   */
+  it('rolls a monthly anchor across a year boundary', () => {
+    const nov15 = budget('month', { anchorAt: d('2026-11-15T00:00:00.000Z') })
+    expect(windowStartFor(nov15, d('2027-01-20T00:00:00.000Z'))).toEqual(d('2027-01-15T00:00:00.000Z'))
+    expect(resetsAtFor(nov15, d('2027-01-15T00:00:00.000Z'))).toEqual(d('2027-02-15T00:00:00.000Z'))
+  })
+
+  /**
+   * An unanchored calendar 'day' window must snap to UTC midnight regardless of the
+   * budget's createdAt time-of-day. If the `budget.window === 'day'` branch is skipped
+   * it would fall through to the createdAt-epoch-aligned path and inherit the 08:30
+   * offset (yielding 2026-06-15T08:30) — so a non-midnight createdAt pins the calendar
+   * day branch to 2026-06-15T00:00.
+   */
+  it('anchors an unanchored day window to UTC midnight independent of createdAt', () => {
+    const dayBudget = budget('day', { createdAt: d('2026-06-01T08:30:00.000Z') })
+    expect(windowStartFor(dayBudget, d('2026-06-15T13:45:00.000Z'))).toEqual(d('2026-06-15T00:00:00.000Z'))
+  })
+
   /** Anchored day/week windows repeat every fixed period from the anchor instant. */
   it('anchors day/week windows to the anchor instant', () => {
     const day = budget('day', { anchorAt: d('2026-06-10T08:00:00.000Z') })
