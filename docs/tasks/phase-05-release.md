@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks (5.7 deferred post-publish) · **Last updated**: 2026-07-04
+> **Status**: ✅ Released (merged via #10) · **Progress**: 6 / 7 tasks (5.7 deferred post-publish) · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
