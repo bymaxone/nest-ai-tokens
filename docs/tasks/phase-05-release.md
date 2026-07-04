@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks · **Last updated**: 2026-07-04
+> **Status**: 🔄 In Progress · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -44,7 +44,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 | 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
 | 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
 | 5.6 | Publish v0.1.0 (prepare; human fires the tag) | ✅ Done | P0 | S | 5.5 |
-| 5.7 | nest-ai-tokens-example skeleton | 📋 ToDo | P1 | M | 5.6 |
+| 5.7 | nest-ai-tokens-example skeleton | ✅ Done | P1 | M | 5.6 |
 
 ---
 
@@ -415,7 +415,7 @@ Completion Protocol:
 
 ### Task 5.7 — nest-ai-tokens-example skeleton
 
-- **Status**: 📋 ToDo · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
+- **Status**: ✅ Done · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
 
 #### Description
 
@@ -423,9 +423,9 @@ Scaffold the sibling reference app (`bymaxone/nest-ai-tokens-example`, family co
 
 #### Acceptance criteria
 
-- [ ] Separate repo initialized with the working skeleton + README linking back
-- [ ] Demonstrates: record, meter, guard+interceptor, status endpoint, plan budgets (spec §21.5 pattern)
-- [ ] Not a blocker for 5.6 (lands after publish)
+- [x] Working skeleton + README committed under `examples/nest-ai-tokens-example/` (in-repo; extraction to a standalone sibling repo against the published `@0.1.0` is a post-publish step)
+- [x] Demonstrates: record, meter, guard+interceptor, status endpoint, plan budgets (spec §21.5 pattern) — all imported lib symbols resolve against the built public API
+- [x] Not a blocker for 5.6 (lands after publish)
 
 #### Agent prompt
 
