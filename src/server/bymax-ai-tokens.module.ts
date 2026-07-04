@@ -239,6 +239,7 @@ async function safeResolve(load: Promise<BymaxAiTokensModuleOptions>): Promise<R
     return applyDefaults(raw)
   } catch (error) {
     if (error instanceof AiTokensException) throw error
+    // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the async options factory rejected or produced invalid options' })
   }
 }
@@ -257,6 +258,7 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
   }
   const factoryToken = descriptor.useClass ?? descriptor.useExisting
   if (factoryToken === undefined) {
+    // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'forRootAsync requires useFactory, useClass, or useExisting' })
   }
   const optionsProvider: Provider = {
@@ -267,6 +269,11 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
   return descriptor.useClass !== undefined ? [optionsProvider, { provide: descriptor.useClass, useClass: descriptor.useClass }] : [optionsProvider]
 }
 
+/**
+ * The root NestJS dynamic module for `@bymax-one/nest-ai-tokens`. Register once
+ * at application root with `forRoot()` or `forRootAsync()`. Exports the metering,
+ * pricing, ledger, wallet, budget, report services and the enforcement primitives.
+ */
 @Global()
 @Module({})
 export class BymaxAiTokensModule {

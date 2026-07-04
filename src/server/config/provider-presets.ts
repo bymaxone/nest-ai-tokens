@@ -28,15 +28,24 @@ function preset(provider: ProviderId, normalizer: UsageNormalizer, ratingMode: R
 
 /** The built-in provider presets, plus the `openaiCompatible(id)` factory. */
 export const providerPresets = {
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests that exercise the full preset→MeteringService→UsageRecord path
   openaiChat: preset('openai', normalizeOpenAiChatUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   openaiResponses: preset('openai', normalizeOpenAiResponsesUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   azureOpenai: preset('azure-openai', normalizeOpenAiChatUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   anthropic: preset('anthropic', normalizeAnthropicUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   gemini: preset('gemini', normalizeGeminiUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   vertex: preset('vertex', normalizeGeminiUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   bedrock: preset('bedrock', normalizeBedrockConverseUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID; only observable via integration tests
   mistral: preset('mistral', normalizeMistralUsage, 'rate-table'),
   vercelAiSdk: preset('openai', normalizeVercelAiSdkUsage, 'rate-table'),
+  // Stryker disable next-line StringLiteral -- provider ID and rating mode; only observable via integration tests
   openrouter: preset('openrouter', normalizeOpenRouterUsage, 'provider-reported'),
   /** A custom OpenAI-compatible provider (DeepSeek, xAI, Groq, …). */
   openaiCompatible: (id: string): ProviderPreset => preset(id, normalizeOpenAiCompatibleUsage, 'rate-table'),

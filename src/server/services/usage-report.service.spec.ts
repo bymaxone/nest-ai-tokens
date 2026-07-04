@@ -1,5 +1,6 @@
 import type { Readable } from 'node:stream'
 import type { AiTokensErrorResponse, UsageSummary } from '../../shared'
+import type { ReportGroupBy } from '../interfaces'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import type { ILedgerStore } from '../interfaces'
@@ -173,11 +174,14 @@ describe('UsageReportService.summarize', () => {
     expect(summary?.cacheSavingsNanoUsd).toBe(1_125_000_000n)
   })
 
-  /** A record with a null priceVersionId contributes zero cache savings. */
+  /** A record with a null priceVersionId contributes zero cache savings, even when a price exists. */
   it('contributes zero savings for a price-missing record', async () => {
     const built = build()
+    // Seed a real price so resolveRate returns non-null (ensures CE→false would produce non-zero savings):
+    await seedPrice(built.pricingStore)
     await built.ledger.append(appendInput({ priceVersionId: null, cacheReadTokens: 1_000_000, priceMissing: true }), 'a')
     const [summary] = await built.service.summarize({ ...FILTER, groupBy: [] })
+    // Must be 0n because priceVersionId is null — kills CE→false on `priceVersionId === null`:
     expect(summary?.cacheSavingsNanoUsd).toBe(0n)
   })
 
@@ -253,6 +257,24 @@ describe('UsageReportService.summarize', () => {
     expect(summary?.billedCostNanoUsd).toBe(3_000_000n)
   })
 
+  /**
+   * All three accumulated fields (totalTokens, rawCostNanoUsd, surchargeNanoUsd) use +=
+   * not -=. With two different-sized records, each should ACCUMULATE (not cancel/reverse).
+   * Kills AssignmentOperator mutation (-= instead of +=) on the accumulate loop.
+   */
+  it('accumulates totalTokens, rawCostNanoUsd, and surchargeNanoUsd across records', async () => {
+    const built = build({ maxExportRows: 2 })
+    // inputTokens: 100 → totalTokens = 100; rawCostNanoUsd: 5_000n, surchargeNanoUsd: 500n
+    await built.ledger.append(appendInput({ inputTokens: 100, outputTokens: 0, rawCostNanoUsd: 5_000n, surchargeNanoUsd: 500n }), 'a')
+    // inputTokens: 200 → totalTokens = 200; rawCostNanoUsd: 10_000n, surchargeNanoUsd: 1_000n
+    await built.ledger.append(appendInput({ inputTokens: 200, outputTokens: 0, rawCostNanoUsd: 10_000n, surchargeNanoUsd: 1_000n }), 'b')
+    const [summary] = await built.service.summarize({ ...FILTER, groupBy: [] })
+    // With -= mutation: 100-200=-100, 5000-10000=-5000, 500-1000=-500 (wrong negative values).
+    expect(summary?.totalTokens).toBe(300)
+    expect(summary?.rawCostNanoUsd).toBe(15_000n)
+    expect(summary?.surchargeNanoUsd).toBe(1_500n)
+  })
+
   /** A store implementing summarize is delegated to directly. */
   it('delegates to a store summarize implementation', async () => {
     const canned: UsageSummary[] = [{ group: { model: 'gpt-5' }, records: 9, totalTokens: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, reasoning: 0, audioIn: 0, audioOut: 0, imageIn: 0, imageOut: 0 }, rawCostNanoUsd: 0n, surchargeNanoUsd: 0n, billedCostNanoUsd: 0n, cacheSavingsNanoUsd: 0n }]
@@ -277,6 +299,29 @@ describe('UsageReportService.export', () => {
     expect(built.audits[0]?.details).toEqual(expect.objectContaining({ action: 'export', format: 'csv' }))
   })
 
+  /** The CSV header lists every §13.2 column name in exact declaration order — kills all StringLiteral mutations in baseCells keys. */
+  it('emits all §13.2 columns in declaration order', async () => {
+    const built = build()
+    await built.ledger.append(appendInput(), 'a')
+    const csv = await collect(await built.service.export(FILTER, 'csv'))
+    const headers = csv.trim().split('\n')[0]!.split(',')
+    expect(headers).toEqual([
+      'tenantId', 'scopeType', 'scopeId',
+      'beneficiaryType', 'beneficiaryId', 'requestedBy',
+      'feature', 'tags',
+      'provider', 'model', 'requestedModel',
+      'operation', 'serviceTier',
+      'inputTokens', 'outputTokens', 'cacheReadTokens',
+      'cacheWrite5mTokens', 'cacheWrite1hTokens', 'reasoningTokens',
+      'audioInTokens', 'audioOutTokens', 'imageInTokens', 'imageOutTokens',
+      'totalTokens', 'extraUnits',
+      'rawCostNanoUsd', 'surchargeNanoUsd', 'billedCostNanoUsd',
+      'markupMultiplier', 'currency', 'priceMissing',
+      'occurredAt', 'idempotencyKey', 'correlationId', 'requestId',
+      'isSystemCost', 'systemCostCategory', 'enforced', 'status',
+    ])
+  })
+
   /** Every optional record field renders in the export row. */
   it('renders all optional record fields', async () => {
     const built = build()
@@ -290,6 +335,29 @@ describe('UsageReportService.export', () => {
     expect(row.correlationId).toBe('corr-1')
     expect(row.requestId).toBe('req-1')
     expect(row.systemCostCategory).toBe('cat')
+  })
+
+  /**
+   * Absent optional string fields (beneficiaryType, beneficiaryId, requestedBy, requestedModel,
+   * correlationId, requestId, systemCostCategory) render as empty string in the export.
+   * Kills StringLiteral mutations that change the `''` fallback to "Stryker was here!".
+   * Also kills SL on extraUnits '' sentinel (when extraUnits is undefined → renders '').
+   */
+  it('renders absent optional fields as empty string', async () => {
+    const built = build()
+    // appendInput defaults: no beneficiary, no requestedBy/requestedModel/correlationId/requestId/systemCostCategory/extraUnits
+    // (Omit optional fields entirely — exactOptionalPropertyTypes disallows passing `undefined`)
+    await built.ledger.append(appendInput(), 'a')
+    const ndjson = (await collect(await built.service.export(FILTER, 'json'))).trim().split('\n')
+    const row = JSON.parse(ndjson[0]!) as Record<string, string>
+    expect(row.beneficiaryType).toBe('')
+    expect(row.beneficiaryId).toBe('')
+    expect(row.requestedBy).toBe('')
+    expect(row.requestedModel).toBe('')
+    expect(row.correlationId).toBe('')
+    expect(row.requestId).toBe('')
+    expect(row.systemCostCategory).toBe('')
+    expect(row.extraUnits).toBe('')
   })
 
   /** JSON export is line-delimited with decimal-string bigints. */
@@ -311,6 +379,20 @@ describe('UsageReportService.export', () => {
     expect(csv).toContain('"a,b"')
   })
 
+  /**
+   * A cell containing a double-quote is RFC-4180-escaped by doubling the embedded quote
+   * (a"b → "a""b"). Kills the StringLiteral mutation that replaces the `'""'` escape
+   * replacement with `''` (which would delete embedded quotes, corrupting the CSV).
+   */
+  it('escapes embedded double-quotes by doubling them', async () => {
+    const built = build()
+    await built.ledger.append(appendInput({ tags: ['a"b'] }), 'a')
+    const csv = await collect(await built.service.export(FILTER, 'csv'))
+    // Original: a"b → "a""b"; mutant ('' replacement): a"b → "ab" (quote deleted, no doubling).
+    expect(csv).toContain('a""b')
+    expect(csv).not.toContain('"ab"')
+  })
+
   /** An export exceeding maxExportRows throws. */
   it('enforces maxExportRows', async () => {
     const built = build({ maxExportRows: 1 })
@@ -325,11 +407,39 @@ describe('UsageReportService.export', () => {
     const built = build({ currency: 'BRL', fx: () => 5_000_000_000n })
     await built.ledger.append(appendInput(), 'a')
     const csv = (await collect(await built.service.export(FILTER, 'csv'))).trim().split('\n')
+    // All four fx header names must appear in the CSV header (kills SL mutations on each name in headers()):
     expect(csv[0]).toContain('billedCostConverted')
     expect(csv[0]).toContain('presentationCurrency')
+    expect(csv[0]).toContain('rawCostConverted')
+    expect(csv[0]).toContain('surchargeConverted')
     // 6_250_000 × 5_000_000_000 / 1_000_000_000 = 31_250_000
     expect(csv[1]).toContain('31250000')
     expect(csv[1]).toContain('BRL')
+  })
+
+  /** FX conversion: (nanoUsd × rate) ÷ NANO_PER_USD — exact value, not substring — kills ArithmeticOperator mutations. */
+  it('applies the exact FX formula (multiply then divide)', async () => {
+    const built = build({ currency: 'BRL', fx: () => 5_000_000_000n })
+    await built.ledger.append(appendInput(), 'a')
+    const lines = (await collect(await built.service.export(FILTER, 'json'))).trim().split('\n')
+    const row = JSON.parse(lines[0]!) as Record<string, string>
+    // 6_250_000n × 5_000_000_000n / 1_000_000_000n = 31_250_000 (exact)
+    // Check all four converted JSON keys (kills SL mutations in rowOf — 'presentationCurrency', 'rawCostConverted', 'surchargeConverted', 'billedCostConverted'):
+    expect(row.billedCostConverted).toBe('31250000')
+    expect(row.rawCostConverted).toBe('31250000')
+    expect(row.surchargeConverted).toBe('0')
+    expect(row.presentationCurrency).toBe('BRL')
+  })
+
+  /** A plain cell with no comma, quote, or newline is NOT quoted in CSV — kills the Regex mutation. */
+  it('does not quote plain cells', async () => {
+    const built = build()
+    await built.ledger.append(appendInput({ tags: [] }), 'a')
+    const csv = await collect(await built.service.export(FILTER, 'csv'))
+    const row = csv.trim().split('\n')[1]!
+    // 'tenant-1' has no special chars — must not be wrapped in quotes
+    expect(row).toContain('tenant-1')
+    expect(row).not.toContain('"tenant-1"')
   })
 
   /** A USD currency emits no converted columns. */
@@ -340,9 +450,156 @@ describe('UsageReportService.export', () => {
     expect(csv).not.toContain('billedCostConverted')
   })
 
+  /**
+   * When currency is USD but an fx function is provided, the `&&` condition ensures
+   * we do NOT convert (currency is already USD — no conversion needed).
+   * Kills CE→true on `currency !== 'USD'` and StringLiteral `""` on 'USD':
+   * both would cause FX conversion even for USD, adding unwanted converted columns.
+   */
+  it('omits converted columns for USD even when an fx function is provided', async () => {
+    const built = build({ currency: 'USD', fx: () => 5_000_000_000n })
+    await built.ledger.append(appendInput(), 'a')
+    const csv = await collect(await built.service.export(FILTER, 'csv'))
+    expect(csv).not.toContain('billedCostConverted')
+    expect(csv).not.toContain('presentationCurrency')
+  })
+
+  /**
+   * A non-USD currency WITHOUT an fx function must NOT emit converted columns: the
+   * `converting` flag requires BOTH a non-USD currency AND a defined fx. This kills the
+   * L136 ConditionalExpression `this.options.fx !== undefined → true`, which would set
+   * `converting` true for BRL even with fx undefined, adding the fx header names while
+   * `rowOf` (guarded by `this.options.fx === undefined`) emits no fx values. (The `→ false`
+   * variant is already killed by 'adds fx-converted columns for a non-USD currency'.)
+   */
+  it('omits converted columns for a non-USD currency when no fx function is provided', async () => {
+    const built = build({ currency: 'BRL' }) // non-USD, but no fx supplied
+    await built.ledger.append(appendInput(), 'a')
+    const csv = await collect(await built.service.export(FILTER, 'csv'))
+    expect(csv).not.toContain('billedCostConverted')
+    expect(csv).not.toContain('presentationCurrency')
+  })
+
   /** The default no-op audit hook is used when none is wired. */
   it('runs without an audit hook', async () => {
     const service = new UsageReportService(new InMemoryLedgerStore(), new InMemoryPricingStore(), { currency: 'USD', reporting: { maxExportRows: 10 } })
     await expect(collect(await service.export(FILTER, 'json'))).resolves.toBe('')
+  })
+})
+
+/**
+ * Each optional filter dimension in `toLedgerFilter` is forwarded to the store. These
+ * isolation tests ensure the conditional expression at each dimension is NOT replaced by
+ * `false` (omitting the field) — a mutation that would cause the filter to match all records.
+ */
+describe('UsageReportService filter isolation', () => {
+  const BASE = { tenantId: 'tenant-1', from: FROM, to: TO, groupBy: [] as ReportGroupBy[] }
+
+  /** scope filter narrows by tenant:scope:id. */
+  it('filters by scope', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ scope: { type: 'user', id: 'match' } }), 'a')
+    await ledger.append(appendInput({ scope: { type: 'user', id: 'other' } }), 'b')
+    const [summary] = await service.summarize({ ...BASE, scope: { type: 'user', id: 'match' } })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** beneficiary filter restricts to records with a matching beneficiary. */
+  it('filters by beneficiary', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ beneficiary: { type: 'user', id: 'ben-1' } }), 'a')
+    await ledger.append(appendInput(), 'b')
+    const [summary] = await service.summarize({ ...BASE, beneficiary: { type: 'user', id: 'ben-1' } })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** feature filter matches on exact feature name. */
+  it('filters by feature', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ feature: 'chat.reply' }), 'a')
+    await ledger.append(appendInput({ feature: 'search.query' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, feature: 'chat.reply' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** features array matches records whose feature is in the list. */
+  it('filters by features array', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ feature: 'chat.reply' }), 'a')
+    await ledger.append(appendInput({ feature: 'search.query' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, features: ['chat.reply'] })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** provider filter matches on exact provider id. */
+  it('filters by provider', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ provider: 'openai' }), 'a')
+    await ledger.append(appendInput({ provider: 'anthropic' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, provider: 'openai' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** model filter matches on exact model name. */
+  it('filters by model', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ model: 'gpt-5' }), 'a')
+    await ledger.append(appendInput({ model: 'gpt-4o' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, model: 'gpt-5' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** operation filter matches on exact operation kind. */
+  it('filters by operation', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ operation: 'chat' }), 'a')
+    await ledger.append(appendInput({ operation: 'responses' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, operation: 'chat' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** serviceTier filter matches on exact tier. */
+  it('filters by serviceTier', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ serviceTier: 'standard' }), 'a')
+    await ledger.append(appendInput({ serviceTier: 'batch' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, serviceTier: 'standard' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** tags filter requires the record to carry every listed tag. */
+  it('filters by tags', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ tags: ['team-a'] }), 'a')
+    await ledger.append(appendInput({ tags: ['team-b'] }), 'b')
+    const [summary] = await service.summarize({ ...BASE, tags: ['team-a'] })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** isSystemCost filter restricts to the specified boolean flag. */
+  it('filters by isSystemCost', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ isSystemCost: true }), 'a')
+    await ledger.append(appendInput({ isSystemCost: false }), 'b')
+    const [summary] = await service.summarize({ ...BASE, isSystemCost: true })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** systemCostCategory filter matches on exact category string. */
+  it('filters by systemCostCategory', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ isSystemCost: true, systemCostCategory: 'retry' }), 'a')
+    await ledger.append(appendInput({ isSystemCost: true, systemCostCategory: 'eval' }), 'b')
+    const [summary] = await service.summarize({ ...BASE, systemCostCategory: 'retry' })
+    expect(summary?.records).toBe(1)
+  })
+
+  /** enforcedOnly filter restricts to records where enforced === true. */
+  it('filters by enforcedOnly', async () => {
+    const { service, ledger } = build()
+    await ledger.append(appendInput({ enforced: true }), 'a')
+    await ledger.append(appendInput({ enforced: false }), 'b')
+    const [summary] = await service.summarize({ ...BASE, enforcedOnly: true })
+    expect(summary?.records).toBe(1)
   })
 })

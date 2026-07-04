@@ -12,6 +12,7 @@ const MARKUP_SCALE = 10_000n
 /** Assert the multiplier is finite and strictly positive. */
 function assertValidMultiplier(multiplier: number): void {
   if (!Number.isFinite(multiplier) || multiplier <= 0) {
+    // Stryker disable next-line StringLiteral -- error message text is internal diagnostics; tests check error type (RangeError), not the message
     throw new RangeError(`applyMarkup: multiplier must be finite and > 0, received ${String(multiplier)}`)
   }
 }

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import type {
   AiTokensErrorResponse,
   BudgetExceededEventData,
@@ -166,10 +167,12 @@ describe('BudgetService — CRUD (§10.5)', () => {
     await expectRejectCode(service.upsertBudget(budgetInput({ limitNanoUsd: undefined })), 'AI_TOKENS_INVALID_CONFIG')
   })
 
-  /** A soft threshold outside (0, 1] is rejected. */
+  /** A soft threshold outside (0, 1] is rejected — threshold=0 kills EQ mutation (> 0 → >= 0 would let 0 through). */
   it('rejects an out-of-range soft threshold', async () => {
     const { service } = makeService()
     await expectRejectCode(service.upsertBudget(budgetInput({ softThresholds: [1.5] })), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.upsertBudget(budgetInput({ softThresholds: [0] })), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.upsertBudget(budgetInput({ softThresholds: [-0.1] })), 'AI_TOKENS_INVALID_CONFIG')
   })
 
   /** removeBudget audits. */
@@ -234,6 +237,20 @@ describe('BudgetService — enforcement (§10.7/§10.8)', () => {
     expect(exceeded[0]?.dimension).toBe('cost')
   })
 
+  /**
+   * Consuming exactly AT the limit (spend === limit) is allowed — kills EQ mutation on
+   * `failingDimensionOrNull` (spend > limit → spend >= limit would block at-limit spend).
+   */
+  it('allows a consume that lands exactly at the limit', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n, limitTokens: 50, limitCount: 3 }))
+    await service.consume(context(), delta(100n, 50, 3)) // exactly at all three limits
+    const window = await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'))
+    expect(window?.spentNanoUsd).toBe(100n)
+    expect(window?.spentTokens).toBe(50)
+    expect(window?.spentCount).toBe(3)
+  })
+
   /** A token-exceeded block budget throws 429. */
   it('blocks on the token dimension (429)', async () => {
     const { service } = makeService()
@@ -256,6 +273,18 @@ describe('BudgetService — enforcement (§10.7/§10.8)', () => {
     await service.consume(context({ feature: 'embeddings' }), delta(40n))
     expect(await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'))).toBeNull()
     await service.consume(context({ feature: 'workout.generate' }), delta(40n))
+    expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(40n)
+  })
+
+  /**
+   * An empty features array is a match-all filter — kills the `features.length === 0`
+   * clause of `featureMatches` (forcing it false would fall through to `[].includes(...)`,
+   * which is always false, wrongly excluding every feature from an empty-filter budget).
+   */
+  it('treats an empty features filter as matching every feature', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ features: [] }))
+    await service.consume(context({ feature: 'anything' }), delta(40n))
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(40n)
   })
 
@@ -308,6 +337,19 @@ describe('BudgetService — soft policies (§10.4)', () => {
     expect(exceeded).toHaveLength(0)
   })
 
+  /**
+   * An allow budget whose spend lands EXACTLY at every limit fires no exceeded event —
+   * kills the boundary mutants on `failingDimensionOrNull`: `spend > limit` → `>=` (or a
+   * forced-true condition) would treat at-limit spend on any of the three dimensions as
+   * over-limit and wrongly emit exceeded.
+   */
+  it('does not flag an allow budget whose spend lands exactly at every limit', async () => {
+    const { service, exceeded } = makeService()
+    await service.upsertBudget(budgetInput({ policy: 'allow', limitNanoUsd: 100n, limitTokens: 50, limitCount: 3 }))
+    await service.consume(context(), delta(100n, 50, 3)) // exactly at all three limits — over none
+    expect(exceeded).toHaveLength(0)
+  })
+
   /** A throttle budget invokes the host callback past its limit and allows the call. */
   it('invokes the throttle callback past the limit', async () => {
     const seen: string[] = []
@@ -335,6 +377,19 @@ describe('BudgetService — thresholds & projection (§10.4)', () => {
     await service.consume(context(), delta(19n)) // 0.99, no new threshold
     await service.consume(context(), delta(1n)) // crosses 1.0
     expect(thresholds.map((t) => t.threshold)).toEqual([0.8, 1])
+  })
+
+  /**
+   * Threshold dedupe is per-budget-window, not global — kills the empty-string mutation of
+   * `windowKey`: collapsing every budget's dedupe key to "" would let the first budget's
+   * emitted threshold suppress the second budget crossing the same threshold in one call.
+   */
+  it('dedupes thresholds per budget window, not globally', async () => {
+    const { service, thresholds } = makeService()
+    await service.upsertBudget(budgetInput({ scope: { type: 'tenant', id: TENANT }, limitNanoUsd: 100n, softThresholds: [0.8] }))
+    await service.upsertBudget(budgetInput({ scope: USER_SCOPE, limitNanoUsd: 100n, softThresholds: [0.8] }))
+    await service.consume(context(), delta(80n)) // both budgets cross 0.8 in the same call
+    expect(thresholds).toHaveLength(2) // one per budget; a shared "" key would suppress the second
   })
 
   /** A single delta that leaps past both thresholds emits both, once. */
@@ -388,6 +443,26 @@ describe('BudgetService — thresholds & projection (§10.4)', () => {
     await service.consume(context(), delta(50n))
     expect(projected).toHaveLength(0)
   })
+
+  /** fraction >= 1 (fully used) does not project — kills EQ mutation (fraction > 1 would let fraction=1 through). */
+  it('does not project when fraction is exactly 1', async () => {
+    const { service, projected } = makeService()
+    await service.upsertBudget(budgetInput({ policy: 'allow', limitNanoUsd: 100n, softThresholds: [0.95] }))
+    await service.consume(context(), delta(100n)) // fraction = 1.0 exactly
+    expect(projected).toHaveLength(0)
+  })
+
+  /** A burn rate exactly matching the elapsed fraction projects to windowEnd — does NOT emit (kills EQ >= → >). */
+  it('does not project when projected crossing is exactly at the window end', async () => {
+    // 15 days in, 50% spent → projectedAt = windowStart + 30days = windowEnd exactly.
+    // Original (>=): projectedAt >= windowEnd → returns early (no projection).
+    // Mutation (>):  projectedAt > windowEnd → false → would emit projection.
+    const midMonth = new Date('2026-06-16T00:00:00.000Z')
+    const { service, projected } = makeService({ now: () => midMonth })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n, softThresholds: [0.95] }))
+    await service.consume(context(), delta(50n)) // 50% at 50% of window → projects exactly at reset
+    expect(projected).toHaveLength(0)
+  })
 })
 
 describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
@@ -402,6 +477,30 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     await service.reconcileWindow(budget.id, windowStart)
     const window = await store.getWindow(budget.id, windowStart)
     expect(window?.spentNanoUsd).toBe(55n) // 25 + 30; system cost excluded
+    expect(window?.spentCount).toBe(2)
+    // spentTokens: 100 + 100 = 200 (each usageRecord defaults to totalTokens: 100)
+    expect(window?.spentTokens).toBe(200)
+  })
+
+  /** A second reconcile recomputes the delta correctly (kills ArithmeticOperator + vs - mutations on delta calc). */
+  it('reconcile called twice produces the correct idempotent window — delta must subtract, not add, the prior window', async () => {
+    const { service, store, ledgerStore } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, limitTokens: 10_000 }))
+    const windowStart = new Date('2026-06-01T00:00:00.000Z')
+
+    // First reconcile: one record → window should reflect just that record.
+    await ledgerStore.append(usageRecord({ idempotencyKey: 'a', billedCostNanoUsd: 25n, totalTokens: 100 }), 'ha')
+    await service.reconcileWindow(budget.id, windowStart)
+    expect((await store.getWindow(budget.id, windowStart))?.spentNanoUsd).toBe(25n)
+
+    // Second reconcile: same + one more record → window should reflect both, NOT be inflated.
+    // With the + mutation (computed + current instead of computed - current), the delta would be
+    // 55 + 25 = 80 added to the existing 25 → 105, not the correct 55.
+    await ledgerStore.append(usageRecord({ idempotencyKey: 'b', billedCostNanoUsd: 30n, totalTokens: 200 }), 'hb')
+    await service.reconcileWindow(budget.id, windowStart)
+    const window = await store.getWindow(budget.id, windowStart)
+    expect(window?.spentNanoUsd).toBe(55n)   // 25 + 30 total, not 25 + 80
+    expect(window?.spentTokens).toBe(300)     // 100 + 200 total
     expect(window?.spentCount).toBe(2)
   })
 
@@ -421,6 +520,16 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     await expectRejectCode(service.reconcileWindow('nope', NOW), 'AI_TOKENS_INVALID_CONFIG')
   })
 
+  /** remaining is floored at 0n when an allow-policy budget is over-consumed — kills CE→false on max0. */
+  it('reports remaining as 0 (not negative) when an allow budget is over-consumed', async () => {
+    const { service } = makeService()
+    await service.upsertBudget(budgetInput({ policy: 'allow', limitNanoUsd: 100n, limitTokens: 50 }))
+    await service.consume(context(), delta(120n, 70, 1)) // over all limits
+    const [status] = await service.status(TENANT, USER_SCOPE)
+    expect(status?.remaining.nanoUsd).toBe(0n) // max0(100-120=-20) = 0n, not -20n
+    expect(status?.remaining.tokens).toBe(0)   // max(0, 50-70=-20) = 0
+  })
+
   /** status reports live spend, remaining (limited dims only), and usedFraction. */
   it('reports status across dimensions', async () => {
     const { service } = makeService()
@@ -431,6 +540,20 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     expect(status?.remaining).toEqual({ nanoUsd: 60n, tokens: 800 }) // count unlimited → absent
     expect(status?.usedFraction).toBeCloseTo(0.4) // max(0.4, 0.2)
     expect(status?.resetsAt).toEqual(new Date('2026-07-01T00:00:00.000Z'))
+  })
+
+  /**
+   * The count remaining is `max(0, limit - spent)` — kills the count-dimension mutants on
+   * `remainingSnapshot`: `Math.max` → `Math.min` (would report 0), the `-` → `+` operator
+   * (would report limit + spent), and the `{ count }` object literal → `{}` (would drop the
+   * field entirely).
+   */
+  it('reports the count remaining as limit minus spend', async () => {
+    const { service } = makeService()
+    await service.upsertBudget(budgetInput({ limitNanoUsd: undefined, limitCount: 5 }))
+    await service.consume(context(), delta(0n, 0, 2)) // 2 of 5 used
+    const [status] = await service.status(TENANT, USER_SCOPE)
+    expect(status?.remaining.count).toBe(3) // max(0, 5 - 2)
   })
 
   /** A budget with no limit dimensions reports an empty remaining and zero usedFraction. */
@@ -591,7 +714,42 @@ describe('BudgetService.adjust (capture ±delta, §11.2)', () => {
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(25n)
   })
 
-  /** A counter outage during adjust is logged, never thrown; the DB window still moves. */
+  /**
+   * A negative adjust larger than the counter balance decrements (flooring at zero) rather
+   * than falling through to the unbounded increment — kills the `amount < 0n` guard mutants
+   * (CE→false and empty-block): both would route the negative amount through `incrIfBelow`,
+   * whose additive path (no floor) would leave the counter below zero instead of at zero.
+   */
+  it('decrements the counter on a negative adjust below the balance, flooring at zero', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(10n)) // counter = 10
+    await service.adjust(context(), delta(-15n)) // decr 15 → floors at 0; the incrIfBelow fallthrough would land -5
+    expect(counter.values.get(costKey(budget.id))).toBe(0n)
+  })
+
+  /**
+   * A normal positive adjust whose increment fits under the int64 ceiling returns early and
+   * never resyncs — kills the CE→false mutant on the `incrIfBelow` guard, which would always
+   * fall through to the reset+reseed path even on a successful, non-overflowing increment.
+   */
+  it('does not resync the counter on a positive adjust that fits under the ceiling', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(40n)) // counter = 40
+    await service.adjust(context(), delta(30n)) // incrIfBelow succeeds → must NOT reset the key
+    expect(counter.values.get(costKey(budget.id))).toBe(70n)
+    expect(counter.resetKeys).not.toContain(costKey(budget.id))
+  })
+
+  /**
+   * A counter outage during adjust is logged, never thrown; the DB window still moves.
+   * The DB window moves before the counter, so the `spentNanoUsd` assertion holds under the
+   * empty-catch mutant too — asserting the `logger.warn` fires is what kills the catch-body
+   * BlockStatement mutant (emptying `catch { this.logger.warn(...) }` swallows silently).
+   */
   it('logs a counter failure without throwing', async () => {
     const counter = new FakeCounter()
     const { service, store } = makeService({ options: { counter } })
@@ -599,8 +757,11 @@ describe('BudgetService.adjust (capture ±delta, §11.2)', () => {
     await service.consume(context(), delta(40n))
     counter.failIncr = true
     counter.failDecr = true
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await service.adjust(context(), delta(10n))
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(50n)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to adjust budget counter'))
+    warn.mockRestore()
   })
 
   /** A first-ever adjust (no window row yet) seeds the counter from a zero baseline. */
@@ -741,14 +902,22 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n) // counter rolled back
   })
 
-  /** A block failure rolls back a sibling budget's live counter, best-effort even if decr fails. */
+  /**
+   * A block failure rolls back a sibling budget's live counter, best-effort even if decr fails.
+   * Asserting the `logger.warn` fires kills the catch-body BlockStatement mutant in
+   * `decrCounters` (emptying `catch { this.logger.warn(...) }`): an empty body swallows the
+   * failed rollback silently, which the BUDGET_EXCEEDED assertion alone cannot observe.
+   */
   it('rolls back a sibling counter on a partial multi-budget failure', async () => {
     const counter = new FakeCounter()
     const { service } = makeService({ options: { counter } })
     const wide = await service.upsertBudget(budgetInput({ scope: { type: 'tenant', id: TENANT }, limitNanoUsd: 1_000n }))
     await service.upsertBudget(budgetInput({ scope: USER_SCOPE, limitNanoUsd: 10n }))
     counter.failDecr = true // rollback decr fails → logged, never thrown
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await expectRejectCode(service.consume(context(), delta(50n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to roll back budget counter'))
+    warn.mockRestore()
     void wide
   })
 
@@ -762,7 +931,12 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n)
   })
 
-  /** rotateWindow resets the counter keys for the new window, tolerating a reset failure. */
+  /**
+   * rotateWindow resets the counter keys for the new window, tolerating a reset failure.
+   * Asserting the `logger.warn` fires on the failing reset kills the catch-body BlockStatement
+   * mutant (emptying `catch { this.logger.warn(...) }` — a silent swallow that the resolve
+   * assertion alone cannot observe, since rotateWindow resolves either way).
+   */
   it('resets counter keys on rotation', async () => {
     const counter = new FakeCounter()
     const { service } = makeService({ options: { counter } })
@@ -770,7 +944,25 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     await service.rotateWindow(budget.id, new Date('2026-06-20T00:00:00.000Z'))
     expect(counter.resetKeys.some((key) => key.includes(':cost'))).toBe(true)
     counter.failReset = true
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await expect(service.rotateWindow(budget.id, new Date('2026-06-21T00:00:00.000Z'))).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to reset budget counter for'))
+    warn.mockRestore()
+  })
+
+  /**
+   * A non-zero token delta flows through the token counter — kills the token
+   * counter-dimension mutants: `delta.tokens !== 0` → `=== 0` would skip the (non-zero)
+   * token dimension, and the empty-block mutation would never push it, so the token counter
+   * would stay unset instead of holding the incremented amount.
+   */
+  it('flows the token dimension through the counter', async () => {
+    const counter = new FakeCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n, limitTokens: 100 }))
+    await service.consume(context(), delta(10n, 30)) // non-zero token delta
+    const tokenKey = `ai_tokens:budget:${budget.id}:2026-06-01T00:00:00.000Z:tokens`
+    expect(counter.values.get(tokenKey)).toBe(30n)
   })
 
   /** The count dimension flows through the counter; a zero-delta dimension is skipped. */
@@ -791,6 +983,23 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
     store.forceWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'), { spentNanoUsd: 100n, spentTokens: 0, spentCount: 0 })
     await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+  })
+
+  /**
+   * When the counter fast-path succeeds but the authoritative DB consume then rejects,
+   * the counter must be rolled back — kills BooleanLiteral mutation on `available: true`
+   * (mutation sets available=false so counterAvailable=false → skips decrCounters).
+   */
+  it('rolls back the counter when the database rejects a consume within limits', async () => {
+    const counter = new FakeCounter()
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    // Pre-fill DB window to the limit so the next consume is rejected by the DB
+    store.forceWindow(budget.id, new Date('2026-06-01T00:00:00.000Z'), { spentNanoUsd: 100n, spentTokens: 0, spentCount: 0 })
+    // Counter is still at 0 (counter and DB are now out of sync — the fast path will succeed then DB rejects)
+    await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
+    // The counter fast-path incremented by 1, then the DB rejection triggered a rollback decrement
+    expect(counter.values.get(costKey(budget.id)) ?? 0n).toBe(0n)
   })
 
   /** A total-window budget uses the long counter TTL without error. */

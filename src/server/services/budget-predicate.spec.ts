@@ -96,4 +96,9 @@ describe('recordConsumesBudget (§10.7 predicate)', () => {
     expect(recordConsumesBudget(makeRecord({ occurredAt: END }), makeBudget(), START, END)).toBe(false)
     expect(recordConsumesBudget(makeRecord({ occurredAt: new Date('2030-01-01T00:00:00.000Z') }), makeBudget(), START, null)).toBe(true)
   })
+
+  /** windowStart is inclusive (>=): a record AT the start timestamp is consumed — kills EQ mutation (>= → >). */
+  it('includes a record whose occurredAt equals windowStart', () => {
+    expect(recordConsumesBudget(makeRecord({ occurredAt: START }), makeBudget(), START, END)).toBe(true)
+  })
 })

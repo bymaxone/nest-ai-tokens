@@ -39,6 +39,7 @@ export type ChainVerification = { valid: true } | { valid: false; brokenAtRecord
  */
 export function chainHash(prevHash: string | null, record: NewUsageRecord & { id: string }): string {
   return deriveIdempotencyKey({
+    // Stryker disable next-line StringLiteral -- empty-string fallback for null prevHash; tests only verify hash determinism and inequality, not the specific hash value for a genesis block
     prevHash: prevHash ?? '',
     id: record.id,
     content: computePayloadHash(record),

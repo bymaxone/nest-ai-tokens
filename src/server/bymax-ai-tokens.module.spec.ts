@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Inject, Injectable, Module } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import {
   applyMarkup,
@@ -25,7 +25,8 @@ import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
 import { BudgetGuard } from './enforcement'
-import type { IAiTokensStore } from './interfaces'
+import { HoldReaper } from './enforcement/hold-reaper'
+import type { IAiTokensStore, IBudgetCounterStore } from './interfaces'
 import { BudgetService, LedgerService, MeteringService, PricingService, UsageReportService, WalletService } from './services'
 
 /** A store passing validation for every feature: real pricing, stubbed ledger/wallet/budget. */
@@ -92,6 +93,24 @@ function makeLiveStore(): IAiTokensStore {
   }
 }
 
+/**
+ * A consumer living in a SEPARATE module — it can only resolve these providers if
+ * `BymaxAiTokensModule` (which is `@Global`) actually EXPORTS them. Removing an export
+ * (the `exports` array or a feature-export `if`) makes this module fail to compile.
+ */
+@Injectable()
+class ExportConsumer {
+  constructor(
+    @Inject(MeteringService) readonly metering: MeteringService,
+    @Inject(WalletService) readonly wallet: WalletService,
+    @Inject(BudgetGuard) readonly budgetGuard: BudgetGuard,
+  ) {}
+}
+
+/** A module that imports nothing from the library, relying on its global exports. */
+@Module({ providers: [ExportConsumer] })
+class ExportConsumerModule {}
+
 describe('BymaxAiTokensModule', () => {
   /** A bare store boots the module with PricingService but no wallet/budget ports. */
   it('boots with only a store and gates wallet/budget ports', async () => {
@@ -111,6 +130,44 @@ describe('BymaxAiTokensModule', () => {
     }).compile()
     expect(moduleRef.get(LedgerService)).toBeInstanceOf(LedgerService)
     expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /**
+   * The hold reaper is provided unconditionally (a stranded hold must be reclaimed
+   * even without wallets/budgets). Kills the `useFactory` ArrowFunction→`() => undefined`
+   * mutant: with it the HoldReaper token would resolve to `undefined`, not an instance.
+   */
+  it('provides the hold reaper', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRoot({ store: makeStore(), pricing: { seedFromSnapshot: false } })],
+    }).compile()
+    expect(moduleRef.get(HoldReaper)).toBeInstanceOf(HoldReaper)
+  })
+
+  /**
+   * Cross-module proof of the `exports` array (sync path). A sibling module resolves the
+   * core `MeteringService` plus the wallet/budget feature providers ONLY because they are
+   * exported globally. Kills the `exports` ArrayDeclaration→`[]` mutant and the
+   * `wallets.enabled`/`budgets.enabled` export-gate ConditionalExpression→false mutants:
+   * any of them drops an export and the consumer module fails to compile.
+   */
+  it('exports the core + feature providers for cross-module injection (sync)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRoot({
+          store: makeStore(),
+          wallets: {},
+          budgets: {},
+          scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }),
+          pricing: { seedFromSnapshot: false },
+        }),
+        ExportConsumerModule,
+      ],
+    }).compile()
+    const consumer = moduleRef.get(ExportConsumer)
+    expect(consumer.metering).toBeInstanceOf(MeteringService)
+    expect(consumer.wallet).toBeInstanceOf(WalletService)
+    expect(consumer.budgetGuard).toBeInstanceOf(BudgetGuard)
   })
 
   /**
@@ -412,5 +469,64 @@ describe('BymaxAiTokensModule.forRootAsync', () => {
       }
     })()
     expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /**
+   * The async path fans the single store out to the wallet/budget store tokens and passes
+   * the budget counter through by reference. Kills the store/counter `useFactory`
+   * ArrowFunction→`() => undefined` mutants (each token would resolve to `undefined`) and
+   * the counter LogicalOperator `?? → &&` mutant (`counter && null` would resolve to `null`).
+   */
+  it('fans the async store out to the wallet/budget tokens and passes the counter through', async () => {
+    const store = makeStore()
+    const counter: IBudgetCounterStore = {
+      incrIfBelow: () => Promise.resolve(true),
+      decr: () => Promise.resolve(),
+      reset: () => Promise.resolve(),
+    }
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRootAsync({
+          useFactory: () => ({ store, wallets: {}, budgets: { counter }, scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }), pricing: { seedFromSnapshot: false } }),
+        }),
+      ],
+    }).compile()
+    expect(moduleRef.get(BYMAX_AI_TOKENS_WALLET_STORE)).toBe(store)
+    expect(moduleRef.get(BYMAX_AI_TOKENS_BUDGET_STORE)).toBe(store)
+    expect(moduleRef.get(BYMAX_AI_TOKENS_BUDGET_COUNTER)).toBe(counter)
+  })
+
+  /**
+   * Cross-module proof of the `exports` array (async path). Kills the async `exports`
+   * ArrayDeclaration→`[]` mutant: with an empty export list the sibling consumer module
+   * cannot resolve the globally-exported services and fails to compile.
+   */
+  it('exports the core + feature providers for cross-module injection (async)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRootAsync({
+          useFactory: () => ({ store: makeStore(), wallets: {}, budgets: {}, scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }), pricing: { seedFromSnapshot: false } }),
+        }),
+        ExportConsumerModule,
+      ],
+    }).compile()
+    const consumer = moduleRef.get(ExportConsumer)
+    expect(consumer.metering).toBeInstanceOf(MeteringService)
+    expect(consumer.wallet).toBeInstanceOf(WalletService)
+    expect(consumer.budgetGuard).toBeInstanceOf(BudgetGuard)
+  })
+
+  /**
+   * A typed exception raised by validation (here `AI_TOKENS_FX_REQUIRED` from a non-USD
+   * currency without an fx resolver) must propagate UNCHANGED through `safeResolve`, not be
+   * remapped to the generic INVALID_CONFIG. Kills the `error instanceof AiTokensException`
+   * ConditionalExpression→false mutant, which would wrap it into AI_TOKENS_INVALID_CONFIG.
+   */
+  it('propagates a typed validation error without remapping it', async () => {
+    const boot = Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeStore(), currency: 'EUR', pricing: { seedFromSnapshot: false } }) })],
+    }).compile()
+    const error = await boot.catch((e: unknown) => e)
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_FX_REQUIRED')
   })
 })

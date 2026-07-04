@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import type { ResolvedContentOptions } from '../config'
 import type { IContentStore } from '../interfaces'
 import { ContentCapture } from './content-capture'
@@ -62,7 +63,11 @@ describe('ContentCapture', () => {
 
   /** A store failure is swallowed (logged), never rethrown into the metering path. */
   it('never rethrows a store failure', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
     const store: IContentStore = { put: () => Promise.reject(new Error('sidecar down')), purge: () => Promise.resolve(0) }
     await expect(new ContentCapture({ enabled: true, store, ttlSeconds: 60 }).capture(INPUT)).resolves.toBeUndefined()
+    // The catch block logged the failure — kills BlockStatement→{} which would empty the catch and skip the log:
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('failed to write content sidecar'))
+    errorSpy.mockRestore()
   })
 })

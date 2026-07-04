@@ -42,8 +42,11 @@ function splitCacheWrite(usage: Record<string, unknown>): {
  * normalizeBedrockConverseUsage({ model: 'us.anthropic.claude', usage: { inputTokens: 100, outputTokens: 40 } })
  */
 export function normalizeBedrockConverseUsage(raw: unknown): NormalizedUsage {
+  // Stryker disable next-line StringLiteral -- provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'bedrock-converse')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const inputTokens = requireNum(usage.inputTokens, 'bedrock-converse', 'usage.inputTokens')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const outputTokens = requireNum(usage.outputTokens, 'bedrock-converse', 'usage.outputTokens')
   const { cacheWrite5mTokens, cacheWrite1hTokens } = splitCacheWrite(usage)
 

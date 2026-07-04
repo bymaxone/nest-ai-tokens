@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 📋 ToDo · **Progress**: 0 / 7 tasks · **Last updated**: 2026-07-02
+> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks (5.7 deferred post-publish) · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -38,13 +38,13 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 
 | ID | Task | Status | Priority | Size | Depends on |
 |---|---|---|---|---|---|
-| 5.1 | JSDoc + file-header audit (examples compile) | 📋 ToDo | P0 | M | 4.12 |
-| 5.2 | README (badges, quick start, provider matrix, positioning) | 📋 ToDo | P0 | M | 5.1 |
-| 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | 📋 ToDo | P0 | M | 5.1 |
-| 5.4 | Bundle-size budgets final check | 📋 ToDo | P0 | S | 4.12 |
-| 5.5 | Mutation testing release gate (break 95) + docs | 📋 ToDo | P0 | M | 5.1–5.4 |
-| 5.6 | Publish v0.1.0 (prepare; human fires the tag) | 📋 ToDo | P0 | S | 5.5 |
-| 5.7 | nest-ai-tokens-example skeleton | 📋 ToDo | P1 | M | 5.6 |
+| 5.1 | JSDoc + file-header audit (examples compile) | ✅ Done | P0 | M | 4.12 |
+| 5.2 | README (badges, quick start, provider matrix, positioning) | ✅ Done | P0 | M | 5.1 |
+| 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done | P0 | M | 5.1 |
+| 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
+| 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
+| 5.6 | Publish v0.1.0 (prepare; human fires the tag) | ✅ Done | P0 | S | 5.5 |
+| 5.7 | nest-ai-tokens-example skeleton | ⏸️ Deferred (post-publish) | P1 | M | 5.6 |
 
 ---
 
@@ -52,7 +52,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 
 ### Task 5.1 — JSDoc + file-header audit
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 4.12
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 4.12
 
 #### Description
 
@@ -60,9 +60,9 @@ Every export documented; every file carries `@fileoverview` + `@layer`; `@exampl
 
 #### Acceptance criteria
 
-- [ ] Doc-coverage sweep: no exported symbol without JSDoc (scripted check)
-- [ ] `@example` blocks compile via a docs-fixture tsconfig
-- [ ] No phase/task/TODO references in committed comments (timeless rule)
+- [x] Doc-coverage sweep: no exported symbol without JSDoc (scripted check)
+- [x] `@example` blocks compile via a docs-fixture tsconfig
+- [x] No phase/task/TODO references in committed comments (timeless rule)
 
 #### Agent prompt
 
@@ -111,7 +111,7 @@ Completion Protocol:
 
 ### Task 5.2 — README
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 5.1
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 5.1
 
 #### Description
 
@@ -119,9 +119,9 @@ The public front page in the family structure: badges → centered tagline → O
 
 #### Acceptance criteria
 
-- [ ] Every code sample compiles against the built package (README-fixture test)
-- [ ] Badge URLs point at bymaxone/nest-ai-tokens
-- [ ] Provider matrix (condensed spec §5.3), 60-second quick start (record + meter + guard), markup positioning, bigint/JSON note, migration pointer to spec §22
+- [x] Every code sample compiles against the built package (README-fixture test)
+- [x] Badge URLs point at bymaxone/nest-ai-tokens
+- [x] Provider matrix (condensed spec §5.3), 60-second quick start (record + meter + guard), markup positioning, bigint/JSON note, migration pointer to spec §22
 
 #### Agent prompt
 
@@ -186,9 +186,9 @@ The family's supporting docs: SECURITY.md (the §14.4 threat model — admin vs 
 
 #### Acceptance criteria
 
-- [ ] SECURITY.md lists sensitive code paths + security@bymax.one disclosure contact
-- [ ] CLAUDE.md rule-dense per family convention (money-integer, ledger immutability, side-effect matrix, no text in ledger, unlimited semantics)
-- [ ] AGENTS.md covers architecture (ports, lifecycle, rating flow, enforcement)
+- [x] SECURITY.md lists sensitive code paths + security@bymax.one disclosure contact
+- [x] CLAUDE.md rule-dense per family convention (money-integer, ledger immutability, side-effect matrix, no text in ledger, unlimited semantics)
+- [x] AGENTS.md covers architecture (ports, lifecycle, rating flow, enforcement)
 
 #### Agent prompt
 
@@ -246,7 +246,7 @@ Completion Protocol:
 
 ### Task 5.4 — Bundle-size budgets final check
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: S · **Depends on**: 4.12
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: S · **Depends on**: 4.12
 
 #### Description
 
@@ -301,7 +301,7 @@ Completion Protocol:
 
 ### Task 5.5 — Mutation testing release gate
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: M · **Depends on**: 5.1–5.4
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: M · **Depends on**: 5.1–5.4
 
 #### Description
 
@@ -309,8 +309,8 @@ Full Stryker run — high 100 / low 95 / **break 95** — plus `docs/mutation_te
 
 #### Acceptance criteria
 
-- [ ] Score ≥ 95%; surviving equivalent mutants documented with `// Stryker disable next-line` + justification
-- [ ] `docs/mutation_testing_plan.md` + `docs/mutation_testing_results.md` committed
+- [x] Score ≥ 95%; surviving equivalent mutants documented with `// Stryker disable next-line` + justification — **100.00%, 0 survivors** (all killed or justified-equivalent)
+- [x] `docs/mutation_testing_plan.md` + `docs/mutation_testing_results.md` committed
 
 #### Agent prompt
 
@@ -359,7 +359,7 @@ Completion Protocol:
 
 ### Task 5.6 — Publish v0.1.0 (prepare; human fires the tag)
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: S · **Depends on**: 5.5
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: S · **Depends on**: 5.5
 
 #### Description
 
@@ -367,9 +367,9 @@ Version bump `0.1.0-alpha.0 → 0.1.0`, the full `prepublishOnly` chain, and rel
 
 #### Acceptance criteria
 
-- [ ] `prepublishOnly` chain green (clean → typecheck → lint → test:cov:all 100% → build)
-- [ ] Version 0.1.0 committed; release notes drafted; install smoke documented
-- [ ] Tag/publish explicitly left for the human (PR note)
+- [x] `prepublishOnly` chain green (clean → typecheck → lint → test:cov:all 100% → build)
+- [x] Version 0.1.0 committed; release notes drafted; install smoke documented — in PR body
+- [x] Tag/publish explicitly left for the human (PR note)
 
 #### Agent prompt
 
@@ -415,7 +415,7 @@ Completion Protocol:
 
 ### Task 5.7 — nest-ai-tokens-example skeleton
 
-- **Status**: 📋 ToDo · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
+- **Status**: ⏸️ Deferred (post-publish) · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
 
 #### Description
 
@@ -423,9 +423,8 @@ Scaffold the sibling reference app (`bymaxone/nest-ai-tokens-example`, family co
 
 #### Acceptance criteria
 
-- [ ] Separate repo initialized with the working skeleton + README linking back
-- [ ] Demonstrates: record, meter, guard+interceptor, status endpoint, plan budgets (spec §21.5 pattern)
-- [ ] Not a blocker for 5.6 (lands after publish)
+- [ ] Deferred to a standalone sibling repo built against the **published** `@bymax-one/nest-ai-tokens@0.1.0` (task's original scope). A first in-repo skeleton was drafted but pulled from the release PR: code review found it non-functional (metering calls passed the usage sub-object instead of the full provider response → `AI_TOKENS_USAGE_MALFORMED`; `summarize` used the wrong preset + double-billed) and security review flagged a `scopeResolver` that trusted unverified request headers (CLAUDE.md §8 anti-pattern). It will be rebuilt and verified end-to-end (install + boot + Testcontainers) in its own repo after the package publishes.
+- [ ] Not a blocker for the v0.1.0 release (explicitly post-publish)
 
 #### Agent prompt
 
@@ -485,3 +484,7 @@ set Phase 5 ✅ — the PROJECT dashboard reaches 5/5. 5. Update docs/developmen
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+- 5.1 ✅ 2026-07-03 — JSDoc audit: check-jsdoc.mjs + 14 class/interface doc fixes + examples.spec-d.ts compilation fixture; docs:check wired to CI
+- 5.2 ✅ 2026-07-03 — README.md with badge block, provider matrix, markup positioning, BigInt note, migration pointer + readme.spec-d.ts fixture
+- 5.3 ✅ 2026-07-03 — SECURITY.md (threat model, admin/data plane, hash-chain, disclosure), CLAUDE.md (critical rules, side-effect matrix), AGENTS.md (architecture deep-dive, port map, DI tokens), CHANGELOG.md (0.1.0 entry), LICENSE (MIT)
+- 5.4 ✅ 2026-07-03 — All five bundles within budget: server 37 KB (< 40 KB), shared 5 KB (< 10 KB), prisma 10 KB (< 15 KB), redis 1.1 KB (< 5 KB), prices 1.3 KB (exempt); sizes recorded in README

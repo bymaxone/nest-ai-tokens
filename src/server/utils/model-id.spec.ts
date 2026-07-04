@@ -31,4 +31,21 @@ describe('normalizeModelId', () => {
     expect(normalizeModelId('  GPT-5  ')).toBe('gpt-5')
     expect(normalizeModelId('claude-3-5-sonnet')).toBe('claude-3-5-sonnet')
   })
+
+  /** Only the leading `models/` prefix is stripped — not an embedded occurrence (kills Regex mutation removing the `^` anchor). */
+  it('does not strip models/ when it appears mid-string', () => {
+    expect(normalizeModelId('not-models/foo')).toBe('not-models/foo')
+  })
+
+  /** Only a leading region prefix is stripped — not an embedded `us.` (kills Regex mutation removing the `^` anchor). */
+  it('does not strip a region prefix when it appears mid-string', () => {
+    expect(normalizeModelId('claude.us.model')).toBe('claude.us.model')
+  })
+
+  /** Only a TRAILING date suffix is stripped — a date in the middle is preserved (kills Regex mutation removing the `$` anchor). */
+  it('does not strip a date when it is not at the end', () => {
+    // Date appears before a non-date suffix — original regex anchored at $, mutation removes the anchor.
+    expect(normalizeModelId('gpt-2026-03-14-turbo')).toBe('gpt-2026-03-14-turbo')
+    expect(normalizeModelId('gpt-20260314-turbo')).toBe('gpt-20260314-turbo')
+  })
 })

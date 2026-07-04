@@ -96,6 +96,12 @@ describe('normalizeOpenAiChatUsage', () => {
     expect(() => normalizeOpenAiChatUsage({ model: 'm' })).toThrow(Error)
     expect(() => normalizeOpenAiChatUsage({ usage: { prompt_tokens: 1 } })).toThrow(Error)
   })
+
+  /** When the response carries no model field, model defaults to an empty string (not undefined or a placeholder). */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeOpenAiChatUsage({ usage: { prompt_tokens: 5, completion_tokens: 3 } })
+    expect(usage.model).toBe('')
+  })
 })
 
 describe('normalizeOpenAiResponsesUsage', () => {
@@ -143,6 +149,32 @@ describe('normalizeOpenAiResponsesUsage', () => {
   it('throws on malformed usage', () => {
     expect(() => normalizeOpenAiResponsesUsage({ usage: {} })).toThrow(Error)
   })
+
+  /** Provider is always 'openai' regardless of the raw object content. */
+  it('sets provider to "openai"', () => {
+    const usage = normalizeOpenAiResponsesUsage({ model: 'm', usage: { input_tokens: 10, output_tokens: 5 } })
+    expect(usage.provider).toBe('openai')
+  })
+
+  /** Audio input tokens are SUBTRACTED from the raw total (not added) — a billing correctness invariant. */
+  it('subtracts audio input tokens from inputTokens', () => {
+    const usage = normalizeOpenAiResponsesUsage({
+      usage: {
+        input_tokens: 130,
+        output_tokens: 50,
+        input_tokens_details: { cached_tokens: 20, audio_tokens: 10 },
+      },
+    })
+    // 130 - 20 (cache) - 10 (audio) = 100
+    expect(usage.inputTokens).toBe(100)
+    expect(usage.audioInTokens).toBe(10)
+  })
+
+  /** When the response carries no model field, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeOpenAiResponsesUsage({ usage: { input_tokens: 10, output_tokens: 5 } })
+    expect(usage.model).toBe('')
+  })
 })
 
 describe('normalizeOpenAiCompatibleUsage', () => {
@@ -176,6 +208,26 @@ describe('normalizeOpenAiCompatibleUsage', () => {
   /** Malformed input throws. */
   it('throws on malformed usage', () => {
     expect(() => normalizeOpenAiCompatibleUsage({ usage: { prompt_tokens: 1 } })).toThrow(Error)
+  })
+
+  /** When BOTH root-level and nested cache-hit tokens are present, they are ADDED together (not subtracted). */
+  it('adds root-level and nested cache-hit tokens', () => {
+    const usage = normalizeOpenAiCompatibleUsage({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        prompt_cache_hit_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 15 },
+      },
+    })
+    expect(usage.cacheReadTokens).toBe(35)  // 20 + 15, not 20 - 15
+    expect(usage.inputTokens).toBe(65)       // 100 - 35
+  })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeOpenAiCompatibleUsage({ usage: { prompt_tokens: 5, completion_tokens: 3 } })
+    expect(usage.model).toBe('')
   })
 })
 
@@ -241,6 +293,12 @@ describe('normalizeAnthropicUsage', () => {
   it('throws on malformed usage', () => {
     expect(() => normalizeAnthropicUsage({ usage: { input_tokens: 1 } })).toThrow(Error)
   })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeAnthropicUsage({ usage: { input_tokens: 10, output_tokens: 5 } })
+    expect(usage.model).toBe('')
+  })
 })
 
 describe('normalizeGeminiUsage', () => {
@@ -288,6 +346,15 @@ describe('normalizeGeminiUsage', () => {
   /** Malformed input throws. */
   it('throws on malformed usageMetadata', () => {
     expect(() => normalizeGeminiUsage({ usageMetadata: {} })).toThrow(Error)
+  })
+
+  /** Falls back through modelVersion → model → empty string. */
+  it('falls back to model when modelVersion absent, then to empty string when both absent', () => {
+    const withModel = normalizeGeminiUsage({ model: 'gemini-pro', usageMetadata: { promptTokenCount: 5 } })
+    expect(withModel.model).toBe('gemini-pro')
+
+    const noModel = normalizeGeminiUsage({ usageMetadata: { promptTokenCount: 5 } })
+    expect(noModel.model).toBe('')
   })
 })
 
@@ -347,6 +414,12 @@ describe('normalizeBedrockConverseUsage', () => {
   it('throws on malformed usage', () => {
     expect(() => normalizeBedrockConverseUsage({ usage: { inputTokens: 1 } })).toThrow(Error)
   })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeBedrockConverseUsage({ usage: { inputTokens: 10, outputTokens: 5 } })
+    expect(usage.model).toBe('')
+  })
 })
 
 describe('normalizeMistralUsage', () => {
@@ -374,6 +447,12 @@ describe('normalizeMistralUsage', () => {
   /** Malformed input throws. */
   it('throws on malformed usage', () => {
     expect(() => normalizeMistralUsage({ usage: { prompt_tokens: 1 } })).toThrow(Error)
+  })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeMistralUsage({ usage: { prompt_tokens: 5, completion_tokens: 3 } })
+    expect(usage.model).toBe('')
   })
 })
 
@@ -429,6 +508,12 @@ describe('normalizeOpenRouterUsage', () => {
   it('throws on malformed usage', () => {
     expect(() => normalizeOpenRouterUsage({ usage: { prompt_tokens: 1 } })).toThrow(Error)
   })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeOpenRouterUsage({ usage: { prompt_tokens: 5, completion_tokens: 3 } })
+    expect(usage.model).toBe('')
+  })
 })
 
 describe('normalizeVercelAiSdkUsage', () => {
@@ -475,5 +560,11 @@ describe('normalizeVercelAiSdkUsage', () => {
   /** Malformed input throws. */
   it('throws on malformed usage', () => {
     expect(() => normalizeVercelAiSdkUsage({ usage: { inputTokens: 1 } })).toThrow(Error)
+  })
+
+  /** When model is absent, model defaults to empty string. */
+  it('defaults model to empty string when model is absent', () => {
+    const usage = normalizeVercelAiSdkUsage({ usage: { inputTokens: 5, outputTokens: 3 } })
+    expect(usage.model).toBe('')
   })
 })

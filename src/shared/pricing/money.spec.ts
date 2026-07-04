@@ -51,6 +51,18 @@ describe('floatUsdToNanoUsd', () => {
     },
   )
 
+  /** Kills CE mutation on the non-finite guard (CE→true would always throw; CE→false would never throw). */
+  it('throws RangeError for NaN and does not throw for a finite number', () => {
+    expect(() => floatUsdToNanoUsd(Number.NaN)).toThrow(RangeError)
+    expect(() => floatUsdToNanoUsd(0.001)).not.toThrow()
+  })
+
+  /** The sign of the result must match the sign of the input (kills CE swap: < → >, -1n↔1n). */
+  it('returns a negative nano value for a negative dollar amount', () => {
+    expect(floatUsdToNanoUsd(-1.0)).toBe(-1_000_000_000n)
+    expect(floatUsdToNanoUsd(-0.001)).toBe(-1_000_000n)
+  })
+
   /** Micro-dollar amounts below $1,000 round-trip to their exact nano value. */
   it('is exact for micro-precision amounts under $1,000', () => {
     fc.assert(
@@ -110,6 +122,42 @@ describe('formatNanoUsd', () => {
       expect(() => formatNanoUsd(1_500_000n, { decimals })).toThrow(RangeError)
     },
   )
+
+  /** Kills CE mutations on the bounds check: < 0 must throw; > 9 must throw; 0 and 9 must pass. */
+  it('throws for decimals -1 and 10, and accepts 0 and 9 — kills all CE/LogOp mutations on the bounds', () => {
+    expect(() => formatNanoUsd(1_000_000n, { decimals: -1 })).toThrow(RangeError)
+    expect(() => formatNanoUsd(1_000_000n, { decimals: 10 })).toThrow(RangeError)
+    expect(() => formatNanoUsd(1_000_000n, { decimals: 0 })).not.toThrow()
+    expect(() => formatNanoUsd(1_000_000n, { decimals: 9 })).not.toThrow()
+    // Kills !Number.isInteger guard: non-integer fraction must throw.
+    expect(() => formatNanoUsd(1_000_000n, { decimals: 1.5 })).toThrow(RangeError)
+    // Kills the || → && LogicalOp mutation: each condition alone must throw.
+    expect(() => formatNanoUsd(1_000_000n, { decimals: Number.NaN })).toThrow(RangeError)
+  })
+
+  /** Kills CE mutation on the null-check for fxRateNano (== null → != null swaps the branches). */
+  it('returns the original nanoUsd value when fxRateNano is not provided', () => {
+    // Omitting the option entirely is equivalent to no FX conversion.
+    expect(formatNanoUsd(5_000_000n, {})).toBe('$0.005000')
+    // No opts at all must also give the same result.
+    expect(formatNanoUsd(5_000_000n)).toBe('$0.005000')
+    // Providing a rate of 1 nano per USD (≈ 0) for comparison shows the branch is taken.
+    expect(formatNanoUsd(1_000_000_000n, { fxRateNano: 2_000_000_000n })).not.toBe('$1.000000')
+  })
+
+  /** Kills CE mutation on `negative = converted < 0n`: positive values must not negate. */
+  it('does not add a minus sign for positive values', () => {
+    expect(formatNanoUsd(1_000_000_000n)).toBe('$1.000000')
+    // Verify positive value is not confused with negative.
+    expect(formatNanoUsd(1_000_000_000n)).not.toContain('-')
+  })
+
+  /** Kills EQ mutation on `currency === 'USD'`: non-USD currency must not get $ prefix. */
+  it('uses the correct branch for USD vs non-USD currency', () => {
+    expect(formatNanoUsd(1_000_000_000n, { currency: 'USD' })).toContain('$')
+    expect(formatNanoUsd(1_000_000_000n, { currency: 'EUR' })).not.toContain('$')
+    expect(formatNanoUsd(1_000_000_000n, { currency: 'EUR' })).toContain('EUR')
+  })
 
   /** At nine decimals the render is lossless and round-trips back to the nano value. */
   it('round-trips losslessly at nine decimals', () => {

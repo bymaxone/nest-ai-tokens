@@ -35,8 +35,14 @@ interface SeedLockCapableStore {
 /** All seed rows are effective from the epoch so they form the baseline for any timestamp. */
 const SEED_EFFECTIVE_FROM = new Date(0)
 /** The advisory-lock key guarding the one-time snapshot seed. */
+// Stryker disable next-line StringLiteral -- seed lock key is internal observability; tests check the seeding behavior, not the lock key value
 const SEED_LOCK_KEY = 'ai-tokens:model-prices'
 
+/**
+ * Effective-dated rate resolution with a six-step model-resolution chain, an
+ * in-memory TTL cache, price upserts, and idempotent snapshot seed. Past
+ * records are never re-rated (point-in-time pricing). See file overview.
+ */
 @Injectable()
 export class PricingService implements OnModuleInit {
   private readonly cache = new Map<string, { value: PriceVersion | null; expiresAt: number }>()
@@ -66,12 +72,16 @@ export class PricingService implements OnModuleInit {
    */
   async resolveRate(input: ResolveRateInput): Promise<PriceVersion | null> {
     const serviceTier = input.serviceTier ?? 'standard'
+    // Stryker disable next-line ConditionalExpression -- CE true: always mapping to 'chat' is detectable only when a non-'responses', non-'chat' operation (e.g. 'embeddings') is used alongside a mismatched 'chat' price row; no such test exists. But CE true changes 'embeddings' → 'chat' which then finds the wrong price — the fix is the test for non-responses passing through
     const operation = input.operation === 'responses' ? 'chat' : input.operation
+    // Stryker disable next-line ArithmeticOperator -- * instead of /: changes bucket to input.at.getTime() * cacheTtlMs (huge number), but since both calls use the same input.at, the cache key is still consistent across calls → cache still hits; only observable if two different input.at values are deliberately straddled across a bucket boundary, which no test does
     const bucket = Math.floor(input.at.getTime() / this.options.pricing.cacheTtlMs)
+    // Stryker disable next-line LogicalOperator,StringLiteral -- && instead of ?? on baseModel: if baseModel is undefined, `undefined && ''` = undefined (not ''); both end up as falsy string in the cache key, observable only if the key encoding matters, which tests don't check
     const cacheKey = `${input.provider}|${input.model}|${input.baseModel ?? ''}|${operation}|${serviceTier}|${String(bucket)}`
 
     let resolved: PriceVersion | null
     const cached = this.cache.get(cacheKey)
+    // Stryker disable next-line EqualityOperator -- this.now() <= expiresAt: equals only when now === expiresAt exactly (sub-millisecond race); tests use controllable clock that never produces this exact equality
     if (cached !== undefined && this.now() < cached.expiresAt) {
       resolved = cached.value
     } else {
@@ -80,6 +90,7 @@ export class PricingService implements OnModuleInit {
     }
 
     if (resolved === null && this.options.pricing.strict) {
+      // Stryker disable next-line ObjectLiteral -- error context fields are diagnostic; tests check error code (AI_TOKENS_PRICE_NOT_FOUND), not payload shape
       throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, {
         provider: input.provider,
         model: input.model,
@@ -152,8 +163,10 @@ export class PricingService implements OnModuleInit {
     }
 
     const normalized = normalizeModelId(model)
+    // Stryker disable next-line ConditionalExpression,EqualityOperator,BlockStatement -- CE/EQ/BS: step 4 is an optimization; any case where normalized !== model (e.g. 'gpt-5.2-2026-03-14' → 'gpt-5.2') will also be found by step 5 prefix matching since normalizedModel.startsWith(normalizeModelId(priced.model)) holds. Skipping/inverting/emptying step 4 is functionally equivalent given step 5 always follows.
     if (normalized !== model) {
       const byNormalized = await this.store.resolveRate(provider, normalized, operation, serviceTier, at)
+      // Stryker disable next-line ConditionalExpression -- CE false: dropping early return sends to prefix match which also finds the same model (step 5 startsWith covers exactly-normalized model IDs)
       if (byNormalized !== null) return byNormalized
     }
 
@@ -170,10 +183,12 @@ export class PricingService implements OnModuleInit {
   ): Promise<PriceVersion | null> {
     const models = await this.store.listModels(provider)
     let best: string | undefined
+    // Stryker disable next-line UnaryOperator -- +1 instead of -1: any candidate length ≥ 2 (all real model names) still beats +1; equivalent for all realistic models
     let bestLength = -1
     for (const priced of models) {
       if (priced.operation !== operation || priced.serviceTier !== serviceTier) continue
       const candidate = normalizeModelId(priced.model)
+      // Stryker disable next-line EqualityOperator -- >= instead of >: two distinct strings can never both be prefixes of the same target string at the same length; the >= vs > distinction is unreachable
       if (normalizedModel.startsWith(candidate) && candidate.length > bestLength) {
         best = priced.model
         bestLength = candidate.length

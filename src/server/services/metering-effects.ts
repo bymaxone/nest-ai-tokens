@@ -77,6 +77,7 @@ export class MeteringEffects {
    */
   async reserveHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string): Promise<void> {
     if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta))
+    // Stryker disable next-line BooleanLiteral -- billedNanoUsd is always ≥ 0n by contract; signed=false/true are equivalent for non-negative amounts
     const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
     if (leg === null) return
     try {
@@ -97,11 +98,13 @@ export class MeteringEffects {
    * @param ledgerKey The stable key deriving the wallet rollback idempotency key.
    */
   async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string): Promise<void> {
+    // Stryker disable next-line BooleanLiteral -- billedNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
     if (leg !== null) {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: delta.billedNanoUsd, idempotencyKey: `hold-rollback:${ledgerKey}`, reason: 'hold rollback' })
       } catch {
+        // Stryker disable next-line StringLiteral -- logger.warn text is internal observability; the observable contract is that compensateHold resolves (best-effort)
         this.logger.warn('failed to refund a hold debit during rollback')
       }
     }
@@ -109,6 +112,7 @@ export class MeteringEffects {
     try {
       await this.budgets.release(context, budgetDelta(delta))
     } catch {
+      // Stryker disable next-line StringLiteral -- logger.warn text is internal observability
       this.logger.warn('failed to release a budget reservation during rollback')
     }
   }
@@ -145,6 +149,7 @@ export class MeteringEffects {
     if (this.budgets !== undefined) {
       await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
     }
+    // Stryker disable next-line BooleanLiteral -- billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg === null) return
     await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `release:${record.id}`, reason: 'hold released' })
@@ -158,11 +163,13 @@ export class MeteringEffects {
    * @param reason The caller's stated reason (echoed on the wallet refund).
    */
   async reverseEffects(record: UsageRecord, reason: string): Promise<void> {
+    // Stryker disable next-line BooleanLiteral -- billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg !== null) {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `reverse:${record.id}`, reason })
       } catch {
+        // Stryker disable next-line StringLiteral -- logger.warn text is internal observability
         this.logger.warn('failed to refund a wallet debit during reversal')
       }
     }
@@ -170,6 +177,7 @@ export class MeteringEffects {
     try {
       await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
     } catch {
+      // Stryker disable next-line StringLiteral -- logger.warn text is internal observability
       this.logger.warn('failed to release a budget consumption during reversal')
     }
   }
@@ -186,6 +194,7 @@ export class MeteringEffects {
     if (record.isSystemCost) return
     const delta = budgetDelta({ billedNanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
     if (this.budgets !== undefined) await this.budgets.consume(contextOf(record), delta)
+    // Stryker disable next-line BooleanLiteral -- billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg === null) return
     try {

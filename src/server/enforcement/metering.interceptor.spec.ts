@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import type { CallHandler, ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { lastValueFrom, of, throwError } from 'rxjs'
@@ -263,6 +264,66 @@ describe('MeteringInterceptor', () => {
     expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
   })
 
+  /**
+   * A null handler result (the extract function returns undefined for null, which then throws USAGE_MALFORMED).
+   * With the LogicalOperator mutation (&&→||): `null.usage` throws a TypeError instead; test distinguishes this.
+   * With CE→true on `value !== null`: `typeof null === 'object' && true` extracts `null.usage` → TypeError, not USAGE_MALFORMED.
+   */
+  it('rejects a null result with USAGE_MALFORMED (not a TypeError)', async () => {
+    const built = makeMetering(() => CONTEXT)
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
+    const error = await lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf(null))).catch((e: unknown) => e)
+    // Must be an AiTokensException with code USAGE_MALFORMED, not a raw TypeError
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+  })
+
+  /**
+   * A handler result whose extracted usage is EXPLICITLY null (`{ usage: null }`, not
+   * merely absent) must fail as USAGE_MALFORMED at the extract guard. This kills the L144
+   * ConditionalExpression `usage === null → false`: with that mutant the null slips past
+   * the guard into `record()`, which (no preset) throws AI_TOKENS_UNKNOWN_PROVIDER instead
+   * — a different code. The existing null-result test only reaches this via an undefined
+   * extraction, so the `usage === null` operand is never the deciding branch there.
+   */
+  it('rejects an explicitly null extracted usage with USAGE_MALFORMED', async () => {
+    const built = makeMetering(() => CONTEXT)
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
+    // The default extractor returns `.usage` (= null) for this object, so `usage` is null at the guard.
+    const error = await lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: null }))).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+  })
+
+  /** minBudgetRemaining picks the SMALLEST remaining — the first status is NOT always the minimum. */
+  it('uses the MINIMUM remaining across statuses when the minimum is not first', async () => {
+    // statuses ordered DESCENDING so CE→false (only-update-when-min-undefined) gives 100 instead of 42.
+    const built = makeMetering()
+    await seed(built.pricingStore)
+    await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const hold = await built.metering.hold(CONTEXT, { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 })
+    // Largest first, smallest second — kills CE→false on `remaining < min`
+    const request: { aiTokens?: RequestAiTokens } = { aiTokens: { status: [status(100n), status(42n), status()], context: CONTEXT, hold } }
+    const headers = new Map<string, string>()
+    const response = { setHeader: (name: string, value: string): void => void headers.set(name, value) }
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, {})
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.withHeaders, request, response), handlerOf({ usage: normalized() })))
+    expect(headers.get('x-ai-tokens-budget-remaining')).toBe('42')
+  })
+
+  /** minBudgetRemaining with no statuses having nanoUsd emits no header. */
+  it('omits the budget-remaining header when no status has a nanoUsd remaining', async () => {
+    const built = makeMetering()
+    await seed(built.pricingStore)
+    await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const hold = await built.metering.hold(CONTEXT, { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 })
+    // All statuses have token-only remaining (no nanoUsd) — kills CE→true on remaining !== undefined
+    const request: { aiTokens?: RequestAiTokens } = { aiTokens: { status: [status(), status()], context: CONTEXT, hold } }
+    const headers = new Map<string, string>()
+    const response = { setHeader: (name: string, value: string): void => void headers.set(name, value) }
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, {})
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.withHeaders, request, response), handlerOf({ usage: normalized() })))
+    expect(headers.has('x-ai-tokens-budget-remaining')).toBe(false)
+  })
+
   /** A response exposing no header method silently drops the headers (never throws). */
   it('tolerates a response with no header method', async () => {
     const built = makeMetering(() => CONTEXT)
@@ -270,5 +331,63 @@ describe('MeteringInterceptor', () => {
     await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
     const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
     await expect(lastValueFrom(interceptor.intercept(executionContext(fixture.withHeaders, {}, {}), handlerOf({ usage: normalized() })))).resolves.toBeDefined()
+  })
+
+  /**
+   * `exposeHeaders: true` must be EXPLICITLY set — absent or false must NOT write cost headers.
+   * Kills CE→true mutation on `config.exposeHeaders === true` (always writes headers).
+   */
+  it('does not write cost headers when exposeHeaders is not set', async () => {
+    const built = makeMetering(() => CONTEXT)
+    await seed(built.pricingStore)
+    await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
+    const headers = new Map<string, string>()
+    const response = { setHeader: (name: string, value: string): void => void headers.set(name, value) }
+    // fixture.metered has no exposeHeaders — cost headers must be absent
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.metered, {}, response), handlerOf({ usage: normalized() })))
+    expect(headers.has('x-ai-tokens-cost')).toBe(false)
+    expect(headers.has('x-ai-tokens-billed-cost')).toBe(false)
+  })
+
+  /**
+   * `@Meter.tags` must reach the recorded context on the no-guard record path.
+   * Kills the EqualityOperator (`config.tags !== undefined` → `=== undefined`) and
+   * ObjectLiteral (`{ tags: config.tags }` → `{}`) mutants: either drops the tags,
+   * so `record()` would be called with a context carrying no `tags`.
+   */
+  it('carries @Meter tags into the recorded context', async () => {
+    const built = makeMetering(() => CONTEXT)
+    await seed(built.pricingStore)
+    await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const recordSpy = jest.spyOn(built.metering, 'record')
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
+    // fixture.systemCost carries tags: ['audit']
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.systemCost), handlerOf({ usage: normalized() })))
+    expect(recordSpy).toHaveBeenCalledTimes(1)
+    const [firstCall] = recordSpy.mock.calls
+    expect(firstCall?.[0].context.tags).toEqual(['audit'])
+    recordSpy.mockRestore()
+  })
+
+  /**
+   * When the hold release fails after a handler error, the interceptor logs a
+   * best-effort warning naming the hold. Kills the BlockStatement mutant that empties
+   * the `.catch()` body: with an empty body no warning is emitted, yet the original
+   * error still propagates (so the error assertion alone cannot observe the mutation).
+   */
+  it('logs a warning when the hold release fails after a handler error', async () => {
+    const built = makeMetering()
+    const hold = { id: 'h', tenantId: 'tenant-1', scope: { type: 'user' as const, id: 'u1' }, estimatedTokens: 1, estimatedCostNanoUsd: 1n, expiresAt: new Date() }
+    jest.spyOn(built.metering, 'release').mockRejectedValue(new Error('release down'))
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const request: { aiTokens?: RequestAiTokens } = { aiTokens: { status: [], context: CONTEXT, hold } }
+    const boom = new Error('handler exploded')
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, {})
+    const handler: CallHandler = { handle: () => throwError(() => boom) }
+    const error = await lastValueFrom(interceptor.intercept(executionContext(fixture.metered, request), handler)).catch((e: unknown) => e)
+    expect(error).toBe(boom)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('failed to release hold h'))
+    warnSpy.mockRestore()
   })
 })

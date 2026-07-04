@@ -118,6 +118,20 @@ describe('computeCostNanoUsd', () => {
       expect(result.tokenNanoUsd).toBe((60n * 3_000_000n) / 1_000_000n)
     })
 
+    /**
+     * Cache-WRITE tokens (5m and 1h) must also count toward the tier threshold.
+     * Here the 30 + 30 cache-write tokens are exactly what pushes totalInput past
+     * the 100-token threshold. Flipping either `+` in the totalInput sum to `-`
+     * would drop the total to 50 (below the threshold) and silently apply the
+     * cheaper base input rate — so pinning the tier rate here kills both
+     * ArithmeticOperator mutants on the cache-write terms.
+     */
+    it('counts cache-write tokens toward the threshold', () => {
+      const result = computeCostNanoUsd(usage({ inputTokens: 50, cacheWrite5mTokens: 30, cacheWrite1hTokens: 30 }), tiered)
+      // totalInput = 50 + 30 + 30 = 110 > 100 → tier input rate applies to the 50 input tokens.
+      expect(result.tokenNanoUsd).toBe((50n * 3_000_000n) / 1_000_000n)
+    })
+
     /** Above the threshold with no tier rates falls back to the base rates. */
     it('falls back to base rates when tier rates are absent', () => {
       const noTierRates = price({

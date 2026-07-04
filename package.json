@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-ai-tokens",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (×9), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
@@ -62,6 +62,7 @@
     "mutation": "stryker run",
     "mutation:incremental": "stryker run --incremental",
     "mutation:dry-run": "stryker run --dryRunOnly",
+    "docs:check": "node scripts/check-jsdoc.mjs && tsc --noEmit -p tsconfig.e2e.json",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "size": "node scripts/check-size.mjs",
     "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",

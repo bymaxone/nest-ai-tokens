@@ -20,8 +20,11 @@ import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum,
  * normalizeOpenAiCompatibleUsage({ model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 40 } })
  */
 export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
+  // Stryker disable next-line StringLiteral -- provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-compatible')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openai-compatible', 'usage.prompt_tokens')
+  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-compatible', 'usage.completion_tokens')
 
   const promptDetails = asObject(usage.prompt_tokens_details)

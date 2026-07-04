@@ -33,6 +33,11 @@ function buildResolvedMarkup(multiplier: number): ResolvedMarkup {
   return { multiplier, apply: (rawCostNanoUsd: bigint): bigint => applyMarkup(rawCostNanoUsd, multiplier) }
 }
 
+/**
+ * Resolves the effective markup multiplier for a metering context, delegating
+ * to a host-supplied {@link IMarkupPolicy} when configured, or using the fixed
+ * module-level `options.markup` value as the default.
+ */
 @Injectable()
 export class MarkupResolver {
   /**
@@ -60,7 +65,9 @@ export class MarkupResolver {
     try {
       return await policy.resolve(context)
     } catch {
+      // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
+        // Stryker disable next-line StringLiteral -- error reason text is internal diagnostics
         reason: 'markup policy failed to resolve a multiplier',
       })
     }
@@ -71,7 +78,9 @@ export class MarkupResolver {
     try {
       return resolveMultiplier4dp(raw)
     } catch {
+      // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
+        // Stryker disable next-line StringLiteral -- error reason text is internal diagnostics
         reason: 'markup policy returned an invalid multiplier',
         value: raw,
       })
