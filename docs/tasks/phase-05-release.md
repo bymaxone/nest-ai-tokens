@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 5 / 7 tasks · **Last updated**: 2026-07-04
+> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -43,7 +43,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 | 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done | P0 | M | 5.1 |
 | 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
 | 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
-| 5.6 | Publish v0.1.0 (prepare; human fires the tag) | 📋 ToDo | P0 | S | 5.5 |
+| 5.6 | Publish v0.1.0 (prepare; human fires the tag) | ✅ Done | P0 | S | 5.5 |
 | 5.7 | nest-ai-tokens-example skeleton | 📋 ToDo | P1 | M | 5.6 |
 
 ---
@@ -359,7 +359,7 @@ Completion Protocol:
 
 ### Task 5.6 — Publish v0.1.0 (prepare; human fires the tag)
 
-- **Status**: 📋 ToDo · **Priority**: P0 · **Size**: S · **Depends on**: 5.5
+- **Status**: ✅ Done · **Priority**: P0 · **Size**: S · **Depends on**: 5.5
 
 #### Description
 
@@ -367,9 +367,9 @@ Version bump `0.1.0-alpha.0 → 0.1.0`, the full `prepublishOnly` chain, and rel
 
 #### Acceptance criteria
 
-- [ ] `prepublishOnly` chain green (clean → typecheck → lint → test:cov:all 100% → build)
-- [ ] Version 0.1.0 committed; release notes drafted; install smoke documented
-- [ ] Tag/publish explicitly left for the human (PR note)
+- [x] `prepublishOnly` chain green (clean → typecheck → lint → test:cov:all 100% → build)
+- [x] Version 0.1.0 committed; release notes drafted; install smoke documented — in PR body
+- [x] Tag/publish explicitly left for the human (PR note)
 
 #### Agent prompt
 
