@@ -28,4 +28,4 @@ Initial public release.
 - **PostgreSQL adapter** — `PrismaAiTokensStore` (`./prisma` subpath) implementing all four storage ports via parameterized raw SQL. Seven-table schema with migrations.
 - **Five subpaths** — `.` (server), `./shared` (zero-dep), `./prices` (data-only), `./prisma` (adapter), `./redis` (counter).
 - **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
-- **100% unit test coverage** — 655 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate (break 95).
+- **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
