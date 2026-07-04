@@ -1,6 +1,6 @@
 # Phase 5 — Release v0.1.0
 
-> **Status**: 🔄 In Progress · **Progress**: 7 / 7 tasks · **Last updated**: 2026-07-04
+> **Status**: 🔄 In Progress · **Progress**: 6 / 7 tasks (5.7 deferred post-publish) · **Last updated**: 2026-07-04
 > **Source roadmap**: [`docs/development_plan.md`](../development_plan.md) § 6
 > **Source spec**: [`docs/technical_specification.md`](../technical_specification.md) (v0.2.0)
 > **Complexity**: LOW (mechanical, but gate-heavy)
@@ -44,7 +44,7 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 | 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
 | 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
 | 5.6 | Publish v0.1.0 (prepare; human fires the tag) | ✅ Done | P0 | S | 5.5 |
-| 5.7 | nest-ai-tokens-example skeleton | ✅ Done | P1 | M | 5.6 |
+| 5.7 | nest-ai-tokens-example skeleton | ⏸️ Deferred (post-publish) | P1 | M | 5.6 |
 
 ---
 
@@ -415,7 +415,7 @@ Completion Protocol:
 
 ### Task 5.7 — nest-ai-tokens-example skeleton
 
-- **Status**: ✅ Done · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
+- **Status**: ⏸️ Deferred (post-publish) · **Priority**: P1 · **Size**: M · **Depends on**: 5.6
 
 #### Description
 
@@ -423,9 +423,8 @@ Scaffold the sibling reference app (`bymaxone/nest-ai-tokens-example`, family co
 
 #### Acceptance criteria
 
-- [x] Working skeleton + README committed under `examples/nest-ai-tokens-example/` (in-repo; extraction to a standalone sibling repo against the published `@0.1.0` is a post-publish step)
-- [x] Demonstrates: record, meter, guard+interceptor, status endpoint, plan budgets (spec §21.5 pattern) — all imported lib symbols resolve against the built public API
-- [x] Not a blocker for 5.6 (lands after publish)
+- [ ] Deferred to a standalone sibling repo built against the **published** `@bymax-one/nest-ai-tokens@0.1.0` (task's original scope). A first in-repo skeleton was drafted but pulled from the release PR: code review found it non-functional (metering calls passed the usage sub-object instead of the full provider response → `AI_TOKENS_USAGE_MALFORMED`; `summarize` used the wrong preset + double-billed) and security review flagged a `scopeResolver` that trusted unverified request headers (CLAUDE.md §8 anti-pattern). It will be rebuilt and verified end-to-end (install + boot + Testcontainers) in its own repo after the package publishes.
+- [ ] Not a blocker for the v0.1.0 release (explicitly post-publish)
 
 #### Agent prompt
 

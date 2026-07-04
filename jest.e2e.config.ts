@@ -12,13 +12,11 @@ import base from './jest.config.ts'
 const config: Config = {
   ...base,
   rootDir: '.',
-  // Scope the module crawl to the library sources and the e2e specs so the
-  // haste map never indexes the sibling `examples/` app (which carries its own
-  // package.json and would collide); specs are matched under `test/e2e` via
-  // `testMatch`, and `passWithNoTests` keeps a scaffold without specs green.
-  roots: ['<rootDir>/src', '<rootDir>/test'],
+  // Root at the repository so the suite stays green on a scaffold without an
+  // end-to-end directory; specs are scoped to `test/e2e` via `testMatch`.
+  roots: ['<rootDir>'],
   testMatch: ['<rootDir>/test/e2e/**/*.e2e-spec.ts'],
-  modulePathIgnorePatterns: ['<rootDir>/dist/', '<rootDir>/examples/'],
+  modulePathIgnorePatterns: ['<rootDir>/dist/'],
   collectCoverageFrom: undefined,
   coverageThreshold: undefined,
   testTimeout: 120_000,
