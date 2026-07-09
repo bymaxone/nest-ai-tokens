@@ -83,7 +83,9 @@ jobs:
 
   e2e:
     name: E2E (Testcontainers + PostgreSQL + Redis)
-    needs: ci
+    # Gate behind verify too: skip the ~25 min Testcontainers run on any PR that
+    # already failed a fast gate (docs / arch guards / build / size).
+    needs: [ci, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
