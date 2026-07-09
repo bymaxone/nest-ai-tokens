@@ -98,7 +98,7 @@
     "@nestjs/platform-express": "^11.1.20",
     "@nestjs/testing": "^11.1.20",
     "@opentelemetry/api": "^1.9.0",
-    "@prisma/client": "^6.16.2",
+    "@prisma/client": "^7.8.0",
     "@stryker-mutator/core": "^9",
     "@stryker-mutator/jest-runner": "^9",
     "@stryker-mutator/typescript-checker": "^9",
