@@ -1,6 +1,13 @@
-# Continuous integration: type-check, lint, coverage, build, size and e2e gates.
-# Every gate is incremental-safe (passWithNoTests, coverage on implemented files,
-# brotli size budgets) so it stays green as the package grows.
+# CI — thin caller of the org-wide reusable pipeline (bymaxone/.github).
+#
+# The generic library jobs (lint, typecheck, unit + coverage, mutation) run via
+# node-lib-ci.yml so every repo shares one definition. This library's JSDoc gate,
+# architecture guards (no provider SDK imports, zero-dependency shared layer, no
+# float math on money paths), build-output integrity across its five subpaths,
+# bundle-size budget, verified-secret scan, and its Testcontainers Postgres+Redis
+# e2e stay here. Mutation runs only on a push to main / manual dispatch, never on
+# PRs. The Prisma client is generated automatically by the `prepare` lifecycle
+# hook on install, so no explicit generate step is needed.
 name: CI
 
 on:
@@ -10,57 +17,33 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  ci:
+    uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
+    with:
+      run-format-check: false # no format:check script; prettier runs via lint/pre-commit
+      run-build: false # build + integrity + size verified in the `verify` job below
+      unit-command: pnpm test:cov # unit coverage (100% per implemented file); e2e runs separately
+      run-mutation: true
+      mutation-source-globs: '^(src/)'
+
   verify:
-    name: Verify (typecheck · lint · test · build · size)
+    name: Verify build + size
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [24.x]
     steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          version: 10.8.1
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - uses: actions/checkout@v6
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: JSDoc coverage + docs fixture type-check
         run: pnpm docs:check
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
       - name: Reject provider SDK imports (normalizer-first)
         run: |
           if grep -rnE "from '(openai|@anthropic-ai/sdk|@google/genai|@mistralai)" src/; then
@@ -68,7 +51,6 @@ jobs:
             exit 1
           fi
           echo "No provider SDK imports present."
-
       - name: Enforce zero-dependency shared layer
         run: |
           if grep -rnE '@nestjs|@prisma|ioredis' src/shared/; then
@@ -76,7 +58,6 @@ jobs:
             exit 1
           fi
           echo "src/shared stays zero-dependency."
-
       - name: Reject float math on money paths
         run: |
           if grep -rnE '\bparseFloat\(|\btoFixed\(' src/shared/pricing src/server/services 2>/dev/null; then
@@ -84,22 +65,9 @@ jobs:
             exit 1
           fi
           echo "No float math on money paths."
-
-      - name: Unit tests with coverage (100% per implemented file)
-        run: pnpm test:cov
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-node-${{ matrix.node-version }}
-          path: coverage/
-          retention-days: 14
-
-      - name: Build
+      - name: Build all subpaths
         run: pnpm build
-
-      - name: Verify build output integrity (5 subpaths)
+      - name: Verify build output integrity
         run: |
           for subpath in server shared prices prisma redis; do
             for ext in mjs cjs d.ts; do
@@ -110,73 +78,44 @@ jobs:
             done
           done
           echo "All five subpaths produced ESM + CJS + .d.ts"
-
-      - name: Bundle size budget (brotli)
+      - name: Bundle size budget
         run: pnpm size
-
-      - name: Secret scan
-        uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
-        with:
-          extra_args: --only-verified
-
-  # Dependency review needs the dependency graph (GitHub Advanced Security), which
-  # is available on public repositories — gate on visibility so the workflow stays
-  # green while private and activates automatically once the repository is public.
-  dependency-review:
-    name: Dependency review
-    if: ${{ github.event_name == 'pull_request' && github.event.repository.visibility == 'public' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Dependency review
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
-        with:
-          fail-on-severity: high
-          comment-summary-in-pr: on-failure
 
   e2e:
     name: E2E (Testcontainers + PostgreSQL + Redis)
-    runs-on: ubuntu-latest # Docker is preinstalled on GitHub-hosted ubuntu runners
-    needs: verify
+    # Gate behind verify too: skip the ~25 min Testcontainers run on any PR that
+    # already failed a fast gate (docs / arch guards / build / size).
+    needs: [ci, verify]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          version: 10.8.1
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 24.x
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - uses: actions/checkout@v6
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Pre-pull pinned images (cache for Testcontainers)
         run: |
           docker pull postgres:16-alpine
           docker pull redis:7-alpine
-
       - name: E2E tests
         run: pnpm test:e2e
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Scan for verified secrets
+        uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
+        with:
+          extra_args: --only-verified
+
+  security:
+    # Dependency review needs the dependency graph (public repos, or private + GHAS).
+    # Gated on visibility so it starts running automatically once this repo is public.
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+    uses: bymaxone/.github/.github/workflows/security.yml@v1
+    with:
+      fail-on-severity: high

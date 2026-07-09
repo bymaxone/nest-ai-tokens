@@ -1,0 +1,21 @@
+# Weekly dependency / third-party security scanning on GitHub infrastructure
+# (≈ zero Action minutes). Dependabot opens PRs when a new CVE affects a
+# dependency you did not touch; those PRs then run the normal event-driven CI +
+# dependency-review gate. No scheduled CI job needed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # One PR for all non-major dev/runtime bumps keeps the noise (and CI runs) low.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
