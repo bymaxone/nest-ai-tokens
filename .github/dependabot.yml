@@ -1,21 +1,86 @@
-# Weekly dependency / third-party security scanning on GitHub infrastructure
-# (≈ zero Action minutes). Dependabot opens PRs when a new CVE affects a
-# dependency you did not touch; those PRs then run the normal event-driven CI +
-# dependency-review gate. No scheduled CI job needed.
+# Dependabot keeps dependencies and GitHub Actions up to date.
+#
+# Updates are proposed as PRs only — they never merge automatically — so peer-range
+# and major-bump decisions are always made by a human before anything lands.
 version: 2
+
 updates:
+  # npm devDependencies and peerDependencies. Production `dependencies` is empty by
+  # design (zero direct deps), so this effectively tracks tooling and peer ranges.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
     groups:
-      # One PR for all non-major dev/runtime bumps keeps the noise (and CI runs) low.
-      minor-and-patch:
-        update-types: [minor, patch]
+      # ORDER MATTERS: a dependency joins only the FIRST group whose conditions it
+      # matches, so any narrower group must precede the catch-all below.
 
+      # The commitlint CLI and its shared config are released in lockstep and are
+      # only compatible pairwise. Split across two PRs, merging either one alone
+      # leaves a mismatched pair that breaks the `commit-msg` hook for every
+      # contributor — locally, where no CI check ever runs it. Grouping all update
+      # types (major included) keeps them in one reviewable change.
+      commitlint:
+        patterns:
+          - '@commitlint/*'
+        update-types:
+          - major
+          - minor
+          - patch
+
+      # Batch low-risk dev tooling bumps into a single PR to cut review noise.
+      # Majors stay out: each one needs its own verification and its own revert.
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Peer dependencies define the supported consumer range — bumping them is a
+      # breaking-change decision made deliberately, not by an automated minor bump.
+      - dependency-name: '@nestjs/*'
+        update-types: [version-update:semver-major]
+      - dependency-name: reflect-metadata
+        update-types: [version-update:semver-major]
+      - dependency-name: rxjs
+        update-types: [version-update:semver-major]
+      - dependency-name: '@prisma/client'
+        update-types: [version-update:semver-major]
+      - dependency-name: ioredis
+        update-types: [version-update:semver-major]
+      - dependency-name: '@opentelemetry/api'
+        update-types: [version-update:semver-major]
+      # TypeScript 6 and ESLint 10 are known to break the lint/typecheck gate and
+      # are intentionally held back until revisited.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      # `@types/node` majors track the Node release line. `engines` declares
+      # `>=24`, so typechecking against a newer major would let code compile
+      # against APIs absent from the oldest runtime this package claims to
+      # support. Raise the floor in `engines` first, then lift this hold.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+
+  # The workflow actions themselves (checkout, setup-node, pnpm, etc.).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope

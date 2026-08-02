@@ -28,7 +28,11 @@ import type {
   WalletEntry,
 } from '../shared'
 import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
-import { AiTokensException } from '../server/errors'
+// By package specifier, not by relative path: entry points are separate
+// bundles, so a relative import would copy the class into this one and the
+// server's four `instanceof AiTokensException` guards would stop matching
+// what this store throws — silently, since the copy has the same name.
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 
 /** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
 export interface UsageRow {

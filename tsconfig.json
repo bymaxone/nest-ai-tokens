@@ -24,7 +24,18 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    // The subpath entries reach the shared graph by package specifier so the
+    // published bundles keep one identity for `AiTokensException`, whose
+    // `instanceof` the server depends on. Map the specifiers to source, or the
+    // typecheck resolves them through `exports` into a `dist/` that may not exist.
+    "paths": {
+      "@bymax-one/nest-ai-tokens": ["./src/server/index.ts"],
+      "@bymax-one/nest-ai-tokens/shared": ["./src/shared/index.ts"],
+      "@bymax-one/nest-ai-tokens/prices": ["./src/prices/index.ts"],
+      "@bymax-one/nest-ai-tokens/prisma": ["./src/prisma/index.ts"],
+      "@bymax-one/nest-ai-tokens/redis": ["./src/redis/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "coverage", "**/*.spec.ts"]

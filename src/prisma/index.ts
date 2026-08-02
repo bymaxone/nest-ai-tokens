@@ -48,7 +48,11 @@ import type {
   WalletEntryFilter,
   WalletEntryPage,
 } from '../server'
-import { AiTokensException } from '../server/errors'
+// By package specifier, not by relative path: entry points are separate
+// bundles, so a relative import would copy the class into this one and the
+// server's four `instanceof AiTokensException` guards would stop matching
+// what this store throws — silently, since the copy has the same name.
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import {

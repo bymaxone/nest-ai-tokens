@@ -9,3 +9,7 @@ reports/
 .env
 .env.*
 !.env.example
+.docs-gate/
+
+# Throwaway consumer built by scripts/check-consumer-runtime.mjs
+.consumer-runtime-check/
