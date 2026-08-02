@@ -84,3 +84,22 @@ updates:
     commit-message:
       prefix: ci
       include: scope
+    groups:
+      # The three CodeQL sub-actions are one product with one version. `init` writes a
+      # config that `analyze` reads back, and the reader refuses a config written by a
+      # different version:
+      #
+      #   Loaded a configuration file for version '4.36.2', but running version '4.37.4'
+      #
+      # Bumped one at a time — which is what Dependabot does by default, since each
+      # sub-action is a separate action reference — every such PR is red on arrival, and
+      # merging one leaves the default branch broken until its sibling lands. Grouping all
+      # update types keeps the three in a single reviewable change that is green by
+      # construction.
+      codeql:
+        patterns:
+          - 'github/codeql-action/*'
+        update-types:
+          - major
+          - minor
+          - patch
