@@ -89,7 +89,7 @@ updates:
       # config that `analyze` reads back, and the reader refuses a config written by a
       # different version:
       #
-      #   Loaded a configuration file for version '4.36.2', but running version '4.37.4'
+      #   Loaded a configuration file for version '<older>', but running version '<newer>'
       #
       # Bumped one at a time — which is what Dependabot does by default, since each
       # sub-action is a separate action reference — every such PR is red on arrival, and
