@@ -6,6 +6,61 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Errors thrown by `PrismaAiTokensStore` were not recognised as
+  `AiTokensException`.** The store lives in the `./prisma` entry point and reached
+  the class through a relative path into `../server`, so the separate bundle got
+  its own copy. The copy carries the same name and the same shape, so nothing
+  crashed — but the four `instanceof AiTokensException` guards in
+  `bymax-ai-tokens.module.ts`, `hold-support.ts`, `wallet.service.ts` and
+  `metering.service.ts` all stopped matching, silently reclassifying store errors
+  such as `AI_TOKENS_INSUFFICIENT_CREDITS` and `AI_TOKENS_IDEMPOTENCY_CONFLICT` as
+  unexpected failures.
+
+  `./prisma` now imports the class by package specifier, which the bundler already
+  kept external for the lazily-loaded `./prices` subpath, so one identity is shared
+  in CommonJS as well as ESM. `isLedgerIdempotencyConflict` was unaffected: it is
+  deliberately duck-typed rather than `instanceof`-based.
+
+- **CommonJS consumers resolved ESM type declarations** on all five subpaths. The
+  `exports` map declared a single `types` condition, so `require()` landed on
+  `.d.ts` instead of `.d.cts`. Types are now declared per condition.
+
+- **`node10` type resolution failed outright**: the manifest carried no `main`,
+  `module` or `types`, and no `typesVersions`. All four are now present.
+
+### Added
+
+- **`pnpm check:exports`** runs `attw --pack . --profile strict` against the packed
+  tarball, which is what surfaced both resolution defects above.
+- **`pnpm check:runtime`** packs the tarball, lays it out the way npm would, and
+  asserts in ESM *and* CommonJS that an error thrown by `PrismaAiTokensStore`
+  satisfies `instanceof AiTokensException` against the class the root exports. No
+  source-based suite can observe this: the unit tests map the subpath specifiers to
+  `src` and therefore see a single copy. Both gates run in CI.
+
+### Security
+
+- **Peer floors raised to exclude known-vulnerable NestJS versions.** The declared
+  ranges were `@nestjs/common ^11.0.0` and `@nestjs/core ^11.0.0`, and both
+  admitted versions carrying published advisories:
+
+  | Peer             | Advisory                                                                                                                                    | Vulnerable                    | New floor  |
+  | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------- |
+  | `@nestjs/common` | [GHSA-cj7v-w2c7-cp7c](https://github.com/advisories/GHSA-cj7v-w2c7-cp7c) — remote code execution via the `Content-Type` header              | `>= 11.0.0-next.1, < 11.0.16` | `^11.0.16` |
+  | `@nestjs/core`   | [GHSA-36xv-jgw5-4q75](https://github.com/advisories/GHSA-36xv-jgw5-4q75) — improper neutralization of special elements in downstream output | `<= 11.1.17`                  | `^11.1.18` |
+
+  A peer range is a statement about which versions this library supports. A floor
+  below a published advisory tells a consumer that a vulnerable install is a
+  supported one, and nothing in their tooling contradicts it — the install resolves
+  cleanly and silently. Corrected before the first publish, so no released version
+  ever carried the permissive range. No runtime behaviour changed.
+
+---
+
 ## [0.1.0] — 2026-07-03
 
 Initial public release.
@@ -29,3 +84,6 @@ Initial public release.
 - **Five subpaths** — `.` (server), `./shared` (zero-dep), `./prices` (data-only), `./prisma` (adapter), `./redis` (counter).
 - **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
 - **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
+
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v0.1.0

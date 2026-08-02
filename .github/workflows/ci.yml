@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: JSDoc coverage + docs fixture type-check
         run: pnpm docs:check
@@ -78,6 +78,18 @@ jobs:
             done
           done
           echo "All five subpaths produced ESM + CJS + .d.ts"
+      - name: Verify published type resolution
+        # A source-level typecheck compiles `src`, so it cannot catch a broken
+        # `exports` map: a consumer resolving through the packed tarball may still
+        # land on declarations for the wrong module format. `attw` packs the
+        # tarball and resolves every entry point the way each resolution mode does.
+        run: pnpm check:exports
+      - name: Consumer runtime
+        # Entry points are separate bundles, so a class both reach by a relative
+        # path is copied into each — and a copied class is a different `instanceof`
+        # target. The unit suite maps the specifiers to `src` and sees one copy, so
+        # only a gate against the packed tarball can observe the split.
+        run: pnpm check:runtime
       - name: Bundle size budget
         run: pnpm size
 
@@ -89,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Pre-pull pinned images (cache for Testcontainers)
         run: |
@@ -104,7 +116,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       - name: Scan for verified secrets

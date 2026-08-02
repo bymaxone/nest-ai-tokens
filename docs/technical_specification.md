@@ -1948,8 +1948,8 @@ Following the family (`@bymax-one/nest-storage`, `nest-queue`): the target is `"
 ```json
 {
   "peerDependencies": {
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
+    "@nestjs/common": "^11.0.16",
+    "@nestjs/core": "^11.1.18",
     "reflect-metadata": "^0.2.0",
     "@prisma/client": ">=6.0.0",
     "ioredis": "^5.0.0",

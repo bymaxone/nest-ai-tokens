@@ -1,7 +1,7 @@
 {
   "name": "@bymax-one/nest-ai-tokens",
   "version": "0.1.0",
-  "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (×9), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
+  "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (\u00d79), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
   "homepage": "https://github.com/bymaxone/nest-ai-tokens#readme",
@@ -22,57 +22,86 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.mjs",
-      "require": "./dist/server/index.cjs"
+      "import": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server/index.mjs"
+      },
+      "require": {
+        "types": "./dist/server/index.d.cts",
+        "default": "./dist/server/index.cjs"
+      }
     },
     "./shared": {
-      "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.mjs",
-      "require": "./dist/shared/index.cjs"
+      "import": {
+        "types": "./dist/shared/index.d.ts",
+        "default": "./dist/shared/index.mjs"
+      },
+      "require": {
+        "types": "./dist/shared/index.d.cts",
+        "default": "./dist/shared/index.cjs"
+      }
     },
     "./prices": {
-      "types": "./dist/prices/index.d.ts",
-      "import": "./dist/prices/index.mjs",
-      "require": "./dist/prices/index.cjs"
+      "import": {
+        "types": "./dist/prices/index.d.ts",
+        "default": "./dist/prices/index.mjs"
+      },
+      "require": {
+        "types": "./dist/prices/index.d.cts",
+        "default": "./dist/prices/index.cjs"
+      }
     },
     "./prisma": {
-      "types": "./dist/prisma/index.d.ts",
-      "import": "./dist/prisma/index.mjs",
-      "require": "./dist/prisma/index.cjs"
+      "import": {
+        "types": "./dist/prisma/index.d.ts",
+        "default": "./dist/prisma/index.mjs"
+      },
+      "require": {
+        "types": "./dist/prisma/index.d.cts",
+        "default": "./dist/prisma/index.cjs"
+      }
     },
     "./redis": {
-      "types": "./dist/redis/index.d.ts",
-      "import": "./dist/redis/index.mjs",
-      "require": "./dist/redis/index.cjs"
-    }
+      "import": {
+        "types": "./dist/redis/index.d.ts",
+        "default": "./dist/redis/index.mjs"
+      },
+      "require": {
+        "types": "./dist/redis/index.d.cts",
+        "default": "./dist/redis/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
-    "prepare": "prisma generate",
-    "db:generate": "prisma generate",
     "build": "pnpm clean && tsup",
+    "check:exports": "attw --pack . --profile strict",
+    "check:published": "node scripts/check-published-surface.mjs",
+    "check:runtime": "node scripts/check-consumer-runtime.mjs",
+    "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",
+    "db:generate": "prisma generate",
+    "docs:check": "node scripts/check-jsdoc.mjs && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "test": "jest",
-    "test:cov": "jest --coverage",
-    "test:watch": "jest --watch",
-    "test:e2e": "jest --config jest.e2e.config.ts",
-    "test:all": "pnpm test && pnpm test:e2e",
-    "test:cov:all": "jest --config jest.coverage.config.ts --coverage",
     "mutation": "stryker run",
-    "mutation:incremental": "stryker run --incremental",
     "mutation:dry-run": "stryker run --dryRunOnly",
-    "docs:check": "node scripts/check-jsdoc.mjs && tsc --noEmit -p tsconfig.e2e.json",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "mutation:incremental": "stryker run --incremental",
+    "prepare": "prisma generate",
+    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build && pnpm check:exports && pnpm check:published && pnpm check:runtime",
+    "release": "pnpm publish --provenance",
     "size": "node scripts/check-size.mjs",
-    "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",
-    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build",
-    "release": "pnpm publish --provenance"
+    "test": "jest",
+    "test:all": "pnpm test && pnpm test:e2e",
+    "test:cov": "jest --coverage",
+    "test:cov:all": "jest --config jest.coverage.config.ts --coverage",
+    "test:e2e": "jest --config jest.e2e.config.ts",
+    "test:watch": "jest --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {},
   "peerDependencies": {
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
+    "@nestjs/common": "^11.0.16",
+    "@nestjs/core": "^11.1.18",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
     "@prisma/client": ">=6.0.0",
@@ -81,16 +110,33 @@
     "@opentelemetry/api": "^1.9.0"
   },
   "peerDependenciesMeta": {
-    "@nestjs/common": { "optional": false },
-    "@nestjs/core": { "optional": false },
-    "reflect-metadata": { "optional": false },
-    "rxjs": { "optional": false },
-    "@prisma/client": { "optional": true },
-    "ioredis": { "optional": true },
-    "@nestjs/event-emitter": { "optional": true },
-    "@opentelemetry/api": { "optional": true }
+    "@nestjs/common": {
+      "optional": false
+    },
+    "@nestjs/core": {
+      "optional": false
+    },
+    "reflect-metadata": {
+      "optional": false
+    },
+    "rxjs": {
+      "optional": false
+    },
+    "@prisma/client": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    },
+    "@nestjs/event-emitter": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
     "@eslint/js": "^9.39.4",
     "@nestjs/common": "^11.1.20",
     "@nestjs/core": "^11.1.20",
@@ -126,13 +172,23 @@
   },
   "pnpm": {
     "overrides": {
+      "brace-expansion@1": "^1.1.17",
+      "brace-expansion@2": "^2.1.3",
+      "brace-expansion@5": "^5.0.8",
       "esbuild": "0.28.1",
+      "fast-uri": "^3.1.4",
       "multer": "2.2.0",
+      "protobufjs": "^7.6.5",
       "qs": "6.15.2",
       "undici": "8.5.0",
       "uuid": "11.1.1"
     },
-    "onlyBuiltDependencies": ["esbuild", "@prisma/client", "@prisma/engines", "prisma"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma"
+    ]
   },
   "keywords": [
     "nestjs",
@@ -159,5 +215,24 @@
     "access": "public",
     "provenance": true,
     "registry": "https://registry.npmjs.org/"
+  },
+  "main": "./dist/server/index.cjs",
+  "module": "./dist/server/index.mjs",
+  "types": "./dist/server/index.d.cts",
+  "typesVersions": {
+    "*": {
+      "shared": [
+        "./dist/shared/index.d.cts"
+      ],
+      "prices": [
+        "./dist/prices/index.d.cts"
+      ],
+      "prisma": [
+        "./dist/prisma/index.d.cts"
+      ],
+      "redis": [
+        "./dist/redis/index.d.cts"
+      ]
+    }
   }
 }
