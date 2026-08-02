@@ -25,13 +25,16 @@
  * Usage: `node scripts/check-consumer-runtime.mjs` (run after `pnpm build`).
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const packageName = '@bymax-one/nest-ai-tokens'
+// Read from the manifest rather than hard-coded: this gate exists to inspect
+// the packed artifact, so a rename must not leave it silently checking a
+// package that no longer exists.
+const packageName = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).name
 
 // The consumer lives inside the repository so Node walks up to the repo's own
 // `node_modules` for the peer dependencies. Nothing is installed and nothing is
