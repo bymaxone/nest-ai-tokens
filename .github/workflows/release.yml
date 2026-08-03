@@ -70,14 +70,15 @@ jobs:
         # tag cannot ship a tarball whose `exports` map resolves to declarations
         # for the wrong module format.
         #
-        # It cannot live in prepublishOnly: attw packs the tarball itself, and a
-        # pack nested inside a publish resolves to a path that does not exist —
-        # `ENOENT: bymax-one-<pkg>-<version>.tgz`.
+        # It is a step rather than a prepublishOnly entry because the publish below
+        # runs with `--ignore-scripts` — prepublishOnly already ran as its own step,
+        # and a second run would clean and rebuild the `dist/` the gates validated.
+        # A gate inside prepublishOnly would therefore never run on this path.
         run: pnpm check:exports
 
       - name: Consumer load
-        # Same reason it is a step rather than a prepublishOnly entry: it packs
-        # the tarball to inspect it, and the nested pack fails inside a publish.
+        # A step for the same reason: prepublishOnly does not run on the publish
+        # below, which passes `--ignore-scripts`.
         run: pnpm check:runtime
 
       - name: Publish with provenance (OIDC)
