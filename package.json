@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-ai-tokens",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (\u00d79), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
@@ -181,7 +181,7 @@
       "multer": "2.2.0",
       "protobufjs": "^7.6.5",
       "qs": "6.15.2",
-      "undici": "8.5.0",
+      "undici": "^8.9.0",
       "uuid": "11.1.1"
     },
     "onlyBuiltDependencies": [

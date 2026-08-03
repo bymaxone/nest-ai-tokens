@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-08-03
+## [1.0.0] - 2026-08-03
 
 First published release. Everything below ships in it.
 
@@ -109,5 +109,5 @@ have regressed from. They are kept because the reasoning is worth having.
 
 ---
 
-[0.1.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v0.1.0
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD
+[1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...HEAD
