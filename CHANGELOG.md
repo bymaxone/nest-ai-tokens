@@ -8,6 +8,55 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-03
+
+First published release. Everything below ships in it.
+
+The `Fixed` and `Security` entries record defects found and corrected before
+publication, not regressions any consumer saw — there is no earlier release to
+have regressed from. They are kept because the reasoning is worth having.
+
+### Added
+
+- **Nine provider normalizers** — OpenAI Chat Completions, OpenAI Responses API, OpenAI-compatible (DeepSeek, xAI, Groq, Azure OpenAI), Anthropic Messages, Google Gemini / Vertex AI, AWS Bedrock Converse, Mistral, OpenRouter, Vercel AI SDK v5/v6. All are pure functions over plain objects; no provider SDK peer dependency.
+- **Versioned effective-dated pricing** — `PricingService` with a six-step model-resolution chain, in-memory TTL cache, `upsertPrice()`, and idempotent `MODEL_PRICES_SEED` snapshot seed. Rates are bigint nano-USD per million tokens; past records are never re-rated.
+- **Immutable append-only ledger** — `LedgerService` with content-derived idempotency (`deriveIdempotencyKey`), exactly-once semantics (payload-hash replay detection), lifecycle transitions (pending → posted → reversed/released), filtered queries, and optional per-tenant tamper-evident hash chain (`verifyChain()`).
+- **First-class markup / margin** — `MarkupResolver` with a fixed multiplier or a per-call `IMarkupPolicy`. Every record stores both `rawCostNanoUsd` (provider cost) and `billedCostNanoUsd` (after markup). The resale lever is a first-class configuration option, not application code.
+- **Prepaid wallets** — `WalletService` with grant/debit/refund/adjust entries, configurable burn order (expiry/priority/FIFO), overdraft support, and debit-allocation tracking.
+- **Multi-dimension budgets** — `BudgetService` with per-scope, per-feature, per-window (daily/weekly/monthly/total) caps on spend, token count, and operation count. Hard block (`policy: 'block'`) or soft alert with threshold events. Renewal-anchored windows via `anchorAt`.
+- **Optional Redis budget counter** — `RedisBudgetCounterStore` with a single atomic Lua `incrIfBelow` script for sub-ms cross-replica enforcement.
+- **Full hold → capture lifecycle** — `MeteringService.hold()` / `capture()` / `release()` / `meter()` for pre-flight spend reservation. `capture()` is idempotent.
+- **Streaming capture** — `StreamUsageCollector` accumulates SSE chunks, prefers provider-final usage, falls back to tokenizer on abort.
+- **NestJS enforcement** — `BudgetGuard` (CanActivate), `MeteringInterceptor` (NestInterceptor), and the `@Meter`, `@RequireBudget`, `@AiFeature` decorators for declarative controller-level metering.
+- **Usage reporting** — `UsageReportService` with SQL-aggregated `summarize()`, CSV/JSON `export()`, paginated history, per-model analytics, and currency conversion.
+- **Events** — Typed domain events (`ai_tokens.*`) delivered to `@nestjs/event-emitter` (optional peer) and/or an `IEventSink` port.
+- **OpenTelemetry** — Optional `ITelemetrySink` / `OtelTelemetrySink` via `@opentelemetry/api` (optional peer).
+- **PostgreSQL adapter** — `PrismaAiTokensStore` (`./prisma` subpath) implementing all four storage ports via parameterized raw SQL. Seven-table schema with migrations.
+- **Five subpaths** — `.` (server), `./shared` (zero-dep), `./prices` (data-only), `./prisma` (adapter), `./redis` (counter).
+- **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
+- **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
+
+
+- **Prisma 7 support, alongside Prisma 6.** The declared peer range has always
+  been `>=6.0.0`, but nothing verified the claim; the end-to-end suite now runs
+  against Prisma 7 and a real PostgreSQL, and it is what surfaced the conflict
+  defect above. The library's own code needed no change — it reaches PostgreSQL
+  exclusively through parameterized raw SQL, and every `Prisma.*` helper it uses
+  is unchanged across the two majors.
+
+  What changed is the development schema and the test harness, mirroring what a
+  host application has to do: `url` left the `datasource` block for a new
+  `prisma.config.ts`, and clients are opened through `@prisma/adapter-pg` rather
+  than the removed `datasourceUrl`. Both setups are documented in the README.
+
+- **`pnpm check:exports`** runs `attw --pack . --profile strict` against the packed
+  tarball, which is what surfaced both resolution defects above.
+- **`pnpm check:runtime`** packs the tarball, lays it out the way npm would, and
+  asserts in ESM *and* CommonJS that an error thrown by `PrismaAiTokensStore`
+  satisfies `instanceof AiTokensException` against the class the root exports. No
+  source-based suite can observe this: the unit tests map the subpath specifiers to
+  `src` and therefore see a single copy. Both gates run in CI.
+
 ### Fixed
 
 - **Idempotency conflicts were reported as generic store errors under Prisma 7.**
@@ -41,28 +90,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **`node10` type resolution failed outright**: the manifest carried no `main`,
   `module` or `types`, and no `typesVersions`. All four are now present.
 
-### Added
-
-- **Prisma 7 support, alongside Prisma 6.** The declared peer range has always
-  been `>=6.0.0`, but nothing verified the claim; the end-to-end suite now runs
-  against Prisma 7 and a real PostgreSQL, and it is what surfaced the conflict
-  defect above. The library's own code needed no change — it reaches PostgreSQL
-  exclusively through parameterized raw SQL, and every `Prisma.*` helper it uses
-  is unchanged across the two majors.
-
-  What changed is the development schema and the test harness, mirroring what a
-  host application has to do: `url` left the `datasource` block for a new
-  `prisma.config.ts`, and clients are opened through `@prisma/adapter-pg` rather
-  than the removed `datasourceUrl`. Both setups are documented in the README.
-
-- **`pnpm check:exports`** runs `attw --pack . --profile strict` against the packed
-  tarball, which is what surfaced both resolution defects above.
-- **`pnpm check:runtime`** packs the tarball, lays it out the way npm would, and
-  asserts in ESM *and* CommonJS that an error thrown by `PrismaAiTokensStore`
-  satisfies `instanceof AiTokensException` against the class the root exports. No
-  source-based suite can observe this: the unit tests map the subpath specifiers to
-  `src` and therefore see a single copy. Both gates run in CI.
-
 ### Security
 
 - **Peer floors raised to exclude known-vulnerable NestJS versions.** The declared
@@ -82,29 +109,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [0.1.0] — 2026-07-03
-
-Initial public release.
-
-### Added
-
-- **Nine provider normalizers** — OpenAI Chat Completions, OpenAI Responses API, OpenAI-compatible (DeepSeek, xAI, Groq, Azure OpenAI), Anthropic Messages, Google Gemini / Vertex AI, AWS Bedrock Converse, Mistral, OpenRouter, Vercel AI SDK v5/v6. All are pure functions over plain objects; no provider SDK peer dependency.
-- **Versioned effective-dated pricing** — `PricingService` with a six-step model-resolution chain, in-memory TTL cache, `upsertPrice()`, and idempotent `MODEL_PRICES_SEED` snapshot seed. Rates are bigint nano-USD per million tokens; past records are never re-rated.
-- **Immutable append-only ledger** — `LedgerService` with content-derived idempotency (`deriveIdempotencyKey`), exactly-once semantics (payload-hash replay detection), lifecycle transitions (pending → posted → reversed/released), filtered queries, and optional per-tenant tamper-evident hash chain (`verifyChain()`).
-- **First-class markup / margin** — `MarkupResolver` with a fixed multiplier or a per-call `IMarkupPolicy`. Every record stores both `rawCostNanoUsd` (provider cost) and `billedCostNanoUsd` (after markup). The resale lever is a first-class configuration option, not application code.
-- **Prepaid wallets** — `WalletService` with grant/debit/refund/adjust entries, configurable burn order (expiry/priority/FIFO), overdraft support, and debit-allocation tracking.
-- **Multi-dimension budgets** — `BudgetService` with per-scope, per-feature, per-window (daily/weekly/monthly/total) caps on spend, token count, and operation count. Hard block (`policy: 'block'`) or soft alert with threshold events. Renewal-anchored windows via `anchorAt`.
-- **Optional Redis budget counter** — `RedisBudgetCounterStore` with a single atomic Lua `incrIfBelow` script for sub-ms cross-replica enforcement.
-- **Full hold → capture lifecycle** — `MeteringService.hold()` / `capture()` / `release()` / `meter()` for pre-flight spend reservation. `capture()` is idempotent.
-- **Streaming capture** — `StreamUsageCollector` accumulates SSE chunks, prefers provider-final usage, falls back to tokenizer on abort.
-- **NestJS enforcement** — `BudgetGuard` (CanActivate), `MeteringInterceptor` (NestInterceptor), and the `@Meter`, `@RequireBudget`, `@AiFeature` decorators for declarative controller-level metering.
-- **Usage reporting** — `UsageReportService` with SQL-aggregated `summarize()`, CSV/JSON `export()`, paginated history, per-model analytics, and currency conversion.
-- **Events** — Typed domain events (`ai_tokens.*`) delivered to `@nestjs/event-emitter` (optional peer) and/or an `IEventSink` port.
-- **OpenTelemetry** — Optional `ITelemetrySink` / `OtelTelemetrySink` via `@opentelemetry/api` (optional peer).
-- **PostgreSQL adapter** — `PrismaAiTokensStore` (`./prisma` subpath) implementing all four storage ports via parameterized raw SQL. Seven-table schema with migrations.
-- **Five subpaths** — `.` (server), `./shared` (zero-dep), `./prices` (data-only), `./prisma` (adapter), `./redis` (counter).
-- **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
-- **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
-
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD

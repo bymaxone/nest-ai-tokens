@@ -65,8 +65,39 @@ jobs:
       - name: Release gate
         run: pnpm prepublishOnly # typecheck · lint · 100% coverage · build · size
 
+      - name: Verify published type resolution
+        # Runs after the build inside prepublishOnly and before the publish, so a
+        # tag cannot ship a tarball whose `exports` map resolves to declarations
+        # for the wrong module format.
+        #
+        # It cannot live in prepublishOnly: attw packs the tarball itself, and a
+        # pack nested inside a publish resolves to a path that does not exist —
+        # `ENOENT: bymax-one-<pkg>-<version>.tgz`.
+        run: pnpm check:exports
+
+      - name: Consumer load
+        # Same reason it is a step rather than a prepublishOnly entry: it packs
+        # the tarball to inspect it, and the nested pack fails inside a publish.
+        run: pnpm check:runtime
+
       - name: Publish with provenance (OIDC)
-        run: pnpm publish --provenance --no-git-checks
+        # `npm publish`, not `pnpm publish`. The registry's `readme` field is
+        # populated from the publish request, and pnpm 11 does not send it: every
+        # package in this family published under pnpm 11 carries an empty `readme`,
+        # while every one published under pnpm 10 — which delegated to the npm CLI
+        # — carries it. The same split shows in `_npmVersion`, present only on the
+        # publishes the npm CLI performed. An empty `readme` renders the npm package
+        # page with no documentation at all, which is where people actually read it.
+        # It already cost this family two corrective patch releases.
+        #
+        # `--ignore-scripts`: npm runs `prepublishOnly` on publish, and this job
+        # already ran it as its own step. Without the flag it runs twice, and the
+        # second run starts by cleaning — deleting and rebuilding the `dist/` the
+        # gates just validated, so the tarball shipped is not the artifact checked.
+        #
+        # `--access public` replaces pnpm's `--no-git-checks`: npm performs no git
+        # check on publish, and the scope needs an explicit public access flag.
+        run: npm publish --provenance --access public --ignore-scripts
 
       - name: Create GitHub Release
         env:
