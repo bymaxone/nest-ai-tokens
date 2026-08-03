@@ -36,8 +36,6 @@ have regressed from. They are kept because the reasoning is worth having.
 - **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
 - **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
 
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v0.1.0
 
 - **Prisma 7 support, alongside Prisma 6.** The declared peer range has always
   been `>=6.0.0`, but nothing verified the claim; the end-to-end suite now runs
@@ -111,3 +109,5 @@ have regressed from. They are kept because the reasoning is worth having.
 
 ---
 
+[0.1.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v0.1.0...HEAD
