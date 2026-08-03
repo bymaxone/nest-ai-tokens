@@ -18,7 +18,6 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
-/** Split the shipped migration into individual statements (comment lines stripped first). */
 /**
  * Build a client for a Testcontainers database.
  *
@@ -32,6 +31,7 @@ function clientFor(url: string): PrismaClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 }
 
+/** Split the shipped migration into individual statements (comment lines stripped first). */
 function migrationStatements(): string[] {
   return readFileSync(MIGRATION, 'utf8')
     .split('\n')

@@ -34,7 +34,6 @@ import { RedisBudgetCounterStore } from '@bymax-one/nest-ai-tokens/redis'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
-/** Split the shipped migration into individual statements. */
 /**
  * Build a client for a Testcontainers database.
  *
@@ -48,6 +47,7 @@ function clientFor(url: string): PrismaClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 }
 
+/** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
   return readFileSync(MIGRATION, 'utf8')
     .split('\n')
