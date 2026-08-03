@@ -25,7 +25,7 @@
  * Usage: `node scripts/check-consumer-runtime.mjs` (run after `pnpm build`).
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -132,14 +132,24 @@ let failed = false
 try {
   // `--ignore-scripts` keeps `prepublishOnly` from rebuilding underneath the
   // artifact this gate is meant to inspect.
-  const packOutput = run('npm', [
-    'pack',
-    '--ignore-scripts',
-    '--silent',
-    '--pack-destination',
-    packDir,
-  ])
-  const tarball = join(packDir, packOutput.trim().split('\n').pop().trim())
+  // The tarball is located by reading the directory it was packed into, not by
+  // parsing `npm pack`'s stdout. Inside a publish, npm writes notices around the
+  // filename, so taking the last line yields a path with trailing text and `tar`
+  // fails on a name that does not exist. The directory is freshly created and
+  // holds exactly one archive.
+  // `npm_config_dry_run` is cleared for the child: a `npm publish --dry-run`
+  // pre-flight exports it, the nested pack inherits it, and a dry pack writes no
+  // file — so the gate would report a missing tarball for a reason that has
+  // nothing to do with the package. Cleared, the gate means the same thing in
+  // every context it can be invoked from.
+  const packEnv = { ...process.env }
+  delete packEnv['npm_config_dry_run']
+  run('npm', ['pack', '--ignore-scripts', '--silent', '--pack-destination', packDir], { env: packEnv })
+  const packed = readdirSync(packDir).filter((name) => name.endsWith('.tgz'))
+  if (packed.length !== 1) {
+    throw new Error(`expected one tarball in ${packDir}, found ${packed.length}`)
+  }
+  const tarball = join(packDir, packed[0])
 
   const packageDir = join(consumerDir, 'node_modules', packageName)
   mkdirSync(packageDir, { recursive: true })
