@@ -85,17 +85,19 @@ updates:
       prefix: ci
       include: scope
     groups:
-      # The three CodeQL sub-actions are one product with one version. `init` writes a
-      # config that `analyze` reads back, and the reader refuses a config written by a
+      # The CodeQL sub-actions are one product with one version. `init` writes a config
+      # that `analyze` reads back, and the reader refuses a config written by a
       # different version:
       #
       #   Loaded a configuration file for version '<older>', but running version '<newer>'
       #
       # Bumped one at a time — which is what Dependabot does by default, since each
-      # sub-action is a separate action reference — every such PR is red on arrival, and
-      # merging one leaves the default branch broken until its sibling lands. Grouping all
-      # update types keeps the three in a single reviewable change that is green by
-      # construction.
+      # sub-action is a separate action reference — merging one leaves the default branch
+      # mismatched until its siblings land, and CodeQL runs on push to main. Which
+      # sub-actions a repository uses varies (`upload-sarif` lives in scorecard.yml, and
+      # `autobuild` only where the analysis needs it), so the pattern covers them all
+      # rather than naming a count. Grouping every update type keeps the set in a single
+      # reviewable change that is consistent by construction.
       codeql:
         patterns:
           - 'github/codeql-action/*'
