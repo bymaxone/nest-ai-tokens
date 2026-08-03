@@ -236,16 +236,34 @@ export function firstOrThrow<T>(rows: T[]): T {
 /** PostgreSQL SQLSTATE for a unique-constraint violation. */
 export const PG_UNIQUE_VIOLATION = '23505'
 
+/** The `meta` shapes a raw-query failure arrives in, across supported Prisma majors. */
+interface RawQueryErrorMeta {
+  /** Prisma 6 and its query engine: the native SQLSTATE, flat on `meta`. */
+  readonly code?: string
+  /** Prisma 7 and its driver adapters: the driver's own error, nested. */
+  readonly driverAdapterError?: {
+    readonly cause?: { readonly originalCode?: string; readonly kind?: string }
+  }
+}
+
 /**
- * Whether an error is a unique-constraint violation. A raw query surfaces the
- * native SQLSTATE (`23505`) under `P2010.meta.code`; a model call would surface
- * `P2002`. Both map to the exactly-once replay-or-conflict path (§15.2).
+ * Whether an error is a unique-constraint violation, which is the exactly-once
+ * replay-or-conflict path (§15.2).
+ *
+ * A model call surfaces `P2002`. A raw query surfaces `P2010` carrying the native
+ * SQLSTATE, and *where* it carries it depends on how the client reaches the
+ * database: Prisma 6 puts it flat on `meta.code`, while a Prisma 7 driver adapter
+ * nests the driver's own error under `meta.driverAdapterError.cause`. Both are
+ * read, because the declared peer range spans both majors — and a missed
+ * violation is silent, downgrading a 409 conflict into a generic store error.
  */
 export function isUniqueViolation(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
   if (error.code === 'P2002') return true
-  const meta = error.meta as { code?: string } | undefined
-  return meta?.code === PG_UNIQUE_VIOLATION
+  const meta = error.meta as RawQueryErrorMeta | undefined
+  if (meta?.code === PG_UNIQUE_VIOLATION) return true
+  const cause = meta?.driverAdapterError?.cause
+  return cause?.originalCode === PG_UNIQUE_VIOLATION || cause?.kind === 'UniqueConstraintViolation'
 }
 
 /** Map an unknown driver error to a domain store error (never leaks connection details). */

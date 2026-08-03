@@ -96,7 +96,29 @@ Required peers (if not already present):
 npm i @nestjs/common @nestjs/core reflect-metadata rxjs
 # Persistence:
 npm i @prisma/client
+# Prisma 7 only — the client is opened through a driver adapter:
+npm i @prisma/adapter-pg
 ```
+
+> **Prisma 6 and 7 are both supported.** The adapter talks to PostgreSQL through
+> parameterized raw SQL and never touches a generated model delegate, so the same
+> code runs on either. What differs is how *your application* builds the client it
+> hands over:
+>
+> ```typescript
+> // Prisma 6
+> const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
+>
+> // Prisma 7 — `datasourceUrl` was removed; open through a driver adapter
+> import { PrismaPg } from '@prisma/adapter-pg'
+> const prisma = new PrismaClient({
+>   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+> })
+> ```
+>
+> Prisma 7 also removed `url` from `datasource` blocks in `schema.prisma`; it
+> moves to a `prisma.config.ts` at your project root. Neither change reaches this
+> library's API — `PrismaAiTokensStore` receives whatever client you built.
 
 ### 2 — Register the module
 

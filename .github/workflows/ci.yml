@@ -70,7 +70,7 @@ jobs:
       - name: Verify build output integrity
         run: |
           for subpath in server shared prices prisma redis; do
-            for ext in mjs cjs d.ts; do
+            for ext in mjs cjs d.ts d.cts; do
               if [ ! -f "dist/$subpath/index.$ext" ]; then
                 echo "Missing dist/$subpath/index.$ext"
                 exit 1

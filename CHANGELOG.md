@@ -10,6 +10,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Fixed
 
+- **Idempotency conflicts were reported as generic store errors under Prisma 7.**
+  A raw-query unique violation carries the native SQLSTATE, and where it carries
+  it depends on how the client reaches the database. Prisma 6 puts it flat on
+  `meta.code`; a Prisma 7 driver adapter nests the driver's own error under
+  `meta.driverAdapterError.cause`. `isUniqueViolation` read only the first, so on
+  Prisma 7 the exactly-once replay-or-conflict path (§15.2) degraded a 409
+  `AI_TOKENS_IDEMPOTENCY_CONFLICT` into a 500-class `AI_TOKENS_STORE_ERROR` —
+  silently, since nothing threw. Both shapes are now read.
+
 - **Errors thrown by `PrismaAiTokensStore` were not recognised as
   `AiTokensException`.** The store lives in the `./prisma` entry point and reached
   the class through a relative path into `../server`, so the separate bundle got
@@ -33,6 +42,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   `module` or `types`, and no `typesVersions`. All four are now present.
 
 ### Added
+
+- **Prisma 7 support, alongside Prisma 6.** The declared peer range has always
+  been `>=6.0.0`, but nothing verified the claim; the end-to-end suite now runs
+  against Prisma 7 and a real PostgreSQL, and it is what surfaced the conflict
+  defect above. The library's own code needed no change — it reaches PostgreSQL
+  exclusively through parameterized raw SQL, and every `Prisma.*` helper it uses
+  is unchanged across the two majors.
+
+  What changed is the development schema and the test harness, mirroring what a
+  host application has to do: `url` left the `datasource` block for a new
+  `prisma.config.ts`, and clients are opened through `@prisma/adapter-pg` rather
+  than the removed `datasourceUrl`. Both setups are documented in the README.
 
 - **`pnpm check:exports`** runs `attw --pack . --profile strict` against the packed
   tarball, which is what surfaced both resolution defects above.

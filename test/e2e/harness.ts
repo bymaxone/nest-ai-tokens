@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Test } from '@nestjs/testing'
 import type { TestingModule } from '@nestjs/testing'
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { GenericContainer, type StartedTestContainer } from 'testcontainers'
@@ -32,6 +33,19 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { RedisBudgetCounterStore } from '@bymax-one/nest-ai-tokens/redis'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
+
+/**
+ * Build a client for a Testcontainers database.
+ *
+ * Prisma 7 removed `datasourceUrl` from the constructor: a client is now opened
+ * through a driver adapter, so the connection string reaches the database through
+ * `@prisma/adapter-pg` rather than through Prisma's own engine. The library never
+ * does this — the host application constructs the client and hands it over — so
+ * this lives in the test harness, which is the only place here that owns one.
+ */
+function clientFor(url: string): PrismaClient {
+  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
+}
 
 /** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
@@ -59,8 +73,8 @@ export interface PostgresFixture {
 export async function startPostgres(): Promise<PostgresFixture> {
   const container = await new PostgreSqlContainer('postgres:16').start()
   const url = container.getConnectionUri()
-  const prisma = new PrismaClient({ datasourceUrl: url })
-  const prismaB = new PrismaClient({ datasourceUrl: url })
+  const prisma = clientFor(url)
+  const prismaB = clientFor(url)
   for (const statement of migrationStatements()) await prisma.$executeRawUnsafe(statement)
   const stop = async (): Promise<void> => {
     await prisma.$disconnect()
