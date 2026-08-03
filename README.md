@@ -588,17 +588,17 @@ fits one.
 
 ## 🛡️ Security Table
 
-| Layer            | Implementation                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path          |
-| Ledger           | Append-only; corrections are compensating records, never updates                          |
-| Tamper evidence  | Optional per-entry hash chain over the previous posted entry                              |
-| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal        |
-| Rating           | Point-in-time — an entry is priced at the call timestamp and never re-rated               |
-| Telemetry        | Model, operation, provider, service tier; prompt and completion text never emitted        |
-| Budget races     | One atomic Lua `incrIfBelow` — the check and the increment cannot interleave              |
-| Provider surface | Normalizers consume plain objects; no provider SDK dependency, no outbound call made here |
-| Supply chain     | `dependencies: {}`; SHA-pinned Actions, OSV-Scanner, TruffleHog, OpenSSF Scorecard        |
+| Layer            | Implementation                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path                                                       |
+| Ledger           | Append-only; corrections are compensating records, never updates                                                                       |
+| Tamper evidence  | Optional per-entry hash chain over the previous posted entry                                                                           |
+| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal                                                     |
+| Rating           | Point-in-time — an entry is priced at the call timestamp and never re-rated                                                            |
+| Telemetry        | Model, operation, provider, service tier; prompt and completion text never emitted                                                     |
+| Budget races     | One atomic Lua `incrIfBelow` — the check and the increment cannot interleave                                                           |
+| Provider surface | Normalizers consume plain objects; no provider SDK dependency, no outbound call made here                                              |
+| Supply chain     | `dependencies: {}`; third-party Actions pinned by commit SHA (org-internal reusables by tag); CodeQL, TruffleHog and OpenSSF Scorecard |
 
 > [!IMPORTANT]
 > **The hash chain is tamper-_evident_, not tamper-_proof_.** It makes an edited row
@@ -657,9 +657,9 @@ Issues: [github.com/bymaxone/nest-ai-tokens/issues](https://github.com/bymaxone/
 
 ## 🔒 Security Policy
 
-If you discover a security vulnerability, please **do not** open a public issue. Instead, email us
-at **security@bymax.one** with details. We take security seriously and will respond promptly. See
-[`SECURITY.md`](./SECURITY.md) for the full policy.
+If you discover a security vulnerability, please **do not** open a public issue.
+Instead, email us at **security@bymax.one** with details. We take security seriously
+and will respond promptly. See [`SECURITY.md`](./SECURITY.md) for the full policy.
 
 ---
 
