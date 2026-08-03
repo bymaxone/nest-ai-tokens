@@ -422,14 +422,19 @@ return toJsonSafe(status) // bigint → decimal strings
 
 When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is registered, the library emits typed events on the NestJS event bus:
 
-| Event                        | When                                   |
-| ---------------------------- | -------------------------------------- |
-| `ai-tokens.record.posted`    | A usage record is posted to the ledger |
-| `ai-tokens.hold.placed`      | A spend hold is placed                 |
-| `ai-tokens.hold.captured`    | A hold is settled with actuals         |
-| `ai-tokens.hold.released`    | A hold is released without charging    |
-| `ai-tokens.budget.threshold` | A soft-threshold alert fires           |
-| `ai-tokens.wallet.depleted`  | A wallet balance reaches zero          |
+| Event                                 | When                                                   |
+| ------------------------------------- | ------------------------------------------------------ |
+| `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                 |
+| `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry           |
+| `ai_tokens.hold.released`             | A hold is released without charging                    |
+| `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                            |
+| `ai_tokens.budget.exceeded`           | A hard budget is exhausted                             |
+| `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                      |
+| `ai_tokens.wallet.granted`            | Credit is granted to a wallet                          |
+| `ai_tokens.wallet.low_balance`        | A wallet crosses its low-balance mark                  |
+| `ai_tokens.wallet.depleted`           | A wallet balance reaches zero                          |
+| `ai_tokens.price.missing`             | No rate is in effect for a model at the call timestamp |
+| `ai_tokens.audit`                     | An auditable operation completed                       |
 
 All event payloads use `bigint` nano-USD internally and `string` decimal at JSON boundaries.
 
@@ -504,10 +509,10 @@ The sections above document each of these with a runnable example. This is the i
 
 ### Request-scoped enforcement
 
-| Class                 | Role                                                                        |
-| --------------------- | --------------------------------------------------------------------------- |
-| `BudgetGuard`         | Refuses the request before the handler runs when a cap is already exhausted |
-| `MeteringInterceptor` | Places the hold around the handler and settles it to actuals afterwards     |
+| Class                 | Role                                                                                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BudgetGuard`         | Check-only gate: refuses the request before the handler runs when a hard budget is exhausted, and — when `@RequireBudget.estimate` is present — places the hold and attaches it to the request            |
+| `MeteringInterceptor` | The capture half: extracts usage from the handler's result, then settles the guard's hold or records post-hoc when there is none. On a handler error it releases the hold and rethrows the original error |
 
 ### Subpaths
 
@@ -526,8 +531,10 @@ The sections above document each of these with a runnable example. This is the i
 ```
 BymaxAiTokensModule (forRoot / forRootAsync)
   │
-  ├── guard + interceptor ── enforcement happens in the request, in-process:
-  │                          no proxy, no sidecar, no external hop to fail
+  ├── guard + interceptor ── enforcement happens in the request, in-process: no
+  │                          proxy, no external hop to fail. The guard checks (and
+  │                          holds, when an estimate is declared); the interceptor
+  │                          captures the handler's actual usage and settles
   │
   ├── normalizers/ ───────── 9 providers → one usage shape. They consume plain
   │                          objects, so no provider SDK is a dependency and the
@@ -574,11 +581,17 @@ in the database stops matching the chain that follows it.
 idempotency key carries a unique constraint, and the replay path is the constraint
 violation being recognized as a conflict rather than surfacing as a store error.
 
-**Prompt and completion text never leave the counting boundary.** The stream
-collector holds response text only to count it, and the OpenTelemetry emitter is
-explicit that attributes carry model, operation, provider and service tier — never
-prompt or completion content. Nothing about a request's contents reaches your
-telemetry backend through this library.
+**Prompt and completion text never reach the ledger, the events or the telemetry.**
+The stream collector holds response text only to count it; the OpenTelemetry emitter
+carries model, operation, provider and service tier, and never content. The ledger
+stores no text at all.
+
+There is one place text can be persisted, and it is opt-in: `IContentStore`, the
+content sidecar. A host that enables it stores **masked** text under a short TTL,
+separate from the ledger, with a `purge()` that deletes by tenant, record or subject
+so an erasure request can be honoured without touching the accounting. It is off
+unless you provide a store — and if you do, text is being written, and where it is
+written is your implementation.
 
 **Budget checks are atomic.** The Redis counter runs check-and-increment as one Lua
 script, so two concurrent requests cannot both observe room under a cap that only
@@ -588,17 +601,18 @@ fits one.
 
 ## 🛡️ Security Table
 
-| Layer            | Implementation                                                                                                                         |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path                                                       |
-| Ledger           | Append-only; corrections are compensating records, never updates                                                                       |
-| Tamper evidence  | Optional per-entry hash chain over the previous posted entry                                                                           |
-| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal                                                     |
-| Rating           | Point-in-time — an entry is priced at the call timestamp and never re-rated                                                            |
-| Telemetry        | Model, operation, provider, service tier; prompt and completion text never emitted                                                     |
-| Budget races     | One atomic Lua `incrIfBelow` — the check and the increment cannot interleave                                                           |
-| Provider surface | Normalizers consume plain objects; no provider SDK dependency, no outbound call made here                                              |
-| Supply chain     | `dependencies: {}`; third-party Actions pinned by commit SHA (org-internal reusables by tag); CodeQL, TruffleHog and OpenSSF Scorecard |
+| Layer            | Implementation                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path                                                                               |
+| Ledger           | Append-only; corrections are compensating records, never updates                                                                                               |
+| Tamper evidence  | Optional per-entry hash chain over the previous posted entry                                                                                                   |
+| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal                                                                             |
+| Rating           | Point-in-time — an entry is priced at the call timestamp and never re-rated                                                                                    |
+| Telemetry        | Model, operation, provider, service tier; prompt and completion text never emitted                                                                             |
+| Content          | Never in the ledger, events or telemetry. The opt-in `IContentStore` sidecar stores masked text under a short TTL, with `purge()` by tenant, record or subject |
+| Budget races     | One atomic Lua `incrIfBelow` — the check and the increment cannot interleave                                                                                   |
+| Provider surface | Normalizers consume plain objects; no provider SDK dependency, no outbound call made here                                                                      |
+| Supply chain     | `dependencies: {}`; third-party Actions pinned by commit SHA (org-internal reusables by tag); CodeQL, TruffleHog and OpenSSF Scorecard                         |
 
 > [!IMPORTANT]
 > **The hash chain is tamper-_evident_, not tamper-_proof_.** It makes an edited row
