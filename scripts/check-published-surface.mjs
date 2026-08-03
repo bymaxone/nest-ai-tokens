@@ -218,7 +218,11 @@ async function checkLinks() {
   // a naive link regex captures the IMAGE — probing shields.io on every run and
   // failing the build when it rate-limits, for a reason that is not ours. The
   // image is stripped first so only the target remains.
-  const clickable = README.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  //
+  // Collection starts from the prose for the same reason the anchor set does: an
+  // `<a href="${url}">` inside a fence is a string an example builds at runtime,
+  // not a link a reader can click, and the checker cannot resolve a placeholder.
+  const clickable = README_PROSE.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
   const links = new Set([
     ...[...clickable.matchAll(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]),
     ...[...clickable.matchAll(/<a\s+href="(https?:\/\/[^"]+)"/g)].map((m) => m[1]),
@@ -226,8 +230,8 @@ async function checkLinks() {
   // Both spellings: the section links are Markdown, but the header navigation is
   // raw HTML. Collecting only the first left this README's nav bar unchecked.
   const internal = new Set([
-    ...[...README.matchAll(/\[[^\]]*\]\((#[^)\s]+)\)/g)].map((m) => m[1].toLowerCase()),
-    ...[...README.matchAll(/<a\s+href="(#[^"]+)"/g)].map((m) => m[1].toLowerCase()),
+    ...[...README_PROSE.matchAll(/\[[^\]]*\]\((#[^)\s]+)\)/g)].map((m) => m[1].toLowerCase()),
+    ...[...README_PROSE.matchAll(/<a\s+href="(#[^"]+)"/g)].map((m) => m[1].toLowerCase()),
   ])
 
   // Relative links are the ones most likely to rot — a file gets renamed and
