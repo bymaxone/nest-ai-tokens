@@ -33,38 +33,86 @@
 
 ## ✨ Overview
 
-`@bymax-one/nest-ai-tokens` eliminates the multi-tool assembly required to meter and bill AI usage in a NestJS application. A team that wants token accounting today must stitch together a tokenizer, a price dataset, a billing engine, a proxy for enforcement, and an observability tool — every one either a separate process, an external SaaS, or a stateless calculator with no ledger, no budgets, and no markup.
+`@bymax-one/nest-ai-tokens` meters AI usage and bills it, in-process. Instead of assembling a
+proxy for enforcement, a ledger for accounting, a price table for rating and a wallet for
+prepaid credit — four systems that must agree on what a call cost — you install one library
+and get all of it behind a NestJS guard and interceptor.
 
-This library provides all of it in-process:
+The library has **zero direct dependencies**. NestJS, Prisma, `ioredis`, the event emitter and
+OpenTelemetry all arrive as peer dependencies, and the optional ones are never imported unless
+the feature that needs them is enabled.
 
-- **In-request enforcement** as a NestJS guard + interceptor — no proxy/sidecar/external hop.
-- **Exact token accounting** across every billing dimension providers report: cached tokens (up to 10× error if mishandled), reasoning tokens (double-billing trap on OpenAI/OpenRouter), service tiers (batch at standard = 2× wrong), server-side surcharges (Anthropic web search is $10/1k calls inside `usage`).
-- **Point-in-time pricing** — a ledger entry is rated at the price in effect at the call timestamp, never re-rated at today's price.
-- **First-class markup** — the difference between provider cost and customer price is configuration, not application code (`markup: 4.0` → end-users pay 4× the provider cost). This is the SaaS profit lever, and it is the library's differentiator.
-- **Prepaid wallets + count/token/spend budgets** — race-safe, Redis-accelerated optional.
-- **Zero runtime dependencies** — `"dependencies": {}`. NestJS, Prisma, ioredis, and OpenTelemetry are all peer dependencies.
+### Why nest-ai-tokens?
+
+- **Enforcement happens in the request.** A guard refuses the call before the handler runs
+  and an interceptor settles the actual usage after it — no proxy to deploy, no sidecar to
+  keep alive, no external hop that can fail open.
+- **Money is exact by construction.** Every persisted amount is `bigint` nano-USD. There is no
+  float arithmetic on a money path, because a rounding difference there is a number a customer
+  is charged.
+- **The ledger is evidence, not state.** Entries are appended and corrections are compensating
+  records; with the optional hash chain on, a row edited in the database stops matching the
+  chain that follows it.
+- **Charging twice is prevented by the database.** The idempotency key carries a unique
+  constraint, and the replay path is that violation being recognized as a conflict — not
+  application care that someone can forget.
 
 ---
 
 ## 🔥 Features
 
-| Capability                   | Detail                                                                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **9 provider normalizers**   | OpenAI Chat, OpenAI Responses, OpenAI-compatible (DeepSeek/xAI/Groq/Azure), Anthropic, Google Gemini (+ Vertex), AWS Bedrock Converse, Mistral, OpenRouter, Vercel AI SDK v5/v6 |
-| **Provider-agnostic**        | No provider SDK peer dep. Normalizers consume plain objects — the library never makes the LLM call.                                                                             |
-| **Exact money math**         | All persisted amounts are `bigint` nano-USD. No float arithmetic on money paths.                                                                                                |
-| **Append-only ledger**       | Immutable entries; corrections are compensating records. Exactly-once accounting via content-derived idempotency keys.                                                          |
-| **Hash-chain integrity**     | Optional per-entry hash chain so tampering with any ledger row is detectable.                                                                                                   |
-| **Hold → capture lifecycle** | Pre-flight spend hold before the handler runs; settled to actuals after. Streaming-safe via `StreamUsageCollector`.                                                             |
-| **Markup / resale**          | Fixed multiplier or per-call `IMarkupPolicy`. Applied in both rating modes. Billed amount = `rawCostNanoUsd × markup`.                                                          |
-| **Prepaid wallets**          | Append-only grant/debit/refund/adjust entries; configurable burn order (expiry/priority/FIFO); overdraft support.                                                               |
-| **Multi-dimension budgets**  | Cap spend, token count, and operation count per scope per window (daily/weekly/monthly/total). Hard block or soft alert.                                                        |
-| **Budget counter (Redis)**   | Optional `RedisBudgetCounterStore` — single atomic Lua script (`incrIfBelow`) for sub-ms cross-replica enforcement.                                                             |
-| **Streaming capture**        | `StreamUsageCollector` accumulates chunks; prefers provider final usage; falls back to tokenizer on abort.                                                                      |
-| **Usage reports**            | Summarize by scope/feature/model/date; currency conversion; CSV and JSON export; per-model analytics.                                                                           |
-| **Events**                   | Typed events (record/hold/capture/release/budget threshold/wallet) via `@nestjs/event-emitter` (optional peer).                                                                 |
-| **OpenTelemetry**            | Optional `@opentelemetry/api` sink — traces every metering call.                                                                                                                |
-| **Five subpaths**            | `"."` server · `"./shared"` zero-dep · `"./prices"` seed data · `"./prisma"` adapter · `"./redis"` counter                                                                      |
+### 📊 Metering
+
+- ✅ **Nine provider normalizers** — OpenAI Chat, OpenAI Responses, OpenAI-compatible
+  (DeepSeek / xAI / Groq / Azure), Anthropic, Google, Bedrock, Mistral, Cohere and a generic
+  fallback, all folded into one usage shape
+- ✅ **Provider-agnostic by construction** — normalizers consume plain objects, so no provider
+  SDK is a dependency and this library never makes the model call itself
+- ✅ **Every billing dimension** — cached tokens, reasoning tokens, audio and image units, and
+  the write/read split providers report separately
+- ✅ **Streaming capture** — `StreamUsageCollector` accumulates chunks and prefers the
+  provider's final usage, falling back to its own count when a stream is cut short
+
+### 💰 Money & Ledger
+
+- ✅ **Exact `bigint` nano-USD** — on every persisted amount; no float arithmetic on a money
+  path
+- ✅ **Point-in-time rating** — an entry is priced at the rate in effect at the call
+  timestamp, and never re-rated by a later price change
+- ✅ **Append-only ledger** — corrections are compensating records that point at what they
+  reverse; nothing is updated in place
+- ✅ **Hash-chain integrity** — optional per-entry chain over the previous posted entry, so a
+  row edited directly in the database is detectable
+- ✅ **Exactly-once accounting** — a unique constraint on the idempotency key; the violation
+  is what the replay path recognizes as a conflict
+- ✅ **Markup as configuration** — a fixed multiplier or a per-call `IMarkupPolicy`, applied
+  in both rating modes, so the resale spread is not application code
+
+### 🛡️ Enforcement
+
+- ✅ **Hold → capture lifecycle** — the guard places a spend hold before the handler runs when
+  an estimate is declared; the interceptor settles it to actuals afterwards
+- ✅ **Multi-dimension budgets** — cap spend, token count and operation count per scope per
+  window (daily / weekly / monthly), hard or soft
+- ✅ **Atomic budget counter** — the optional `RedisBudgetCounterStore` runs check and
+  increment as one Lua script, so two concurrent requests cannot both fit under a cap that
+  holds one
+- ✅ **Prepaid wallets** — append-only grant / debit / refund / adjust entries, with a
+  configurable burn order (expiry, priority, FIFO)
+
+### 🧩 Developer Experience
+
+- ✅ **Zero runtime dependencies** — Prisma, `ioredis`, the event emitter and OpenTelemetry
+  all arrive as peers, and the optional ones are imported only when enabled
+- ✅ **Five subpaths** — `.` server · `./shared` zero-dependency contracts · `./prices` seed
+  data · `./prisma` the PostgreSQL store · `./redis` the budget counter
+- ✅ **Usage reports** — summarize by scope, feature, model or date, with currency conversion
+  and CSV or JSON export
+- ✅ **Typed events** — eleven event types over `@nestjs/event-emitter`, optional
+- ✅ **OpenTelemetry** — an optional sink that traces every metering call, carrying model and
+  operation and never prompt or completion text
+- ✅ **Typed end to end** — TypeScript `strict` with `exactOptionalPropertyTypes` and
+  `noUncheckedIndexedAccess`; zero `any`
 
 ---
 
@@ -564,38 +612,67 @@ BymaxAiTokensModule (forRoot / forRootAsync)
 implementation over PostgreSQL and `./redis` accelerates budget counters; both are
 peers you already control. The library defines the contracts.
 
+### Design Principles
+
+| Principle                                      | Description                                                                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 💵 **Exact money, always**                     | Every persisted amount is `bigint` nano-USD. A float on a billing path is a rounding difference someone is charged for                            |
+| 📜 **Append, never update**                    | The ledger is evidence. A correction is a compensating record that points at what it reverses, so the history of a charge survives the correction |
+| 🔒 **The database prevents the double charge** | A unique constraint on the idempotency key, with the violation recognized as a conflict — not application discipline that can be forgotten        |
+| ⏱️ **Priced when it happened**                 | An entry is rated at the price in effect at the call timestamp and never re-rated, so a price change does not rewrite the past                    |
+| 🚪 **In-request enforcement**                  | Guard and interceptor, in-process: no proxy to deploy, no sidecar to keep alive, no external hop that can fail open                               |
+| 🧊 **Zero runtime dependencies**               | `dependencies` is `{}`, and an optional peer is imported only when the feature that needs it is enabled                                           |
+
 ---
 
 ## 🔐 Security Model
 
-**Money is `bigint` nano-USD everywhere it is persisted.** Not because floats are
-imprecise in the abstract, but because a rounding difference on a billing path is a
-number a customer is charged. There is no float arithmetic on a money path.
+This library decides what a customer is charged and holds the record that proves it. Its
+security contract is about arithmetic that cannot drift, a record that cannot be quietly
+rewritten, and text that does not travel.
 
-**The ledger cannot be rewritten.** Entries are appended; a correction is a
-compensating record that points at what it reverses. With the optional hash chain
-on, each posted entry carries a hash over its predecessor, so a row edited directly
-in the database stops matching the chain that follows it.
+### Money is `bigint` nano-USD everywhere it is persisted
 
-**Charging twice is prevented by the database, not by application care.** The
-idempotency key carries a unique constraint, and the replay path is the constraint
-violation being recognized as a conflict rather than surfacing as a store error.
+Not because floats are imprecise in the abstract, but because a rounding difference on a
+billing path is a number a customer is charged. There is no float arithmetic on a money
+path.
 
-**Prompt and completion text never reach the ledger, the events or the telemetry.**
-The stream collector holds response text only to count it; the OpenTelemetry emitter
-carries model, operation, provider and service tier, and never content. The ledger
-stores no text at all.
+### The ledger cannot be rewritten
 
-There is one place text can be persisted, and it is opt-in: `IContentStore`, the
-content sidecar. A host that enables it stores **masked** text under a short TTL,
-separate from the ledger, with a `purge()` that deletes by tenant, record or subject
-so an erasure request can be honoured without touching the accounting. It is off
-unless you provide a store — and if you do, text is being written, and where it is
-written is your implementation.
+Entries are appended; a correction is a compensating record that points at what it
+reverses. With the optional hash chain on, each posted entry carries a hash over its
+predecessor, so a row edited directly in the database stops matching the chain that follows
+it. It is tamper-_evident_, not tamper-proof: pair it with database permissions that forbid
+`UPDATE` on the ledger table.
 
-**Budget checks are atomic.** The Redis counter runs check-and-increment as one Lua
-script, so two concurrent requests cannot both observe room under a cap that only
-fits one.
+### Charging twice is prevented by the database
+
+The idempotency key carries a unique constraint, and the replay path is that constraint
+violation being recognized as a conflict rather than surfacing as a store error. Application
+care is not what stands between a retry and a second charge.
+
+### Prompt and completion text never reach the ledger, the events or the telemetry
+
+The stream collector holds response text only to count it; the OpenTelemetry emitter carries
+model, operation, provider and service tier, and never content. The ledger stores no text at
+all.
+
+There is one place text can be persisted, and it is opt-in: `IContentStore`, the content
+sidecar. A host that enables it stores **masked** text under a short TTL, separate from the
+ledger, with a `purge()` that deletes by tenant, record or subject so an erasure request can
+be honoured without touching the accounting. It is off unless you provide a store — and if
+you do, text is being written, and where it is written is your implementation.
+
+### Budget checks are atomic
+
+The Redis counter runs check-and-increment as one Lua script, so two concurrent requests
+cannot both observe room under a cap that only fits one.
+
+### The scope resolver is trusted input
+
+`scopeResolver` decides whose budget and whose wallet a request draws on. It is documented
+as taking the host's **verified** auth context — never the client's body or query. A resolver
+that reads a tenant id from request input lets a caller bill someone else.
 
 ---
 
@@ -638,45 +715,58 @@ fits one.
 
 ## 🧪 Testing & Quality
 
+This library decides what a customer is charged, so the suite is held to a bar beyond "the
+tests pass".
+
+- ✅ **100% line coverage** — statements, branches, functions and lines, enforced as a gate
+- ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) at
+  `break: 95` ([report](./docs/mutation_testing_results.md))
+- ✅ **Real PostgreSQL in e2e** — Testcontainers, so the unique constraint that prevents a
+  double charge is exercised against an actual database rather than a mock of one
+- ✅ **Both Prisma majors** — the raw-query violation path is unit-tested for the query engine
+  _and_ the driver adapter, because the peer range admits 6 and 7 and each reports the
+  SQLSTATE in a different place
+- ✅ **Published-artifact gates** — `check:exports` resolves the types the way each module
+  system does, `check:runtime` loads every subpath from the packed tarball in ESM and
+  CommonJS, and `check:published` compiles this README's snippets against `dist/`
+- ✅ **Zero suppressions** — no coverage or mutation directives in the production source
+
 ```bash
-# Unit tests (100% line/branch coverage):
-pnpm test
-pnpm test:cov
-
-# E2E (Testcontainers — requires Docker):
-pnpm test:e2e
-
-# Mutation gate (Stryker, ~10-20 min):
-pnpm mutation
-
-# Type-check + JSDoc coverage + docs fixture:
-pnpm docs:check && pnpm typecheck
-
-# Lint:
-pnpm lint
-
-# Bundle size budgets:
-pnpm build && pnpm size
+pnpm test          # unit tests
+pnpm test:cov      # unit tests with the 100% coverage gate
+pnpm test:e2e      # end-to-end against PostgreSQL (requires Docker)
+pnpm mutation      # Stryker mutation testing (break: 95)
+pnpm typecheck     # tsc strict check
+pnpm lint          # ESLint
+pnpm build && pnpm size   # bundle-size budgets
 ```
 
 ---
 
 ## 🤝 Contributing
 
-See [AGENTS.md](./AGENTS.md) for the architecture map and [CLAUDE.md](./CLAUDE.md) for the critical engineering rules (money-integer invariant, ledger immutability, side-effect matrix).
+Pull requests are welcome. Please open an issue first for significant changes.
 
-Issues: [github.com/bymaxone/nest-ai-tokens/issues](https://github.com/bymaxone/nest-ai-tokens/issues)
+- Read [`docs/technical_specification.md`](./docs/technical_specification.md) for architecture decisions.
+- Run `pnpm test:cov` and `pnpm lint` before opening a PR.
+- Conventional Commits are used for every change.
 
 ---
 
 ## 🔒 Security Policy
 
-If you discover a security vulnerability, please **do not** open a public issue.
-Instead, email us at **security@bymax.one** with details. We take security seriously
-and will respond promptly. See [`SECURITY.md`](./SECURITY.md) for the full policy.
+If you discover a security vulnerability, please **do not** open a public issue. Instead, email us
+at **security@bymax.one** with details. We take security seriously and will respond promptly. See
+[`SECURITY.md`](./SECURITY.md) for the full policy.
 
 ---
 
 ## 📄 License
 
-MIT — see [LICENSE](./LICENSE).
+[MIT](./LICENSE) © [Bymax One](https://github.com/bymaxone)
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/bymaxone">Bymax One</a></sub>
+</p>
