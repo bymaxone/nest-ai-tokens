@@ -64,8 +64,8 @@ the feature that needs them is enabled.
 ### 📊 Metering
 
 - ✅ **Nine provider normalizers** — OpenAI Chat, OpenAI Responses, OpenAI-compatible
-  (DeepSeek / xAI / Groq / Azure), Anthropic, Google, Bedrock, Mistral, Cohere and a generic
-  fallback, all folded into one usage shape
+  (DeepSeek / xAI / Groq / Azure), Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter
+  and the Vercel AI SDK, all folded into one usage shape
 - ✅ **Provider-agnostic by construction** — normalizers consume plain objects, so no provider
   SDK is a dependency and this library never makes the model call itself
 - ✅ **Every billing dimension** — cached tokens, reasoning tokens, audio and image units, and
@@ -108,7 +108,8 @@ the feature that needs them is enabled.
   data · `./prisma` the PostgreSQL store · `./redis` the budget counter
 - ✅ **Usage reports** — summarize by scope, feature, model or date, with currency conversion
   and CSV or JSON export
-- ✅ **Typed events** — eleven event types over `@nestjs/event-emitter`, optional
+- ✅ **Typed events** — ten emitted event types over `@nestjs/event-emitter`, optional
+  (`wallet.low_balance` is declared in the catalog and reserved; nothing emits it yet)
 - ✅ **OpenTelemetry** — an optional sink that traces every metering call, carrying model and
   operation and never prompt or completion text
 - ✅ **Typed end to end** — TypeScript `strict` with `exactOptionalPropertyTypes` and
@@ -470,19 +471,19 @@ return toJsonSafe(status) // bigint → decimal strings
 
 When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is registered, the library emits typed events on the NestJS event bus:
 
-| Event                                 | When                                                   |
-| ------------------------------------- | ------------------------------------------------------ |
-| `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                 |
-| `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry           |
-| `ai_tokens.hold.released`             | A hold is released without charging                    |
-| `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                            |
-| `ai_tokens.budget.exceeded`           | A hard budget is exhausted                             |
-| `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                      |
-| `ai_tokens.wallet.granted`            | Credit is granted to a wallet                          |
-| `ai_tokens.wallet.low_balance`        | A wallet crosses its low-balance mark                  |
-| `ai_tokens.wallet.depleted`           | A wallet balance reaches zero                          |
-| `ai_tokens.price.missing`             | No rate is in effect for a model at the call timestamp |
-| `ai_tokens.audit`                     | An auditable operation completed                       |
+| Event                                 | When                                                      |
+| ------------------------------------- | --------------------------------------------------------- |
+| `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                    |
+| `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry              |
+| `ai_tokens.hold.released`             | A hold is released without charging                       |
+| `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                               |
+| `ai_tokens.budget.exceeded`           | A hard budget is exhausted                                |
+| `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                         |
+| `ai_tokens.wallet.granted`            | Credit is granted to a wallet                             |
+| `ai_tokens.wallet.low_balance`        | _Reserved._ Declared in the catalog; nothing emits it yet |
+| `ai_tokens.wallet.depleted`           | A wallet balance reaches zero                             |
+| `ai_tokens.price.missing`             | No rate is in effect for a model at the call timestamp    |
+| `ai_tokens.audit`                     | An auditable operation completed                          |
 
 All event payloads use `bigint` nano-USD internally and `string` decimal at JSON boundaries.
 
@@ -719,8 +720,9 @@ This library decides what a customer is charged, so the suite is held to a bar b
 tests pass".
 
 - ✅ **100% line coverage** — statements, branches, functions and lines, enforced as a gate
-- ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) at
-  `break: 95` ([report](./docs/mutation_testing_results.md))
+- ✅ **100% mutation score against a `break: 95` gate** — the gate is the floor a run must
+  clear; the score the suite actually reaches is 100%, verified with
+  [Stryker](https://stryker-mutator.io/) ([report](./docs/mutation_testing_results.md))
 - ✅ **Real PostgreSQL in e2e** — Testcontainers, so the unique constraint that prevents a
   double charge is exercised against an actual database rather than a mock of one
 - ✅ **Both Prisma majors** — the raw-query violation path is unit-tested for the query engine
@@ -729,7 +731,10 @@ tests pass".
 - ✅ **Published-artifact gates** — `check:exports` resolves the types the way each module
   system does, `check:runtime` loads every subpath from the packed tarball in ESM and
   CommonJS, and `check:published` compiles this README's snippets against `dist/`
-- ✅ **Zero suppressions** — no coverage or mutation directives in the production source
+- ✅ **Every suppression carries its reason** — no coverage directives anywhere; each
+  `// Stryker disable` in the production source states, after `--`, why the mutant it
+  silences is unobservable from a unit test (an internal error context, a provider id
+  reached only through integration)
 
 ```bash
 pnpm test          # unit tests
@@ -749,7 +754,7 @@ Pull requests are welcome. Please open an issue first for significant changes.
 
 - Read [`docs/technical_specification.md`](./docs/technical_specification.md) for architecture decisions.
 - Run `pnpm test:cov` and `pnpm lint` before opening a PR.
-- Conventional Commits are used for every change.
+- Please use Conventional Commits for the message; nothing enforces it here, so it is a convention rather than a gate.
 
 ---
 
