@@ -36,15 +36,15 @@ Phases 1–4 are code-complete, e2e-proven, and integration-reviewed. This phase
 
 ## Task index
 
-| ID | Task | Status | Priority | Size | Depends on |
-|---|---|---|---|---|---|
-| 5.1 | JSDoc + file-header audit (examples compile) | ✅ Done | P0 | M | 4.12 |
-| 5.2 | README (badges, quick start, provider matrix, positioning) | ✅ Done | P0 | M | 5.1 |
-| 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done | P0 | M | 5.1 |
-| 5.4 | Bundle-size budgets final check | ✅ Done | P0 | S | 4.12 |
-| 5.5 | Mutation testing release gate (break 95) + docs | ✅ Done | P0 | M | 5.1–5.4 |
-| 5.6 | Publish v0.1.0 (prepare; human fires the tag) | ✅ Done | P0 | S | 5.5 |
-| 5.7 | nest-ai-tokens-example skeleton | ⏸️ Deferred (post-publish) | P1 | M | 5.6 |
+| ID  | Task                                                         | Status                     | Priority | Size | Depends on |
+| --- | ------------------------------------------------------------ | -------------------------- | -------- | ---- | ---------- |
+| 5.1 | JSDoc + file-header audit (examples compile)                 | ✅ Done                    | P0       | M    | 4.12       |
+| 5.2 | README (badges, quick start, provider matrix, positioning)   | ✅ Done                    | P0       | M    | 5.1        |
+| 5.3 | SECURITY.md / CHANGELOG.md / CLAUDE.md / AGENTS.md / LICENSE | ✅ Done                    | P0       | M    | 5.1        |
+| 5.4 | Bundle-size budgets final check                              | ✅ Done                    | P0       | S    | 4.12       |
+| 5.5 | Mutation testing release gate (break 95) + docs              | ✅ Done                    | P0       | M    | 5.1–5.4    |
+| 5.6 | Publish v0.1.0 (prepare; human fires the tag)                | ✅ Done                    | P0       | S    | 5.5        |
+| 5.7 | nest-ai-tokens-example skeleton                              | ⏸️ Deferred (post-publish) | P1       | M    | 5.6        |
 
 ---
 
@@ -66,7 +66,7 @@ Every export documented; every file carries `@fileoverview` + `@layer`; `@exampl
 
 #### Agent prompt
 
-````
+```
 You are a senior TypeScript engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
@@ -105,7 +105,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 1/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.1 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.1`.
-````
+```
 
 ---
 
@@ -125,7 +125,7 @@ The public front page in the family structure: badges → centered tagline → O
 
 #### Agent prompt
 
-````
+```
 You are a senior developer-experience engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
@@ -172,7 +172,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 2/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.2 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.2`.
-````
+```
 
 ---
 
@@ -186,13 +186,13 @@ The family's supporting docs: SECURITY.md (the §14.4 threat model — admin vs 
 
 #### Acceptance criteria
 
-- [x] SECURITY.md lists sensitive code paths + security@bymax.one disclosure contact
+- [x] SECURITY.md lists sensitive code paths + support@bymax.one disclosure contact
 - [x] CLAUDE.md rule-dense per family convention (money-integer, ledger immutability, side-effect matrix, no text in ledger, unlimited semantics)
 - [x] AGENTS.md covers architecture (ports, lifecycle, rating flow, enforcement)
 
 #### Agent prompt
 
-````
+```
 You are a senior engineer writing project documentation for the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
@@ -221,7 +221,7 @@ DELIVERABLES
 1. SECURITY.md — security goals; the admin-plane vs data-plane split (grant/upsertPrice/
    reverse/adjust/export = privileged); scopeResolver trusted-input rule; cross-tenant hold
    validation; hash-chain verification procedure; sensitive paths list (wallet debit, budget
-   consume, capture, markup resolution); disclosure: security@bymax.one.
+   consume, capture, markup resolution); disclosure: support@bymax.one.
 2. CLAUDE.md — quick reference + CRITICAL RULES (bigint money everywhere; append-only ledger,
    annotation-only reversal; capture idempotent; unlimited = no row, 0 = block; isSystemCost
    never consumes; no prompt text in ledger; the §11.2 matrix condensed; commands).
@@ -240,7 +240,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 3/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.3 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.3`.
-````
+```
 
 ---
 
@@ -259,7 +259,7 @@ Enforce the spec §19.1 budgets (server < 40 KB, shared < 10 KB, prisma < 15 KB,
 
 #### Agent prompt
 
-````
+```
 You are a senior build engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — five-subpath tsup build with brotli size budgets
@@ -295,7 +295,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 4/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.4 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.4`.
-````
+```
 
 ---
 
@@ -314,7 +314,7 @@ Full Stryker run — high 100 / low 95 / **break 95** — plus `docs/mutation_te
 
 #### Agent prompt
 
-````
+```
 You are a senior test engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — Jest 100% coverage floor + Stryker mutation gate
@@ -353,7 +353,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 5/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.5 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.5`.
-````
+```
 
 ---
 
@@ -373,7 +373,7 @@ Version bump `0.1.0-alpha.0 → 0.1.0`, the full `prepublishOnly` chain, and rel
 
 #### Agent prompt
 
-````
+```
 You are a senior release engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — provenance-signed npm publish, tag-driven release.yml
@@ -409,7 +409,7 @@ Completion Protocol:
 1. Set status ✅ (task block + index). 2. Tick acceptance criteria. 3. Update the index row.
 4. Bump header progress to 6/7. 5. Update the Phase 5 row in docs/development_plan.md §1.5
 (+§1.4). 6. Append: `- 5.6 ✅ <YYYY-MM-DD> — <summary>`. 7. Commit `docs(plan): complete task 5.6`.
-````
+```
 
 ---
 
@@ -428,7 +428,7 @@ Scaffold the sibling reference app (`bymaxone/nest-ai-tokens-example`, family co
 
 #### Agent prompt
 
-````
+```
 You are a senior NestJS engineer scaffolding the reference app for the nest-ai-tokens library.
 
 PROJECT: nest-ai-tokens-example — reference implementation for @bymax-one/nest-ai-tokens
@@ -477,13 +477,14 @@ Completion Protocol:
 set Phase 5 ✅ — the PROJECT dashboard reaches 5/5. 5. Update docs/development_plan.md §1.5 +
 §1.4 (Overall: 5/5 phases, 47/47). 6. Append: `- 5.7 ✅ <YYYY-MM-DD> — <summary>`.
 7. Commit `docs(plan): complete task 5.7 — v0.1.0 shipped`.
-````
+```
 
 ---
 
 ## Completion log
 
 <!-- Append-only. One line per completed task: `- <task-id> ✅ YYYY-MM-DD — <one-line summary>` -->
+
 - 5.1 ✅ 2026-07-03 — JSDoc audit: check-jsdoc.mjs + 14 class/interface doc fixes + examples.spec-d.ts compilation fixture; docs:check wired to CI
 - 5.2 ✅ 2026-07-03 — README.md with badge block, provider matrix, markup positioning, BigInt note, migration pointer + readme.spec-d.ts fixture
 - 5.3 ✅ 2026-07-03 — SECURITY.md (threat model, admin/data plane, hash-chain, disclosure), CLAUDE.md (critical rules, side-effect matrix), AGENTS.md (architecture deep-dive, port map, DI tokens), CHANGELOG.md (0.1.0 entry), LICENSE (MIT)
