@@ -600,25 +600,31 @@ The sections above document each of these with a runnable example. This is the i
                    │ records post-hoc    │
                    └──────────┬──────────┘
                               │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-   normalizers/          pricing/               ledger/
-   9 providers →     rate in effect AT      append-only; a
-   one usage shape   the call timestamp     correction is a
-        │            (never re-rated)       compensating record
-        │                     │                     │
-        │                markup/            optional hash chain
-        │            multiplier or          over the previous
-        │            IMarkupPolicy          posted entry
-        │                                          │
-        └──────────────────┬───────────────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-        wallets/budgets          RedisBudgetCounterStore
-      append-only entries        one Lua incrIfBelow —
-      spend · tokens · count     check and increment
-      per scope per window       cannot interleave
+                              ▼
+                        normalizers/
+              9 providers → one usage shape
+                              │
+                              ▼
+                          pricing/
+            rate in effect AT the call timestamp
+                    (never re-rated)
+                              │
+                              ▼
+                          markup/
+              multiplier or IMarkupPolicy
+                              │
+                              ▼
+                          ledger/
+             append-only; a correction is a
+             compensating record. Optional hash
+             chain over the previous posted entry
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+        wallets/budgets            RedisBudgetCounterStore
+      append-only entries          one Lua incrIfBelow —
+      spend · tokens · count       check and increment
+      per scope per window         cannot interleave
 ```
 
 **Storage is an adapter, not a dependency.** `./prisma` is the reference
