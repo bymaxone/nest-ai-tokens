@@ -84,8 +84,20 @@ export class CounterValueOutOfRangeError extends Error {
 /** The official Redis adapter for the live budget counter port. */
 export class RedisBudgetCounterStore implements IBudgetCounterStore {
   private readonly keyPrefix: string
-  private readonly source: Redis | string
-  private connecting: Promise<Redis> | null = null
+  /**
+   * The live client or the connection URL it is opened from.
+   *
+   * An ECMAScript private field rather than a TypeScript `private` one, which is
+   * erased at runtime: a connection URL carries the Redis password inline, and an
+   * ioredis instance carries `options.password` as a plain field. Leaving either
+   * enumerable would let anything that serializes this store — a structured
+   * logger rendering its arguments, an error reporter capturing the scope of a
+   * throw — emit the credentials in plaintext.
+   */
+  readonly #source: Redis | string
+
+  /** The in-flight lazy connection, which resolves to the same credentialed client. */
+  #connecting: Promise<Redis> | null = null
 
   /**
    * @param redis A live `ioredis` client, or a connection URL to lazily connect.
@@ -93,7 +105,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   constructor(redis: Redis | string, options: RedisBudgetCounterStoreOptions = {}) {
     this.keyPrefix = options.keyPrefix ?? ''
-    this.source = redis
+    this.#source = redis
   }
 
   /**
@@ -149,9 +161,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
 
   /** Resolve the live client, lazily connecting a URL via a dynamic `ioredis` import. */
   private resolve(): Promise<Redis> {
-    if (typeof this.source !== 'string') return Promise.resolve(this.source)
-    this.connecting ??= this.connect(this.source)
-    return this.connecting
+    if (typeof this.#source !== 'string') return Promise.resolve(this.#source)
+    this.#connecting ??= this.connect(this.#source)
+    return this.#connecting
   }
 
   /** Dynamically import `ioredis` and connect the given URL. */

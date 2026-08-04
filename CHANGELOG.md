@@ -8,6 +8,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-04
+
+### Security
+
+- The Redis credentials are no longer disclosed when `RedisBudgetCounterStore` is
+  serialized. The store kept the live client — or the connection URL it is opened from —
+  in a TypeScript `private` property, which is erased at runtime and leaves an enumerable
+  own property. A connection URL carries the password inline and an ioredis instance
+  carries `options.password` as a plain field, so `JSON.stringify`, object spread and
+  `util.inspect` emitted the password in plaintext, which is what a structured logger does
+  when it renders its arguments and what an error reporter does when it captures the scope
+  of a throw. The source and the in-flight lazy connection both move to ECMAScript private
+  fields.
+
+Reading on purpose is unchanged and no public type or export moved.
+
 ## [1.0.0] - 2026-08-03
 
 First published release. Everything below ships in it.
@@ -110,4 +126,5 @@ have regressed from. They are kept because the reasoning is worth having.
 ---
 
 [1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...HEAD
+[1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...HEAD
