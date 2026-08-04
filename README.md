@@ -395,7 +395,7 @@ const status = await metering.getStatus(tenantId, { type: 'user', id: userId })
 // status[].remaining, status[].exhausted, status[].policy
 ```
 
-**Unlimited semantics:** no budget row = unlimited. `limit = 0` = hard block. Never use `null` or `0` to mean unlimited (see §22 migration notes).
+**Unlimited semantics:** no budget row = unlimited. `limit = 0` = hard block. Never use `null` or `0` to mean unlimited.
 
 ---
 
@@ -529,14 +529,6 @@ import { formatNanoUsd } from '@bymax-one/nest-ai-tokens/shared'
 formatNanoUsd(5_000_000n) // '$0.005000'
 formatNanoUsd(5_000_000n, { currency: 'BRL', fxRateNano: 5_000_000_000n }) // '0.025000 BRL'
 ```
-
----
-
-## 🚚 Migration
-
-If you are migrating the `_commons_/ai/*` layer from `bymax-fitness`, see [docs/technical_specification.md §22](./docs/technical_specification.md) for the full field-by-field mapping table, the zero/null → unlimited translation rules, and backfill notes.
-
-Key caution: `bymax-fitness` treats `0` as unlimited on most paths and as blocked on one path. Do not import plan rows verbatim. Translate `0`/`null` limits to **no budget row** (the normative unlimited representation in this library).
 
 ---
 

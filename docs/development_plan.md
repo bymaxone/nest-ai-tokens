@@ -1128,23 +1128,23 @@ Canonical `package.json` fields, scripts block, and publishConfig: identical to 
 
 ## Appendix D — Glossary and Term Mapping
 
-| Term                         | Meaning here                                                    | bymax-fitness equivalent                                                            |
-| ---------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **Usage record**             | One immutable ledger row for one AI call (or its hold)          | `AITokenTransaction` row                                                            |
-| **Normalizer**               | Pure function: provider `usage` → `NormalizedUsage`             | (none — OpenAI shape read inline)                                                   |
-| **Rating**                   | Resolving a price version + computing nano-USD cost             | `PricingService.calculateCost`                                                      |
-| **Markup**                   | Multiplier turning raw provider cost into billed customer price | (none)                                                                              |
-| **Hold → capture**           | Reserve on estimate, settle on actuals (auth-hold model)        | pre-check + post-success debit (non-atomic)                                         |
-| **Wallet**                   | Prepaid nano-USD balance (grants/debits/refunds/adjustments)    | `Tenant.aiTokenBalance` (token-denominated)                                         |
-| **Grant**                    | A credit entry with priority/expiry, burned by debits           | `monthly_allocation` / `purchase` transactions                                      |
-| **Budget**                   | A cap (spend/tokens/count) per scope per window                 | `Plan.aiTokensMonthly` / `maxAIGenerationsPerMonth` + `Subscription.*Used` counters |
-| **Window anchor**            | Per-budget cycle start (`anchorAt`) with month-end clamping     | `renewalDate` (reset promise)                                                       |
-| **Enforcement predicate**    | The 5-clause rule deciding which records consume budgets        | (implicit, inconsistent across two write paths)                                     |
-| **System cost**              | Platform-absorbed usage, never billed to a customer             | `isSystemCost` + `systemCostCategory` metadata                                      |
-| **Beneficiary**              | The subject who received the value when ≠ payer                 | client in trainer-generates-for-client                                              |
-| **Scope**                    | `{ type: tenant\|team\|user\|key, id }` — the payer subject     | `tokenPayerId`                                                                      |
-| **Provider-reported rating** | Trusting the gateway's dollar cost (OpenRouter `usage.cost`)    | (none)                                                                              |
-| **Reaper**                   | Sweep that releases expired holds                               | (none — debits were post-hoc)                                                       |
+| Term | Meaning here |
+| ---------------------------- | --------------------------------------------------------------- |
+| **Usage record** | One immutable ledger row for one AI call (or its hold) |
+| **Normalizer** | Pure function: provider `usage` → `NormalizedUsage` |
+| **Rating** | Resolving a price version + computing nano-USD cost |
+| **Markup** | Multiplier turning raw provider cost into billed customer price |
+| **Hold → capture** | Reserve on estimate, settle on actuals (auth-hold model) |
+| **Wallet** | Prepaid nano-USD balance (grants/debits/refunds/adjustments) |
+| **Grant** | A credit entry with priority/expiry, burned by debits |
+| **Budget** | A cap (spend/tokens/count) per scope per window |
+| **Window anchor** | Per-budget cycle start (`anchorAt`) with month-end clamping |
+| **Enforcement predicate** | The 5-clause rule deciding which records consume budgets |
+| **System cost** | Platform-absorbed usage, never billed to a customer |
+| **Beneficiary** | The subject who received the value when ≠ payer |
+| **Scope** | `{ type: tenant\ | team\ | user\ | key, id }` — the payer subject |
+| **Provider-reported rating** | Trusting the gateway's dollar cost (OpenRouter `usage.cost`) |
+| **Reaper** | Sweep that releases expired holds |
 
 ---
 

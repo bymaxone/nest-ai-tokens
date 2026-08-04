@@ -10,6 +10,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.0.1] - 2026-08-04
 
+### Removed
+
+- The README's `Migration` section, which described migrating an AI cost layer out of a
+  named private monorepo. It reached the npm page of a public package, where it named a
+  repository its readers cannot see and cannot act on. The normative rule it carried —
+  translate `0`/`null` limits to no budget row — is already stated under the budget
+  semantics and is unchanged.
+
 ### Security
 
 - The Redis credentials are no longer disclosed when `RedisBudgetCounterStore` is

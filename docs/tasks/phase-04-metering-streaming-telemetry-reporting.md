@@ -343,7 +343,7 @@ You are a senior NestJS engineer working on the nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
 NestJS 11. This task completes the MeteringService facade: meter() (the most common entry
-point), the orchestrated reverse() (the bymax-fitness refund made first-class), and
+point), the orchestrated reverse() (refund-on-failure made first-class), and
 getStatus() (the usage-meter query).
 
 CURRENT PHASE: 4 (Metering Lifecycle + …) — Task 4.4 of 12 (MIDDLE)
@@ -676,7 +676,7 @@ You are a senior backend engineer specializing in analytics/reporting, working o
 nest-ai-tokens project.
 
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
-NestJS 11. Reporting is real SQL over typed columns (the very thing bymax-fitness could not
+NestJS 11. Reporting is real SQL over typed columns (the very thing a JSON-blob ledger could not
 do with JSON metadata): SUM…GROUP BY across 12 dimensions, plus cache-savings math and
 streaming exports.
 
