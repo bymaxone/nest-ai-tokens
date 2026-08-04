@@ -5,7 +5,7 @@
 > **Status:** Draft for implementation
 > **Type:** Public npm package (`@bymax-one/nest-ai-tokens`)
 > **Owner:** Bymax One — Platform Engineering
-> **Related:** `@bymax-one/nest-storage`, `@bymax-one/nest-queue`, `@bymax-one/nest-cache`, `@bymax-one/nest-logger`; reference extraction from the private `bymax-fitness` monorepo (`_commons_/ai/*`).
+> **Related:** `@bymax-one/nest-storage`, `@bymax-one/nest-queue`, `@bymax-one/nest-cache`, `@bymax-one/nest-logger`.
 
 ---
 
@@ -32,7 +32,6 @@
 19. [Implementation Phases](#19-implementation-phases)
 20. [Known Limitations](#20-known-limitations)
 21. [Example Integration](#21-example-integration)
-22. [Migration from bymax-fitness](#22-migration-from-bymax-fitness)
 
 ---
 
@@ -44,7 +43,7 @@
 
 The same application code runs unchanged across **OpenAI (Chat Completions + Responses), Azure OpenAI, Anthropic, Google Gemini, Vertex AI, Mistral, AWS Bedrock, OpenRouter, and the OpenAI-compatible ecosystem (DeepSeek, xAI, Groq, Together, Fireworks, Ollama, …)** — plus anything the host already normalizes through the **Vercel AI SDK** — because the library is **normalizer-first**: it consumes the provider's own `usage` object and maps every provider's native shape into a single canonical `NormalizedUsage`.
 
-The starting point is the internal AI cost layer extracted from the production `bymax-fitness` monorepo (`_commons_/ai/{pricing,ai-token-transaction,...}.service.ts` + the `ModelPricing` / `AITokenTransaction` Prisma models). That implementation is hardcoded to OpenAI, stores cost inside an untyped JSON blob, has two divergent write paths, and offers no markup. This library generalizes the strong bones (the DB-backed effective-dated pricing service, the signed credit/debit ledger, the atomic "update counter + insert ledger row" transaction) and fixes the gaps (provider lock-in, typed cost columns, one unified metering path, markup, count quotas, billing-cycle-anchored windows, streaming-safe capture, race-safe enforcement).
+The starting point is a prior internal AI cost layer: a pricing service, a token-transaction service, and the matching Prisma models. That implementation is hardcoded to OpenAI, stores cost inside an untyped JSON blob, has two divergent write paths, and offers no markup. This library generalizes the strong bones (the DB-backed effective-dated pricing service, the signed credit/debit ledger, the atomic "update counter + insert ledger row" transaction) and fixes the gaps (provider lock-in, typed cost columns, one unified metering path, markup, count quotas, billing-cycle-anchored windows, streaming-safe capture, race-safe enforcement).
 
 ### 1.2 Why it exists
 
@@ -169,7 +168,7 @@ The library models the gap between a pre-call **estimate** and the provider-repo
 
 Expired holds (process crashed between 1 and 3) are swept by the **hold reaper** (§8.3) after `holds.ttlSeconds` — the reaper performs the same restoration as `release()`. The reaper is a v0.1 requirement, not an optimization: a hold moves real wallet/budget headroom.
 
-`MeteringService.meter(fn, ctx, extract)` wraps steps 1–4 around an async function for the common case; `hold()` / `capture()` / `release()` are exposed for full manual control (streaming, multi-call features); `record(input)` is the pure post-hoc path (no hold) that mirrors how `bymax-fitness` works today — observe-only by default, enforcing when `ctx.enforce: true` (§11.4).
+`MeteringService.meter(fn, ctx, extract)` wraps steps 1–4 around an async function for the common case; `hold()` / `capture()` / `release()` are exposed for full manual control (streaming, multi-call features); `record(input)` is the pure post-hoc path (no hold) — observe-only by default, enforcing when `ctx.enforce: true` (§11.4).
 
 ### 2.3 Rating flow — two modes
 
@@ -198,7 +197,7 @@ Unlike `@bymax-one/nest-storage` (which deliberately persists nothing), this lib
 
 - **Four storage ports:** `ILedgerStore`, `IPricingStore`, `IWalletStore`, `IBudgetStore` — bundled as `IAiTokensStore` (§4.1). The `forRoot()` wiring registers the single `store` object under each per-port DI token; a host may override any individual port by binding its token directly (§4.6).
 - **One optional counter port:** `IBudgetCounterStore` — a live cross-replica spend counter (official Redis implementation in `./redis`). Without it, enforcement falls back to the budget store's DB atomic conditional consume — correct, but a hotter row under high concurrency.
-- The official adapter `PrismaAiTokensStore` (`./prisma`, Prisma 6+ / PostgreSQL, matching the `bymax-fitness` stack) implements the four storage ports and ships a schema fragment + SQL migrations (§15.3).
+- The official adapter `PrismaAiTokensStore` (`./prisma`, Prisma 6+ / PostgreSQL) implements the four storage ports and ships a schema fragment + SQL migrations (§15.3).
 - A host that enables neither `wallets` nor `budgets` only needs the ledger + pricing halves; `forRoot()` validates at init that every enabled feature has a working port (§4.6).
 
 ### 2.5 Why in-process (guard/interceptor) instead of a proxy
@@ -697,7 +696,7 @@ export class StreamUsageCollector {
 
 A ledger entry must be rated at the price in effect at the moment of the call — never re-rated at today's price. This is the same invariant as Stripe's deliberately immutable `Price` object (to change a price you create a new one and archive the old) and ASC 606 revenue recognition (the transaction price is fixed at the time of the exchange). Model prices change on schedule (e.g. a mid-2026 Claude Sonnet tier increase), so a call the day before and the day after must bill different rates.
 
-The registry is therefore **append-only and effective-dated** — the pattern already present in `bymax-fitness`'s `ModelPricing` (`effectiveFrom`/`effectiveTo`), generalized here with two extra dimensions: **service tier** and **non-token unit rates**.
+The registry is therefore **append-only and effective-dated** — the pattern already present in the prior `ModelPricing` model (`effectiveFrom`/`effectiveTo`), generalized here with two extra dimensions: **service tier** and **non-token unit rates**.
 
 ### 6.2 `PriceVersion`
 
@@ -964,7 +963,7 @@ The idempotency key should be **derived from request content** (`deriveIdempoten
 
 `LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`; reversing a `pending`/`released` record is invalid (use `release()`).
 
-This is `bymax-fitness`'s refund-on-failure made first-class: a refunded user immediately regains quota headroom, including the operation-count headroom.
+This is the prior implementation's refund-on-failure made first-class: a refunded user immediately regains quota headroom, including the operation-count headroom.
 
 ### 8.6 Tamper-evident hash chain (opt-in)
 
@@ -1062,7 +1061,7 @@ export class WalletService {
     reason: string
   }): Promise<WalletEntry>
 
-  /** Paginated entry history — the tenant-token transaction listing of bymax-fitness. */
+  /** Paginated entry history — the tenant-token transaction listing. */
   getEntries(ref: WalletRef, filter?: {
     from?: Date; to?: Date; type?: WalletEntryType
     limit?: number; offset?: number
@@ -1110,7 +1109,7 @@ export interface Budget {
   /**
    * Restrict which usage counts against this budget. Empty/absent = all features.
    * This is what lets embeddings bypass a user's generation quota while decision-assist
-   * consumes it (the bymax-fitness selective-metering requirement).
+   * consumes it (the selective-metering requirement).
    */
   features?: string[]
   /** Caps — any combination; each dimension is enforced independently. */
@@ -1142,7 +1141,7 @@ export interface Budget {
 - **A present limit of `0` is a valid hard block** (always exceeded) — e.g. "AI disabled for this tier".
 - Negative limits are rejected at validation (`AI_TOKENS_INVALID_CONFIG`).
 
-> Migration warning (§22): `bymax-fitness` treats `0` as *unlimited* on most paths and as *blocked* on one — importing plan rows verbatim would invert entitlements. Fitness `0`/`null` limits must be translated to **no budget row**.
+> Migration warning: an existing system that treats `0` as *unlimited* on some paths and as *blocked* on others will invert entitlements if its plan rows are imported verbatim. Translate `0`/`null` limits to **no budget row**.
 
 ### 10.3 Scopes, windows, and multi-level enforcement
 
@@ -1181,7 +1180,7 @@ export class BudgetService {
 
 ### 10.6 Status API (`BudgetStatus` / `AccessStatus`)
 
-The query every consuming frontend needs to render a usage meter — the `aiTokensRemaining` / `aiGenerationsRemaining` DTOs of `bymax-fitness`, generalized (OpenMeter-entitlement semantics):
+The query every consuming frontend needs to render a usage meter — the `aiTokensRemaining` / `aiGenerationsRemaining` DTOs, generalized (OpenMeter-entitlement semantics):
 
 ```typescript
 export interface BudgetStatus {
@@ -1352,7 +1351,7 @@ export class MeteringService {
 ### 11.3 `BudgetGuard` and `MeteringInterceptor`
 
 - **`BudgetGuard`** (`CanActivate`): resolves the context via `scopeResolver` (§4.1), merges the decorator config, and calls `getStatus()`. If any matching hard budget is exhausted → `AI_TOKENS_BUDGET_EXCEEDED`/`_QUOTA_EXCEEDED` before the handler runs. When `@RequireBudget` supplies an `estimate`, the guard additionally places a **hold** and attaches it to the request; otherwise it is **check-only** (a cheaper but racy gate — the §10.8 atomic consume still protects the actual charge at capture/record time).
-- The guard attaches `request.aiTokens = { status: AccessStatus, hold?: Hold, context: MeteringContext }` — the request-enrichment contract `bymax-fitness`'s `AIGenerationGuard` provides today (`tokensRemaining`, `estimatedTokens`).
+- The guard attaches `request.aiTokens = { status: AccessStatus, hold?: Hold, context: MeteringContext }` — the request-enrichment contract the prior `AIGenerationGuard` provides today (`tokensRemaining`, `estimatedTokens`).
 - **`MeteringInterceptor`**: after the handler resolves, extracts the raw usage from the return value using `@Meter`'s `extract` (default: the `usage` property), normalizes via `@Meter`'s `preset`, and either **captures the guard's hold** (when present on the request) or calls `record({ enforce: true })`. On handler error with a hold present, it releases the hold. With `exposeHeaders: true`, sets `x-ai-tokens-cost`, `x-ai-tokens-billed-cost`, and `x-ai-tokens-budget-remaining` response headers (the LiteLLM `x-litellm-response-cost` pattern).
 
 ### 11.4 Decorators
@@ -1469,7 +1468,7 @@ export interface UsageSummary {
 
 @Injectable()
 export class UsageReportService {
-  /** Real SQL aggregation over typed columns (SUM … GROUP BY) — scales where bymax-fitness's JSON-in-memory filtering could not. */
+  /** Real SQL aggregation over typed columns (SUM … GROUP BY) — scales where the prior JSON-in-memory filtering could not. */
   summarize(filter: ReportFilter & {
     groupBy: Array<'day' | 'week' | 'month' | 'feature' | 'provider' | 'model'
                   | 'operation' | 'serviceTier' | 'scope' | 'beneficiary'
@@ -1862,7 +1861,7 @@ model AiBudgetWindow {
 
 ### 15.4 Multi-tenancy
 
-Every table is keyed by `tenantId`; the subject hierarchy (`scopeType`/`scopeId`) supports tenant → team → user → key rollups directly in SQL — a capability `bymax-fitness` lacked (its per-user ledger had no tenant key). The host resolves tenant/scope from its auth layer (`scopeResolver` or explicit `MeteringContext`); the library never guesses it.
+Every table is keyed by `tenantId`; the subject hierarchy (`scopeType`/`scopeId`) supports tenant → team → user → key rollups directly in SQL — a capability the prior implementation lacked (its per-user ledger had no tenant key). The host resolves tenant/scope from its auth layer (`scopeResolver` or explicit `MeteringContext`); the library never guesses it.
 
 ### 15.5 BigInt at the JSON boundary
 
@@ -1923,14 +1922,14 @@ export class AiTokensException extends HttpException {
 Deliberate scope decisions — each belongs to another lib, an external platform, or the consumer app:
 
 - **Making the LLM call.** The library is normalizer-first; the host calls its provider SDK and hands over the `usage`. Optional thin typed wrappers are a v0.2 evaluation, not the core.
-- **Invoicing / payment collection.** No Stripe/PayPal/MercadoPago charge is created. The library produces the metered usage + billable amount; connectors to Stripe Billing / Lago / OpenMeter are v0.2 adapters. (`bymax-fitness` likewise has no payment-gateway integration — intentional separation.)
+- **Invoicing / payment collection.** No Stripe/PayPal/MercadoPago charge is created. The library produces the metered usage + billable amount; connectors to Stripe Billing / Lago / OpenMeter are v0.2 adapters. The separation from the payment gateway is intentional.
 - **Subscription / seat / plan management.** Plan definitions, seats, entitlement flags (e.g. `canGenerateWithAI`), and recurring fiat billing belong to the host's billing layer; the library owns the **usage/consumption** half and composes with it (a plan flag becomes a host guard before `BudgetGuard`).
 - **Renewal scheduling.** The library provides `rotateWindow()` and `grant()`; *when* to call them (subscription renewed, plan changed) is the host's billing-cycle event.
 - **A tokenizer implementation.** The host plugs `tiktoken` / `@dqbd/tiktoken` / provider count-tokens endpoints in via `ITokenizer`; the library ships no WASM tokenizer.
 - **A dashboard UI.** Query surface only; the reference dashboard lives in `nest-ai-tokens-example`.
 - **Prompt/response content storage by default.** Opt-in, redacted, short-TTL sidecar only.
 - **Non-AI operation counting.** `maxWorkoutsPerMonth`-style caps that count *manual* (non-AI) actions are host domain logic — a count budget only counts AI usage records.
-- **Web3 / gamification "tokens."** The `bymax-fitness` `web3-tokens` concept (earn tokens by completing workouts) is unrelated to AI cost and out of scope.
+- **Web3 / gamification "tokens."** Reward tokens earned through product activity are unrelated to AI cost and out of scope.
 - **RAG / embeddings orchestration.** Vector search and prompt construction are app logic; the library only meters the embeddings `usage` they produce.
 - **Rate limiting of raw HTTP.** Use `@nestjs/throttler`; the library enforces spend/token/count budgets, not request rates.
 - **LLM retry/backoff.** The host owns retries; each attempt's usage is `record()`ed individually (`isSystemCost` for absorbed attempts), sharing a `correlationId`.
@@ -2052,7 +2051,7 @@ Typed provider call wrappers · Stripe/Lago/OpenMeter invoice connectors · `ref
 
 ## 21. Example Integration
 
-### 21.1 Post-hoc metering (the `bymax-fitness` style, generalized)
+### 21.1 Post-hoc metering, generalized
 
 ```typescript
 import { MeteringService, providerPresets } from '@bymax-one/nest-ai-tokens'
@@ -2119,7 +2118,7 @@ export class AiController {
     // returns { summary, usage } — the interceptor captures the guard's hold with `usage`
   }
 
-  /** The frontend usage meter — bymax-fitness's aiTokensRemaining/aiGenerationsRemaining DTOs. */
+  /** The frontend usage meter — the aiTokensRemaining/aiGenerationsRemaining DTOs. */
   @Get('me/usage')
   async myUsage(@Req() req: AuthedRequest) {
     const status = await this.metering.getStatus(req.user.tenantId, { type: 'user', id: req.user.id })
@@ -2229,52 +2228,6 @@ await this.reports.summarize({ tenantId, scope: { type: 'user', id: trainerId },
 - **Restrict the admin plane** (grants, price changes, reversals, exports) to privileged roles (§14.4).
 - **Serialize bigint at controller boundaries** with `toJsonSafe()` (§15.5).
 - **Keep the price snapshot fresh**, but rely on effective-dated rows for historical correctness — never re-rate past usage.
-
----
-
-## 22. Migration from bymax-fitness
-
-This library replaces the bespoke AI cost layer in `bymax-fitness` (`_commons_/ai/*`). Verified against the production code, the mapping is:
-
-| bymax-fitness today | nest-ai-tokens equivalent |
-| --- | --- |
-| `AITokenTransaction` (Int `amount`, cost/model/flags inside `metadata` JSON) | `AiUsageRecord` — typed, indexed columns for every token category, `rawCostNanoUsd`/`billedCostNanoUsd`, `feature`, `systemCostCategory` |
-| `ModelPricing` (`effectiveFrom`/`effectiveTo`, USD Decimal) | `AiModelPrice` — same effective-dated model, bigint nano-USD/million, + `serviceTier` + `unitRates` dimensions |
-| `PricingService.calculateCost()` | `PricingService.resolveRate()` + pure `computeCostNanoUsd()` (+ alias resolution §6.6) |
-| Two divergent write paths (`SubscriptionsService` `$transaction` vs bare `createTransaction`) | One unified path: `record()` / `meter()` — the counter-update inconsistency disappears |
-| `Subscription.aiTokensUsed` + pre-check with heuristic estimate (check-only, racy) | Token budget (`limitTokens`) + `hold()` with a caller-supplied `HoldEstimate` (`{ amountNanoUsd }` accepts the existing `WorkoutTokenEstimator` output) — a real race-safe reservation |
-| `Subscription.aiGenerationsUsed` / `Plan.maxAIGenerationsPerMonth` (operation counts) | **Count budget**: `limitCount` + `features: ['workout.generate']` (§10.1) — decision-assist stays outside via its own feature name |
-| `Plan.maxWorkoutsPerMonth` (counts manual, non-AI workouts too) | **Stays host-owned** — not AI usage (§17) |
-| Billing-cycle reset ("tokens reset on renewalDate" — today a promise without a scheduler) | `anchorAt: renewalDate` windows + `rotateWindow()` on the host's renewal event — the missing primitive, provided |
-| `TrialPlan.aiTokensTotal` / `maxAIGenerationsTotal` | `window: 'total'` budgets (+ `limitCount`) with `expiresAt` = trial end |
-| `isUnlimited`: `null \|\| 0 → unlimited` (and `0 → blocked` on one path — a live production bug) | Normative §10.2: unlimited = **no budget row**; `0` = hard block. **Migration rule: fitness `0`/`null` limits ⇒ do not create a budget row** |
-| Trainer-pays-for-client (`tokenPayerId` role logic) | Host resolves the payer into `scope`; the client goes in `beneficiary`; `requestedBy` = the actor (§21.7) — payer-side enforcement + beneficiary-side reporting |
-| `AIGenerationGuard` (blocks + enriches `request.tokensRemaining`/`estimatedTokens`) | `BudgetGuard` + `@RequireBudget` — attaches `request.aiTokens = { status, hold?, context }` (§11.3) |
-| `aiTokensRemaining`/`aiGenerationsRemaining`/`workoutsRemaining` DTOs | `MeteringService.getStatus()` → `AccessStatus`/`BudgetStatus` (§10.6), exposed via a host `GET /me/ai-usage` |
-| `Plan.canGenerateWithAI`, `priorityAI` | **Stay host-side**: entitlement guard before `BudgetGuard`; queue priority in the host's BullMQ options |
-| Refund-on-failure (`refundAITokenInTransaction`: decrement counters + `refund` row) | `MeteringService.reverse()` — ledger compensation + wallet refund + budget release (cost/tokens/**count**) in one transaction (§8.5) |
-| Debit failure swallowed after success (revenue leak by design) | Idempotent `record()` retries safely — a behavior improvement, not just parity |
-| Per-service copy-pasted retry/backoff; **every failed attempt** charged as system cost | Host owns retries; each attempt is `record()`ed individually (`isSystemCost: true`, `systemCostCategory: 'workout_generation_retry'`), sharing a `correlationId` |
-| `systemCostCategory` strings (`workout_generation_retry`, `guideline_setup`, `system_config`, `admin_ai_command`, `admin_text_translation`, `exercise_setup`) | `systemCostCategory` column, preserved verbatim + `groupBy: ['systemCostCategory']` (§13.1) — the boolean flag alone is NOT sufficient |
-| `getSystemCosts` by category/user/total (in-memory JSON filtering) | `summarize()` with `isSystemCost`/`systemCostCategory` filters — real SQL |
-| Embeddings recorded but never hitting user quota (by design) | `record()` **without** `enforce` — observed in reports, invisible to budgets (§10.7); RAG-query embeddings attributed to the payer via `scope` + `feature: 'rag.query'` |
-| `type 'monthly_allocation'` credits (decorative — enforcement never read them) | Either a real wallet `grant()` (money model) or — recommended for fitness, since plan limits don't roll over — plain budgets; pick ONE, not both |
-| `Tenant.aiTokenBalance` (prepaid **token** pool) + `TenantAITokenTransaction` (purchase/manual_adjustment/refund…) | `AiWallet` (`ownerType: 'tenant'`) + `grant`/`adjust`/`refund`/`getEntries`. **Denomination change: tokens → nano-USD.** Convert at a fixed board-approved rate (e.g. `balanceNanoUsd = aiTokenBalance × flatNanoUsdPerToken`) and update tenant-facing UI copy from "tokens" to "credits" |
-| Voucher mint: debit `tokensReserved = maxRedemptions × perRedemption` upfront; pro-rata refund on delete | `WalletService.debit()` (no `usageRecordId`, `reason: 'voucher:<code>'`) at mint + `refund()` on delete — same economics; a true `reserve()` earmark is v0.2 |
-| `PlatformAITokenCost` (platform liability for global vouchers/trials) | A platform-owned wallet (`ownerType: 'tenant'`, the platform tenant) or `isSystemCost` records with `systemCostCategory: 'voucher_*'` — one mechanism, not two tables |
-| Prompt text in ledger metadata (`queryText` first 200 chars) | **Forbidden in the ledger** (§14.2). Migrating call sites move it to the `content` sidecar or logs |
-| Three model configs (embedding/command/workout) wired through one module | No special wiring — every call is independently `(provider, model, operation)`-keyed; embedding rows are `operation: 'embeddings'` with output rate 0 |
-
-### 22.1 Backfill notes
-
-A one-off host-owned script can replay historical `AITokenTransaction` rows into `AiUsageRecord`:
-
-- Rate each row against the `AiModelPrice` version effective at its `createdAt` (point-in-time preserved).
-- **Degraded mapping is unavoidable for most rows:** `amount` is a single total (no input/output split except on decision-assist rows) → map `inputTokens = |amount|`, other categories 0, and set `priceMissing`-style provenance in `tags: ['backfill:v1']`.
-- **Strip `queryText`/`reasoning`** and any prompt fragments from `metadata` — they must not enter the ledger (§14.2).
-- Translate `type` → `feature` (`generation → workout.generate`, `embedding_generation → embedding.generate`, `agent_decision_assist → agent.decision_assist`, `purchase`/`refund`/`monthly_allocation`/`trial_allocation` → wallet entries, not usage records).
-- Set `enforced: false` on all backfilled rows — they must not retro-consume budget windows (§10.7).
-- Plan limits: `0`/`null` ⇒ **no budget row** (§10.2 warning).
 
 ---
 

@@ -36,7 +36,7 @@ Corrections are compensating records (`reverse()`). The only permitted post-post
 Budget enforcement semantics (spec §10.2):
 - **No budget row** = unlimited. `getStatus()` returns no entry for the feature.
 - **`limit = 0`** = hard block (blocks all calls immediately).
-- `null`/`undefined` limits and `0` must NEVER be conflated. Migration from bymax-fitness: translate `0`/`null` fitness limits to **no budget row**.
+- `null`/`undefined` limits and `0` must NEVER be conflated. When migrating from a system that uses them, translate `0`/`null` limits to **no budget row**.
 
 ### 6. isSystemCost never consumes
 
@@ -120,4 +120,3 @@ No `Co-Authored-By` trailers.
 Full spec: `docs/technical_specification.md`  
 Architecture and ports: `AGENTS.md`  
 Security threat model: `SECURITY.md`  
-Migration from bymax-fitness: `docs/technical_specification.md §22`

@@ -20,7 +20,7 @@ This is the **riskiest code in the library** — concurrent money movement. The 
 ## Rules-of-phase
 
 1. **Token economy.** Grep the cited `§` heading, read only that range. Never read whole docs or other phase files.
-2. **Unlimited semantics are normative (spec §10.2):** no budget row / null limit = unlimited; a present `0` = hard block; negative rejected. Never re-import bymax-fitness's `0 = unlimited` bug.
+2. **Unlimited semantics are normative (spec §10.2):** no budget row / null limit = unlimited; a present `0` = hard block; negative rejected. Never re-import a `0 = unlimited` convention.
 3. **ALL matching budgets across the scope hierarchy are checked and consume independently** (spec §10.3) — "most-specific wins" is a documented anti-pattern.
 4. **The consumption predicate (spec §10.7) is the single source of truth** for what consumes windows — enforced ∧ ¬system ∧ feature-match ∧ posted/reversed ∧ in-window. `reconcileWindow` uses the SAME predicate.
 5. **Atomicity via conditional writes** — `UPDATE … WHERE` guards, never check-then-write (spec §9.4, §10.8). Contract tests must run two concurrent operations with headroom for one.
@@ -339,7 +339,7 @@ nest-ai-tokens project.
 PROJECT: @bymax-one/nest-ai-tokens — AI token metering & usage-based billing library for
 NestJS 11. Budgets cap spend/tokens/operation-counts per scope per window. Windows anchor
 either to calendar UTC or to a per-subject date (subscription renewal) with month-end
-clamping — the primitive bymax-fitness promised users but never had.
+clamping — the primitive a `renewalDate` reset promises but does not deliver.
 
 CURRENT PHASE: 3 (Wallets + Budgets + Enforcement) — Task 3.4 of 10 (FIRST, budget lane)
 
@@ -490,7 +490,7 @@ Completion Protocol:
 
 #### Description
 
-`BudgetService.status(tenantId, scope)` → `BudgetStatus[]` — the user-facing "how much is left" query (the `aiTokensRemaining`/`aiGenerationsRemaining` DTOs of bymax-fitness, generalized).
+`BudgetService.status(tenantId, scope)` → `BudgetStatus[]` — the user-facing "how much is left" query (the `aiTokensRemaining`/`aiGenerationsRemaining` DTOs, generalized).
 
 #### Acceptance criteria
 
