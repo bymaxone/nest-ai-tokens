@@ -42,31 +42,31 @@ The phase order respects the dependency graph (Appendix A): shared types before 
 
 ### 1.2 Guiding principles
 
-| Principle | Practical application |
-|---|---|
-| **TS strict, zero `any`** | Compiler in `strict: true`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Provider `usage` objects enter as `unknown` and are narrowed by normalizers — never cast. |
-| **Money is an integer** | Every persisted monetary value is bigint nano-USD (spec §7.1, §7.4). No `number` arithmetic on money anywhere; `fast-check` guards it. |
-| **Normalizer-first, zero provider SDKs** | No provider SDK peer deps at all (spec §18.1). Normalizers are pure functions over plain objects; reconciliation invariants (spec §5.5) are hard test requirements. |
-| **Point-in-time pricing** | Rates resolved by `(provider, model, operation, serviceTier, occurredAt)` via the §6.6 resolution chain. Past records are never re-rated. |
-| **Append-only ledger** | No `UPDATE`/`DELETE` of posted amounts; corrections are compensating records (spec §8.5); the only permitted post-posting mutation is the `reversedByRecordId` annotation. |
-| **Exactly-once accounting** | Content-derived idempotency keys + payload-hash replay detection (spec §8.4). Every example and fixture passes a key. |
-| **JSDoc on every exported symbol** | Every `export` carries JSDoc with `@example` where applicable; every file has `@fileoverview` + `@layer`. |
-| **English in code and comments** | Identifiers, messages, comments, JSDoc, docs — all in English. |
-| **Zero `dependencies`** | `package.json` ships `"dependencies": {}`. Everything via peer dep (only `@nestjs/common`, `@nestjs/core`, `reflect-metadata` required). |
-| **PII discipline** | No prompt/completion text in the ledger (spec §14.2). Tests assert the ledger row shape has no text fields. |
-| **Fail-closed enforcement** | Budget checks fail closed by default when counter/store degrade (spec §10.8). |
-| **Conventional Commits** | `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:` — scope `(ai-tokens)`; no `Co-Authored-By` trailers. |
+| Principle                                | Practical application                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TS strict, zero `any`**                | Compiler in `strict: true`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Provider `usage` objects enter as `unknown` and are narrowed by normalizers — never cast. |
+| **Money is an integer**                  | Every persisted monetary value is bigint nano-USD (spec §7.1, §7.4). No `number` arithmetic on money anywhere; `fast-check` guards it.                                          |
+| **Normalizer-first, zero provider SDKs** | No provider SDK peer deps at all (spec §18.1). Normalizers are pure functions over plain objects; reconciliation invariants (spec §5.5) are hard test requirements.             |
+| **Point-in-time pricing**                | Rates resolved by `(provider, model, operation, serviceTier, occurredAt)` via the §6.6 resolution chain. Past records are never re-rated.                                       |
+| **Append-only ledger**                   | No `UPDATE`/`DELETE` of posted amounts; corrections are compensating records (spec §8.5); the only permitted post-posting mutation is the `reversedByRecordId` annotation.      |
+| **Exactly-once accounting**              | Content-derived idempotency keys + payload-hash replay detection (spec §8.4). Every example and fixture passes a key.                                                           |
+| **JSDoc on every exported symbol**       | Every `export` carries JSDoc with `@example` where applicable; every file has `@fileoverview` + `@layer`.                                                                       |
+| **English in code and comments**         | Identifiers, messages, comments, JSDoc, docs — all in English.                                                                                                                  |
+| **Zero `dependencies`**                  | `package.json` ships `"dependencies": {}`. Everything via peer dep (only `@nestjs/common`, `@nestjs/core`, `reflect-metadata` required).                                        |
+| **PII discipline**                       | No prompt/completion text in the ledger (spec §14.2). Tests assert the ledger row shape has no text fields.                                                                     |
+| **Fail-closed enforcement**              | Budget checks fail closed by default when counter/store degrade (spec §10.8).                                                                                                   |
+| **Conventional Commits**                 | `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:` — scope `(ai-tokens)`; no `Co-Authored-By` trailers.                                                            |
 
 ### 1.3 Status legend
 
-| Symbol | Meaning |
-| --- | --- |
-| 📋 | ToDo |
-| 🔄 | In Progress |
-| 👀 | Review |
-| ✅ | Done |
-| ⛔ | Blocked |
-| 🟡 | Partial |
+| Symbol | Meaning     |
+| ------ | ----------- |
+| 📋     | ToDo        |
+| 🔄     | In Progress |
+| 👀     | Review      |
+| ✅     | Done        |
+| ⛔     | Blocked     |
+| 🟡     | Partial     |
 
 ### 1.4 Progress
 
@@ -76,14 +76,14 @@ The phase order respects the dependency graph (Appendix A): shared types before 
 
 ### 1.5 Phase dashboard
 
-| ID | Phase | Status | Progress | Complexity | Last updated |
-| --- | --- | --- | --- | --- | --- |
-| 1 | [Foundation + Shared Core + Pricing](./tasks/phase-01-foundation-shared-core-pricing.md) | ✅ Done | 11/11 | MEDIUM | 2026-07-03 |
-| 2 | [Ledger + Markup + Events + Prisma Store](./tasks/phase-02-ledger-markup-events-prisma.md) | ✅ Done | 7/7 | HIGH | 2026-07-03 |
-| 3 | [Wallets + Budgets + Enforcement](./tasks/phase-03-wallets-budgets-enforcement.md) | ✅ Done | 10/10 | HIGH | 2026-07-03 |
-| 4 | [Metering Lifecycle + Streaming + Telemetry + Reporting + E2E](./tasks/phase-04-metering-streaming-telemetry-reporting.md) | ✅ Done | 12/12 | HIGH | 2026-07-03 |
-| 5 | [Release v0.1.0](./tasks/phase-05-release.md) | ✅ Done | 6/7 · 5.7 deferred | LOW | 2026-07-04 |
-| | **Total** | ✅ **5 / 5 phases** | **46 / 47 sub-steps** | — | — |
+| ID  | Phase                                                                                                                      | Status              | Progress              | Complexity | Last updated |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------- | ---------- | ------------ |
+| 1   | [Foundation + Shared Core + Pricing](./tasks/phase-01-foundation-shared-core-pricing.md)                                   | ✅ Done             | 11/11                 | MEDIUM     | 2026-07-03   |
+| 2   | [Ledger + Markup + Events + Prisma Store](./tasks/phase-02-ledger-markup-events-prisma.md)                                 | ✅ Done             | 7/7                   | HIGH       | 2026-07-03   |
+| 3   | [Wallets + Budgets + Enforcement](./tasks/phase-03-wallets-budgets-enforcement.md)                                         | ✅ Done             | 10/10                 | HIGH       | 2026-07-03   |
+| 4   | [Metering Lifecycle + Streaming + Telemetry + Reporting + E2E](./tasks/phase-04-metering-streaming-telemetry-reporting.md) | ✅ Done             | 12/12                 | HIGH       | 2026-07-03   |
+| 5   | [Release v0.1.0](./tasks/phase-05-release.md)                                                                              | ✅ Done             | 6/7 · 5.7 deferred    | LOW        | 2026-07-04   |
+|     | **Total**                                                                                                                  | ✅ **5 / 5 phases** | **46 / 47 sub-steps** | —          | —            |
 
 > Each phase links to its (future) task file in [`docs/tasks/`](./tasks/) (one file per phase, generated by `/bymax-workflow:phase-tasks`). Per-sub-step detail is in §2–§6; dependency graph in Appendix A, complexity matrix in Appendix B. Task files may expand one sub-step into several executable tasks (§1.9), so task counts in the dashboard are updated when each phase's task file is scaffolded.
 
@@ -165,20 +165,20 @@ Each task carries the full self-contained prompt for AI agent execution (Role / 
 
 These spec rules apply to multiple phases and MUST be enforced in every task that touches them:
 
-| Rule | Spec | Applies to |
-|---|---|---|
-| Output-side reconciliation invariant (`totalOutput = outputTokens + reasoningTokens`; OpenAI subtracts, Gemini maps, Anthropic zero) | §5.5 | P1 normalizers, P4 collector |
-| All persisted money = nano-USD bigint; FX/presentation only at read time | §7.4 | P2 ledger, P3 wallets/budgets, P4 reporting |
-| Markup applies in BOTH rating modes, 4-dp multiplier, truncation-toward-zero division | §7.2 | P1 cost engine, P2 record, P4 capture |
-| Ledger state machine: `pending → posted \| released`; `posted → reversed` annotation-only | §8.3, §8.5 | P2 ledger, P4 lifecycle |
-| Idempotency: upsert on `(tenantId, idempotencyKey)` + payload-hash replay-or-conflict | §8.4, §15.2 | P2 ledger, P3 wallet entries |
-| Budget consumption predicate (enforced ∧ ¬system ∧ feature-match ∧ posted/reversed ∧ in-window) | §10.7 | P3 budgets, P4 capture/reverse, P4 reporting |
-| Unlimited = no row/null; `0` = hard block; negatives rejected | §10.2 | P3 budgets |
-| All matching budgets across the scope hierarchy are checked and consume independently | §10.3 | P3 budgets, P4 guard |
-| `isSystemCost` rows never touch wallet/budget/counter | §11.2 | P2–P4 |
-| Side-effect matrix is normative for record/hold/capture/release/reverse | §11.2 | P2–P4 |
-| bigint never crosses a JSON boundary raw — `toJsonSafe()` / decimal strings | §15.5 | P2 events, P4 reporting/interceptor |
-| Admin-plane mutations emit `ai_tokens.audit` | §14.4 | P2–P4 |
+| Rule                                                                                                                                 | Spec        | Applies to                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----------- | -------------------------------------------- |
+| Output-side reconciliation invariant (`totalOutput = outputTokens + reasoningTokens`; OpenAI subtracts, Gemini maps, Anthropic zero) | §5.5        | P1 normalizers, P4 collector                 |
+| All persisted money = nano-USD bigint; FX/presentation only at read time                                                             | §7.4        | P2 ledger, P3 wallets/budgets, P4 reporting  |
+| Markup applies in BOTH rating modes, 4-dp multiplier, truncation-toward-zero division                                                | §7.2        | P1 cost engine, P2 record, P4 capture        |
+| Ledger state machine: `pending → posted \| released`; `posted → reversed` annotation-only                                            | §8.3, §8.5  | P2 ledger, P4 lifecycle                      |
+| Idempotency: upsert on `(tenantId, idempotencyKey)` + payload-hash replay-or-conflict                                                | §8.4, §15.2 | P2 ledger, P3 wallet entries                 |
+| Budget consumption predicate (enforced ∧ ¬system ∧ feature-match ∧ posted/reversed ∧ in-window)                                      | §10.7       | P3 budgets, P4 capture/reverse, P4 reporting |
+| Unlimited = no row/null; `0` = hard block; negatives rejected                                                                        | §10.2       | P3 budgets                                   |
+| All matching budgets across the scope hierarchy are checked and consume independently                                                | §10.3       | P3 budgets, P4 guard                         |
+| `isSystemCost` rows never touch wallet/budget/counter                                                                                | §11.2       | P2–P4                                        |
+| Side-effect matrix is normative for record/hold/capture/release/reverse                                                              | §11.2       | P2–P4                                        |
+| bigint never crosses a JSON boundary raw — `toJsonSafe()` / decimal strings                                                          | §15.5       | P2 events, P4 reporting/interceptor          |
+| Admin-plane mutations emit `ai_tokens.audit`                                                                                         | §14.4       | P2–P4                                        |
 
 ---
 
@@ -966,7 +966,7 @@ These spec rules apply to multiple phases and MUST be enforced in every task tha
 
 **Objective:** The family's supporting docs. SECURITY.md covers the §14.4 threat model (admin vs data plane, scope-resolver trust, hash-chain verification); CLAUDE.md carries the critical rules (money-integer, ledger immutability, side-effect matrix, no text in ledger); AGENTS.md the architecture deep-dive.
 
-**Acceptance criteria:** SECURITY.md lists sensitive code paths + disclosure contact (security@bymax.one); CLAUDE.md ≤ ~150 lines, rule-dense per family convention.
+**Acceptance criteria:** SECURITY.md lists sensitive code paths + disclosure contact (support@bymax.one); CLAUDE.md ≤ ~150 lines, rule-dense per family convention.
 
 **Dependencies:** §6.1.
 
@@ -1060,49 +1060,49 @@ Every sub-step's canonical contract lives in the spec (cited inline). If impleme
 
 ## Appendix B — Complexity Matrix
 
-| Sub-step | Complexity | Risk driver |
-| --- | --- | --- |
-| 2.1 Scaffold + CI | MEDIUM | 5-entry tsup; CI front-loading |
-| 2.2 Catalogs/types | LOW | Breadth only |
-| 2.3 Money/idempotency utils | MEDIUM | Zero-dep sha256 decision; exactness |
-| 2.4 Normalizers ×9 | **HIGH** | Reasoning subtraction; per-provider fixtures; invariants |
-| 2.5 Cost engine | **HIGH** | Tier all-or-nothing; surcharge loop; billing-correctness core |
-| 2.6 Price seed | MEDIUM | Data conversion fidelity |
-| 2.7 Errors | LOW | Mechanical |
-| 2.8 Ports | LOW–MEDIUM | Contract fidelity to spec §15.1 |
-| 2.9 Tokens/validation | MEDIUM | Feature-port validation matrix |
-| 2.10 PricingService | **HIGH** | 6-step resolution chain; tier fallback rules; seed idempotence |
-| 2.11 Module forRoot | MEDIUM | Fan-out + precedence + feature gating |
-| 3.1 Ledger append/query | **HIGH** | Exactly-once core |
-| 3.2 State machine + reverse | **HIGH** | Transition legality; compensation math |
-| 3.3 Hash chain | MEDIUM | Serialization + settlement-only hashing |
-| 3.4 Markup wiring | LOW–MEDIUM | 4-dp resolution |
-| 3.5 record() | MEDIUM | Facade composition |
-| 3.6 Events | MEDIUM | Optional-peer bridge |
-| 3.7 Prisma ledger+pricing | **HIGH** | First real-DB semantics; migrations; race tests |
-| 4.1 WalletService | MEDIUM | Surface breadth |
-| 4.2 Burn-down | **HIGH** | Allocation correctness; lazy expiry |
-| 4.3 Conditional debit | **HIGH** | The race-safety core |
-| 4.4 Budget model/windows | **HIGH** | Anchor math incl. month-end clamping |
-| 4.5 Predicate + consume | **HIGH** | Five-clause predicate; multi-dimension atomicity |
-| 4.6 Status API | MEDIUM | Aggregation shape |
-| 4.7 Thresholds/throttle | MEDIUM | Once-per-window event dedupe |
-| 4.8 Guard (check mode) | MEDIUM | ExecutionContext plumbing |
-| 4.9 Redis counter | MEDIUM–HIGH | Atomic Lua; fail-closed fallback |
-| 4.10 Prisma wallet+budget | **HIGH** | Concurrency contract tests on real DB |
-| 5.1 hold() | **HIGH** | Compensation ordering |
-| 5.2 capture/release | **HIGH** | Idempotency contracts; delta math |
-| 5.3 Reaper | MEDIUM–HIGH | Multi-replica claim |
-| 5.4 meter/reverse/getStatus | **HIGH** | Cross-store orchestration |
-| 5.5 StreamUsageCollector | **HIGH** | Provider stream shapes; abort fallbacks |
-| 5.6 Interceptor + @Meter | MEDIUM–HIGH | Guard hand-off |
-| 5.7 OTel | LOW–MEDIUM | Attribute mapping |
-| 5.8 Reporting | MEDIUM–HIGH | SQL groupBy dimensions; cache savings |
-| 5.9 forRootAsync | LOW | Pattern copy |
-| 5.10 Content sidecar | LOW | Opt-in hook |
-| 5.11 E2E suite | **HIGH** | Ten scenarios; containers in CI |
-| 5.12 Integration review | MEDIUM | Audit discipline |
-| 6.x Release steps | LOW | Mechanical + gates |
+| Sub-step                    | Complexity  | Risk driver                                                    |
+| --------------------------- | ----------- | -------------------------------------------------------------- |
+| 2.1 Scaffold + CI           | MEDIUM      | 5-entry tsup; CI front-loading                                 |
+| 2.2 Catalogs/types          | LOW         | Breadth only                                                   |
+| 2.3 Money/idempotency utils | MEDIUM      | Zero-dep sha256 decision; exactness                            |
+| 2.4 Normalizers ×9          | **HIGH**    | Reasoning subtraction; per-provider fixtures; invariants       |
+| 2.5 Cost engine             | **HIGH**    | Tier all-or-nothing; surcharge loop; billing-correctness core  |
+| 2.6 Price seed              | MEDIUM      | Data conversion fidelity                                       |
+| 2.7 Errors                  | LOW         | Mechanical                                                     |
+| 2.8 Ports                   | LOW–MEDIUM  | Contract fidelity to spec §15.1                                |
+| 2.9 Tokens/validation       | MEDIUM      | Feature-port validation matrix                                 |
+| 2.10 PricingService         | **HIGH**    | 6-step resolution chain; tier fallback rules; seed idempotence |
+| 2.11 Module forRoot         | MEDIUM      | Fan-out + precedence + feature gating                          |
+| 3.1 Ledger append/query     | **HIGH**    | Exactly-once core                                              |
+| 3.2 State machine + reverse | **HIGH**    | Transition legality; compensation math                         |
+| 3.3 Hash chain              | MEDIUM      | Serialization + settlement-only hashing                        |
+| 3.4 Markup wiring           | LOW–MEDIUM  | 4-dp resolution                                                |
+| 3.5 record()                | MEDIUM      | Facade composition                                             |
+| 3.6 Events                  | MEDIUM      | Optional-peer bridge                                           |
+| 3.7 Prisma ledger+pricing   | **HIGH**    | First real-DB semantics; migrations; race tests                |
+| 4.1 WalletService           | MEDIUM      | Surface breadth                                                |
+| 4.2 Burn-down               | **HIGH**    | Allocation correctness; lazy expiry                            |
+| 4.3 Conditional debit       | **HIGH**    | The race-safety core                                           |
+| 4.4 Budget model/windows    | **HIGH**    | Anchor math incl. month-end clamping                           |
+| 4.5 Predicate + consume     | **HIGH**    | Five-clause predicate; multi-dimension atomicity               |
+| 4.6 Status API              | MEDIUM      | Aggregation shape                                              |
+| 4.7 Thresholds/throttle     | MEDIUM      | Once-per-window event dedupe                                   |
+| 4.8 Guard (check mode)      | MEDIUM      | ExecutionContext plumbing                                      |
+| 4.9 Redis counter           | MEDIUM–HIGH | Atomic Lua; fail-closed fallback                               |
+| 4.10 Prisma wallet+budget   | **HIGH**    | Concurrency contract tests on real DB                          |
+| 5.1 hold()                  | **HIGH**    | Compensation ordering                                          |
+| 5.2 capture/release         | **HIGH**    | Idempotency contracts; delta math                              |
+| 5.3 Reaper                  | MEDIUM–HIGH | Multi-replica claim                                            |
+| 5.4 meter/reverse/getStatus | **HIGH**    | Cross-store orchestration                                      |
+| 5.5 StreamUsageCollector    | **HIGH**    | Provider stream shapes; abort fallbacks                        |
+| 5.6 Interceptor + @Meter    | MEDIUM–HIGH | Guard hand-off                                                 |
+| 5.7 OTel                    | LOW–MEDIUM  | Attribute mapping                                              |
+| 5.8 Reporting               | MEDIUM–HIGH | SQL groupBy dimensions; cache savings                          |
+| 5.9 forRootAsync            | LOW         | Pattern copy                                                   |
+| 5.10 Content sidecar        | LOW         | Opt-in hook                                                    |
+| 5.11 E2E suite              | **HIGH**    | Ten scenarios; containers in CI                                |
+| 5.12 Integration review     | MEDIUM      | Audit discipline                                               |
+| 6.x Release steps           | LOW         | Mechanical + gates                                             |
 
 ---
 
@@ -1110,17 +1110,17 @@ Every sub-step's canonical contract lives in the spec (cited inline). If impleme
 
 Tooling configs are copied from `../nest-storage/` (the family's most recent release) and adapted — same pattern nest-storage used from nest-auth:
 
-| Source (nest-storage) | Adaptation for nest-ai-tokens |
-| --- | --- |
-| `tsconfig*.json` (6 variants) | Path aliases for **5** subpaths (`.`, `/shared`, `/prices`, `/prisma`, `/redis`) |
-| `jest.config.ts` + coverage/e2e/stryker variants | `moduleNameMapper` ×5; e2e `testTimeout: 90_000` (Postgres + Redis containers) |
-| `stryker.config.json` | Same thresholds (high 100 / low 95 / break 95) |
-| `eslint.config.mjs` | Same flat v9 stack; keep `eslint-plugin-security` |
-| `tsup.config.ts` | **Rewrite** — 5 entries; externals: `/^@nestjs\//`, `reflect-metadata`, `@prisma/client`, `ioredis`, `@nestjs/event-emitter`, `@opentelemetry/api` |
-| `scripts/check-size.mjs` | **Rewrite** — 5 entries with §19.1 budgets |
-| `.github/workflows/*` (4 files) | e2e job spins Postgres+Redis (Testcontainers handles it — needs Docker runner) |
-| `.prettierrc`, `.gitignore`, `.npmignore`, `.npmrc` | Identical |
-| `package.json` | Name/description/exports/peers per spec §3.2 + §18.2; devDeps add `fast-check`, `prisma`, `@testcontainers/postgresql` |
+| Source (nest-storage)                               | Adaptation for nest-ai-tokens                                                                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig*.json` (6 variants)                       | Path aliases for **5** subpaths (`.`, `/shared`, `/prices`, `/prisma`, `/redis`)                                                                   |
+| `jest.config.ts` + coverage/e2e/stryker variants    | `moduleNameMapper` ×5; e2e `testTimeout: 90_000` (Postgres + Redis containers)                                                                     |
+| `stryker.config.json`                               | Same thresholds (high 100 / low 95 / break 95)                                                                                                     |
+| `eslint.config.mjs`                                 | Same flat v9 stack; keep `eslint-plugin-security`                                                                                                  |
+| `tsup.config.ts`                                    | **Rewrite** — 5 entries; externals: `/^@nestjs\//`, `reflect-metadata`, `@prisma/client`, `ioredis`, `@nestjs/event-emitter`, `@opentelemetry/api` |
+| `scripts/check-size.mjs`                            | **Rewrite** — 5 entries with §19.1 budgets                                                                                                         |
+| `.github/workflows/*` (4 files)                     | e2e job spins Postgres+Redis (Testcontainers handles it — needs Docker runner)                                                                     |
+| `.prettierrc`, `.gitignore`, `.npmignore`, `.npmrc` | Identical                                                                                                                                          |
+| `package.json`                                      | Name/description/exports/peers per spec §3.2 + §18.2; devDeps add `fast-check`, `prisma`, `@testcontainers/postgresql`                             |
 
 Canonical `package.json` fields, scripts block, and publishConfig: identical to nest-storage (Appendix of its plan / spec §14) — including `prepublishOnly` chain and `release: pnpm publish --provenance`.
 
@@ -1128,23 +1128,23 @@ Canonical `package.json` fields, scripts block, and publishConfig: identical to 
 
 ## Appendix D — Glossary and Term Mapping
 
-| Term | Meaning here | bymax-fitness equivalent |
-| --- | --- | --- |
-| **Usage record** | One immutable ledger row for one AI call (or its hold) | `AITokenTransaction` row |
-| **Normalizer** | Pure function: provider `usage` → `NormalizedUsage` | (none — OpenAI shape read inline) |
-| **Rating** | Resolving a price version + computing nano-USD cost | `PricingService.calculateCost` |
-| **Markup** | Multiplier turning raw provider cost into billed customer price | (none) |
-| **Hold → capture** | Reserve on estimate, settle on actuals (auth-hold model) | pre-check + post-success debit (non-atomic) |
-| **Wallet** | Prepaid nano-USD balance (grants/debits/refunds/adjustments) | `Tenant.aiTokenBalance` (token-denominated) |
-| **Grant** | A credit entry with priority/expiry, burned by debits | `monthly_allocation` / `purchase` transactions |
-| **Budget** | A cap (spend/tokens/count) per scope per window | `Plan.aiTokensMonthly` / `maxAIGenerationsPerMonth` + `Subscription.*Used` counters |
-| **Window anchor** | Per-budget cycle start (`anchorAt`) with month-end clamping | `renewalDate` (reset promise) |
-| **Enforcement predicate** | The 5-clause rule deciding which records consume budgets | (implicit, inconsistent across two write paths) |
-| **System cost** | Platform-absorbed usage, never billed to a customer | `isSystemCost` + `systemCostCategory` metadata |
-| **Beneficiary** | The subject who received the value when ≠ payer | client in trainer-generates-for-client |
-| **Scope** | `{ type: tenant\|team\|user\|key, id }` — the payer subject | `tokenPayerId` |
-| **Provider-reported rating** | Trusting the gateway's dollar cost (OpenRouter `usage.cost`) | (none) |
-| **Reaper** | Sweep that releases expired holds | (none — debits were post-hoc) |
+| Term                         | Meaning here                                                    | bymax-fitness equivalent                                                            |
+| ---------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Usage record**             | One immutable ledger row for one AI call (or its hold)          | `AITokenTransaction` row                                                            |
+| **Normalizer**               | Pure function: provider `usage` → `NormalizedUsage`             | (none — OpenAI shape read inline)                                                   |
+| **Rating**                   | Resolving a price version + computing nano-USD cost             | `PricingService.calculateCost`                                                      |
+| **Markup**                   | Multiplier turning raw provider cost into billed customer price | (none)                                                                              |
+| **Hold → capture**           | Reserve on estimate, settle on actuals (auth-hold model)        | pre-check + post-success debit (non-atomic)                                         |
+| **Wallet**                   | Prepaid nano-USD balance (grants/debits/refunds/adjustments)    | `Tenant.aiTokenBalance` (token-denominated)                                         |
+| **Grant**                    | A credit entry with priority/expiry, burned by debits           | `monthly_allocation` / `purchase` transactions                                      |
+| **Budget**                   | A cap (spend/tokens/count) per scope per window                 | `Plan.aiTokensMonthly` / `maxAIGenerationsPerMonth` + `Subscription.*Used` counters |
+| **Window anchor**            | Per-budget cycle start (`anchorAt`) with month-end clamping     | `renewalDate` (reset promise)                                                       |
+| **Enforcement predicate**    | The 5-clause rule deciding which records consume budgets        | (implicit, inconsistent across two write paths)                                     |
+| **System cost**              | Platform-absorbed usage, never billed to a customer             | `isSystemCost` + `systemCostCategory` metadata                                      |
+| **Beneficiary**              | The subject who received the value when ≠ payer                 | client in trainer-generates-for-client                                              |
+| **Scope**                    | `{ type: tenant\|team\|user\|key, id }` — the payer subject     | `tokenPayerId`                                                                      |
+| **Provider-reported rating** | Trusting the gateway's dollar cost (OpenRouter `usage.cost`)    | (none)                                                                              |
+| **Reaper**                   | Sweep that releases expired holds                               | (none — debits were post-hoc)                                                       |
 
 ---
 

@@ -3,12 +3,12 @@
 ## Supported versions
 
 | Version | Supported |
-|---|---|
-| 1.0.x | ✅ Active |
+| ------- | --------- |
+| 1.0.x   | ✅ Active |
 
 ## Reporting a vulnerability
 
-Email **security@bymax.one** with a description of the vulnerability, reproduction steps, and your assessment of impact. Do not open a public GitHub issue for security vulnerabilities.
+Email **support@bymax.one** with a description of the vulnerability, reproduction steps, and your assessment of impact. Do not open a public GitHub issue for security vulnerabilities.
 
 We aim to acknowledge receipt within 2 business days and provide a resolution timeline within 7 business days.
 
@@ -24,16 +24,16 @@ We aim to acknowledge receipt within 2 business days and provide a resolution ti
 
 The following operations mutate billing state and MUST be guarded by a host-side admin check:
 
-| Method | Risk |
-|---|---|
-| `WalletService.grant()` | Creates credits from nothing |
-| `WalletService.adjust()` | Corrects a wallet balance |
-| `PricingService.upsertPrice()` | Changes what future calls cost |
+| Method                         | Risk                              |
+| ------------------------------ | --------------------------------- |
+| `WalletService.grant()`        | Creates credits from nothing      |
+| `WalletService.adjust()`       | Corrects a wallet balance         |
+| `PricingService.upsertPrice()` | Changes what future calls cost    |
 | `BudgetService.upsertBudget()` | Creates or raises spending limits |
-| `BudgetService.removeBudget()` | Removes enforcement |
-| `BudgetService.rotateWindow()` | Resets usage counters |
-| `MeteringService.reverse()` | Compensation + credit refund |
-| `UsageReportService.export()` | Bulk read of billing data |
+| `BudgetService.removeBudget()` | Removes enforcement               |
+| `BudgetService.rotateWindow()` | Resets usage counters             |
+| `MeteringService.reverse()`    | Compensation + credit refund      |
+| `UsageReportService.export()`  | Bulk read of billing data         |
 
 Every admin-plane mutation emits an `ai_tokens.audit` event with actor propagation via `requestedBy`.
 
@@ -63,13 +63,13 @@ The ledger stores token counts, model identifiers, cost, and scope IDs. It **nev
 
 ### Sensitive code paths
 
-| Path | Sensitivity |
-|---|---|
-| `WalletService.debit()` | Race-safe balance check — conditional update fails loudly |
-| `BudgetService.consume()` | Atomic counter — Redis Lua or DB conditional write |
-| `MeteringService.capture()` | Idempotent hold settlement — duplicate capture is safe |
-| `MarkupResolver.resolve()` | Host policy is trusted; a throwing policy fails the call |
-| `ContentCapture.capture()` | Failures are logged, never thrown, and never include text |
+| Path                        | Sensitivity                                               |
+| --------------------------- | --------------------------------------------------------- |
+| `WalletService.debit()`     | Race-safe balance check — conditional update fails loudly |
+| `BudgetService.consume()`   | Atomic counter — Redis Lua or DB conditional write        |
+| `MeteringService.capture()` | Idempotent hold settlement — duplicate capture is safe    |
+| `MarkupResolver.resolve()`  | Host policy is trusted; a throwing policy fails the call  |
+| `ContentCapture.capture()`  | Failures are logged, never thrown, and never include text |
 
 ### Connection strings
 
@@ -88,4 +88,4 @@ The ledger stores token counts, model identifiers, cost, and scope IDs. It **nev
 
 ## Disclosure contact
 
-**security@bymax.one**
+**support@bymax.one**

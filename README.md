@@ -761,7 +761,7 @@ Pull requests are welcome. Please open an issue first for significant changes.
 ## 🔒 Security Policy
 
 If you discover a security vulnerability, please **do not** open a public issue. Instead, email us
-at **security@bymax.one** with details. We take security seriously and will respond promptly. See
+at **support@bymax.one** with details. We take security seriously and will respond promptly. See
 [`SECURITY.md`](./SECURITY.md) for the full policy.
 
 ---
