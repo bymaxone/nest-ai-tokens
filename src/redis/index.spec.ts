@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import type { Redis } from 'ioredis'
 import { CounterValueOutOfRangeError, RedisBudgetCounterStore } from './index'
 
@@ -137,3 +138,21 @@ jest.mock('ioredis', () => ({
     }
   },
 }))
+
+describe('RedisBudgetCounterStore serialization', () => {
+  it('keeps the connection source out of every serialization path', () => {
+    // A connection URL carries the password inline and an ioredis instance
+    // carries `options.password` as a plain field, so a store that exposes
+    // either leads a logger or an error reporter straight to the credentials.
+    // `showHidden` is asserted because it is what defeats a merely
+    // non-enumerable property.
+    const password = 'r3d1s-canary'
+    const store = new RedisBudgetCounterStore(`redis://default:${password}@127.0.0.1:6379`)
+
+    expect(JSON.stringify(store)).not.toContain(password)
+    // `Object.assign` rather than a spread: it copies the same enumerable own
+    // properties, and this repository forbids spreading a class instance.
+    expect(JSON.stringify(Object.assign({}, store))).not.toContain(password)
+    expect(inspect(store, { depth: null, showHidden: true })).not.toContain(password)
+  })
+})
