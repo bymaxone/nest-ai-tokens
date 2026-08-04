@@ -578,35 +578,47 @@ The sections above document each of these with a runnable example. This is the i
 ## 🏗️ Architecture
 
 ```
-BymaxAiTokensModule (forRoot / forRootAsync)
-  │
-  ├── guard + interceptor ── enforcement happens in the request, in-process: no
-  │                          proxy, no external hop to fail. The guard checks (and
-  │                          holds, when an estimate is declared); the interceptor
-  │                          captures the handler's actual usage and settles
-  │
-  ├── normalizers/ ───────── 9 providers → one usage shape. They consume plain
-  │                          objects, so no provider SDK is a dependency and the
-  │                          library never makes the model call itself
-  │
-  ├── pricing/ ───────────── point-in-time rating: an entry is priced at the
-  │                          rate in effect at the call timestamp, never re-rated
-  │       └── markup ─────── the resale spread is configuration, not application code
-  │
-  ├── ledger/ ────────────── append-only. A correction is a compensating record,
-  │       │                  never an update; optional per-entry hash chain makes a
-  │       │                  tampered row detectable
-  │       └── exactly-once ─ a unique constraint on the idempotency key; a replay
-  │                          is a conflict the store reports, not a second charge
-  │
-  ├── wallets + budgets ──── grant / debit / refund / adjust, also append-only;
-  │                          budgets cap spend, tokens and operation count per
-  │                          scope per window
-  │       └── RedisBudgetCounterStore — one atomic Lua `incrIfBelow`, so the
-  │                          check and the increment cannot interleave
-  │
-  └── streaming ──────────── StreamUsageCollector accumulates chunks and prefers
-                             the provider's final usage, falling back to its own count
+                        HTTP request
+                             │
+                             ▼
+                   ┌─────────────────────┐
+                   │     BudgetGuard     │  ← scopeResolver
+                   │  check-only; holds  │    (your VERIFIED auth
+                   │  when an estimate   │     context, never the
+                   │  is declared        │     client's body)
+                   └──────────┬──────────┘
+                              │  refuses here if a hard budget is spent
+                              ▼
+                        your handler
+                     (calls the provider)
+                              │
+                              ▼
+                   ┌─────────────────────┐
+                   │ MeteringInterceptor │
+                   │ extracts usage, then│
+                   │ settles the hold or │
+                   │ records post-hoc    │
+                   └──────────┬──────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+   normalizers/          pricing/               ledger/
+   9 providers →     rate in effect AT      append-only; a
+   one usage shape   the call timestamp     correction is a
+        │            (never re-rated)       compensating record
+        │                     │                     │
+        │                markup/            optional hash chain
+        │            multiplier or          over the previous
+        │            IMarkupPolicy          posted entry
+        │                                          │
+        └──────────────────┬───────────────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+        wallets/budgets          RedisBudgetCounterStore
+      append-only entries        one Lua incrIfBelow —
+      spend · tokens · count     check and increment
+      per scope per window       cannot interleave
 ```
 
 **Storage is an adapter, not a dependency.** `./prisma` is the reference
