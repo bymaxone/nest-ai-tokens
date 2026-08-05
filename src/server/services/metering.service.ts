@@ -34,15 +34,14 @@ import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } f
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
-import type { MarkupResolver} from './markup.resolver';
-import { type ResolvedMarkup } from './markup.resolver'
+import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import { MeteringEffects } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import type { TelemetryEmitter } from '../telemetry/otel-emitter'
 import { NO_OP_TELEMETRY } from '../telemetry/no-op-telemetry'
-import type { ContentCapture} from './content-capture';
 import { NO_OP_CONTENT_CAPTURE } from './content-capture'
+import type { ContentCapture } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
   isNormalizedUsage,
