@@ -35,7 +35,7 @@ import type {
   IBudgetStore,
   MeteringContext,
 } from '../interfaces'
-import { LedgerService } from './ledger.service'
+import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
 

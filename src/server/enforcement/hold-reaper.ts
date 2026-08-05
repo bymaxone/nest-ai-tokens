@@ -14,8 +14,8 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common'
 import type { ResolvedAiTokensOptions } from '../config'
-import { LedgerService } from '../services/ledger.service'
-import { MeteringService } from '../services/metering.service'
+import type { LedgerService } from '../services/ledger.service'
+import type { MeteringService } from '../services/metering.service'
 
 /** The maximum number of expired holds reclaimed per sweep. */
 const REAP_BATCH_SIZE = 100

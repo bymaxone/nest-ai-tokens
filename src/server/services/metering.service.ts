@@ -33,14 +33,16 @@ import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
-import { LedgerService } from './ledger.service'
-import { MarkupResolver, type ResolvedMarkup } from './markup.resolver'
+import type { LedgerService } from './ledger.service'
+import type { MarkupResolver} from './markup.resolver';
+import { type ResolvedMarkup } from './markup.resolver'
 import { MeteringEffects } from './metering-effects'
-import { PricingService } from './pricing.service'
+import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { TelemetryEmitter } from '../telemetry/otel-emitter'
+import type { TelemetryEmitter } from '../telemetry/otel-emitter'
 import { NO_OP_TELEMETRY } from '../telemetry/no-op-telemetry'
-import { ContentCapture, NO_OP_CONTENT_CAPTURE } from './content-capture'
+import type { ContentCapture} from './content-capture';
+import { NO_OP_CONTENT_CAPTURE } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
   isNormalizedUsage,

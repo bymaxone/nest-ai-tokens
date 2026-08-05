@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto'
 import { Injectable, Logger } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
-import { ModuleRef } from '@nestjs/core'
+import type { ModuleRef } from '@nestjs/core'
 import type { AiTokensEvent, AiTokensEventType, AuditEventData, MeteringScope } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { toJsonSafe } from '../utils/to-json-safe'
