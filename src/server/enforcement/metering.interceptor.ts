@@ -70,28 +70,18 @@ export class MeteringInterceptor implements NestInterceptor {
    */
   intercept(executionContext: ExecutionContext, next: CallHandler): Observable<unknown> {
     const targets = [executionContext.getHandler(), executionContext.getClass()]
-    const config = this.reflector.getAllAndOverride<MeterConfig | undefined>(
-      METER_METADATA,
-      targets,
-    )
+    const config = this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets)
     if (config === undefined) return next.handle()
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
     const enrichment = request.aiTokens
     return next.handle().pipe(
-      mergeMap((result: unknown) =>
-        from(this.settle(executionContext, config, enrichment, result)),
-      ),
+      mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result))),
       catchError((error: unknown) => this.onError(enrichment, error)),
     )
   }
 
   /** Settle the handler's usage and set the cost headers; returns the untouched result. */
-  private async settle(
-    executionContext: ExecutionContext,
-    config: MeterConfig,
-    enrichment: RequestAiTokens | undefined,
-    result: unknown,
-  ): Promise<unknown> {
+  private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<unknown> {
     const usage = extractUsage(result, config)
     const record = await this.capture(executionContext, config, enrichment, usage)
     if (config.exposeHeaders === true) this.setHeaders(executionContext, record, enrichment)
@@ -99,49 +89,28 @@ export class MeteringInterceptor implements NestInterceptor {
   }
 
   /** Capture the guard's hold when present, else record enforcing post-hoc. */
-  private async capture(
-    executionContext: ExecutionContext,
-    config: MeterConfig,
-    enrichment: RequestAiTokens | undefined,
-    usage: unknown,
-  ): Promise<UsageRecord> {
-    if (enrichment?.hold !== undefined)
-      return this.metering.capture(enrichment.hold, usage, config.preset)
+  private async capture(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, usage: unknown): Promise<UsageRecord> {
+    if (enrichment?.hold !== undefined) return this.metering.capture(enrichment.hold, usage, config.preset)
     const context = await this.resolveContext(executionContext, config, enrichment)
     return this.metering.record({
       usage,
       // Stryker disable next-line ConditionalExpression -- CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
       ...(config.preset !== undefined ? { preset: config.preset } : {}),
       // Stryker disable next-line ConditionalExpression -- CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
-      context: {
-        ...context,
-        enforce: true,
-        isSystemCost: config.isSystemCost ?? false,
-        ...(config.tags !== undefined ? { tags: config.tags } : {}),
-      },
+      context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
     })
   }
 
   /** The metering context: the guard's enrichment, else the host `scopeResolver`. */
-  private async resolveContext(
-    executionContext: ExecutionContext,
-    config: MeterConfig,
-    enrichment: RequestAiTokens | undefined,
-  ): Promise<MeteringContext> {
+  private async resolveContext(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined): Promise<MeteringContext> {
     if (enrichment !== undefined) return enrichment.context
     if (this.scopeResolver === undefined) {
       // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
-      throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran',
-      })
+      throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
     }
     const resolved = await this.scopeResolver(executionContext)
     // Stryker disable next-line ConditionalExpression,EqualityOperator,ObjectLiteral -- equivalent: this context feeds the no-guard record() path, and record() derives its preset from config.preset directly (passed above), never from context.preset — so adding, omitting, or flipping this spread has no observable effect
-    return {
-      ...resolved,
-      feature: config.feature,
-      ...(config.preset !== undefined ? { preset: config.preset } : {}),
-    }
+    return { ...resolved, feature: config.feature, ...(config.preset !== undefined ? { preset: config.preset } : {}) }
   }
 
   /** Release the guard's hold (if any) and rethrow the ORIGINAL handler error. */
@@ -152,43 +121,29 @@ export class MeteringInterceptor implements NestInterceptor {
     const released = this.metering.release(enrichment.hold, 'handler threw').catch(() => {
       // Stryker disable next-line BlockStatement -- best-effort hold release; the reaper reclaims unreleased holds
       // Stryker disable next-line StringLiteral -- logger text is internal observability
-      this.logger.warn(
-        `failed to release hold ${holdId} after a handler error; the reaper will reclaim it`,
-      )
+      this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
     })
     return from(released).pipe(mergeMap(() => throwError(() => error)))
   }
 
   /** Set the three `x-ai-tokens-*` headers as decimal strings via the HTTP adapter. */
-  private setHeaders(
-    executionContext: ExecutionContext,
-    record: UsageRecord,
-    enrichment: RequestAiTokens | undefined,
-  ): void {
+  private setHeaders(executionContext: ExecutionContext, record: UsageRecord, enrichment: RequestAiTokens | undefined): void {
     const response = executionContext.switchToHttp().getResponse<HeaderSink>()
     writeHeader(response, 'x-ai-tokens-cost', record.rawCostNanoUsd.toString())
     writeHeader(response, 'x-ai-tokens-billed-cost', record.billedCostNanoUsd.toString())
     const remaining = minBudgetRemaining(enrichment)
-    if (remaining !== undefined)
-      writeHeader(response, 'x-ai-tokens-budget-remaining', remaining.toString())
+    if (remaining !== undefined) writeHeader(response, 'x-ai-tokens-budget-remaining', remaining.toString())
   }
 }
 
 /** Extract the raw usage from the handler result, or fail as malformed. */
 function extractUsage(result: unknown, config: MeterConfig): unknown {
   // Stryker disable next-line ConditionalExpression -- CE true on `typeof value === 'object'` is equivalent: the `value !== null` operand still excludes null, and for any non-object non-null primitive `.usage` is undefined — identical to the else branch — so the extracted value is unchanged
-  const extract =
-    config.extract ??
-    ((value: unknown): unknown =>
-      typeof value === 'object' && value !== null
-        ? (value as { usage?: unknown }).usage
-        : undefined)
+  const extract = config.extract ?? ((value: unknown): unknown => (typeof value === 'object' && value !== null ? (value as { usage?: unknown }).usage : undefined))
   const usage = extract(result)
   if (usage === undefined || usage === null) {
     // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
-    throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, {
-      reason: 'the handler result carried no extractable usage',
-    })
+    throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the handler result carried no extractable usage' })
   }
   return usage
 }
