@@ -73,3 +73,33 @@ Stryker 9.6.1 does not honor `// Stryker disable next-line` on a **catch-clause 
 - **Production code is comment-only.** Reaching the gate never changed production logic or values — only inline `// Stryker disable next-line` directives were added (and seven non-functional catch-body directives removed in favor of tests). No money path acquired `parseFloat`/`toFixed`/float arithmetic.
 
 _Run reproduced with `pnpm mutation` (single suite, `concurrency: 1`)._
+
+---
+
+## Re-run — 2026-08-06
+
+| Metric              | Value            |
+| ------------------- | ---------------- |
+| **Mutation score**  | **100.00 %**  |
+| Surviving mutants   | 0               |
+| Break threshold     | 95 % -> PASS     |
+
+No change to the score, but a regression was found and corrected during this pass.
+
+A commit earlier in the sweep reformatted `metering.interceptor.ts` while adding explicit DI
+tokens. The file was written with each suppressed expression on ONE long line directly under its
+`// Stryker disable next-line` directive, which is what `next-line` covers — this package has no
+`format` script and CI declares `run-format-check: false` precisely because that layout is
+deliberate. Reformatting split those lines into blocks, so each mutant moved three or four lines
+below a directive that only reaches the next one. Eight suppressions stopped applying in silence
+and the score fell to 99.44 without anything reporting it.
+
+The file was restored to its committed layout and the change reduced to the two decorators it was
+actually about.
+
+Every equivalence claim in this section was checked by running the mutant, not by reading it.
+Where a `// Stryker disable next-line` directive was found not to apply — above a `} catch {`, a
+`.replace()` inside a method chain, a multi-line `sort(...)` argument, or anywhere inside a
+builder chain — it was replaced with the block `disable`/`restore` form, or, where that does not
+work either, with a plain comment at the line so the reasoning is visible rather than silently
+ineffective.
