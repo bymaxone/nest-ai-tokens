@@ -42,12 +42,12 @@ export function perMillion(tokens: number, ratePerMillionNano: bigint): bigint {
  * floatUsdToNanoUsd(0.005) // 5_000_000n
  */
 export function floatUsdToNanoUsd(usd: number): bigint {
-  // Stryker disable next-line ConditionalExpression,BlockStatement -- redundant guard: a non-finite usd still throws RangeError downstream via BigInt(NaN)/BigInt(Infinity), so bypassing/emptying the guard is behavior-preserving (same error type)
+  // Stryker disable next-line ConditionalExpression,BlockStatement: redundant guard: a non-finite usd still throws RangeError downstream via BigInt(NaN)/BigInt(Infinity), so bypassing/emptying the guard is behavior-preserving (same error type)
   if (!Number.isFinite(usd)) {
-    // Stryker disable next-line StringLiteral -- diagnostic RangeError message; asserted via toThrow(RangeError), not on the message text
+    // Stryker disable next-line StringLiteral: diagnostic RangeError message; asserted via toThrow(RangeError), not on the message text
     throw new RangeError(`floatUsdToNanoUsd: expected a finite number, received ${String(usd)}`)
   }
-  // Stryker disable next-line EqualityOperator -- `usd <= 0` is equivalent here: at usd === 0 the result is sign * 0n === 0n for either sign
+  // Stryker disable next-line EqualityOperator: `usd <= 0` is equivalent here: at usd === 0 the result is sign * 0n === 0n for either sign
   const sign = usd < 0 ? -1n : 1n
   const abs = Math.abs(usd)
   const wholeDollars = Math.floor(abs)
@@ -82,9 +82,9 @@ export interface FormatNanoUsdOptions {
  */
 export function formatNanoUsd(nanoUsd: bigint, opts?: FormatNanoUsdOptions): string {
   const decimals = opts?.decimals ?? DEFAULT_DISPLAY_DECIMALS
-  // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement -- redundant guard: any invalid decimals independently throws RangeError downstream via 10n ** BigInt(9 - decimals) / BigInt(9 - decimals), so the guard is behavior-preserving (same error type)
+  // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: redundant guard: any invalid decimals independently throws RangeError downstream via 10n ** BigInt(9 - decimals) / BigInt(9 - decimals), so the guard is behavior-preserving (same error type)
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) {
-    // Stryker disable next-line StringLiteral -- diagnostic RangeError message; asserted via toThrow(RangeError), not on the message text
+    // Stryker disable next-line StringLiteral: diagnostic RangeError message; asserted via toThrow(RangeError), not on the message text
     throw new RangeError(`formatNanoUsd: decimals must be an integer in [0, 9], received ${String(decimals)}`)
   }
   const currency = opts?.currency ?? 'USD'

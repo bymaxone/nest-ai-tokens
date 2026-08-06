@@ -18,15 +18,15 @@ import { buildUsage, readResponse, requireNum, str } from './usage-fields'
  * normalizeMistralUsage({ model: 'mistral-large', usage: { prompt_tokens: 100, completion_tokens: 40 } })
  */
 export function normalizeMistralUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral -- provider name in error messages is internal diagnostics; tests only check toThrow(Error)
+  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'mistral')
   return buildUsage({
     provider: 'mistral',
     model: str(response.model) ?? '',
     operation: 'chat',
-    // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+    // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
     inputTokens: requireNum(usage.prompt_tokens, 'mistral', 'usage.prompt_tokens'),
-    // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+    // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
     outputTokens: requireNum(usage.completion_tokens, 'mistral', 'usage.completion_tokens'),
     raw: usage,
   })

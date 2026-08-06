@@ -742,9 +742,11 @@ tests pass".
   system does, `check:runtime` loads every subpath from the packed tarball in ESM and
   CommonJS, and `check:published` compiles this README's snippets against `dist/`
 - ✅ **Every suppression carries its reason** — no coverage directives anywhere; each
-  `// Stryker disable` in the production source states, after `--`, why the mutant it
-  silences is unobservable from a unit test (an internal error context, a provider id
-  reached only through integration)
+  `// Stryker disable` in the production source states, after the `:` Stryker reads it
+  from, why the mutant it silences is unobservable from a unit test (an internal error
+  context, a provider id reached only through integration). `check:mutants` proves the
+  reasons parse, so they reach the mutation report instead of being replaced by
+  Stryker's `Ignored using a comment` fallback
 
 ```bash
 pnpm test          # unit tests

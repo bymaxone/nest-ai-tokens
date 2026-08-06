@@ -8,6 +8,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-06
+
+### Fixed
+
+- **Every suppression reason was dropped from the mutation report.** All 249 `// Stryker
+  disable` directives in the source wrote their justification after `--`. Stryker reads a
+  directive with one regular expression, `/^\s?Stryker (disable|restore)(?: (next-line))?
+  ([a-zA-Z, ]+)(?::(.+)?)?/`, whose mutator list accepts letters, commas and spaces only
+  and which captures the reason exclusively after a colon. A `-` therefore closed the
+  mutator list and left the reason unmatched, so each directive still silenced its mutant
+  but the report recorded Stryker's fallback text, `Ignored using a comment`. The README
+  claimed the opposite — that every suppression carries its reason — and documented the
+  broken separator as the convention. The directives now use `<Mutator>: <reason>`, which
+  is the grammar the parser accepts, and the reasons reach the report.
+
+### Added
+
+- `check:mutants` gate (`scripts/check-mutation-directives.mjs`) — validates every
+  `// Stryker` comment against the parser's own regular expression, rejecting a reason
+  written after `--`, a reason wrapped onto a second comment line (the report keeps only
+  the first fragment), and a mutator name Stryker does not know, which would silence
+  nothing at all. Wired into CI and `prepublishOnly`. Stryker warns about the last case,
+  but only during a mutation run, which on this repo happens post-merge.
+
+### Changed
+
+- No runtime behaviour changed. `dist/` differs only in the text of those comments; the
+  server bundle moved from 38,096 to 38,145 B brotli, well inside its 40,000 B budget.
+
 ## [1.0.2] - 2026-08-05
 
 ### Fixed
@@ -164,4 +193,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...HEAD
+[1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...HEAD

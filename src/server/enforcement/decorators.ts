@@ -14,7 +14,7 @@ import type { CustomDecorator } from '@nestjs/common'
 import type { ProviderPreset, ScopeType } from '../../shared'
 import type { HoldEstimate } from '../interfaces'
 
-// Stryker disable StringLiteral -- these reflector metadata keys are used symmetrically (SetMetadata + getAllAndOverride); any unique string is equivalent
+// Stryker disable StringLiteral: these reflector metadata keys are used symmetrically (SetMetadata + getAllAndOverride); any unique string is equivalent
 /** Reflector key for {@link Meter} metadata. */
 export const METER_METADATA = 'bymax:ai-tokens:meter'
 /** Reflector key for {@link RequireBudget} metadata. */

@@ -44,7 +44,7 @@ export class ContentCapture {
    */
   async capture(input: CaptureContentInput): Promise<void> {
     if (!this.options.enabled) return
-    // Stryker disable next-line ConditionalExpression -- CE false: removing the early-return is equivalent because the inner guards (input.prompt !== undefined, input.completion !== undefined) prevent any store calls when both are absent
+    // Stryker disable next-line ConditionalExpression: CE false: removing the early-return is equivalent because the inner guards (input.prompt !== undefined, input.completion !== undefined) prevent any store calls when both are absent
     if (input.prompt === undefined && input.completion === undefined) return
     const { store, ttlSeconds } = this.options
     const mask = this.options.mask ?? IDENTITY
@@ -55,9 +55,9 @@ export class ContentCapture {
       if (input.completion !== undefined) {
         await store.put({ usageRecordId: input.usageRecordId, tenantId: input.tenantId, role: 'completion', text: mask(input.completion), ttlSeconds })
       }
-    // Stryker disable next-line BlockStatement -- best-effort content capture; failures must never affect the primary metering path
+    // Stryker disable next-line BlockStatement: best-effort content capture; failures must never affect the primary metering path
     } catch {
-      // Stryker disable next-line StringLiteral -- logger text is internal observability
+      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.error(`failed to write content sidecar for record ${input.usageRecordId}`)
     }
   }

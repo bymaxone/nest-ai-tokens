@@ -100,7 +100,7 @@ export function sha256Hex(input: string): string {
   bytes.set(message)
   bytes[message.length] = 0x80
   const view = new DataView(bytes.buffer)
-  // Stryker disable next-line ArithmeticOperator -- high 32-bit word of the bit length (SHA-256 Merkle-Damgård length padding); for messages shorter than 512 MB the high word is always 0, making * vs / indistinguishable in unit tests
+  // Stryker disable next-line ArithmeticOperator: high 32-bit word of the bit length (SHA-256 Merkle-Damgård length padding); for messages shorter than 512 MB the high word is always 0, making * vs / indistinguishable in unit tests
   view.setUint32(paddedLength - 8, Math.floor(bitLength / 0x100000000))
   view.setUint32(paddedLength - 4, bitLength >>> 0)
 

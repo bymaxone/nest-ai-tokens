@@ -65,6 +65,8 @@ jobs:
             exit 1
           fi
           echo "No float math on money paths."
+      - name: Mutation directives parse and carry their reason
+        run: pnpm check:mutants
       - name: Build all subpaths
         run: pnpm build
       - name: Verify build output integrity
