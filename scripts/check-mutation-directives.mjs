@@ -16,7 +16,11 @@
  *   fallback text, `Ignored using a comment`. The justification stays in the source
  *   and never reaches the reader of the report.
  * - The reason ends at the end of the comment line. Wrapped onto a second `//` line,
- *   the report keeps a truncated half-sentence.
+ *   the report keeps a truncated half-sentence. Detecting that wrap is a judgement about
+ *   prose, so it is deliberately narrow: it fires only on a following comment that resumes
+ *   mid-sentence and belongs to no other tool. A comment that opens a sentence of its own,
+ *   and an `eslint-disable`/`@ts-expect-error` under the directive, are left alone — a gate
+ *   that fails the build on a legitimate adjacent comment would be worse than the miss.
  *
  * An unknown mutator name is worse than either: the rule matches nothing, so the
  * mutant is never ignored at all. Stryker only warns about that while a mutation run
@@ -29,7 +33,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 /** The directive grammar, copied from Stryker's own `DirectiveBookkeeper`. */
@@ -42,6 +46,19 @@ const COMMENT_RE = /^\s*\/\/\s*Stryker\b/
 const WILDCARD = 'all'
 
 /**
+ * A reason wrapped onto a second line resumes mid-sentence, so it starts lowercase.
+ * A comment that opens a new sentence is a comment of its own, not a lost fragment.
+ */
+const CONTINUATION_RE = /^\/\/\s*[a-z]/
+
+/**
+ * Another tool's directive on the following line is that tool's business, not a wrapped
+ * reason — several of them start lowercase and would otherwise read as one.
+ */
+const TOOL_DIRECTIVE_RE =
+  /^\/\/\s*(?:@?(?:ts|eslint|prettier|biome|dprint|deno|c8|v8|istanbul|stryker|webpack|vite)\b|#(?:region|endregion)\b)/i
+
+/**
  * Resolves the mutator names the installed Stryker knows about.
  *
  * @returns {Promise<readonly string[] | null>} The names, or `null` when the internal
@@ -51,12 +68,11 @@ async function loadMutatorNames() {
   try {
     const require = createRequire(import.meta.url)
     // The instrumenter is a transitive dependency, so under pnpm's strict layout it is
-    // reachable from `core`'s own directory rather than from this package's root.
-    const core = require.resolve('@stryker-mutator/core')
+    // reachable from `core`'s own directory rather than from this package's root. `paths`
+    // entries are directories to start the `node_modules` walk from, hence the `dirname`.
+    const core = dirname(require.resolve('@stryker-mutator/core'))
     const entry = require.resolve('@stryker-mutator/instrumenter', { paths: [core] })
-    const module = await import(
-      pathToFileURL(join(entry, '..', 'mutators', 'index.js')).href
-    )
+    const module = await import(pathToFileURL(join(entry, '..', 'mutators', 'index.js')).href)
     const names = module.allMutators?.map((/** @type {{ name: string }} */ m) => m.name)
     return Array.isArray(names) && names.length > 0 ? names : null
   } catch {
@@ -102,7 +118,7 @@ function inspect(file, mutatorNames) {
       problems.push({
         ...at,
         problem: 'not a directive Stryker can parse — it is an ordinary comment',
-        hint: 'use "// Stryker disable next-line <Mutator>: <reason>"',
+        hint: 'use "// Stryker disable next-line <Mutator>: <reason>"'
       })
       return
     }
@@ -115,7 +131,7 @@ function inspect(file, mutatorNames) {
         problems.push({
           ...at,
           problem: `unknown mutator "${mutator}" — this directive silences nothing`,
-          hint: `known mutators: ${mutatorNames.join(', ')}`,
+          hint: `known mutators: ${mutatorNames.join(', ')}`
         })
       }
     }
@@ -129,17 +145,17 @@ function inspect(file, mutatorNames) {
         problem: line.includes(' -- ')
           ? 'reason written after "--", which Stryker does not read — the report will say "Ignored using a comment"'
           : 'no reason — the report will say "Ignored using a comment"',
-        hint: 'put the reason after a colon: "<Mutator>: <why the mutant is equivalent>"',
+        hint: 'put the reason after a colon: "<Mutator>: <why the mutant is equivalent>"'
       })
       return
     }
 
     const next = lines[index + 1]?.trim() ?? ''
-    if (next.startsWith('//') && !next.startsWith('// Stryker')) {
+    if (CONTINUATION_RE.test(next) && !TOOL_DIRECTIVE_RE.test(next)) {
       problems.push({
         ...at,
         problem: 'reason continues on the next line, so the report keeps only this fragment',
-        hint: 'keep the whole reason on the directive line',
+        hint: 'keep the whole reason on the directive line'
       })
     }
   })
