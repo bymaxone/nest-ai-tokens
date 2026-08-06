@@ -18,13 +18,13 @@
 
 import { Inject, Injectable } from '@nestjs/common'
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
-import { Reflector } from '@nestjs/core'
+import type { Reflector } from '@nestjs/core'
 import type { BudgetStatus } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
-import { BudgetService, MeteringService } from '../services'
+import type { BudgetService, MeteringService } from '../services'
 import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA } from './decorators'
 import type { MeterConfig, RequireBudgetConfig } from './decorators'
 

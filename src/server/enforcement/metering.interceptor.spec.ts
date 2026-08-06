@@ -9,7 +9,7 @@ import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-stor
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import type { ResolvedAiTokensOptions } from '../config'
 import type { MeteringContext } from '../interfaces'
-import { AiTokensException } from '../errors'
+import type { AiTokensException } from '../errors'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, WalletService } from '../services'
 import type { RequestAiTokens } from './budget.guard'
 import { providerPresets } from '../config/provider-presets'

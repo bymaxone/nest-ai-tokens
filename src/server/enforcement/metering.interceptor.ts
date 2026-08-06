@@ -53,8 +53,8 @@ export class MeteringInterceptor implements NestInterceptor {
    * @param options The resolved options (fallback `scopeResolver` when no guard ran).
    */
   constructor(
-    private readonly reflector: Reflector,
-    private readonly metering: MeteringService,
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(MeteringService) private readonly metering: MeteringService,
     @Inject(BYMAX_AI_TOKENS_OPTIONS) options: MeteringInterceptorOptions,
   ) {
     this.scopeResolver = options.scopeResolver

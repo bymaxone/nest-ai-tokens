@@ -8,6 +8,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-05
+
+### Fixed
+
+- **The module could not be initialised by a consumer at all.** `MeteringInterceptor` is
+  registered as a plain class provider, so Nest resolves its constructor — but only the
+  third parameter carried a token. Nest reads two separate metadata keys for this:
+  `self:paramtypes`, written by `@Inject()`, and `design:paramtypes`, written by
+  TypeScript. The published bundle is built by tsup/esbuild, and esbuild states it cannot
+  implement `emitDecoratorMetadata` because it does not replicate TypeScript's type
+  system — so the second key was never there. The first two parameters had neither, and
+  the container threw `Nest can't resolve dependencies of the MeteringInterceptor
+  (?, +, Symbol(BYMAX_AI_TOKENS_OPTIONS))` before any provider was created. Both now
+  carry `@Inject`.
+
+### Changed
+
+- `emitDecoratorMetadata` is `false` in `tsconfig.json`. It was `true`, which was never
+  true of the artifact: tsup prints `You have emitDecoratorMetadata enabled but
+  @swc/core was not installed, skipping swc plugin` on every build, and that warning had
+  been printed on every build of this package. Turning it off makes the source compile
+  the way the bundle is built, so a parameter that depends on reflected types now fails
+  where it is cheap to see.
+- The imports that existed only to feed that metadata are `import type` again. The lint
+  rule reported each one the moment the flag went off, which makes it a precise detector
+  for this defect: an import that is value-only because a constructor parameter needs its
+  type is an import that will not survive the bundle.
+
 ## [1.0.1] - 2026-08-04
 
 ### Removed
@@ -135,4 +163,5 @@ have regressed from. They are kept because the reasoning is worth having.
 
 [1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...HEAD
+[1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...HEAD

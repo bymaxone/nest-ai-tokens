@@ -7,7 +7,7 @@ import {
   normalizeOpenAiCompatibleUsage,
 } from '../shared'
 import type { AiTokensEvent, AiTokensErrorResponse } from '../shared'
-import { AiTokensException } from './errors'
+import type { AiTokensException } from './errors'
 import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
 import {
