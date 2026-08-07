@@ -25,7 +25,7 @@ export class LedgerIdempotencyConflict extends Error {
     readonly tenantId: string,
     readonly idempotencyKey: string,
   ) {
-    // Stryker disable next-line StringLiteral -- Error message string is internal diagnostics; tests check the error type, not the message text
+    // Stryker disable next-line StringLiteral: Error message string is internal diagnostics; tests check the error type, not the message text
     super('Ledger idempotency-key payload mismatch')
     this.name = 'LedgerIdempotencyConflict'
   }

@@ -20,11 +20,11 @@ import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum,
  * normalizeOpenAiChatUsage({ model: 'gpt-5.2', usage: { prompt_tokens: 100, completion_tokens: 40 } })
  */
 export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics; tests only check toThrow(Error)
+  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-chat')
-  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openai-chat', 'usage.prompt_tokens')
-  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-chat', 'usage.completion_tokens')
 
   const promptDetails = asObject(usage.prompt_tokens_details)

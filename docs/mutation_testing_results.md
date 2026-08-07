@@ -19,6 +19,8 @@ This document records the release mutation-testing run for `v0.1.0` and justifie
 
 Every mutant is accounted for: it is either **killed** by a test that asserts the mutated behavior would be wrong, or **ignored** via an inline `// Stryker disable next-line` directive carrying a justification. No mutant survives undocumented, and the break threshold was never lowered.
 
+Directives follow the grammar Stryker parses — `// Stryker disable next-line <Mutator[,Mutator]>: <reason>` — with the whole reason on the directive line. Stryker captures the reason only after the colon and only to the end of that line; written any other way the mutant is still silenced but the report shows the fallback text `Ignored using a comment`, and the justification never reaches the reader. `pnpm check:mutants` enforces this, and also rejects a mutator name Stryker does not know, which would silence nothing at all.
+
 The `Ignored (compile error)` mutants are discarded by Stryker's TypeScript checker before execution: under the project's strict compiler settings (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) many mutations produce uncompilable code and cannot represent a real defect.
 
 ## Provably-equivalent survivors (justified `// Stryker disable`)

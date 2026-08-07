@@ -28,7 +28,7 @@ export async function resolveEmitterChannel(moduleRef: ModuleRef, enabled: boole
   if (!enabled) return null
   try {
     const emitterModule = await import('@nestjs/event-emitter')
-    // Stryker disable next-line ObjectLiteral,BooleanLiteral -- { strict: false } retrieves a global singleton; unit tests do not install @nestjs/event-emitter so the catch path always fires, making the options value unobservable
+    // Stryker disable next-line ObjectLiteral,BooleanLiteral: { strict: false } retrieves a global singleton; unit tests do not install @nestjs/event-emitter so the catch path always fires, making the options value unobservable
     const emitter = moduleRef.get(emitterModule.EventEmitter2, { strict: false })
     return {
       emit: (type: string, envelope: unknown): void => {

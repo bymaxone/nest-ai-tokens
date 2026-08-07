@@ -239,7 +239,7 @@ async function safeResolve(load: Promise<BymaxAiTokensModuleOptions>): Promise<R
     return applyDefaults(raw)
   } catch (error) {
     if (error instanceof AiTokensException) throw error
-    // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the async options factory rejected or produced invalid options' })
   }
 }
@@ -258,7 +258,7 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
   }
   const factoryToken = descriptor.useClass ?? descriptor.useExisting
   if (factoryToken === undefined) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'forRootAsync requires useFactory, useClass, or useExisting' })
   }
   const optionsProvider: Provider = {

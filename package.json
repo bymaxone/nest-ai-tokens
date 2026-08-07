@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-ai-tokens",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (×9), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
@@ -76,6 +76,7 @@
   "scripts": {
     "build": "pnpm clean && tsup",
     "check:exports": "attw --pack . --profile strict",
+    "check:mutants": "node scripts/check-mutation-directives.mjs",
     "check:published": "node scripts/check-published-surface.mjs",
     "check:runtime": "node scripts/check-consumer-runtime.mjs",
     "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",
@@ -87,7 +88,7 @@
     "mutation:dry-run": "stryker run --dryRunOnly",
     "mutation:incremental": "stryker run --incremental",
     "prepare": "prisma generate",
-    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build && pnpm size && pnpm check:published",
+    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm check:mutants && pnpm test:cov:all && pnpm build && pnpm size && pnpm check:published",
     "release": "npm publish --provenance --access public",
     "size": "node scripts/check-size.mjs",
     "test": "jest",

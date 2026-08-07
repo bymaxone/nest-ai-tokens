@@ -52,7 +52,7 @@ function zeroUsage(provider: ProviderId, model: string, operation: AiOperation):
 
 /** Coerce an unknown chunk to a plain record, or `null`. */
 function asRecord(value: unknown): Record<string, unknown> | null {
-  // Stryker disable next-line ConditionalExpression -- value !== null → true is equivalent: for a null value the cast still yields null, so asRecord(null) returns null regardless
+  // Stryker disable next-line ConditionalExpression: value !== null → true is equivalent: for a null value the cast still yields null, so asRecord(null) returns null regardless
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
 }
 
@@ -134,14 +134,14 @@ export class StreamUsageCollector {
    * @throws {AiTokensException} `AI_TOKENS_STREAM_USAGE_MISSING` on an abort with no tokenizer; a re-use error on a second call.
    */
   async finalize(): Promise<NormalizedUsage> {
-    // Stryker disable next-line ObjectLiteral,StringLiteral -- error context and reason are internal diagnostics; tests check error code only
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
     if (this.finalized) throw new AiTokensException('AI_TOKENS_STREAM_USAGE_MISSING', undefined, { reason: 'the collector was already finalized' })
     this.finalized = true
     const provider = this.opts.provider
     if (this.finalResponse !== null) return this.normalizeFinal(this.finalResponse)
     const tokenizer = this.opts.tokenizer
     if (tokenizer !== undefined) return this.fallbackUsage(provider, tokenizer)
-    // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics
+    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
     throw new AiTokensException('AI_TOKENS_STREAM_USAGE_MISSING', undefined, { provider, model: this.opts.model })
   }
 
@@ -200,7 +200,7 @@ function openAiDelta(record: Record<string, unknown>): string | undefined {
     const delta = asRecord(asRecord(choice)?.delta)
     if (typeof delta?.content === 'string') text += delta.content
   }
-  // Stryker disable next-line ConditionalExpression,StringLiteral -- returning '' instead of undefined for empty output is a no-op: the sole caller appends the result to outputText and `outputText += ''` changes nothing, so both CE→false and the empty-string-sentinel mutation are equivalent
+  // Stryker disable next-line ConditionalExpression,StringLiteral: returning '' instead of undefined for empty output is a no-op: the sole caller appends the result to outputText and `outputText += ''` changes nothing, so both CE→false and the empty-string-sentinel mutation are equivalent
   return text === '' ? undefined : text
 }
 

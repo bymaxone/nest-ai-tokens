@@ -19,11 +19,11 @@ import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum,
  * normalizeOpenAiResponsesUsage({ model: 'gpt-5.2', usage: { input_tokens: 100, output_tokens: 40 } })
  */
 export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral -- provider name in error messages is internal diagnostics; tests only check toThrow(Error)
+  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-responses')
-  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const inputTokensTotal = requireNum(usage.input_tokens, 'openai-responses', 'usage.input_tokens')
-  // Stryker disable next-line StringLiteral -- provider and field names in error messages are internal diagnostics
+  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.output_tokens, 'openai-responses', 'usage.output_tokens')
 
   const inputDetails = asObject(usage.input_tokens_details)

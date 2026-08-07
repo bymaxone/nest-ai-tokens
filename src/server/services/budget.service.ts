@@ -123,7 +123,7 @@ interface GuardResult {
 /** The window-length grace (seconds) added to a counter key's TTL (§10.8). */
 const COUNTER_GRACE_SECONDS = 3_600
 /** The counter TTL for a `'total'` window that never resets (≈ 400 days). */
-// Stryker disable next-line ArithmeticOperator -- TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
+// Stryker disable next-line ArithmeticOperator: TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
 const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
 /** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
 const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
@@ -168,11 +168,11 @@ export class BudgetService {
     this.assertLimits(input)
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
     for (const threshold of softThresholds) {
-      // Stryker disable next-line StringLiteral -- error reason template is internal diagnostics; tests check error code only
+      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics; tests check error code only
       if (!(threshold > 0 && threshold <= 1)) throw invalid(`softThresholds must be within (0, 1], received ${String(threshold)}`)
     }
     const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy })
-    // Stryker disable next-line ObjectLiteral -- audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
+    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
     return budget
   }
@@ -185,7 +185,7 @@ export class BudgetService {
    */
   async removeBudget(budgetId: string, tenantId: string): Promise<void> {
     await this.store.remove(budgetId)
-    // Stryker disable next-line ObjectLiteral -- audit payload is internal observability; tests check the method completes, not the event payload shape
+    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the method completes, not the event payload shape
     await this.events.audit('ai_tokens.budget.removed', { tenantId, budgetId })
   }
 
@@ -222,12 +222,12 @@ export class BudgetService {
         try {
           await counter.reset(counterKey(budgetId, windowStart, dimension.name))
         } catch {
-          // Stryker disable next-line StringLiteral -- logger text is internal observability
+          // Stryker disable next-line StringLiteral: logger text is internal observability
           this.logger.warn(`failed to reset budget counter for ${budgetId}`)
         }
       }
     }
-    // Stryker disable next-line ObjectLiteral -- audit payload is internal observability; tests check window rotation behavior, not event payload shape
+    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check window rotation behavior, not event payload shape
     await this.events.audit('ai_tokens.budget.rotated', { tenantId: budget.tenantId, budgetId, windowStart: start.toISOString() })
   }
 
@@ -306,7 +306,7 @@ export class BudgetService {
    */
   private async adjustCounter(counter: IBudgetCounterStore, key: string, amount: bigint, authoritative: bigint, ttl: number): Promise<void> {
     try {
-      // Stryker disable next-line EqualityOperator -- `< 0n` vs `<= 0n` differ only at amount === 0n, which never reaches adjustCounter: counterDimensions omits any dimension whose delta component is 0, so `amount` is always non-zero here
+      // Stryker disable next-line EqualityOperator: `< 0n` vs `<= 0n` differ only at amount === 0n, which never reaches adjustCounter: counterDimensions omits any dimension whose delta component is 0, so `amount` is always non-zero here
       if (amount < 0n) {
         await counter.decr(key, -amount)
         return
@@ -314,7 +314,7 @@ export class BudgetService {
       if (await counter.incrIfBelow(key, amount, UNBOUNDED_COUNTER_LIMIT, ttl)) return
       await this.resyncCounter(counter, key, authoritative, ttl)
     } catch {
-      // Stryker disable next-line StringLiteral -- logger text is internal observability
+      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`failed to adjust budget counter ${key}`)
     }
   }
@@ -327,7 +327,7 @@ export class BudgetService {
     // is intentionally not checked (unlike the overflowing increment that got us here). It restores
     // counter == DB-window instead of trusting the overflowed fast-path value.
     await counter.incrIfBelow(key, authoritative, UNBOUNDED_COUNTER_LIMIT, ttl)
-    // Stryker disable next-line StringLiteral -- logger text is internal observability
+    // Stryker disable next-line StringLiteral: logger text is internal observability
     this.logger.warn(`budget counter ${key} overflowed the int64 ceiling; resynced to the database window spend`)
   }
 
@@ -341,7 +341,7 @@ export class BudgetService {
   async reconcileWindow(budgetId: string, windowStart: Date): Promise<void> {
     const budget = await this.requireBudget(budgetId)
     const windowEnd = resetsAtFor(budget, windowStart)
-    // Stryker disable next-line ObjectLiteral -- the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
+    // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
     const filter = { tenantId: budget.tenantId, from: windowStart, ...(windowEnd !== null ? { to: windowEnd } : {}) }
     const records = await this.ledger.query(filter)
     const computed: BudgetWindowSpend = { spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 }
@@ -452,9 +452,9 @@ export class BudgetService {
       return { rejected: false, increments, available: true }
     } catch {
       await this.decrCounters(counter, increments)
-      // Stryker disable next-line StringLiteral -- logger text is internal observability; callers observe return value, not warning text
+      // Stryker disable next-line StringLiteral: logger text is internal observability; callers observe return value, not warning text
       this.logger.warn(`budget counter unavailable for ${located.budget.id}; falling back to the database`)
-      // Stryker disable next-line BooleanLiteral -- `available` only gates decrCounters(counter, increments), and on this outage path `increments` is []; flipping the flag cannot change any observable behaviour (decr of [] is a no-op; the returned increments stay [])
+      // Stryker disable next-line BooleanLiteral: `available` only gates decrCounters(counter, increments), and on this outage path `increments` is []; flipping the flag cannot change any observable behaviour (decr of [] is a no-op; the returned increments stay [])
       return { rejected: false, increments: [], available: false }
     }
   }
@@ -470,17 +470,17 @@ export class BudgetService {
     try {
       const ok = await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits)
       if (!ok) {
-        // Stryker disable next-line ConditionalExpression -- CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
+        // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
         if (counterAvailable) await this.decrCounters(counter, increments)
         return { ok: false, increments: [] }
       }
       return { ok: true, increments: counterAvailable ? increments : [] }
     } catch {
-      // Stryker disable next-line ConditionalExpression -- CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
+      // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
       if (counterAvailable) await this.decrCounters(counter, increments)
-      // Stryker disable next-line ObjectLiteral -- empty error context {} is the intended shape for STORE_ERROR
+      // Stryker disable next-line ObjectLiteral: empty error context {} is the intended shape for STORE_ERROR
       if (this.options.failClosed) throw new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, {})
-      // Stryker disable next-line StringLiteral -- logger text is internal observability
+      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`budget store unavailable for ${located.budget.id}; allowing (failClosed disabled)`)
       return { ok: true, increments: [] }
     }
@@ -492,7 +492,7 @@ export class BudgetService {
       try {
         await counter.decr(increment.key, increment.amount)
       } catch {
-        // Stryker disable next-line StringLiteral -- logger text is internal observability
+        // Stryker disable next-line StringLiteral: logger text is internal observability
         this.logger.warn(`failed to roll back budget counter ${increment.key}`)
       }
     }
@@ -519,7 +519,7 @@ export class BudgetService {
       spent: spendSnapshot(before),
       resetsAt: located.windowEnd,
     })
-    // Stryker disable next-line ObjectLiteral -- exception context is internal diagnostics; the asserted dimension travels on the exceeded event above, and tests check only the thrown error code
+    // Stryker disable next-line ObjectLiteral: exception context is internal diagnostics; the asserted dimension travels on the exceeded event above, and tests check only the thrown error code
     throw new AiTokensException(failing.code, undefined, { budgetId: located.budget.id, dimension: failing.dimension })
   }
 
@@ -550,7 +550,7 @@ export class BudgetService {
   private async throttle(context: MeteringContext, located: LocatedWindow, before: BudgetWindowSpend): Promise<void> {
     const status = buildStatus(located.budget, located.windowStart, located.windowEnd, before)
     if (this.options.onThrottle === undefined) {
-      // Stryker disable next-line StringLiteral -- logger text is internal observability
+      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`budget ${located.budget.id} exceeded with policy 'throttle' but no onThrottle callback is configured`)
       return
     }
@@ -569,16 +569,16 @@ export class BudgetService {
     const fractionAfter = usedFraction(after, located.limits)
     const emitted = this.notifiedThreshold.get(key) ?? 0
     let highest = emitted
-    // Stryker disable next-line MethodExpression -- [...arr].sort vs arr.sort: store.findMatching returns new objects each call, so in-place mutation is observable only across calls (harmless reorder of a fresh copy each time)
-    // Stryker disable next-line ArithmeticOperator -- a+b sort comparator produces descending order but mis-tracks `highest`; due to the monotonic fractionBefore invariant the wrong `highest` causes no re-emission in practice
+    // Stryker disable next-line MethodExpression: [...arr].sort vs arr.sort: store.findMatching returns new objects each call, so in-place mutation is observable only across calls (harmless reorder of a fresh copy each time)
+    // Stryker disable next-line ArithmeticOperator: a+b sort comparator produces descending order but mis-tracks `highest`; due to the monotonic fractionBefore invariant the wrong `highest` causes no re-emission in practice
     for (const threshold of [...located.budget.softThresholds].sort((a, b) => a - b)) {
-      // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator -- CE/EQ on `threshold > emitted`: monotonic fractionBefore ≥ emitted means `threshold ≤ emitted` ⟹ `threshold ≤ fractionBefore`, so `threshold > fractionBefore` already blocks re-emission; the emitted guard is redundant. LogicalOperator (&&→||) between the two guards is inert too: a threshold is emitted exactly when the fraction first reaches it, so `threshold > emitted` ⟺ `threshold > fractionBefore`, and the AND/OR of two equal guards coincide
+      // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: CE/EQ on `threshold > emitted`: monotonic fractionBefore ≥ emitted means `threshold ≤ emitted` ⟹ `threshold ≤ fractionBefore`, so `threshold > fractionBefore` already blocks re-emission; the emitted guard is redundant. LogicalOperator (&&→||) between the two guards is inert too: a threshold is emitted exactly when the fraction first reaches it, so `threshold > emitted` ⟺ `threshold > fractionBefore`, and the AND/OR of two equal guards coincide
       if (threshold > emitted && threshold > fractionBefore && threshold <= fractionAfter) {
         await this.emitThreshold(context, located, threshold, fractionAfter, after)
         highest = threshold
       }
     }
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator -- highest > emitted: mutations (>=, <=, false) all produce no-ops in practice because the monotonic fractionBefore invariant prevents re-emission even with a stale notifiedThreshold value
+    // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: highest > emitted: mutations (>=, <=, false) all produce no-ops in practice because the monotonic fractionBefore invariant prevents re-emission even with a stale notifiedThreshold value
     if (highest > emitted) this.notifiedThreshold.set(key, highest)
     await this.signalProjection(context, located, fractionAfter)
   }
@@ -604,7 +604,7 @@ export class BudgetService {
 
   /** Emit `projected_exceeded` once per window when the burn rate projects crossing before reset. */
   private async signalProjection(context: MeteringContext, located: LocatedWindow, fraction: number): Promise<void> {
-    // Stryker disable next-line ConditionalExpression -- CE false on `fraction <= 0`: zero fraction yields elapsedMs/0 = Infinity → projectedAt = Infinity ≥ windowEnd → exits anyway; equivalent
+    // Stryker disable next-line ConditionalExpression: CE false on `fraction <= 0`: zero fraction yields elapsedMs/0 = Infinity → projectedAt = Infinity ≥ windowEnd → exits anyway; equivalent
     if (located.windowEnd === null || fraction <= 0 || fraction >= 1) return
     const key = windowKey(located.budget.id, located.windowStart)
     if (this.projected.has(key)) return
@@ -645,7 +645,7 @@ export class BudgetService {
   /** Load a budget by id or throw an invalid-config error. */
   private async requireBudget(budgetId: string): Promise<Budget> {
     const budget = await this.store.findBudgetById(budgetId)
-    // Stryker disable next-line StringLiteral -- error reason template is internal diagnostics
+    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     if (budget === null) throw invalid(`budget ${budgetId} does not exist`)
     return budget
   }
@@ -657,11 +657,11 @@ export class BudgetService {
       ['limitTokens', input.limitTokens],
       ['limitCount', input.limitCount],
     ] as const) {
-      // Stryker disable next-line StringLiteral -- error reason template is internal diagnostics
+      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       if (value !== undefined && value < 0) throw invalid(`${name} must not be negative (§10.2)`)
     }
     if (input.limitNanoUsd === undefined && input.limitTokens === undefined && input.limitCount === undefined) {
-      // Stryker disable next-line StringLiteral -- error reason text is internal diagnostics
+      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw invalid('a budget must define at least one limit dimension')
     }
   }
@@ -669,7 +669,7 @@ export class BudgetService {
 
 /** Build the invalid-config exception with an actionable reason. */
 function invalid(reason: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral -- error context is internal diagnostics; tests check error code only
+  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
@@ -681,11 +681,11 @@ function featureMatches(features: string[] | undefined, feature: string): boolea
 /** The limits object for a budget (only defined dimensions). */
 function limitsOf(budget: Budget): BudgetLimits {
   return {
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { nanoUsd: undefined } is equivalent to {} because all consumers check limits.nanoUsd !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} because all consumers check limits.nanoUsd !== undefined
     ...(budget.limitNanoUsd !== undefined ? { nanoUsd: budget.limitNanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { tokens: undefined } is equivalent to {} because all consumers check limits.tokens !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} because all consumers check limits.tokens !== undefined
     ...(budget.limitTokens !== undefined ? { tokens: budget.limitTokens } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { count: undefined } is equivalent to {} because all consumers check limits.count !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} because all consumers check limits.count !== undefined
     ...(budget.limitCount !== undefined ? { count: budget.limitCount } : {}),
   }
 }
@@ -750,11 +750,11 @@ function ratio(spent: bigint, limit: bigint): number {
 /** The limit snapshot (present dimensions only) for an event payload. */
 function limitSnapshot(limits: BudgetLimits): { nanoUsd?: bigint; tokens?: number; count?: number } {
   return {
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.nanoUsd !== undefined ? { nanoUsd: limits.nanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.tokens !== undefined ? { tokens: limits.tokens } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.count !== undefined ? { count: limits.count } : {}),
   }
 }
@@ -767,11 +767,11 @@ function spendSnapshot(spend: BudgetWindowSpend): { nanoUsd: bigint; tokens: num
 /** The remaining snapshot (limited dimensions only, floored at zero) for an event payload. */
 function remainingSnapshot(limits: BudgetLimits, spend: BudgetWindowSpend): { nanoUsd?: bigint; tokens?: number; count?: number } {
   return {
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.nanoUsd !== undefined ? { nanoUsd: max0(limits.nanoUsd - spend.spentNanoUsd) } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.tokens !== undefined ? { tokens: Math.max(0, limits.tokens - spend.spentTokens) } : {}),
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.count !== undefined ? { count: Math.max(0, limits.count - spend.spentCount) } : {}),
   }
 }
@@ -781,7 +781,7 @@ function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | null, s
   const limits = limitsOf(budget)
   return {
     budgetId: budget.id,
-    // Stryker disable next-line ConditionalExpression -- CE true: spreading { features: undefined } is equivalent to {} because status consumers check features !== undefined
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { features: undefined } is equivalent to {} because status consumers check features !== undefined
     ...(budget.features !== undefined ? { features: budget.features } : {}),
     window: budget.window,
     windowStart,
@@ -807,7 +807,7 @@ function counterKey(budgetId: string, windowStart: Date, dimension: 'cost' | 'to
 /** The counter TTL: the window length plus a grace hour, or a long fixed TTL for `'total'`. */
 function counterTtlSeconds(windowStart: Date, windowEnd: Date | null): number {
   if (windowEnd === null) return TOTAL_WINDOW_TTL_SECONDS
-  // Stryker disable next-line ArithmeticOperator -- TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
+  // Stryker disable next-line ArithmeticOperator: TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
   return Math.ceil((windowEnd.getTime() - windowStart.getTime()) / 1_000) + COUNTER_GRACE_SECONDS
 }
 
@@ -819,15 +819,15 @@ function dimensionSpends(spend: BudgetWindowSpend): Record<'cost' | 'tokens' | '
 /** The limited dimensions a delta touches, as int64 counter amounts/limits. */
 function counterDimensions(delta: BudgetDelta, limits: BudgetLimits): CounterDimension[] {
   const dimensions: CounterDimension[] = []
-  // Stryker disable next-line ConditionalExpression -- CE true on `delta.nanoUsd !== 0n`: incrIfBelow(amount=0, limit) is a no-op (0 ≤ any limit → true, counter unchanged); including zero-delta dimensions is observable only via extra counter round-trips, not observable in unit tests
+  // Stryker disable next-line ConditionalExpression: CE true on `delta.nanoUsd !== 0n`: incrIfBelow(amount=0, limit) is a no-op (0 ≤ any limit → true, counter unchanged); including zero-delta dimensions is observable only via extra counter round-trips, not observable in unit tests
   if (limits.nanoUsd !== undefined && delta.nanoUsd !== 0n) {
     dimensions.push({ name: 'cost', amount: delta.nanoUsd, limit: limits.nanoUsd })
   }
-  // Stryker disable next-line ConditionalExpression -- CE true on `delta.tokens !== 0`: same as above — incrIfBelow(0n, limit) is a no-op in FakeCounter; only round-trip count differs, not test-observable outcomes
+  // Stryker disable next-line ConditionalExpression: CE true on `delta.tokens !== 0`: same as above — incrIfBelow(0n, limit) is a no-op in FakeCounter; only round-trip count differs, not test-observable outcomes
   if (limits.tokens !== undefined && delta.tokens !== 0) {
     dimensions.push({ name: 'tokens', amount: BigInt(delta.tokens), limit: BigInt(limits.tokens) })
   }
-  // Stryker disable next-line ConditionalExpression -- CE true on `delta.count !== 0`: same reasoning; count=0 increment is a no-op
+  // Stryker disable next-line ConditionalExpression: CE true on `delta.count !== 0`: same reasoning; count=0 increment is a no-op
   if (limits.count !== undefined && delta.count !== 0) {
     dimensions.push({ name: 'count', amount: BigInt(delta.count), limit: BigInt(limits.count) })
   }
@@ -836,6 +836,6 @@ function counterDimensions(delta: BudgetDelta, limits: BudgetLimits): CounterDim
 
 /** Floor a bigint at zero. */
 function max0(value: bigint): bigint {
-  // Stryker disable next-line EqualityOperator -- value <= 0n: when value = 0n, both branches yield 0n (equivalent); distinguishable only for value = 0n case which produces the same output
+  // Stryker disable next-line EqualityOperator: value <= 0n: when value = 0n, both branches yield 0n (equivalent); distinguishable only for value = 0n case which produces the same output
   return value < 0n ? 0n : value
 }
