@@ -1,3 +1,8 @@
+# CodeQL — thin caller of the org-wide reusable analysis (bymaxone/.github).
+#
+# The whole definition, including the public-repository gate that decides
+# whether scanning may run at all, lives in bymaxone/.github so the licensing
+# rule exists once rather than in every repository that copies it.
 name: CodeQL
 
 on:
@@ -8,58 +13,26 @@ on:
   schedule:
     - cron: '27 3 * * 1'
 
-permissions:
-  contents: read
-
+# Kept from the workflow this replaces: without it, repeated pushes to a
+# branch leave several analyses of the same ref running at once.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  analyze:
-    name: Analyze (javascript-typescript)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  # Job id is the convention across the org: it prefixes the reported check,
+  # so every repo shows `codeql / Analyze (<language>)` under the same name.
+  codeql:
+    # Declared on the calling job, which is the only place that reaches the
+    # called workflow: a job that sets its own permissions replaces the
+    # workflow-level set rather than intersecting with it, and a called
+    # workflow cannot be granted more than its caller holds.
     permissions:
-      actions: read
       contents: read
       security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript]
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        with:
-          languages: ${{ matrix.language }}
-          queries: security-extended
-
-      # Code scanning upload needs GitHub Advanced Security on private repositories.
-      # Gate the upload on visibility so analysis always runs, and results upload
-      # automatically once the repository is public — no workflow change required.
-      - name: Resolve code scanning upload mode
-        id: scanning
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          visibility="$(gh api "repos/${{ github.repository }}" --jq '.visibility')"
-          if [ "$visibility" = "public" ]; then
-            echo 'upload=always' >> "$GITHUB_OUTPUT"
-          else
-            echo 'upload=never' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        with:
-          category: '/language:${{ matrix.language }}'
-          upload: ${{ steps.scanning.outputs.upload }}
+      actions: read
+    uses: bymaxone/.github/.github/workflows/codeql.yml@v1
+    with:
+      # Carried over from the workflow this replaces. It is a superset of the
+      # default suite, so leaving it out analyses strictly less than before.
+      queries: security-extended
