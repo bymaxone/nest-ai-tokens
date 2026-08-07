@@ -19,6 +19,12 @@ concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for anything that does not declare its own. The `codeql` job
+# below replaces this set rather than intersecting with it, so this floor governs
+# any job added later that forgets to think about it.
+permissions:
+  contents: read
+
 jobs:
   # Job id is the convention across the org: it prefixes the reported check,
   # so every repo shows `codeql / Analyze (<language>)` under the same name.
@@ -31,7 +37,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: bymaxone/.github/.github/workflows/codeql.yml@v1
+    uses: bymaxone/.github/.github/workflows/codeql.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
     with:
       # Restored from the workflow this caller replaced: it ran the egress
       # audit as its first step, and a caller cannot prepend steps around a
