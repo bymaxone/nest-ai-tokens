@@ -33,6 +33,10 @@ jobs:
       actions: read
     uses: bymaxone/.github/.github/workflows/codeql.yml@v1
     with:
+      # Restored from the workflow this caller replaced: it ran the egress
+      # audit as its first step, and a caller cannot prepend steps around a
+      # `uses:` job. Same action, same SHA, same audit-only policy.
+      harden-runner: true
       # Carried over from the workflow this replaces. It is a superset of the
       # default suite, so leaving it out analyses strictly less than before.
       queries: security-extended
