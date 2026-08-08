@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   ci:
-    uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+    uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
     with:
       run-format-check: false # no format:check script; prettier runs via lint/pre-commit
       run-build: false # build + integrity + size verified in the `verify` job below
@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: JSDoc coverage + docs fixture type-check
         run: pnpm docs:check
       - name: Reject provider SDK imports (normalizer-first)
@@ -104,7 +104,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Pre-pull pinned images (cache for Testcontainers)
         run: |
           docker pull postgres:16-alpine
@@ -130,7 +130,7 @@ jobs:
     # Dependency review needs the dependency graph (public repos, or private + GHAS).
     # Gated on visibility so it starts running automatically once this repo is public.
     if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
-    uses: bymaxone/.github/.github/workflows/security.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+    uses: bymaxone/.github/.github/workflows/security.yml@v1
     with:
       fail-on-severity: high
 

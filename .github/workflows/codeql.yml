@@ -37,7 +37,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: bymaxone/.github/.github/workflows/codeql.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+    uses: bymaxone/.github/.github/workflows/codeql.yml@v1
     with:
       # Restored from the workflow this caller replaced: it ran the egress
       # audit as its first step, and a caller cannot prepend steps around a
