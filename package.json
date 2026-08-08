@@ -85,6 +85,7 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "mutation": "stryker run",
+    "mutation:full": "node -e \"require('node:fs').rmSync('reports/stryker-incremental.json',{force:true})\" && stryker run",
     "mutation:dry-run": "stryker run --dryRunOnly",
     "mutation:incremental": "stryker run --incremental",
     "prepare": "prisma generate",
