@@ -43,4 +43,4 @@ jobs:
     # issue would report findings that do not describe what this package
     # actually declares.
     if: github.ref_name == github.event.repository.default_branch
-    uses: bymaxone/.github/.github/workflows/peer-advisory-drift.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
+    uses: bymaxone/.github/.github/workflows/peer-advisory-drift.yml@v1
