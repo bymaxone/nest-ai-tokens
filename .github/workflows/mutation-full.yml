@@ -14,6 +14,13 @@ on:
     - cron: '13 3 * * 1'
   workflow_dispatch:
 
+# Single-flight: a scheduled run and a manual dispatch must not both write the
+# shared incremental baseline. Not cancel-in-progress — a cold run that is
+# half finished leaves no baseline at all, which is worse than waiting.
+concurrency:
+  group: mutation-full-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   # The reusable reads `gh run list` to decide whether anything can have moved the score.
