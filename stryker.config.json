@@ -2,14 +2,23 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "packageManager": "pnpm",
   "testRunner": "jest",
-  "plugins": ["@stryker-mutator/jest-runner", "@stryker-mutator/typescript-checker"],
-  "checkers": ["typescript"],
+  "plugins": [
+    "@stryker-mutator/jest-runner",
+    "@stryker-mutator/typescript-checker"
+  ],
+  "checkers": [
+    "typescript"
+  ],
   "tsconfigFile": "tsconfig.json",
   "jest": {
     "projectType": "custom",
     "configFile": "jest.stryker.config.ts"
   },
-  "reporters": ["clear-text", "progress", "json"],
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
   "coverageAnalysis": "perTest",
   "timeoutMS": 15000,
   "mutate": [
@@ -29,5 +38,7 @@
     "low": 95,
     "break": 95
   },
-  "concurrency": 1
+  "concurrency": 1,
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json"
 }

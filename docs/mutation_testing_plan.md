@@ -50,9 +50,7 @@ The threshold is **break 95** — a mutation score below 95% fails the build.
 NODE_OPTIONS=--max-old-space-size=4096 pnpm mutation
 
 # Incremental (only mutate changed files — faster in dev):
-pnpm mutation:incremental
-
-# Dry run (list mutants, do not execute tests):
+pnpm mutation:full        # cold — deletes the baseline first, measures the truth
 pnpm mutation:dry-run
 ```
 

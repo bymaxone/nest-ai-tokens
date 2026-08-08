@@ -1,0 +1,39 @@
+# The full cold mutation run. The logic lives once in `bymaxone/.github`; what stays here is
+# what is genuinely local: when it runs and how long it may take.
+#
+# Why it exists: `stryker.config.json` sets `incremental: true`, so the per-push job re-tests
+# only what changed and finishes inside the minutes a routine gate is allowed to take. That is a
+# trade — an incremental run reuses stored verdicts, and reused verdicts for STATIC mutants can
+# be stale. The fast signal is here every push; the truth is measured cold, once a week.
+name: Mutation (full)
+
+on:
+  schedule:
+    # Off the working day, and staggered against the other libraries so a Monday morning does
+    # not start ten cold suites at once.
+    - cron: '13 3 * * 1'
+  workflow_dispatch:
+
+# Single-flight across the whole repository, deliberately NOT keyed by `github.ref`
+# — the same reasoning `peer-advisory-drift.yml` here already carries. What two runs
+# would race over is one shared incremental baseline, so a ref-scoped group would put
+# a dispatch and the scheduled run in different groups and leave the race intact.
+# Queue rather than cancel: a cold run killed halfway leaves no baseline at all,
+# which is worse than a second run waiting for the first.
+concurrency:
+  group: mutation-full
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # The reusable reads `gh run list` to decide whether anything can have moved the score.
+  actions: read
+
+jobs:
+  full:
+    uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
+    with:
+      # Measured cold: 28 min. Generous on purpose — nothing blocks on this job, so an
+      # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the
+      # whole run and leaves the week without a measured baseline.
+      timeout-minutes: 90

@@ -33,6 +33,11 @@ jobs:
       unit-command: pnpm test:cov # unit coverage (100% per implemented file); e2e runs separately
       run-mutation: true
       mutation-source-globs: '^(src/)'
+      # The per-push run is incremental and finishes in minutes; this ceiling exists for the
+      # cold one — the first run after enabling incremental, and any run whose baseline cache
+      # expired. Measured cold: 28 min. The job is CANCELLED rather than failed when it
+      # lands, which reads as an infrastructure blip instead of a budget.
+      mutation-timeout-minutes: 90
 
   verify:
     name: Verify build + size
