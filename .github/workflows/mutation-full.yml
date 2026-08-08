@@ -14,11 +14,14 @@ on:
     - cron: '13 3 * * 1'
   workflow_dispatch:
 
-# Single-flight: a scheduled run and a manual dispatch must not both write the
-# shared incremental baseline. Not cancel-in-progress — a cold run that is
-# half finished leaves no baseline at all, which is worse than waiting.
+# Single-flight across the whole repository, deliberately NOT keyed by `github.ref`
+# — the same reasoning `peer-advisory-drift.yml` here already carries. What two runs
+# would race over is one shared incremental baseline, so a ref-scoped group would put
+# a dispatch and the scheduled run in different groups and leave the race intact.
+# Queue rather than cancel: a cold run killed halfway leaves no baseline at all,
+# which is worse than a second run waiting for the first.
 concurrency:
-  group: mutation-full-${{ github.ref }}
+  group: mutation-full
   cancel-in-progress: false
 
 permissions:
