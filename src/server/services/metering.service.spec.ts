@@ -205,6 +205,64 @@ describe('MeteringService.record', () => {
     expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
+  // A caller-supplied occurredAt is a lever on both the price version and the budget
+  // window, so it is clamped to a window around the server clock. `strict: false`
+  // keeps pricing out of the way — only the stamped occurredAt is under test.
+  describe('occurredAt clamping', () => {
+    const FIXED_NOW = new Date('2026-06-15T12:00:00.000Z')
+    const clock = (): Date => FIXED_NOW
+    const SKEW_MS = 5 * 60 * 1000
+
+    it('clamps a back-dated occurredAt to the earliest allowed instant', async () => {
+      const built = build({ strict: false, clock })
+      const backdated = new Date(FIXED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000)
+      const record = await built.service.record({
+        usage: normalized(),
+        context: context(),
+        occurredAt: backdated,
+      })
+      expect(record.occurredAt.getTime()).toBe(FIXED_NOW.getTime() - SKEW_MS)
+    })
+
+    it('clamps a future occurredAt to the latest allowed instant', async () => {
+      const built = build({ strict: false, clock })
+      const future = new Date(FIXED_NOW.getTime() + 60 * 60 * 1000)
+      const record = await built.service.record({
+        usage: normalized(),
+        context: context(),
+        occurredAt: future,
+      })
+      expect(record.occurredAt.getTime()).toBe(FIXED_NOW.getTime() + SKEW_MS)
+    })
+
+    it('preserves an occurredAt within the allowed window', async () => {
+      const built = build({ strict: false, clock })
+      const within = new Date(FIXED_NOW.getTime() - 60 * 1000)
+      const record = await built.service.record({
+        usage: normalized(),
+        context: context(),
+        occurredAt: within,
+      })
+      expect(record.occurredAt.getTime()).toBe(within.getTime())
+    })
+
+    it('falls back to the server clock when occurredAt is absent', async () => {
+      const built = build({ strict: false, clock })
+      const record = await built.service.record({ usage: normalized(), context: context() })
+      expect(record.occurredAt.getTime()).toBe(FIXED_NOW.getTime())
+    })
+
+    it('falls back to the server clock when occurredAt is an invalid Date', async () => {
+      const built = build({ strict: false, clock })
+      const record = await built.service.record({
+        usage: normalized(),
+        context: context(),
+        occurredAt: new Date(Number.NaN),
+      })
+      expect(record.occurredAt.getTime()).toBe(FIXED_NOW.getTime())
+    })
+  })
+
   /** Un-normalizable input is rejected as UNKNOWN_PROVIDER. */
   it.each([null, 'nope', { prompt_tokens: 1 }, { provider: 'x' }, { provider: 'x', inputTokens: 1 }])(
     'rejects un-normalizable input %p as UNKNOWN_PROVIDER',
