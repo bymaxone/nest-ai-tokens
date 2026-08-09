@@ -53,16 +53,6 @@ import {
 import type { WalletService } from './wallet.service'
 import type { BudgetService } from './budget.service'
 
-/**
- * How far a caller-supplied `occurredAt` may sit from the server clock, in either
- * direction, before it is clamped to that bound. A usage timestamp selects both the
- * price version in effect and the budget window the usage counts against, so an
- * unbounded caller value lets a request back-date itself to a cheaper historical rate
- * or into a previous, already-reset budget period. Five minutes absorbs clock skew and
- * the lag of an asynchronous settlement without opening either door.
- */
-const MAX_OCCURRED_AT_SKEW_MS = 5 * 60 * 1000
-
 /** Input to {@link MeteringService.record}. */
 export interface RecordInput {
   /** Raw provider usage OR an already-normalized {@link NormalizedUsage}. */
@@ -73,7 +63,14 @@ export interface RecordInput {
   normalizer?: UsageNormalizer
   /** The per-call metering context (trusted input from the host's auth layer). */
   context: MeteringContext
-  /** When the call happened; defaults to now (backfills pass the original time). */
+  /**
+   * When the call happened; defaults to now. Backfills deliberately pass the original time so a
+   * usage record imported late still lands in the price version and budget window in effect when
+   * it actually occurred. Because that timestamp selects both, it is honoured as given — it is
+   * trusted host input, like the rest of {@link MeteringContext}. A host that forwards a value an
+   * untrusted end user controls must validate it first, since a back-dated `occurredAt` would pick
+   * a historical price and an earlier budget window.
+   */
   occurredAt?: Date
   /**
    * The ONLY path prompt/completion text enters the library (spec §14.2): masked +
@@ -262,32 +259,6 @@ export class MeteringService {
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
-  /**
-   * Clamp a caller-supplied usage timestamp into a window around the server clock.
-   *
-   * The timestamp drives price-version and budget-window selection, so a value the
-   * caller controls is a lever on both cost and budget. Clamping to
-   * {@link MAX_OCCURRED_AT_SKEW_MS} keeps a legitimate slightly-late settlement while
-   * refusing a back-date to another rate or a spent budget period. An absent or
-   * non-finite value falls back to the server clock.
-   *
-   * @param candidate - The caller-supplied timestamp, if any.
-   * @param now - The server clock reading for this operation.
-   * @returns A timestamp within `now ± MAX_OCCURRED_AT_SKEW_MS`.
-   */
-  private clampOccurredAt(candidate: Date | undefined, now: Date): Date {
-    if (candidate === undefined) return now
-    const millis = candidate.getTime()
-    if (!Number.isFinite(millis)) return now
-    const earliest = now.getTime() - MAX_OCCURRED_AT_SKEW_MS
-    const latest = now.getTime() + MAX_OCCURRED_AT_SKEW_MS
-    // Stryker disable next-line EqualityOperator: at millis === earliest, `<` returns the candidate and `<=` returns new Date(earliest), both carrying the same getTime() — equivalent.
-    if (millis < earliest) return new Date(earliest)
-    // Stryker disable next-line EqualityOperator: at millis === latest, `>` returns the candidate and `>=` returns new Date(latest), both carrying the same getTime() — equivalent.
-    if (millis > latest) return new Date(latest)
-    return candidate
-  }
-
   async record(input: RecordInput): Promise<UsageRecord> {
     const { context } = input
     const enforcing = context.enforce === true
@@ -300,7 +271,7 @@ export class MeteringService {
     }
     const normalized = this.resolveNormalizedUsage(input)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
-    const occurredAt = this.clampOccurredAt(input.occurredAt, this.now())
+    const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating: NormalizedUsage = { ...normalized, serverToolUse: ratedUnits }
