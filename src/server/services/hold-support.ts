@@ -114,8 +114,7 @@ function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
   const counts = tokenCountsOf(usage)
   const clamped = zeroTokenCounts()
   for (const field of TOKEN_FIELDS) {
-    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where
-    // both branches yield 0, so the mutant is behavior-equivalent.
+    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
     clamped[field] = counts[field] < 0 ? 0 : counts[field]
   }
   return { ...usage, ...clamped }

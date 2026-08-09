@@ -281,11 +281,9 @@ export class MeteringService {
     if (!Number.isFinite(millis)) return now
     const earliest = now.getTime() - MAX_OCCURRED_AT_SKEW_MS
     const latest = now.getTime() + MAX_OCCURRED_AT_SKEW_MS
-    // Stryker disable next-line EqualityOperator: at millis === earliest, `<` returns the candidate
-    // and `<=` returns new Date(earliest), both carrying the same getTime() — equivalent.
+    // Stryker disable next-line EqualityOperator: at millis === earliest, `<` returns the candidate and `<=` returns new Date(earliest), both carrying the same getTime() — equivalent.
     if (millis < earliest) return new Date(earliest)
-    // Stryker disable next-line EqualityOperator: at millis === latest, `>` returns the candidate and
-    // `>=` returns new Date(latest), both carrying the same getTime() — equivalent.
+    // Stryker disable next-line EqualityOperator: at millis === latest, `>` returns the candidate and `>=` returns new Date(latest), both carrying the same getTime() — equivalent.
     if (millis > latest) return new Date(latest)
     return candidate
   }
