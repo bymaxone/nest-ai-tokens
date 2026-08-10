@@ -715,7 +715,7 @@ that reads a tenant id from request input lets a caller bill someone else.
 - **Runtime:** Node.js 24+
 - **Framework:** NestJS 11 (guard + interceptor, `ConfigurableModuleBuilder`, `Symbol()` tokens)
 - **Persistence:** `@prisma/client ^6 || ^7` (peer) over PostgreSQL — both majors supported
-- **Budget acceleration:** `ioredis ^5` (peer), optional
+- **Budget acceleration:** `ioredis ^6` (peer), optional
 - **Events:** `@nestjs/event-emitter >=2` (peer), optional
 - **Telemetry:** `@opentelemetry/api ^1.9` (peer), optional
 - **Build:** tsup — ESM + CJS per subpath, with `.d.ts` _and_ `.d.cts` declarations

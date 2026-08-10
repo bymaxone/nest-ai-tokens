@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- **`ioredis` peer widened to `^6.0.0`** (was `^5.0.0`). It aligns the `./redis` budget counter
+  with `@bymax-one/nest-queue@1.2.0`, so a backend that consumes both resolves one shared `ioredis`.
+  ioredis 6 defaults to RESP3 but keeps `replyMapping: "legacy"`, leaving reply shapes unchanged at
+  runtime; the store's URL-only `new Redis(url)` construction is untouched by the RESP3 options
+  typing break, so no source changed.
+- **Mutation gate raised to a perfect score.** `stryker.config.json` now breaks below 100 (`break`,
+  `high` and `low` are all 100), so no surviving mutant can pass the gate.
+
 ## [1.0.4] - 2026-08-10
 
 Remediation of a local audit's settlement findings (merged in #65). No API changed.
