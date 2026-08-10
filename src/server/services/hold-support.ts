@@ -97,7 +97,7 @@ export function sumTokenCounts(counts: TokenCounts): number {
 }
 
 /**
- * Floor every token count at zero.
+ * Floor every token count — and the provider-reported cost — at zero.
  *
  * A provider payload — or a normalizer that computes a field by subtraction, such
  * as OpenRouter's `prompt - cached` — can report a NEGATIVE token count. Left alone
@@ -107,8 +107,13 @@ export function sumTokenCounts(counts: TokenCounts): number {
  * proves each field is finite, not that it is non-negative, so the guarantee is
  * enforced here, on the value every cost and settlement is computed from.
  *
- * @param usage - The normalized usage, whose counts may include a negative.
- * @returns The same usage with every token count floored at zero.
+ * `providerReportedCostNanoUsd` needs the same floor for the same reason: OpenRouter
+ * preserves a negative `usage.cost`, and provider-reported rating uses it directly as
+ * the raw cost, so a negative value credits the wallet/budget on capture just as a
+ * negative token count would. Flooring it here covers both rating modes.
+ *
+ * @param usage - The normalized usage, whose counts or cost may include a negative.
+ * @returns The same usage with every token count and the provider-reported cost floored at zero.
  */
 function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
   const counts = tokenCountsOf(usage)
@@ -117,7 +122,13 @@ function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
     // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
     clamped[field] = counts[field] < 0 ? 0 : counts[field]
   }
-  return { ...usage, ...clamped }
+  const result: NormalizedUsage = { ...usage, ...clamped }
+  const cost = usage.providerReportedCostNanoUsd
+  // Stryker disable next-line EqualityOperator: `< 0n` and `<= 0n` differ only at exactly 0n, where both leave the cost 0n, so the mutant is behavior-equivalent.
+  if (cost !== undefined && cost < 0n) {
+    return { ...result, providerReportedCostNanoUsd: 0n }
+  }
+  return result
 }
 
 /** Whether a value is a complete, well-typed {@link NormalizedUsage} (every token field finite). */

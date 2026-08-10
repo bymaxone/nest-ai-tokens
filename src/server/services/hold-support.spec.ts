@@ -113,4 +113,28 @@ describe('normalizeCaptureUsage', () => {
     expect(result.inputTokens).toBe(1000)
     expect(result.outputTokens).toBe(500)
   })
+
+  /**
+   * A negative `providerReportedCostNanoUsd` is floored to zero. Provider-reported
+   * rating uses it directly as the raw cost, so a negative value (OpenRouter preserves
+   * a negative `usage.cost`) would credit the wallet/budget on capture.
+   */
+  it('clamps a negative providerReportedCostNanoUsd to zero', () => {
+    const result = normalizeCaptureUsage({
+      ...validUsage(),
+      providerReportedCostNanoUsd: -1_000n,
+    })
+
+    expect(result.providerReportedCostNanoUsd).toBe(0n)
+  })
+
+  /** A non-negative provider-reported cost passes through untouched. */
+  it('leaves a non-negative providerReportedCostNanoUsd unchanged', () => {
+    const result = normalizeCaptureUsage({
+      ...validUsage(),
+      providerReportedCostNanoUsd: 5_000n,
+    })
+
+    expect(result.providerReportedCostNanoUsd).toBe(5_000n)
+  })
 })

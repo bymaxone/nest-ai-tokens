@@ -1427,6 +1427,24 @@ describe('MeteringService.capture — streaming collector', () => {
     expect(record.outputTokens).toBe(400)
   })
 
+  /**
+   * A provider-final stream carrying a NEGATIVE count is clamped before settlement.
+   * The collector path must sanitize just as the non-stream path does — returning the
+   * collector's final raw let a negative reach the signed wallet/budget leg and credit
+   * it. Pins the `normalizeCaptureUsage` wrap on the streaming branch.
+   */
+  it('clamps a negative provider-final count on the streaming path', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
+    collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 800, completion_tokens: -400 } })
+    const record = await built.service.capture(hold, collector)
+    expect(record.inputTokens).toBe(800)
+    expect(record.outputTokens).toBe(0)
+  })
+
   /** A NON-fallback stream that reports zero prompt tokens keeps input at 0 — the estimate fallback must NOT trigger. */
   it('keeps zero input tokens when a non-fallback stream reports zero prompt tokens', async () => {
     const built = build({ wallets: true })
