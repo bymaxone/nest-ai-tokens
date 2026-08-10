@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-ai-tokens",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "AI token metering & usage-based billing for NestJS 11: provider usage normalizer (×9), versioned effective-dated pricing, immutable append-only ledger, prepaid wallets, multi-dimension budgets, and markup/margin. Zero runtime dependencies.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",

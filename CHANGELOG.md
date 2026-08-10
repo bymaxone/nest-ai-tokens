@@ -8,6 +8,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-08-10
+
+Remediation of a local audit's settlement findings (merged in #65). No API changed.
+
+### Fixed
+
+- **Negative usage can no longer credit the wallet or budget.** `clampUsageCounts` floors every
+  token count — and the provider-reported cost (`providerReportedCostNanoUsd`) — at zero before the
+  signed settlement leg. A normalizer that computes a field by subtraction (OpenRouter's
+  `prompt - cached`), or a provider that reports a negative `usage.cost`, would otherwise credit
+  back more than was reserved and drive budget consumption negative.
+- **Streaming captures are clamped like non-stream captures.** `finalizeCaptureUsage` now routes
+  the `StreamUsageCollector` final through `normalizeCaptureUsage`, so a provider-final stream
+  carrying negative counts or cost no longer bypasses the floor and reaches settlement raw.
+
+### Documentation
+
+- `RecordInput.occurredAt` documents its trust model: it is a deliberate backfill feature, honoured
+  as given because `record()`'s input is trusted host input, and a host that forwards a value an
+  untrusted end user controls must validate it first — a back-dated timestamp selects a historical
+  price and an earlier budget window.
+
 ## [1.0.3] - 2026-08-06
 
 ### Fixed
@@ -193,5 +215,6 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
+[1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...HEAD
