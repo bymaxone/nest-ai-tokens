@@ -96,6 +96,41 @@ export function sumTokenCounts(counts: TokenCounts): number {
   return TOKEN_FIELDS.reduce((total, field) => total + counts[field], 0)
 }
 
+/**
+ * Floor every token count — and the provider-reported cost — at zero.
+ *
+ * A provider payload — or a normalizer that computes a field by subtraction, such
+ * as OpenRouter's `prompt - cached` — can report a NEGATIVE token count. Left alone
+ * it flows into the SIGNED settlement leg (`reservedBilled - actualBilled`), where a
+ * negative `actual` credits back MORE than was reserved and drives budget
+ * consumption negative — a usage report that mints money. `isNormalizedUsage` only
+ * proves each field is finite, not that it is non-negative, so the guarantee is
+ * enforced here, on the value every cost and settlement is computed from.
+ *
+ * `providerReportedCostNanoUsd` needs the same floor for the same reason: OpenRouter
+ * preserves a negative `usage.cost`, and provider-reported rating uses it directly as
+ * the raw cost, so a negative value credits the wallet/budget on capture just as a
+ * negative token count would. Flooring it here covers both rating modes.
+ *
+ * @param usage - The normalized usage, whose counts or cost may include a negative.
+ * @returns The same usage with every token count and the provider-reported cost floored at zero.
+ */
+function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
+  const counts = tokenCountsOf(usage)
+  const clamped = zeroTokenCounts()
+  for (const field of TOKEN_FIELDS) {
+    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
+    clamped[field] = counts[field] < 0 ? 0 : counts[field]
+  }
+  const result: NormalizedUsage = { ...usage, ...clamped }
+  const cost = usage.providerReportedCostNanoUsd
+  // Stryker disable next-line EqualityOperator: `< 0n` and `<= 0n` differ only at exactly 0n, where both leave the cost 0n, so the mutant is behavior-equivalent.
+  if (cost !== undefined && cost < 0n) {
+    return { ...result, providerReportedCostNanoUsd: 0n }
+  }
+  return result
+}
+
 /** Whether a value is a complete, well-typed {@link NormalizedUsage} (every token field finite). */
 export function isNormalizedUsage(usage: unknown): usage is NormalizedUsage {
   // Stryker disable next-line ConditionalExpression: redundant sub-condition: the `typeof usage !== 'object' → false` variant leaves `usage === null`, and any non-object non-null value is still rejected downstream by `typeof candidate.provider !== 'string'`, so it is behavior-preserving
@@ -221,10 +256,10 @@ async function resolveTokenEstimate(
  * @throws {AiTokensException} `AI_TOKENS_USAGE_MALFORMED` when the usage cannot be normalized.
  */
 export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown) => NormalizedUsage): NormalizedUsage {
-  if (isNormalizedUsage(usage)) return usage
+  if (isNormalizedUsage(usage)) return clampUsageCounts(usage)
   if (normalizer !== undefined) {
     try {
-      return normalizer(usage)
+      return clampUsageCounts(normalizer(usage))
     } catch (error) {
       if (error instanceof AiTokensException) throw error
       // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics

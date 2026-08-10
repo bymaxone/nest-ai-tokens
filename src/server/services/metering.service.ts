@@ -63,7 +63,14 @@ export interface RecordInput {
   normalizer?: UsageNormalizer
   /** The per-call metering context (trusted input from the host's auth layer). */
   context: MeteringContext
-  /** When the call happened; defaults to now (backfills pass the original time). */
+  /**
+   * When the call happened; defaults to now. Backfills deliberately pass the original time so a
+   * usage record imported late still lands in the price version and budget window in effect when
+   * it actually occurred. Because that timestamp selects both, it is honoured as given — it is
+   * trusted host input, like the rest of {@link MeteringContext}. A host that forwards a value an
+   * untrusted end user controls must validate it first, since a back-dated `occurredAt` would pick
+   * a historical price and an earlier budget window.
+   */
   occurredAt?: Date
   /**
    * The ONLY path prompt/completion text enters the library (spec §14.2): masked +
@@ -618,11 +625,14 @@ export class MeteringService {
   private async finalizeCaptureUsage(usage: unknown, hold: Hold, preset?: ProviderPreset): Promise<NormalizedUsage> {
     if (usage instanceof StreamUsageCollector) {
       const finalized = await usage.finalize()
+      // Clamp the collector's own final just as the non-stream path is clamped: a provider-final
+      // stream can carry negative counts or cost, and returning it raw let those reach the signed
+      // settlement. It is already normalized, so `normalizeCaptureUsage` only floors the negatives.
       // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on hold.estimatedTokens: the override runs only when finalized.inputTokens === 0, and estimatedTokens is a non-negative token total; at estimatedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `hold.estimatedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at estimatedTokens === 0 the override sets inputTokens back to 0, unchanged)
       if (usage.usedFallback && finalized.inputTokens === 0 && hold.estimatedTokens > 0) {
-        return { ...finalized, inputTokens: hold.estimatedTokens }
+        return normalizeCaptureUsage({ ...finalized, inputTokens: hold.estimatedTokens })
       }
-      return finalized
+      return normalizeCaptureUsage(finalized)
     }
     return normalizeCaptureUsage(usage, preset?.normalizer)
   }

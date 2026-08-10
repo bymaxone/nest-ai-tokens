@@ -7,7 +7,8 @@
  * @layer server
  */
 
-import { isNormalizedUsage } from './hold-support'
+import type { NormalizedUsage } from '../../shared'
+import { isNormalizedUsage, normalizeCaptureUsage } from './hold-support'
 
 /** A complete, well-typed normalized usage (all ten token fields present and finite). */
 function validUsage(): Record<string, unknown> {
@@ -76,5 +77,64 @@ describe('isNormalizedUsage', () => {
   /** A usage with an unknown operation is rejected. */
   it('rejects a usage with an unknown operation', () => {
     expect(isNormalizedUsage({ ...validUsage(), operation: 'not-an-op' })).toBe(false)
+  })
+})
+
+describe('normalizeCaptureUsage', () => {
+  /**
+   * A negative token count in an already-normalized usage is floored to zero.
+   * Left alone it flows into the signed settlement leg and credits back more than
+   * was reserved — a usage report that mints money. Positive fields are untouched.
+   */
+  it('clamps a negative count in an already-normalized usage to zero', () => {
+    const result = normalizeCaptureUsage({ ...validUsage(), outputTokens: -500 })
+
+    expect(result.outputTokens).toBe(0)
+    expect(result.inputTokens).toBe(1000)
+  })
+
+  /**
+   * The same flooring applies to a normalizer's output — the path where a
+   * `prompt - cached` subtraction can produce a negative.
+   */
+  it('clamps a negative count produced by the normalizer to zero', () => {
+    const normalizer = (): NormalizedUsage =>
+      ({ ...validUsage(), reasoningTokens: -10 }) as unknown as NormalizedUsage
+
+    const result = normalizeCaptureUsage({ raw: 'payload' }, normalizer)
+
+    expect(result.reasoningTokens).toBe(0)
+  })
+
+  /** A non-negative usage passes through with its counts intact. */
+  it('leaves non-negative counts unchanged', () => {
+    const result = normalizeCaptureUsage(validUsage())
+
+    expect(result.inputTokens).toBe(1000)
+    expect(result.outputTokens).toBe(500)
+  })
+
+  /**
+   * A negative `providerReportedCostNanoUsd` is floored to zero. Provider-reported
+   * rating uses it directly as the raw cost, so a negative value (OpenRouter preserves
+   * a negative `usage.cost`) would credit the wallet/budget on capture.
+   */
+  it('clamps a negative providerReportedCostNanoUsd to zero', () => {
+    const result = normalizeCaptureUsage({
+      ...validUsage(),
+      providerReportedCostNanoUsd: -1_000n,
+    })
+
+    expect(result.providerReportedCostNanoUsd).toBe(0n)
+  })
+
+  /** A non-negative provider-reported cost passes through untouched. */
+  it('leaves a non-negative providerReportedCostNanoUsd unchanged', () => {
+    const result = normalizeCaptureUsage({
+      ...validUsage(),
+      providerReportedCostNanoUsd: 5_000n,
+    })
+
+    expect(result.providerReportedCostNanoUsd).toBe(5_000n)
   })
 })
