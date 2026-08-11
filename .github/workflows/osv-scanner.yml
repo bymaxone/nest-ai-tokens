@@ -1,0 +1,22 @@
+# Scans the full resolved dependency tree (the lockfile) against the OSV
+# database — the audit dependency-review (PR diff only) and peer-advisory-drift
+# (declared ranges only) do not do. A transitive package already installed can
+# turn vulnerable between releases; this re-reads the whole tree on push, PR,
+# and a weekly schedule. The scan itself lives once in bymaxone/.github.
+name: OSV-Scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, off the hour so the scheduled run does not cluster at :00.
+    - cron: '42 6 * * 3'
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    uses: bymaxone/.github/.github/workflows/osv-scanner.yml@v1
