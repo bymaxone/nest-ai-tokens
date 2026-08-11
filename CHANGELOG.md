@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [Unreleased]
+## [1.1.0] - 2026-08-11
 
 ### Changed
 
@@ -225,6 +225,7 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.0]: https://github.com/bymaxone/nest-ai-tokens/releases/tag/v1.0.0
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
+[1.1.0]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
 [Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...HEAD
