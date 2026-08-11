@@ -730,7 +730,7 @@ This library decides what a customer is charged, so the suite is held to a bar b
 tests pass".
 
 - ✅ **100% line coverage** — statements, branches, functions and lines, enforced as a gate
-- ✅ **100% mutation score against a `break: 95` gate** — the gate is the floor a run must
+- ✅ **100% mutation score against a `break: 100` gate** — the gate is the floor a run must
   clear; the score the suite actually reaches is 100%, verified with
   [Stryker](https://stryker-mutator.io/) ([report](./docs/mutation_testing_results.md))
 - ✅ **Real PostgreSQL in e2e** — Testcontainers, so the unique constraint that prevents a
@@ -752,7 +752,7 @@ tests pass".
 pnpm test          # unit tests
 pnpm test:cov      # unit tests with the 100% coverage gate
 pnpm test:e2e      # end-to-end against PostgreSQL (requires Docker)
-pnpm mutation      # Stryker mutation testing (break: 95)
+pnpm mutation      # Stryker mutation testing (break: 100)
 pnpm typecheck     # tsc strict check
 pnpm lint          # ESLint
 pnpm build && pnpm size   # bundle-size budgets
