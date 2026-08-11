@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Changed
 
-- **`ioredis` peer widened to `^6.0.0`** (was `^5.0.0`). It aligns the `./redis` budget counter
+- **BREAKING: `ioredis` peer moved to `^6.0.0`** (was `^5.0.0`; the ranges are disjoint, so an
+  ioredis 5 consumer no longer satisfies the contract). It aligns the `./redis` budget counter
   with `@bymax-one/nest-queue@1.2.0`, so a backend that consumes both resolves one shared `ioredis`.
   ioredis 6 defaults to RESP3 but keeps `replyMapping: "legacy"`, leaving reply shapes unchanged at
   runtime; the store's URL-only `new Redis(url)` construction is untouched by the RESP3 options
@@ -45,9 +46,9 @@ Remediation of a local audit's settlement findings (merged in #65). No API chang
 ### Fixed
 
 - **Every suppression reason was dropped from the mutation report.** All 249 `// Stryker
-  disable` directives in the source wrote their justification after `--`. Stryker reads a
+disable` directives in the source wrote their justification after `--`. Stryker reads a
   directive with one regular expression, `/^\s?Stryker (disable|restore)(?: (next-line))?
-  ([a-zA-Z, ]+)(?::(.+)?)?/`, whose mutator list accepts letters, commas and spaces only
+([a-zA-Z, ]+)(?::(.+)?)?/`, whose mutator list accepts letters, commas and spaces only
   and which captures the reason exclusively after a colon. A `-` therefore closed the
   mutator list and left the reason unmatched, so each directive still silenced its mutant
   but the report recorded Stryker's fallback text, `Ignored using a comment`. The README
@@ -81,14 +82,14 @@ Remediation of a local audit's settlement findings (merged in #65). No API chang
   implement `emitDecoratorMetadata` because it does not replicate TypeScript's type
   system — so the second key was never there. The first two parameters had neither, and
   the container threw `Nest can't resolve dependencies of the MeteringInterceptor
-  (?, +, Symbol(BYMAX_AI_TOKENS_OPTIONS))` before any provider was created. Both now
+(?, +, Symbol(BYMAX_AI_TOKENS_OPTIONS))` before any provider was created. Both now
   carry `@Inject`.
 
 ### Changed
 
 - `emitDecoratorMetadata` is `false` in `tsconfig.json`. It was `true`, which was never
   true of the artifact: tsup prints `You have emitDecoratorMetadata enabled but
-  @swc/core was not installed, skipping swc plugin` on every build, and that warning had
+@swc/core was not installed, skipping swc plugin` on every build, and that warning had
   been printed on every build of this package. Turning it off makes the source compile
   the way the bundle is built, so a parameter that depends on reflected types now fails
   where it is cheap to see.
@@ -149,7 +150,6 @@ have regressed from. They are kept because the reasoning is worth having.
 - **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
 - **100% unit test coverage** — 804 tests; 10-scenario Testcontainers e2e suite; Stryker mutation gate at 100.00% (0 surviving mutants, break 95).
 
-
 - **Prisma 7 support, alongside Prisma 6.** The declared peer range has always
   been `>=6.0.0`, but nothing verified the claim; the end-to-end suite now runs
   against Prisma 7 and a real PostgreSQL, and it is what surfaced the conflict
@@ -165,7 +165,7 @@ have regressed from. They are kept because the reasoning is worth having.
 - **`pnpm check:exports`** runs `attw --pack . --profile strict` against the packed
   tarball, which is what surfaced both resolution defects above.
 - **`pnpm check:runtime`** packs the tarball, lays it out the way npm would, and
-  asserts in ESM *and* CommonJS that an error thrown by `PrismaAiTokensStore`
+  asserts in ESM _and_ CommonJS that an error thrown by `PrismaAiTokensStore`
   satisfies `instanceof AiTokensException` against the class the root exports. No
   source-based suite can observe this: the unit tests map the subpath specifiers to
   `src` and therefore see a single copy. Both gates run in CI.

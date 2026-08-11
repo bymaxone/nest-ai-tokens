@@ -4,7 +4,7 @@
 > **Last updated:** 2026-07-02
 > **Status:** Draft for execution
 > **Reference spec:** [`docs/technical_specification.md`](./technical_specification.md) (v0.2.0, post-audit)
-> **Persistence targets:** Prisma ≥ 6 / PostgreSQL (official store), ioredis ^5 (optional budget counter)
+> **Persistence targets:** Prisma ≥ 6 / PostgreSQL (official store), ioredis ^6 (optional budget counter)
 > **Derived documents:** `docs/tasks/phase-NN-<slug>.md` (Layer 3 — one file per phase, generated from this plan via `/bymax-workflow:phase-tasks`) + `docs/tasks/README.md` (folder index)
 
 ---
