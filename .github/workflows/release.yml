@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish to npm + GitHub Release
+    name: Publish to npm and create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Only publish from a semver tag — a manual workflow_dispatch on a branch must never publish.
