@@ -1951,7 +1951,7 @@ Following the family (`@bymax-one/nest-storage`, `nest-queue`): the target is `"
     "@nestjs/core": "^11.1.18",
     "reflect-metadata": "^0.2.0",
     "@prisma/client": ">=6.0.0",
-    "ioredis": "^5.0.0",
+    "ioredis": "^6.0.0",
     "@nestjs/event-emitter": ">=2.0.0",
     "@opentelemetry/api": "^1.9.0"
   },

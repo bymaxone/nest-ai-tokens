@@ -291,7 +291,7 @@ Package:      @bymax-one/nest-ai-tokens — AI token metering & usage-based bill
               markup/margin). FIVE subpaths: "." server / "./shared" zero-dep / "./prices"
               data / "./prisma" store adapter / "./redis" budget counter. Zero runtime deps;
               REQUIRED peers @nestjs/common ^11, @nestjs/core ^11, reflect-metadata ^0.2;
-              OPTIONAL peers @prisma/client >=6, ioredis ^5, @nestjs/event-emitter,
+              OPTIONAL peers @prisma/client >=6, ioredis ^6, @nestjs/event-emitter,
               @opentelemetry/api. ALL persisted money is bigint nano-USD.
 You are running in an ISOLATED git worktree — your branch, commits, and files do not touch the
 main tree or any other agent. Create your branch with `git switch -c feat/phase-{N}-<slug>`
@@ -453,7 +453,7 @@ the Bymax Code-Craft Standard.
 ### Dependencies & API surface
 - **Zero runtime deps** — `package.json` ships `"dependencies": {}`. REQUIRED peers:
   `@nestjs/common ^11`, `@nestjs/core ^11`, `reflect-metadata ^0.2`. OPTIONAL peers
-  (`peerDependenciesMeta`): `@prisma/client >=6` (only for `./prisma`), `ioredis ^5` (only for
+  (`peerDependenciesMeta`): `@prisma/client >=6` (only for `./prisma`), `ioredis ^6` (only for
   `./redis`), `@nestjs/event-emitter` (event channel), `@opentelemetry/api` (telemetry).
 - **NO provider SDKs, ever** — `openai`/`@anthropic-ai/sdk`/`@google/genai`/`@mistralai/*` never
   appear in the dependency graph or the imports (grep-gated). The normalizers consume plain
