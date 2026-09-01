@@ -15,6 +15,12 @@ allowBuilds:
   cpu-features: false
   protobufjs: false
   ssh2: false
+  # jest-haste-map 30.5.0 pulls @parcel/watcher in, where 30.4.1 did not. It
+  # only speeds up the file crawl behind `jest --watch`, and jest falls back to
+  # its own polling watcher without it. `test:watch` exists in package.json,
+  # but no CI job and no git hook invokes it, so denying the native build
+  # costs nothing here.
+  '@parcel/watcher': false
 # Forced versions for vulnerable transitive dev dependencies. These live here and
 # NOT in package.json: pnpm 11 no longer reads the `pnpm` field of package.json, so
 # an override placed there does nothing — it warns, but it does nothing.
