@@ -84,7 +84,7 @@ The ledger stores token counts, model identifiers, cost, and IDs. Prompt and com
 ## Key commands
 
 ```bash
-pnpm test              # unit tests (655 tests, 100% coverage)
+pnpm test              # unit tests (824 tests, 100% coverage)
 pnpm test:e2e          # Testcontainers e2e (requires Docker)
 pnpm test:cov          # coverage report
 pnpm typecheck         # tsc --noEmit on all configs
@@ -92,7 +92,7 @@ pnpm lint              # eslint src/
 pnpm docs:check        # JSDoc coverage sweep + docs fixture type-check
 pnpm build             # tsup → dist/ (5 subpaths)
 pnpm size              # brotli size budgets (server < 40 KB, shared < 10 KB, prisma < 15 KB, redis < 5 KB)
-pnpm mutation          # Stryker mutation gate (break 95, ~10-20 min)
+pnpm mutation          # Stryker mutation gate (break 100, ~10-20 min)
 pnpm prepublishOnly    # full gate chain (typecheck + lint + test:cov:all + build)
 ```
 
