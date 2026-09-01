@@ -39,10 +39,31 @@ overrides:
   # the range cannot be raised from package.json. Build-time only — @prisma/config
   # arrives under the `prisma` CLI and this package ships no runtime dependencies,
   # so nothing here reaches a consumer install.
+  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx (CVSS 7.5 each) — a prototype
+  # write while normalising an untrusted browserslist-stats.json, and a query
+  # cache that never evicts until the process runs out of memory. Both are fixed
+  # in 4.28.7. Reached transitively through @babel/helper-compilation-targets
+  # under @babel/core, which arrives by two dev paths — Stryker's instrumenter
+  # and babel-jest — so the range cannot be raised from package.json. That
+  # package asks for ^4.24.0, and no other declared range caps the ceiling.
+  'browserslist': '^4.28.7'
   'deepmerge-ts': '^8.0.0'
   'esbuild': '0.28.1'
   'fast-uri': '^3.1.4'
   'multer': '2.2.0'
+  # GHSA-3f6p-5ww8-9rcr (CVSS 8.2) — a hostile server can downgrade the auth
+  # plugin to mysql_clear_password and read the credentials in plaintext; fixed
+  # in 3.22.0. GHSA-rgwj-5xj2-c3m3 — the compressed-protocol handler inflates
+  # without bounding the output, so a decompression bomb exhausts memory; fixed
+  # only in 3.23.1. The floor is the LATER of the two: ^3.22.0 would clear the
+  # first advisory and leave the scan red on the second.
+  #
+  # Build-time only, and not reachable from a consumer install: mysql2 is a
+  # dependency of the `prisma` CLI (a devDependency here, never a peer), not of
+  # @prisma/client, which is the optional peer this package actually exposes.
+  # With `dependencies: {}` and only `dist/` published, nothing pulls it. This
+  # project's datasource is postgresql, so no MySQL connection is ever opened.
+  'mysql2': '^3.23.1'
   'protobufjs': '^7.6.5'
   'qs': '6.15.2'
   'undici': '^8.9.0'
