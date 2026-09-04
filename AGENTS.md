@@ -382,3 +382,41 @@ exist in the repository it was reported against and quoting `git log` output no 
 each one asked for was a force-push rewriting published history.
 
 <!-- shared:end -->
+
+## Where this repository narrows a shared rule
+
+Only the rules a reviewer gets wrong **here**. Each is a narrowing of the block above, not a
+disagreement with it.
+
+### `scopeResolver` is trusted input — the shared rule about validating input inverts here
+
+The shared block treats unvalidated input at a boundary as a finding. `scopeResolver` is the
+exception that proves it: it MUST read from the host's verified auth context (JWT claims, a
+validated session) and MUST NEVER read `request.body` or `request.query`. So the finding is not
+"this input is unvalidated" — it is **"this identity was accepted rather than resolved"**.
+
+**Safe path:** on any diff touching `BudgetGuard` or `MeteringInterceptor`, follow `scopeResolver`
+to where the host supplies it. A `tenantId` reaching a budget decision from anything the caller can
+influence is the defect, and it is worth a P1 even when every field is type-checked — the types are
+not the control.
+
+### Money is `bigint` nano-USD, so the usual numeric-precision advice is inverted
+
+`parseFloat`, `toFixed`, and arithmetic on `number` are defects on money paths, not style. The only
+sanctioned conversions are `floatUsdToNanoUsd` at provider ingress and `formatNanoUsd` /
+`toJsonSafe` at display and JSON egress. A reviewer used to "avoid floating point where it matters"
+will accept a `number` that round-trips correctly in a test; it is still a defect, because the
+ledger is hash-chained and a value that differs by one nano breaks the chain rather than rounding.
+
+### `limit = 0` and "no budget row" are opposite, not equivalent
+
+No row means unlimited. `limit = 0` is a hard block. A diff that coalesces `null`/`undefined` to
+`0` — the ordinary defensive move, and one a reviewer normally approves — converts "unlimited" into
+"blocks every call". Treat any `?? 0` or `|| 0` on a limit as a finding until proven otherwise.
+
+### `capture()` is idempotent by contract — a guard at the call site is the bug
+
+Calling `capture(hold, usage)` twice settles with the first actuals and returns the already-settled
+record. A caller that adds a "have we captured this already?" check is not being careful, it is
+duplicating a guarantee and creating a second source of truth. The shared block's rule against
+swallowing errors does not license the defensive check here.
