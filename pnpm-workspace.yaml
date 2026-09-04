@@ -49,7 +49,13 @@ overrides:
   'browserslist': '^4.28.7'
   'deepmerge-ts': '^8.0.0'
   'esbuild': '0.28.1'
-  'fast-uri': '^3.1.4'
+  # GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf and
+  # GHSA-jqff-g426-hqxp (CVSS 7.5 each) — a scheme-relative reference skips IDN
+  # canonicalisation, so two different hosts compare equal. Fixed in 3.1.6.
+  # The floor was ^3.1.4, which admitted 3.1.6 but did not require it: ajv 8.20.0
+  # under the Prisma CLI resolved 3.1.6 while ajv 8.18.0 under Stryker stayed on
+  # 3.1.5, so the tree carried both and only the older edge was vulnerable.
+  'fast-uri': '^3.1.6'
   'multer': '2.2.0'
   # GHSA-3f6p-5ww8-9rcr (CVSS 8.2) — a hostile server can downgrade the auth
   # plugin to mysql_clear_password and read the credentials in plaintext; fixed
@@ -65,6 +71,11 @@ overrides:
   # project's datasource is postgresql, so no MySQL connection is ever opened.
   'mysql2': '^3.23.1'
   'protobufjs': '^7.6.5'
-  'qs': '6.15.2'
+  # GHSA-4mjr-xmp4-gh2g and GHSA-x5fp-wj9c-mxmx (CVSS 6.3 each) — an
+  # attacker-controlled `isBuffer` makes parsing degrade into a denial of service.
+  # Fixed in 6.16.0. This entry was an exact pin at 6.15.2 carried over from the
+  # initial scaffold; an exact pin refuses the fix rather than merely failing to
+  # require it, so it is a caret now, matching the other security floors here.
+  'qs': '^6.16.0'
   'undici': '^8.9.0'
   'uuid': '11.1.1'
