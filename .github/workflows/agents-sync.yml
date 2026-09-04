@@ -1,0 +1,52 @@
+# Keeps the shared half of AGENTS.md in step with the canonical copy in
+# bymaxone/.github. The rules that must not vary between Bymax repositories are
+# edited there; everything this repository writes for itself lives outside the
+# markers and is never touched.
+#
+# Codex reads AGENTS.md from the file tree of the repository under review, so a
+# shared rule has to exist as a real file here rather than be referenced. It does
+# not read CLAUDE.md, .github/copilot-instructions.md or .github/instructions/.
+# That is why this is a sync and not a `uses:` — the reusable CI elsewhere in
+# this directory propagates by reference, this one has to propagate by commit.
+name: agents-sync
+
+on:
+  schedule:
+    # Weekly on THURSDAY, read off THIS repository's own schedule rather than
+    # copied from a sibling. Monday already carries mutation-full (03:13),
+    # codeql (03:27) and peer-advisory-drift (06:17); Tuesday carries scorecard
+    # (02:18) and Wednesday the OSV scan (06:42). Thursday is empty here, so
+    # this run competes with nothing.
+    - cron: '31 7 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    # Referenced by the moving alias rather than pinned, which is the convention
+    # for first-party reusables and the rule the shared block itself states.
+    uses: bymaxone/.github/.github/workflows/agents-sync.yml@v1
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets:
+      # The GitHub App, named rather than `inherit` so the called workflow
+      # receives these two and not every secret this repository holds.
+      #
+      # The pair is read together: the reusable errors out when exactly one is
+      # set rather than falling back, because a silent fallback is how a caller
+      # ends up looking configured while running on the default token.
+      #
+      # `sync-token` is left deliberately UNMAPPED. It is still a declared,
+      # optional input of the reusable, so mapping it would be valid YAML and
+      # would be accepted — and a secret that does not exist resolves to the
+      # empty string, which the reusable treats as "not supplied" and falls back
+      # from. The mapping would read as configured while contributing nothing.
+      #
+      # Why the credential matters at all: a pull request opened with the default
+      # GITHUB_TOKEN starts no workflow runs, so an unattended sync PR can never
+      # satisfy required checks and cannot merge.
+      app-id: ${{ secrets.AGENTS_SYNC_APP_ID }}
+      app-private-key: ${{ secrets.AGENTS_SYNC_PRIVATE_KEY }}
