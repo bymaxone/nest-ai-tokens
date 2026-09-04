@@ -323,6 +323,19 @@ A failing gate means the code is wrong, the type is wrong, or the rule is wrong.
 whichever it is. Changing a rule's configuration with a stated reason is legitimate; scattering
 per-call-site silencers is not.
 
+### A key built from more than one field keeps its boundaries
+
+A key or digest derived from **two or more variable fields** must not let a field's content move the
+boundary between them. `${tenantId}:${recipient}` makes `('a:b','c')` and `('a','b:c')` one key,
+which no digest strength repairs, and one tenant's lookup then resolves another's record. Rejecting
+empty fields does not fix it, and neither does a caller that validates its input — the property has
+to hold in the construction. A fixed prefix beside a single field is not this shape.
+
+**Safe path:** encode each field so it cannot contain the delimiter, or hash each to a fixed width.
+Any other composition needs an argument that every boundary is recoverable, and one bounded field
+does not rescue two free ones beside it. Then assert it in a test: where the property holds only
+because of the values in play, the next one added takes it away and nothing says so.
+
 ### Comments state constraints, never history
 
 A comment must read as true for whoever opens the file next. Flag any comment that narrates what a
