@@ -24,8 +24,18 @@ import { BudgetService, type BudgetEventHooks, type BudgetServiceOptions, type U
 import { InMemoryBudgetStore } from './in-memory-budget-store'
 import { InMemoryLedgerStore } from './in-memory-ledger-store'
 
+/** The tenant every fixture belongs to. Budgets are per-tenant, so a spec asserting isolation needs a second one of its own. */
 export const TENANT = 't1'
+
+/** The payer scope `budgetInput` and `context` default to; a spec covering scope matching passes its own. */
 export const USER_SCOPE: MeteringScope = { type: 'user', id: 'u1' }
+
+/**
+ * The clock `makeService` runs on. Mid-month by choice: a calendar-month window
+ * anchored here starts on 2026-06-01, so window arithmetic is visible in the keys
+ * rather than coinciding with the current instant. Moving this date changes the
+ * window boundaries the counter spec spells out literally.
+ */
 export const NOW = new Date('2026-06-15T00:00:00.000Z')
 
 /** Read the typed error code from a thrown `AiTokensException`. */
