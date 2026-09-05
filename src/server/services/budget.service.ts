@@ -82,9 +82,21 @@ interface CounterIncrement {
   amount: bigint
 }
 
+/**
+ * The counter dimensions, as one runtime value. `CounterDimensionName` derives from
+ * it rather than being declared beside it, so a dimension cannot be added to the type
+ * without appearing in this array — which is what `counterKey` injectivity is asserted
+ * over. Exported for that assertion; the services barrel re-exports by name, so this
+ * does not reach the published surface.
+ */
+export const COUNTER_DIMENSIONS = ['cost', 'tokens', 'count'] as const
+
+/** One counter dimension. Derived from {@link COUNTER_DIMENSIONS}. */
+export type CounterDimensionName = (typeof COUNTER_DIMENSIONS)[number]
+
 /** A dimension consumed against the live counter (limited dimension, non-zero delta). */
 interface CounterDimension {
-  name: 'cost' | 'tokens' | 'count'
+  name: CounterDimensionName
   amount: bigint
   limit: bigint
 }
@@ -705,7 +717,7 @@ function addSpend(spend: BudgetWindowSpend, delta: BudgetDelta): BudgetWindowSpe
 }
 
 /** Map a limited budget/counter dimension to its typed §16 block code: spend → 402, tokens/count → 429. */
-function dimensionCode(name: 'cost' | 'tokens' | 'count'): FailingDimension {
+function dimensionCode(name: CounterDimensionName): FailingDimension {
   return name === 'cost' ? { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' } : { dimension: name, code: 'AI_TOKENS_QUOTA_EXCEEDED' }
 }
 
@@ -794,13 +806,39 @@ function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | null, s
   }
 }
 
-/** Compose the per-window dedupe key. */
-function windowKey(budgetId: string, windowStart: Date): string {
+/**
+ * Compose the per-window dedupe key.
+ *
+ * The composition must stay injective: `|` cannot occur in an ISO 8601 timestamp, so
+ * the boundary is recoverable however `budgetId` is spelled. `budgetId` is
+ * caller-supplied and unvalidated, so this is a property of the construction, not of
+ * the input. Exported for the injectivity assertion only.
+ *
+ * @param budgetId The budget id (caller-supplied; may contain any character).
+ * @param windowStart The window start.
+ * @returns The dedupe key.
+ */
+export function windowKey(budgetId: string, windowStart: Date): string {
   return `${budgetId}|${windowStart.toISOString()}`
 }
 
-/** The live-counter key for one dimension (§10.8 scheme). */
-function counterKey(budgetId: string, windowStart: Date, dimension: 'cost' | 'tokens' | 'count'): string {
+/**
+ * The live-counter key for one dimension (§10.8 scheme).
+ *
+ * Injective, and only because of three facts a future edit can remove: no member of
+ * {@link COUNTER_DIMENSIONS} is a suffix of another, `toISOString()` emits a
+ * fixed-length tail, and in its 27-character form the character 25 positions from the
+ * end is always a year digit rather than the delimiter a collision would need. All
+ * three are asserted in the spec; changing the delimiter, the timestamp format, or
+ * adding a dimension that ends with an existing one breaks the property. Exported for
+ * that assertion only.
+ *
+ * @param budgetId The budget id (caller-supplied; may contain any character).
+ * @param windowStart The window start.
+ * @param dimension The counter dimension.
+ * @returns The counter key.
+ */
+export function counterKey(budgetId: string, windowStart: Date, dimension: CounterDimensionName): string {
   return `ai_tokens:budget:${budgetId}:${windowStart.toISOString()}:${dimension}`
 }
 
