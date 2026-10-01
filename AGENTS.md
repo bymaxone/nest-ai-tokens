@@ -207,19 +207,7 @@ Security threat model: `SECURITY.md`
   run. Change it here, cut a release, and every repository is offered the update.
 
   Repository-specific rules go OUTSIDE this block, below the closing marker.
-
-  FOR WHOEVER EDITS THIS FILE, not for the reviewer who reads it:
-
-  Codex reads one AGENTS.md per directory, root to nested, within
-  project_doc_max_bytes (32 KiB default). Never name a template or fixture
-  AGENTS.md below the root: a change under it is read as the repo's guidance.
-
-  This block is charged against every consumer's budget. A rule added here must
-  be worth the bytes in the smallest-headroom repository, not only in this one;
-  agents-sync reports each consumer's headroom and fails when it is exceeded.
-
-  When you scope a rule, scope every rule in its paragraph or split the
-  paragraph -- an unscoped neighbour reads as deliberate.
+  Editing notes: AGENTS.md in bymaxone/.github.
 -->
 
 These rules hold in every Bymax repository. What is specific to this one is written after this
@@ -260,15 +248,23 @@ it is about.
 | A commit's author or committer identity | out of scope: it is not text a change introduces                               |
 | What a file contains                    | the file at the revision under review, not an earlier one                      |
 
-The first two rows are separate on purpose, and the rule below says why: a field can stay optional
-in the published type while becoming mandatory in behaviour. A `.d.ts` settles what a signature
-accepts and nothing about what the implementation does with it, so a behavioural claim resting on
-one is unfounded.
+The first two rows are separate on purpose: a `.d.ts` settles what a signature accepts and nothing
+about what the implementation does with it, so a behavioural claim resting on one is unfounded.
 
 Weight the checking by what acting on the finding would cost. A comment that asks for a reworded
 sentence is cheap to be wrong about; one that asks for history to be rewritten, a merge reverted, or
 a release pulled is not — verify that class before raising it, and raise it at the severity the
 evidence supports rather than the severity the consequence would deserve if true.
+
+### A bug reproduces, and a finding is this change's
+
+Unless a rule here says to report without one, raise a bug only with its trigger: the input or
+repository state, the command, the wrong result. Letting through what should be refused is P1 at
+least, as is a crash an untrusted caller can trigger; a refusal, or a crash no untrusted caller can
+reach, on input the project does not claim to support is not. Behaviour already present at the merge
+base belongs to another change. On new commits, review what changed since the last reviewed commit,
+and treat a thread resolved or answered with a reason as settled. One comment per root cause, its
+siblings named in it.
 
 ### A dependency upgrade migrates every call site, not only the ones that fail to compile
 
@@ -284,11 +280,11 @@ changelog is the compatibility contract.
 **Safe path:** read **every** changelog entry from the version being replaced up to the proposed
 one, not only the proposed one's, and check every call site they name — not only the ones the
 compiler rejected. Upgrades routinely skip releases, and the entry that matters is often not the
-last one: adopting `@bymax-one/nest-cache` 1.1.0 → 1.2.1 skipped 1.2.0, where a namespace-validation
-security fix lives; 1.2.1's own entry is a field rename. Diff the `.d.ts` of the **previously adopted** version against
-the **proposed** one — `npm pack` both, and name the two versions. Reaching for "the installed
-declarations" is the trap: in a checkout of the branch under review the installed tree is already
-the new version, so that diff compares a release with itself and shows nothing.
+last one: adopting `@bymax-one/nest-cache` 1.1.0 → 1.2.1 skipped 1.2.0, whose entry holds a security
+fix. Diff the `.d.ts` of the **previously adopted** version against the **proposed** one — `npm
+pack` both, and name the two versions. Reaching for "the installed declarations" is the trap: in a
+checkout of the branch under review the installed tree is already the new version, so that diff
+compares a release with itself and shows nothing.
 
 ### Settled decisions are not review findings
 
@@ -344,11 +340,10 @@ the code. **Safe path:** state the constraint that still holds, and let `git log
 
 Evidence for a constraint is not history, and how the evidence was obtained does not decide which it
 is. The test is whether the fact still binds the next reader. A measurement that predicts what they
-will hit if they take the other path — what the alternative did when it was tried, what the cost is
-in numbers — belongs beside the constraint it supports, whether it came from a deliberate trial or
-from something breaking. What ages is the part that cannot recur for them: what a previous version
-of this code did, a version number, a registry state, a review round, a failure that has since been
-fixed. Flag those; keep the measurement.
+will hit on the other path — what the alternative did, what it costs in numbers — belongs beside the
+constraint it supports, however it was obtained. What ages is the part that cannot recur for them:
+what a previous version of this code did, a version number, a registry state, a review round, a
+failure that has since been fixed. Flag those; keep the measurement.
 
 ### Size and layering
 
@@ -366,9 +361,8 @@ otherwise produce a finding on every pull request touching three lines of it, wh
 cannot act on and did not cause. Raise it for a **new** file over the limit, or when a change pushes
 a file past it or materially grows one already over.
 
-Markdown, generated output and lockfiles are **out of scope**: a changelog is an append-only log that
-only grows, a lockfile is generated, and neither has layers. Reporting their length is a false
-positive on every dependency bump and every release note.
+Markdown, generated output and lockfiles are **out of scope**: none has layers, and reporting their
+length fires on every dependency bump and release note.
 
 **Safe path:** extract by responsibility rather than by line count — the limit is a symptom, and one
 file doing two jobs is the defect.
@@ -390,9 +384,8 @@ signature in a comment or a description.
 A commit's author and committer fields are not that: they come from the contributor's git
 configuration rather than from the diff, and a review reading the diff cannot see them. Never report
 an identity field, and never present a command's reconstructed output as evidence for one. Measured:
-eight P1 findings in a single day across four pull requests, each naming a commit SHA that does not
-exist in the repository it was reported against and quoting `git log` output no review had run. What
-each one asked for was a force-push rewriting published history.
+twenty-six such findings, every SHA resolving nowhere and every `git log` line unrun, each asking to
+rewrite published history.
 
 <!-- shared:end -->
 
