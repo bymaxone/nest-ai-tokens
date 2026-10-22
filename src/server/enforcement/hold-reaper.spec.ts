@@ -166,4 +166,70 @@ describe('HoldReaper', () => {
     // The batch continued: exactly one hold remains released-but-unrestored is acceptable; both were transitioned.
     expect(built.ledgerStore.all().filter((r) => r.status === 'released')).toHaveLength(2)
   })
+
+  /**
+   * A rejected expired-hold scan (e.g. a dropped database connection) is logged under its
+   * stable key and ends the sweep without throwing; the next sweep runs normally.
+   */
+  it('logs a failed expired-hold scan and recovers on the next sweep', async () => {
+    const built = build(60)
+    const walletRef = { tenantId: 'tenant-1', ownerType: 'user' as const, ownerId: 'u1' }
+    const wallets = new WalletService(built.walletStore, built.options.wallets as never)
+    await grant(wallets, 100_000_000n)
+    await built.service.hold(context(), ESTIMATE)
+    const later = new Date(built.now().getTime() + 3_600_000)
+    const dropped = Object.assign(new Error('Connection terminated unexpectedly'), { code: 'ECONNRESET' })
+    jest.spyOn(built.ledger, 'findExpiredHolds').mockRejectedValueOnce(dropped)
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const reaper = new HoldReaper(built.ledger, built.service, built.options, () => later)
+    try {
+      await expect(reaper.sweep()).resolves.toBeUndefined()
+      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error message="Connection terminated unexpectedly" code=ECONNRESET')
+      expect((await wallets.getBalance(walletRef)).nanoUsd).toBe(93_750_000n)
+      await reaper.sweep()
+      expect((await wallets.getBalance(walletRef)).nanoUsd).toBe(100_000_000n)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  /** The log line carries a numeric `code`, omits an absent one, and never dumps a non-`Error` value. */
+  it.each([
+    [Object.assign(new TypeError('bad'), { code: 57 }), 'ai_tokens.hold_reaper.scan_failed name=TypeError message="bad" code=57'],
+    [Object.assign(new Error('bad'), { code: { host: 'db' } }), 'ai_tokens.hold_reaper.scan_failed name=Error message="bad"'],
+    [new Error('bad'), 'ai_tokens.hold_reaper.scan_failed name=Error message="bad"'],
+    [{ password: 'secret' }, 'ai_tokens.hold_reaper.scan_failed non-Error rejection'],
+  ])('summarises a scan rejection safely (%#)', async (rejection, expected) => {
+    const built = build(60)
+    jest.spyOn(built.ledger, 'findExpiredHolds').mockRejectedValueOnce(rejection)
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(built.reaper().sweep()).resolves.toBeUndefined()
+      expect(warnSpy).toHaveBeenCalledWith(expected)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  /** No rejection out of a timer-driven sweep can escape as an unhandled rejection. */
+  it('contains a rejected sweep inside the timer callback', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    jest.useFakeTimers()
+    const reaper = build().reaper()
+    try {
+      jest.spyOn(reaper, 'sweep').mockRejectedValue(new Error('clock exploded'))
+      reaper.onApplicationBootstrap()
+      await jest.advanceTimersByTimeAsync(1_000)
+      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.sweep_failed name=Error message="clock exploded"')
+    } finally {
+      reaper.onApplicationShutdown()
+      jest.useRealTimers()
+      await new Promise((resolve) => setImmediate(resolve))
+      process.off('unhandledRejection', unhandled)
+      warnSpy.mockRestore()
+    }
+    expect(unhandled).not.toHaveBeenCalled()
+  })
 })
