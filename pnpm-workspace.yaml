@@ -74,7 +74,7 @@ overrides:
   # platform-express is a devDependency here, not a peer.
   'multer': '^2.4.0'
   # GHSA-jqcg-44mw-7w3h (CVSS 9.1) — fixed in 2.0.8. Reached through express under the
-  # dev-only @nestjs/platform-express; express 5.2.1 asks for ~2.0.7.
+  # dev-only @nestjs/platform-express; express 5.2.1 asks for ^2.0.7.
   'proxy-addr': '^2.0.8'
   # GHSA-m9gg-hp2v-232j (CVSS 7.4) and GHSA-f596-whhp-79r4 (CVSS 3.7) — fixed in
   # 1.14.5. Reached through the Testcontainers e2e stack; build-time only.
@@ -99,7 +99,8 @@ overrides:
   # initial scaffold; an exact pin refuses the fix rather than merely failing to
   # require it, so it is a caret now, matching the other security floors here.
   'qs': '^6.16.0'
-  # GHSA-rfgv-xxqx-mfg5 (CVSS 7.5) and seven lower-severity advisories, all fixed in
-  # 8.10.2.
+  # Eleven advisories affect 8.10.0, all fixed in 8.10.2; the most severe are
+  # GHSA-rfgv-xxqx-mfg5 (CVSS 7.5), GHSA-w293-vg96-wgc3 and GHSA-vp8m-p9jh-q5pm
+  # (CVSS 7.4 each).
   'undici': '^8.10.2'
   'uuid': '11.1.1'
