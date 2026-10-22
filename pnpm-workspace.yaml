@@ -67,14 +67,14 @@ overrides:
   # ts-jest; build-time only.
   'handlebars': '^4.7.10'
   # GHSA-535w-7cp7-47q4, GHSA-qfvm-cv95-jqjf and GHSA-wc9g-mqfw-jrwm (CVSS 7.5 each),
-  # GHSA-3pph-fpjx-jg34 and GHSA-qvfw-j98x-7q72; the last fix is in 2.4.0. This was an
-  # exact pin at 2.2.0 from the initial scaffold, the same shape `qs` had: an exact pin
-  # refuses the fix. @nestjs/platform-express 11.2.3 pins multer 2.2.0 exactly, and
-  # 11.2.7 pins 2.4.0, so the floor matches what the framework itself now ships.
-  # platform-express is a devDependency here, not a peer.
+  # GHSA-3pph-fpjx-jg34 and GHSA-qvfw-j98x-7q72; the last fix is in 2.4.0.
+  # @nestjs/platform-express pins multer to an exact version, so only an override can
+  # lift it. A caret, not an exact pin: an exact pin would refuse the next fix the same
+  # way. platform-express is a devDependency here, not a peer.
   'multer': '^2.4.0'
   # GHSA-jqcg-44mw-7w3h (CVSS 9.1) — fixed in 2.0.8. Reached through express under the
-  # dev-only @nestjs/platform-express; express 5.2.1 asks for ^2.0.7.
+  # dev-only @nestjs/platform-express. Express's own caret range admits the fixed
+  # release without requiring it, so this floor is what forces it.
   'proxy-addr': '^2.0.8'
   # GHSA-m9gg-hp2v-232j (CVSS 7.4) and GHSA-f596-whhp-79r4 (CVSS 3.7) — fixed in
   # 1.14.5. Reached through the Testcontainers e2e stack; build-time only.
@@ -99,7 +99,7 @@ overrides:
   # initial scaffold; an exact pin refuses the fix rather than merely failing to
   # require it, so it is a caret now, matching the other security floors here.
   'qs': '^6.16.0'
-  # Eleven advisories affect 8.10.0, all fixed in 8.10.2; the most severe are
+  # Eleven advisories are first fixed in 8.10.2; the most severe are
   # GHSA-rfgv-xxqx-mfg5 (CVSS 7.5), GHSA-w293-vg96-wgc3 and GHSA-vp8m-p9jh-q5pm
   # (CVSS 7.4 each).
   'undici': '^8.10.2'
