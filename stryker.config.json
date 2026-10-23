@@ -12,7 +12,8 @@
   "tsconfigFile": "tsconfig.json",
   "jest": {
     "projectType": "custom",
-    "configFile": "jest.stryker.config.ts"
+    "configFile": "jest.stryker.config.ts",
+    "enableFindRelatedTests": false
   },
   "reporters": [
     "clear-text",
