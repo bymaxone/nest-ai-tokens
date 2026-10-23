@@ -280,14 +280,13 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
   it('rolls back a sibling counter on a partial multi-budget failure', async () => {
     const counter = new FakeCounter()
     const { service } = makeService({ options: { counter } })
-    const wide = await service.upsertBudget(budgetInput({ scope: { type: 'tenant', id: TENANT }, limitNanoUsd: 1_000n }))
+    await service.upsertBudget(budgetInput({ scope: { type: 'tenant', id: TENANT }, limitNanoUsd: 1_000n }))
     await service.upsertBudget(budgetInput({ scope: USER_SCOPE, limitNanoUsd: 10n }))
     counter.failDecr = true // rollback decr fails → logged, never thrown
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await expectRejectCode(service.consume(context(), delta(50n)), 'AI_TOKENS_BUDGET_EXCEEDED')
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to roll back budget counter'))
     warn.mockRestore()
-    void wide
   })
 
   /** release decrements the live counter across matching budgets. */

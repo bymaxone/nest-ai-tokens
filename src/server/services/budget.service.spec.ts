@@ -171,10 +171,9 @@ describe('BudgetService — enforcement (§10.7/§10.8)', () => {
   /** A misbehaving store that rejects within limits still throws a typed budget error (fallback). */
   it('throws a budget error when the store rejects within limits', async () => {
     const { service, store } = makeService()
-    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
     jest.spyOn(store, 'conditionalConsume').mockResolvedValue(false)
     await expectRejectCode(service.consume(context(), delta(1n)), 'AI_TOKENS_BUDGET_EXCEEDED')
-    void budget
   })
 
   /** release subtracts the delta from every matching window. */
