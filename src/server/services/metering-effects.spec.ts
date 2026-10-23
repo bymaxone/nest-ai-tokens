@@ -17,7 +17,6 @@ import { Logger } from '@nestjs/common'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
-import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import type { MeteringContext } from '../interfaces'
 import type { UsageRecord } from '../../shared'
 import { LedgerService } from './ledger.service'
@@ -122,9 +121,7 @@ function buildWalletService(): { service: WalletService; store: InMemoryWalletSt
 function buildBudgetService(): { service: BudgetService; store: InMemoryBudgetStore } {
   const budgetStore = new InMemoryBudgetStore({ now })
   const ledgerStore = new InMemoryLedgerStore()
-  const pricingStore = new InMemoryPricingStore()
   const ledger = new LedgerService(ledgerStore, OPTIONS_WITH_WALLETS)
-  void pricingStore
   const service = new BudgetService(budgetStore, ledger, BUDGET_OPTIONS, now)
   return { service, store: budgetStore }
 }
