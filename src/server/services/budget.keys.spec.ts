@@ -19,7 +19,7 @@ describe('budget.keys — composite key injectivity', () => {
   // shape in which a collision is possible at all.
 
   /** A budget id that embeds both delimiters, a whole key tail, and the expanded-year prefix. */
-  const ADVERSARIAL = ['x', 'x:', 'x|', 'x:cost', 'x:tokens', 'x:+01', 'x:2026-06-15T00:00:00.000Z', 'x:2026-06-15T00:00:00.000Z:cost', 'x|2026-06-15T00:00:00.000Z']
+  const ADVERSARIAL = ['x', 'x:', 'x|', 'x:cost', 'x:tokens', 'x:+0', 'x:+01', 'x:2026-06-15T00:00:00.000Z', 'x:2026-06-15T00:00:00.000Z:cost', 'x|2026-06-15T00:00:00.000Z']
 
   /** A UTC midnight on 1 January of `year`, including years outside the 0000-9999 range. */
   function january(year: number): Date {
@@ -47,12 +47,10 @@ describe('budget.keys — composite key injectivity', () => {
     expect(windowKey('b1', new Date('2026-06-15T00:00:00.000Z'))).toBe('b1|2026-06-15T00:00:00.000Z')
   })
 
-  /** FACT 1: a dimension ending with another makes the trailing field ambiguous. `discount` would. */
-  it('keeps the dimension literals prefix-free at the tail', () => {
-    for (const a of COUNTER_DIMENSIONS) {
-      for (const b of COUNTER_DIMENSIONS) {
-        if (a !== b) expect(a.endsWith(b)).toBe(false)
-      }
+  /** FACT 1: the dimension is whatever follows the last `:`, so no dimension may contain it. */
+  it('keeps the delimiter out of every dimension literal', () => {
+    for (const dimension of COUNTER_DIMENSIONS) {
+      expect(dimension).not.toContain(':')
     }
   })
 
@@ -63,16 +61,17 @@ describe('budget.keys — composite key injectivity', () => {
   })
 
   /** FACT 3, through the key: the near-collision an expanded year almost creates.
-   * These two keys differ at exactly one character — a year digit where the shorter
-   * form would need the delimiter — and that single character is the whole invariant. */
+   * These two keys have the same length and differ at exactly one character — a year
+   * digit where the shorter form would need the delimiter — and that single character
+   * is the whole invariant. */
   it('does not collide an expanded-year window with an in-range one', () => {
     const expanded = counterKey('x', january(10000), 'cost')
-    const inRange = counterKey('x:+01', january(0), 'cost')
-    expect(expanded).not.toBe(inRange)
-    let differing = 0
-    while (expanded.charAt(differing) === inRange.charAt(differing)) differing += 1
-    expect(expanded.charAt(differing)).toBe('0')
-    expect(inRange.charAt(differing)).toBe(':')
+    const inRange = counterKey('x:+0', january(0), 'cost')
+    expect(expanded).toHaveLength(inRange.length)
+    const differing = Array.from({ length: expanded.length }, (_, index) => index).filter((index) => expanded.charAt(index) !== inRange.charAt(index))
+    expect(differing).toHaveLength(1)
+    expect(expanded.charAt(differing[0] ?? -1)).toBe('1')
+    expect(inRange.charAt(differing[0] ?? -1)).toBe(':')
   })
 
   /** The property itself, over both timestamp lengths: no two distinct triples may share a key. */
