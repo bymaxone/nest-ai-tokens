@@ -27,6 +27,7 @@ import type {
 } from '../../shared'
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey, type CounterDimensionName } from './budget.keys'
 import type {
   BudgetDelta,
   BudgetLimits,
@@ -82,13 +83,6 @@ interface CounterIncrement {
   amount: bigint
 }
 
-/** A dimension consumed against the live counter (limited dimension, non-zero delta). */
-interface CounterDimension {
-  name: 'cost' | 'tokens' | 'count'
-  amount: bigint
-  limit: bigint
-}
-
 /** A recorded consumption, kept for rollback on a partial multi-budget failure. */
 interface Consumed {
   budgetId: string
@@ -99,7 +93,7 @@ interface Consumed {
 
 /** A budget dimension over its limit, carrying the typed §16 block code (spend → 402, tokens/count → 429). */
 interface FailingDimension {
-  dimension: 'cost' | 'tokens' | 'count'
+  dimension: CounterDimensionName
   code: 'AI_TOKENS_BUDGET_EXCEEDED' | 'AI_TOKENS_QUOTA_EXCEEDED'
 }
 
@@ -120,11 +114,6 @@ interface GuardResult {
   failing?: FailingDimension
 }
 
-/** The window-length grace (seconds) added to a counter key's TTL (§10.8). */
-const COUNTER_GRACE_SECONDS = 3_600
-/** The counter TTL for a `'total'` window that never resets (≈ 400 days). */
-// Stryker disable next-line ArithmeticOperator: TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
-const TOTAL_WINDOW_TTL_SECONDS = 60 * 60 * 24 * 400
 /** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
 const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
 
@@ -705,7 +694,7 @@ function addSpend(spend: BudgetWindowSpend, delta: BudgetDelta): BudgetWindowSpe
 }
 
 /** Map a limited budget/counter dimension to its typed §16 block code: spend → 402, tokens/count → 429. */
-function dimensionCode(name: 'cost' | 'tokens' | 'count'): FailingDimension {
+function dimensionCode(name: CounterDimensionName): FailingDimension {
   return name === 'cost' ? { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' } : { dimension: name, code: 'AI_TOKENS_QUOTA_EXCEEDED' }
 }
 
@@ -792,46 +781,6 @@ function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | null, s
     remaining: remainingSnapshot(limits, spend),
     usedFraction: usedFraction(spend, limits),
   }
-}
-
-/** Compose the per-window dedupe key. */
-function windowKey(budgetId: string, windowStart: Date): string {
-  return `${budgetId}|${windowStart.toISOString()}`
-}
-
-/** The live-counter key for one dimension (§10.8 scheme). */
-function counterKey(budgetId: string, windowStart: Date, dimension: 'cost' | 'tokens' | 'count'): string {
-  return `ai_tokens:budget:${budgetId}:${windowStart.toISOString()}:${dimension}`
-}
-
-/** The counter TTL: the window length plus a grace hour, or a long fixed TTL for `'total'`. */
-function counterTtlSeconds(windowStart: Date, windowEnd: Date | null): number {
-  if (windowEnd === null) return TOTAL_WINDOW_TTL_SECONDS
-  // Stryker disable next-line ArithmeticOperator: TTL arithmetic is only observable in integration with a real counter store (Redis TTL); unit tests use FakeCounter which ignores TTL
-  return Math.ceil((windowEnd.getTime() - windowStart.getTime()) / 1_000) + COUNTER_GRACE_SECONDS
-}
-
-/** The authoritative window spend per counter dimension, as int64 counter values (resync source). */
-function dimensionSpends(spend: BudgetWindowSpend): Record<'cost' | 'tokens' | 'count', bigint> {
-  return { cost: spend.spentNanoUsd, tokens: BigInt(spend.spentTokens), count: BigInt(spend.spentCount) }
-}
-
-/** The limited dimensions a delta touches, as int64 counter amounts/limits. */
-function counterDimensions(delta: BudgetDelta, limits: BudgetLimits): CounterDimension[] {
-  const dimensions: CounterDimension[] = []
-  // Stryker disable next-line ConditionalExpression: CE true on `delta.nanoUsd !== 0n`: incrIfBelow(amount=0, limit) is a no-op (0 ≤ any limit → true, counter unchanged); including zero-delta dimensions is observable only via extra counter round-trips, not observable in unit tests
-  if (limits.nanoUsd !== undefined && delta.nanoUsd !== 0n) {
-    dimensions.push({ name: 'cost', amount: delta.nanoUsd, limit: limits.nanoUsd })
-  }
-  // Stryker disable next-line ConditionalExpression: CE true on `delta.tokens !== 0`: same as above — incrIfBelow(0n, limit) is a no-op in FakeCounter; only round-trip count differs, not test-observable outcomes
-  if (limits.tokens !== undefined && delta.tokens !== 0) {
-    dimensions.push({ name: 'tokens', amount: BigInt(delta.tokens), limit: BigInt(limits.tokens) })
-  }
-  // Stryker disable next-line ConditionalExpression: CE true on `delta.count !== 0`: same reasoning; count=0 increment is a no-op
-  if (limits.count !== undefined && delta.count !== 0) {
-    dimensions.push({ name: 'count', amount: BigInt(delta.count), limit: BigInt(limits.count) })
-  }
-  return dimensions
 }
 
 /** Floor a bigint at zero. */
