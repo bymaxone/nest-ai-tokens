@@ -59,11 +59,12 @@ export function windowKey(budgetId: string, windowStart: Date): string {
  * The live-counter key for one dimension (§10.8 scheme).
  *
  * Injective, and only because of three facts a future edit can remove: no member of
- * {@link COUNTER_DIMENSIONS} is a suffix of another, `toISOString()` emits a
- * fixed-length tail, and in its 27-character form the character 25 positions from the
- * end is always a year digit rather than the delimiter a collision would need. All
- * three are asserted in `budget.keys.spec.ts`; changing the delimiter, the timestamp
- * format, or adding a dimension that ends with an existing one breaks the property.
+ * {@link COUNTER_DIMENSIONS} contains the `:` delimiter, so the dimension is whatever
+ * follows the last `:`; `toISOString()` emits a fixed-length tail; and in its
+ * 27-character form the character 25 positions from the end is always a year digit
+ * rather than the delimiter a collision would need. All three are asserted in
+ * `budget.keys.spec.ts`; changing the delimiter, the timestamp format, or adding a
+ * dimension that contains `:` breaks the property.
  *
  * @param budgetId The budget id (caller-supplied; may contain any character).
  * @param windowStart The window start.
