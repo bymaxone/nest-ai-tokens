@@ -6,6 +6,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.1.1] - 2026-10-23
+
+### Fixed
+
+- **A failed expired-hold scan no longer crashes the process.** `HoldReaper` read the
+  expired holds outside any `try`, and its interval callback discarded the promise
+  `sweep()` returned. A database error during that read — a failover or a dropped
+  connection — became an unhandled rejection, which terminates Node in every process that
+  loads the module. The scan is now guarded: a failure is logged once under the stable key
+  `ai_tokens.hold_reaper.scan_failed` with the error's `name`, `message` and string/number
+  `code` only, and the sweep ends; the next tick retries. Every timer-driven sweep also
+  carries a `catch` (logged as `ai_tokens.hold_reaper.sweep_failed`), so no rejection from
+  `sweep()` can escape the interval. Per-hold isolation, the multi-replica claim, `unref()`
+  and shutdown are unchanged. (#108)
+
+  **Apply to a derived backend:** a consumer that wrapped its store's `findExpiredHolds`
+  in a local guard (catching the error and returning `[]`) to survive this can drop that
+  guard once it runs 1.1.1. The reaper now absorbs and logs the failure itself.
+
+### Security
+
+- Advisories on transitive **dev** packages are cleared through `pnpm-workspace.yaml`
+  overrides: handlebars, proxy-addr, multer, undici, @grpc/grpc-js, fast-uri, js-yaml and
+  brace-expansion (#109); fast-uri and qs (#87); browserslist and mysql2 (#85);
+  deepmerge-ts (#80). osv-scanner reports no issues on the lockfile. None of these reach a
+  consumer install: the package has no runtime dependencies.
+
+### Changed
+
+- The budget counter-key construction moved to its own module, and its injectivity is
+  now asserted in tests: the keys are built from a caller-supplied `budgetId` and a
+  caller-chosen timestamp, and the specs fail if a field is reordered or a delimiter
+  changes. `COUNTER_DIMENSIONS` is the single runtime list the dimension type derives
+  from. No exported type or value changed. (#91)
+- Dev dependencies and CI actions updated (#79, #83, #111, and the pinned-action bumps). The
+  mutation gate now runs every spec rather than only Jest's related tests, which had silently
+  dropped specs reaching the code through helpers under `test/` (#112).
+- Published artifact: every `.d.ts` is byte-identical to 1.1.0, and so are the `shared`,
+  `prisma`, `redis` and `prices` bundles. Only the `server` bundle changed, from 38,204 to
+  38,417 B brotli, inside its 40,000 B budget.
+
 ## [1.1.0] - 2026-08-11
 
 ### Changed
@@ -226,6 +267,7 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
 [1.1.0]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...v1.1.0
+[1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...HEAD
