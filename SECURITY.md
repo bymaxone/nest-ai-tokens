@@ -5,7 +5,9 @@
 | Version | Supported |
 | ------- | --------- |
 | 1.1.x   | ✅ Active |
-| 1.0.x   | ✅ Active |
+| 1.0.x   | ❌ No support — upgrade to 1.1.x |
+
+Only the latest minor line receives security fixes.
 
 ## Reporting a vulnerability
 

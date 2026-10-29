@@ -25,6 +25,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   `osv-scanner.toml` until 2027-01-27. None of these reach a consumer install: the package
   has no runtime dependencies.
 
+### Documentation
+
+- `SECURITY.md`: only the latest minor line (1.1.x) receives security fixes; 1.0.x is
+  unsupported and consumers should upgrade.
+
 ## [1.1.1] - 2026-10-23
 
 ### Fixed
