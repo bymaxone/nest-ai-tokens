@@ -412,7 +412,8 @@ not the control.
 sanctioned conversions are `floatUsdToNanoUsd` at provider ingress and `formatNanoUsd` /
 `toJsonSafe` at display and JSON egress. A reviewer used to "avoid floating point where it matters"
 will accept a `number` that round-trips correctly in a test; it is still a defect, because the
-ledger is hash-chained and a value that differs by one nano breaks the chain rather than rounding.
+ledger is immutable and hash-chained: a cost that is one nano off at insert is hashed as-is, so the
+chain still verifies and the wrong billed amount can only be reversed, never rounded away or corrected in place.
 
 ### `limit = 0` and "no budget row" are opposite, not equivalent
 

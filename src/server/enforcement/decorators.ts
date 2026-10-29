@@ -2,7 +2,7 @@
  * @fileoverview The controller-level metering/enforcement decorators (spec §11.4).
  * `@Meter` marks a handler for the `MeteringInterceptor` and is metadata-only
  * here; `@RequireBudget` marks it for the `BudgetGuard`; `@AiFeature`
- * is a lightweight feature tag. Each stores its config under an exported symbol key
+ * is a lightweight feature tag. Each stores its config under an exported string key
  * that the guard/interceptor read via the NestJS `Reflector`. Feature precedence is
  * `@RequireBudget.feature` > `@Meter.feature` > `@AiFeature` (§11.4). These are pure
  * metadata; they never touch a wallet, budget, or the request.

@@ -113,10 +113,10 @@ export class WalletService {
   ) {}
 
   /**
-   * The current balance, excluding not-yet-effective and expired grants (§9.2).
-   * Reads the materialized balance; expiry is applied lazily on debit, so a grant
-   * that lapses purely with the passage of time is reflected at the next debit or
-   * `reconcile` (the documented §9.3 lazy-materialization trade-off).
+   * The current balance (§9.2). Reads the materialized balance; expiry is applied
+   * lazily on debit, so a grant that lapses purely with the passage of time is still
+   * counted until the next debit or `reconcile` (the documented §9.3
+   * lazy-materialization trade-off).
    *
    * @param ref The wallet owner (a `'tenant' | 'team' | 'user'`, never `'key'`).
    * @returns The nano-USD balance and its presentation credits.
@@ -318,7 +318,7 @@ export class WalletService {
    * `ai_tokens.audit`.
    *
    * @param ref The wallet owner.
-   * @returns The reconciled wallet.
+   * @returns The reconciled nano-USD balance and its presentation credits.
    */
   async reconcile(ref: WalletRef): Promise<WalletBalance> {
     this.assertOwner(ref)

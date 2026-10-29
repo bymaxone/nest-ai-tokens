@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [Unreleased]
+
 ## [1.1.1] - 2026-10-23
 
 ### Fixed
@@ -62,7 +64,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.0.4] - 2026-08-10
 
-Remediation of a local audit's settlement findings (merged in #65). No API changed.
+Remediation of a local audit's settlement findings (merged in #65). No API changes.
 
 ### Fixed
 
