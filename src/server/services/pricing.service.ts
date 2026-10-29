@@ -76,8 +76,8 @@ export class PricingService implements OnModuleInit {
     const operation = input.operation === 'responses' ? 'chat' : input.operation
     // Stryker disable next-line ArithmeticOperator: * instead of /: changes bucket to input.at.getTime() * cacheTtlMs (huge number), but since both calls use the same input.at, the cache key is still consistent across calls → cache still hits; only observable if two different input.at values are deliberately straddled across a bucket boundary, which no test does
     const bucket = Math.floor(input.at.getTime() / this.options.pricing.cacheTtlMs)
-    // Stryker disable next-line LogicalOperator,StringLiteral: && instead of ?? on baseModel: if baseModel is undefined, `undefined && ''` = undefined (not ''); both end up as falsy string in the cache key, observable only if the key encoding matters, which tests don't check
-    const cacheKey = `${input.provider}|${input.model}|${input.baseModel ?? ''}|${operation}|${serviceTier}|${String(bucket)}`
+    // A JSON array escapes every string field, so no character inside provider, model or baseModel can move the boundary between fields.
+    const cacheKey = JSON.stringify([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
 
     let resolved: PriceVersion | null
     const cached = this.cache.get(cacheKey)

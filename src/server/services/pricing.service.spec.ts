@@ -302,6 +302,29 @@ describe('PricingService.resolveRate', () => {
     await service.resolveRate({ provider: 'openai', model: 'gpt-5', operation: 'chat', at: AT })
     expect(spy.mock.calls.length).toBeGreaterThan(afterFirst) // refreshed
   })
+
+  /**
+   * Two different requests must never share a cache entry: a `|` inside a field cannot
+   * move the boundary between fields. `model: 'b|c'` with no baseModel and `model: 'b'`
+   * with `baseModel: 'c|'` spell the same text when the fields are joined with `|`, and
+   * each must still resolve its own row.
+   */
+  it('keeps requests whose joined fields would read the same apart', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'b|c', operation: 'chat', inputNanoUsdPerMillion: 1_000_000_000n })
+    await seed(store, { provider: 'openai', model: 'b', operation: 'chat', inputNanoUsdPerMillion: 2_000_000_000n })
+    const service = new PricingService(options(), store)
+    const first = await service.resolveRate({ provider: 'openai', model: 'b|c', operation: 'chat', at: AT })
+    const second = await service.resolveRate({
+      provider: 'openai',
+      model: 'b',
+      operation: 'chat',
+      at: AT,
+      baseModel: 'c|',
+    })
+    expect(first?.model).toBe('b|c')
+    expect(second?.model).toBe('b')
+  })
 })
 
 describe('PricingService.upsertPrice / getPriceHistory', () => {
