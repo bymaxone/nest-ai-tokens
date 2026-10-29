@@ -8,6 +8,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`PricingService.resolveRate` no longer serves one request's price to another.** The
+  resolution cache key joined provider, model, baseModel, operation, tier and time bucket
+  with `|`, which can also appear inside a model id. Two different requests could spell the
+  same key — `model: 'b|c'` with no `baseModel` against `model: 'b'` with `baseModel: 'c|'` —
+  and the second received the first's rate from the cache. The key is now a JSON array of
+  the fields, so no value can move the boundary between them.
+
 ### Security
 
 - Advisories on transitive **dev** packages are cleared through `pnpm-workspace.yaml`
