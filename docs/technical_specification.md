@@ -1983,7 +1983,7 @@ Following the family (`@bymax-one/nest-storage`, `nest-queue`): the target is `"
 
 ## 19. Implementation Phases
 
-> **Testing strategy:** TDD per phase. Each phase delivers services + unit tests with **100% line/branch coverage on every file implemented in the phase** (Bymax lib floor); the published artifact is additionally gated at 100% global by `jest.coverage.config.ts` (run via `prepublishOnly`). Phase 4 adds e2e against real PostgreSQL (+ Redis) via Testcontainers; Phase 5 runs mutation testing (Stryker, break 95). All money math is bigint — property-based tests (`fast-check`) assert no drift across large accumulations and that markup/tier/surcharge composition is exact.
+> **Testing strategy:** TDD per phase. Each phase delivers services + unit tests with **100% line/branch coverage on every file implemented in the phase** (Bymax lib floor); the published artifact is additionally gated at 100% global by `jest.coverage.config.ts` (run via `prepublishOnly`). Phase 4 adds e2e against real PostgreSQL (+ Redis) via Testcontainers; Phase 5 runs mutation testing (Stryker, break 100). All money math is bigint — property-based tests (`fast-check`) assert no drift across large accumulations and that markup/tier/surcharge composition is exact.
 
 ### 19.1 Overview
 

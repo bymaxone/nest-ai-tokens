@@ -134,9 +134,9 @@ Two composable channels (spec §12.1):
 
 ## Testing strategy
 
-- **Unit:** Jest, 100% line/branch per implemented file (655 tests). Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
+- **Unit:** Jest, 100% line/branch per implemented file. Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
 - **E2E:** Testcontainers (PostgreSQL 16 + Redis 7). 10 scenarios: record/hold/capture/release, streaming, wallets, budgets, reporting, multi-tenant isolation. One `GenericContainer` set at a time — never concurrent.
-- **Mutation:** Stryker (break 95). Critical paths: cost engine, model resolution, ledger state machine, conditional debit/consume, window anchoring.
+- **Mutation:** Stryker (break 100); scope is `mutate` in `stryker.config.json`.
 
 ---
 
@@ -412,7 +412,8 @@ not the control.
 sanctioned conversions are `floatUsdToNanoUsd` at provider ingress and `formatNanoUsd` /
 `toJsonSafe` at display and JSON egress. A reviewer used to "avoid floating point where it matters"
 will accept a `number` that round-trips correctly in a test; it is still a defect, because the
-ledger is hash-chained and a value that differs by one nano breaks the chain rather than rounding.
+ledger is immutable and hash-chained: a cost that is one nano off at insert is hashed as-is, so the
+chain still verifies and the wrong billed amount can only be reversed, never rounded away or corrected in place.
 
 ### `limit = 0` and "no budget row" are opposite, not equivalent
 
@@ -426,3 +427,7 @@ Calling `capture(hold, usage)` twice settles with the first actuals and returns 
 record. A caller that adds a "have we captured this already?" check is not being careful, it is
 duplicating a guarantee and creating a second source of truth. The shared block's rule against
 swallowing errors does not license the defensive check here.
+
+## Session memory (Obsidian vault)
+
+Lessons from earlier sessions live outside the repository, in the owner's Obsidian vault at `~/Documents/MyApps/obsidian/Brain/`, when it is present on this machine. Before a task, find this repository's hub under `02 - Areas/`: the table in `02 - Areas/Bymax/Bymax.md` maps each Bymax repository to its folder; for any other repository, search `02 - Areas/` for the repository name. Read the hub with its `Learnings.md` and `Decisions.md`, and the relevant stack notes under `03 - Resources/`. When the vault and the code disagree, the code wins. Record each non-obvious gotcha, root cause or decision in the hub as the vault's `_meta/conventions.md` describes; a repository without a hub gets one from `_meta/templates/project-hub.md`.

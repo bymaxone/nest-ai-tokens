@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- Advisories on transitive **dev** packages are cleared through `pnpm-workspace.yaml`
+  overrides: body-parser, multer, qs and zod (#115). deepmerge GHSA-gcqx-w48m-w2h4 has no
+  patched release and is reached only through `jest-config`, so it is ignored in
+  `osv-scanner.toml` until 2027-01-27. None of these reach a consumer install: the package
+  has no runtime dependencies.
+
 ## [1.1.1] - 2026-10-23
 
 ### Fixed
@@ -62,7 +72,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.0.4] - 2026-08-10
 
-Remediation of a local audit's settlement findings (merged in #65). No API changed.
+Remediation of a local audit's settlement findings (merged in #65). No API changes.
 
 ### Fixed
 
