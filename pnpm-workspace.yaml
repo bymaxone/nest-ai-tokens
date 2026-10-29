@@ -37,6 +37,10 @@ overrides:
   'brace-expansion@1': '^1.1.21'
   'brace-expansion@2': '^2.1.7'
   'brace-expansion@5': '^5.0.12'
+  # GHSA-27r3-jxmh-p828 (CVSS 7.5) — fixed in 2.4.0. Reached through express under the
+  # dev-only @nestjs/platform-express; express's caret range admits the fix without
+  # requiring it, so this floor is what forces it.
+  'body-parser@2': '^2.4.0'
   # GHSA-ggr8-5vv4-36mx (CVSS 8.2) — merging two records that both self-reference
   # at the same key recurses without cycle detection until the stack is exhausted.
   # Reached transitively through @prisma/config, which parses prisma.config.ts, so
@@ -67,11 +71,12 @@ overrides:
   # ts-jest; build-time only.
   'handlebars': '^4.7.10'
   # GHSA-535w-7cp7-47q4, GHSA-qfvm-cv95-jqjf and GHSA-wc9g-mqfw-jrwm (CVSS 7.5 each),
-  # GHSA-3pph-fpjx-jg34 and GHSA-qvfw-j98x-7q72; the last fix is in 2.4.0.
+  # GHSA-3pph-fpjx-jg34 and GHSA-qvfw-j98x-7q72, then GHSA-q7qp-rjg7-q26m (CVSS 7.5);
+  # the last fix is in 2.5.0.
   # @nestjs/platform-express pins multer to an exact version, so only an override can
   # lift it. A caret, not an exact pin: an exact pin would refuse the next fix the same
   # way. platform-express is a devDependency here, not a peer.
-  'multer': '^2.4.0'
+  'multer': '^2.5.0'
   # GHSA-jqcg-44mw-7w3h (CVSS 9.1) — fixed in 2.0.8. Reached through express under the
   # dev-only @nestjs/platform-express. Express's own caret range admits the fixed
   # release without requiring it, so this floor is what forces it.
@@ -98,9 +103,15 @@ overrides:
   # Fixed in 6.16.0. This entry was an exact pin at 6.15.2 carried over from the
   # initial scaffold; an exact pin refuses the fix rather than merely failing to
   # require it, so it is a caret now, matching the other security floors here.
-  'qs': '^6.16.0'
+  # GHSA-6pq8-jhm2-2vcw (CVSS 6.3) — fixed in 6.16.1, which the ^6.16.0 floor admitted
+  # but did not require. Reached through body-parser under the dev-only
+  # @nestjs/platform-express.
+  'qs': '^6.16.1'
   # Eleven advisories are first fixed in 8.10.2; the most severe are
   # GHSA-rfgv-xxqx-mfg5 (CVSS 7.5), GHSA-w293-vg96-wgc3 and GHSA-vp8m-p9jh-q5pm
   # (CVSS 7.4 each).
   'undici': '^8.10.2'
   'uuid': '11.1.1'
+  # GHSA-mrhx-c7xc-m3w5 (CVSS 8.2) — fixed in 4.6.6. Reached through
+  # mutation-server-protocol under @stryker-mutator/core; build-time only.
+  'zod@4': '^4.6.6'
