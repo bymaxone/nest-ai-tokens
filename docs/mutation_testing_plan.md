@@ -4,7 +4,7 @@
 
 Mutation testing uses [Stryker Mutator](https://stryker-mutator.io/) to validate that the test suite has sufficient sensitivity to detect realistic source-code defects.  A mutant that survives (is not killed by any test) exposes either a gap in the test suite or a provably equivalent variant that must be justified.
 
-The threshold is **break 95** — a mutation score below 95% fails the build.
+The threshold is **break 100** — any mutation score below 100% fails the build.
 
 ## Why mutation testing at release
 
@@ -36,7 +36,7 @@ The threshold is **break 95** — a mutation score below 95% fails the build.
     "!src/server/errors/ai-tokens-error-status.ts",
     "!src/shared/constants/**"
   ],
-  "thresholds": { "high": 100, "low": 95, "break": 95 },
+  "thresholds": { "high": 100, "low": 100, "break": 100 },
   "concurrency": 1
 }
 ```

@@ -84,7 +84,7 @@ The ledger stores token counts, model identifiers, cost, and IDs. Prompt and com
 ## Key commands
 
 ```bash
-pnpm test              # unit tests (824 tests, 100% coverage)
+pnpm test              # unit tests (100% coverage)
 pnpm test:e2e          # Testcontainers e2e (requires Docker)
 pnpm test:cov          # coverage report
 pnpm typecheck         # tsc --noEmit on all configs

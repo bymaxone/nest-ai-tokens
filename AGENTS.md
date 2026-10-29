@@ -134,7 +134,7 @@ Two composable channels (spec §12.1):
 
 ## Testing strategy
 
-- **Unit:** Jest, 100% line/branch per implemented file (655 tests). Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
+- **Unit:** Jest, 100% line/branch per implemented file. Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
 - **E2E:** Testcontainers (PostgreSQL 16 + Redis 7). 10 scenarios: record/hold/capture/release, streaming, wallets, budgets, reporting, multi-tenant isolation. One `GenericContainer` set at a time — never concurrent.
 - **Mutation:** Stryker (break 95). Critical paths: cost engine, model resolution, ledger state machine, conditional debit/consume, window anchoring.
 
