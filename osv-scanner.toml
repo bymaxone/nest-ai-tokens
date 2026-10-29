@@ -1,0 +1,5 @@
+# deepmerge <=4.3.1 has no patched release. Re-evaluate on the date below.
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-01-27T00:00:00Z
+reason = "deepmerge <=4.3.1 (prototype poisoning in mergeObject) has no patched release. Reached only through jest-config (test tooling, devDependency); not in the published package. Remove when a fixed deepmerge ships or jest drops it."
