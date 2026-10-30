@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-30
+
 ### Fixed
 
 - **`PricingService.resolveRate` no longer serves one request's price to another.** The
@@ -15,7 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   with `|`, which can also appear inside a model id. Two different requests could spell the
   same key — `model: 'b|c'` with no `baseModel` against `model: 'b'` with `baseModel: 'c|'` —
   and the second received the first's rate from the cache. The key is now a JSON array of
-  the fields, so no value can move the boundary between them.
+  the fields, so no value can move the boundary between them. (#117)
+
+  **Apply:** no action required. Requests whose model names contain `|` now resolve their
+  own price instead of a colliding entry's.
 
 ### Security
 
@@ -291,7 +296,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.0...v1.0.1
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
 [1.1.0]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...v1.1.0
+[1.1.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...HEAD
