@@ -8,6 +8,7 @@
 
 /** Every error code the library can raise, mapped to itself for value access. */
 export const AI_TOKENS_ERROR_CODES = {
+  /** Reserved: nothing raises it. Nest resolves the async options before it builds any service. */
   AI_TOKENS_NOT_CONFIGURED: 'AI_TOKENS_NOT_CONFIGURED',
   AI_TOKENS_INVALID_CONFIG: 'AI_TOKENS_INVALID_CONFIG',
   AI_TOKENS_UNKNOWN_PROVIDER: 'AI_TOKENS_UNKNOWN_PROVIDER',

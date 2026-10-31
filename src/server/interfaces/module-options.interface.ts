@@ -146,7 +146,20 @@ export interface BymaxAiTokensModuleOptionsFactory {
  * yet wired; the contract is defined here).
  */
 export interface BymaxAiTokensModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
-  useFactory?: (...args: unknown[]) => BymaxAiTokensModuleOptions | Promise<BymaxAiTokensModuleOptions>
+  /**
+   * Factory returning the module options. Its parameters are whatever `inject` resolves to, so
+   * declare them with the types you expect:
+   *
+   * ```ts
+   * useFactory: (config: ConfigService) => ({ store: new PrismaAiTokensStore(prisma) })
+   * ```
+   *
+   * Declared with method syntax on purpose: that makes the parameters bivariant, so a factory
+   * with typed parameters is accepted where `(...args: unknown[])` would reject it. Nest resolves
+   * the arguments from `inject` at run time, so no signature can make them statically safe, and
+   * method syntax keeps the factory callable, which a `never[]` rest parameter would not.
+   */
+  useFactory?(...args: unknown[]): BymaxAiTokensModuleOptions | Promise<BymaxAiTokensModuleOptions>
   inject?: readonly (string | symbol | Type<unknown>)[]
   useExisting?: Type<BymaxAiTokensModuleOptionsFactory>
   useClass?: Type<BymaxAiTokensModuleOptionsFactory>
