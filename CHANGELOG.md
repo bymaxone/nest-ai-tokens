@@ -32,7 +32,7 @@ snapshot. Run the two queries under the seed entry below to look for affected ro
   call, with a type that said `WalletService`. It now injects a stand-in whose methods throw
   `AI_TOKENS_INVALID_CONFIG`; the reason names the missing options block, `wallets` or
   `budgets`. The stand-in is an instance of the service's class, so provider-discovery libraries
-  (queue processors, schedulers, event listeners) can inspect it like any other provider. `forRoot` is unchanged: it does not register a disabled service.
+  can inspect it like any other provider. `forRoot` is unchanged: it does not register a disabled service.
 
   **Apply:** code that tested the injected service for `null` to detect a disabled feature must
   check its own options instead.
