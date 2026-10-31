@@ -8,6 +8,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Documentation
+
+- **The README now matches the code.** The configuration table gave the wrong default for
+  `pricing.seedFromSnapshot` (`true`, not `false`), `budgets.defaultPolicy` (`'block'`, not
+  `'alert'`) and `holds.ttlSeconds` (`3600`, not `300`), and gave no default for
+  `wallets.creditRateNanoUsd` (`1_000_000_000n`). It told readers to pass an
+  `OtelTelemetrySink` that the library does not ship; the option is `telemetry.sink`, which
+  takes your own `ITelemetrySink`, next to `telemetry.metrics`. The Bedrock preset is
+  `providerPresets.bedrock`, not `providerPresets.bedrockConverse`. The artifact-size table,
+  the stack list (it named a `ConfigurableModuleBuilder` the module does not use) and the
+  `AI_TOKENS_PRICE_NOT_FOUND` description (it counted resolution steps) were corrected too.
+
 ## [1.1.2] - 2026-10-30
 
 ### Fixed
