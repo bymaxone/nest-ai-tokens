@@ -17,9 +17,9 @@ const DISABLED = Symbol('bymax.ai-tokens.disabled-service')
  * `instanceof`, `toString`, `JSON.stringify` and every probe a provider-discovery library makes
  * (`Reflect.getOwnMetadata(key, instance.constructor)`, lifecycle hooks, `then`) behave as they do
  * for any provider. Only the methods the class defines are replaced, each with one that throws
- * `AI_TOKENS_INVALID_CONFIG` naming the missing options block. A proxy answering `undefined` for
- * `constructor` made discovery libraries throw at boot, which is why this is an object rather than a
- * proxy. It is built without running the constructor, which needs the stores the feature lacks.
+ * `AI_TOKENS_INVALID_CONFIG` naming the missing options block. Provider discovery requires
+ * `instance.constructor` to be a valid metadata target, so the stand-in keeps the service's own
+ * prototype. It is built without running the constructor, which needs the stores the feature lacks.
  *
  * @param service The class being stood in for (its prototype names the methods).
  * @param block The options block that enables it, for the error message.
