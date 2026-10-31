@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-31
+
+**Billing:** if you set prices with `upsertPrice` for a model the snapshot also prices while
+`pricing.seedFromSnapshot` was on, a restart of an earlier version could replace them with the
+snapshot. Run the two queries under the seed entry below to look for affected rows.
+
 ### Fixed
 
 - **`forRootAsync({ useFactory })` accepts a factory with typed parameters.** The declared
@@ -390,7 +396,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.1...v1.0.2
 [1.1.0]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...v1.1.0
 [1.1.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...v1.1.2
+[1.1.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...v1.1.3
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...HEAD
