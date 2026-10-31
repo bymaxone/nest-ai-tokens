@@ -602,8 +602,39 @@ function scaffoldConsumer() {
     )}\n`,
   )
   // The names a snippet uses without introducing them, typed for real so a call
-  // made through one is checked instead of silently resolving to `any`.
-  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.d.ts'))
+  // made through one is checked instead of silently resolving to `any`. Copied with a
+  // `.ts` extension: the repository tsconfig sets `skipLibCheck`, a declaration file is
+  // never diagnosed, and a prelude type that stopped resolving would turn into `any`
+  // without a word.
+  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.ts'))
+}
+
+/**
+ * Where a snippet leaves an argument, an element or a property out with a bare `...`, as
+ * the positions of the diagnostics the parser reports for it. The parse tree decides, not
+ * the text: regular expressions, template literals, JSX text, comments and strings are
+ * already resolved there, so none of them can pass for an elision. An elision is a spread
+ * whose expression is missing, and the parser reports the missing expression at the next
+ * token, which is where the position is taken. Returns `line:column` keys, both 1-based,
+ * in the numbering of the compiled text.
+ */
+function elisionPositions(code, ext) {
+  const kind = ext === 'tsx' ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const file = ts.createSourceFile('snippet', code, ts.ScriptTarget.Latest, true, kind)
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, file.languageVariant, code)
+  const positions = new Set()
+  const visit = (node) => {
+    const spread = node.kind === ts.SyntaxKind.SpreadElement || ts.isSpreadAssignment(node)
+    if (spread && node.expression.pos === node.expression.end) {
+      scanner.resetTokenState(node.expression.pos)
+      scanner.scan()
+      const { line, character } = file.getLineAndCharacterOfPosition(scanner.getTokenStart())
+      positions.add(`${String(line + 1)}:${String(character + 1)}`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return positions
 }
 
 // ---------------------------------------------------------------------------
@@ -636,20 +667,33 @@ function checkSnippets() {
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
+  /** file name → positions of the bare-ellipsis elisions in what was compiled. */
+  const elisions = new Map()
   subjects.forEach(({ ext, raw, code }, i) => {
     const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
     // The abbreviated-type check below reads what the author wrote, not the header
     // this script added, which names every public type.
     sources.set(name, raw)
+    elisions.set(name, elisionPositions(code, ext))
     writeFileSync(join(GATE_DIR, name), code)
   })
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
-  // undeclared name is an error. What is still not held against a snippet is a
-  // parse-level elision (`…`, a bare `return`) and a peer package the fixture does
-  // not install; those are counted and reported, never dropped silently.
-  const CONTEXT_ONLY = new Set(['TS1108', 'TS1109'])
+  // undeclared name is an error. Held against a snippet are neither the parse error a
+  // bare `...` elision leaves in an argument, element or property position nor an
+  // optional peer the fixture does not install; those are counted and reported, never
+  // dropped silently.
+  const PARSE_ELISION = new Set(['TS1108', 'TS1109'])
+  const fileOf = (line) => (/^([^(]+)\(/.exec(line)?.[1] ?? '').split(/[\\/]/).pop() ?? ''
+  /** Whether a parse diagnostic is the one the parser reports for an elision. Decided by
+   * the diagnostic's own position, so an ellipsis elsewhere in the snippet, or on the same
+   * line, says nothing about a missing expression somewhere else. */
+  const isParseElision = (line) => {
+    if (!PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1])) return false
+    const at = /\((\d+),(\d+)\)/.exec(line)
+    return at !== null && (elisions.get(fileOf(line))?.has(`${at[1]}:${at[2]}`) ?? false)
+  }
   /** `Property 'x' does not exist on type 'Y'` is an API defect when `Y` comes
    * from the package, and snippet noise when `Y` is a class the snippet declares
    * itself and abbreviates — a README example routinely writes `this.repo`
@@ -688,10 +732,7 @@ function checkSnippets() {
     const lines = compileGate()
     if (process.env.GATE_DEBUG) console.log(lines.join('\n'))
     const real = lines.filter(
-      (l) =>
-        !CONTEXT_ONLY.has((/error (TS\d+)/.exec(l) ?? [])[1]) &&
-        !isOptionalPeer(l) &&
-        !isAbbreviatedLocalType(l, sources),
+      (l) => !isParseElision(l) && !isOptionalPeer(l) && !isAbbreviatedLocalType(l, sources),
     )
     const context = lines.length - real.length
     if (real.length > 0) {
@@ -703,7 +744,7 @@ function checkSnippets() {
     console.log(
       `  snippets: ${subjects.length} README snippets compiled against dist/` +
         (context > 0
-          ? ` (${context} diagnostic(s) ignored: an abbreviated local class, an optional peer the fixture does not install, or a parse-level elision)`
+          ? ` (${context} diagnostic(s) ignored: an abbreviated local class, an optional peer the fixture does not install, or a bare ellipsis)`
           : ''),
     )
   } finally {
