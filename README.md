@@ -192,8 +192,8 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
     BymaxAiTokensModule.forRootAsync({
       imports: [PrismaModule],
       inject: [PrismaService],
-      useFactory: (prisma: unknown) => ({
-        store: new PrismaAiTokensStore(prisma as PrismaService),
+      useFactory: (prisma: PrismaService) => ({
+        store: new PrismaAiTokensStore(prisma),
         // The resale lever — end-users pay 4× provider cost:
         markup: 4.0,
         wallets: { creditRateNanoUsd: 5_000_000_000n }, // 1 credit = $5
@@ -326,8 +326,8 @@ The fundamental difference between "what the provider charged you" and "what you
 ```typescript
 // Configure at module level:
 BymaxAiTokensModule.forRootAsync({
-  useFactory: (prisma: unknown) => ({
-    store: new PrismaAiTokensStore(prisma as PrismaService),
+  useFactory: (prisma: PrismaService) => ({
+    store: new PrismaAiTokensStore(prisma),
     markup: 4.0, // 4× resale margin
     wallets: { creditRateNanoUsd: 5_000_000_000n }, // sell credits at $5 each
   }),
@@ -491,7 +491,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 
 | Code                             | HTTP | When                                                                                  |
 | -------------------------------- | ---- | ------------------------------------------------------------------------------------- |
-| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Service invoked before async init completed                                           |
+| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it                                                           |
 | `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                      |
 | `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                       |
 | `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                       |

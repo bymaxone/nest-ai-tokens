@@ -7,6 +7,7 @@ import {
   normalizeOpenAiCompatibleUsage,
 } from '../shared'
 import type { AiTokensEvent, AiTokensErrorResponse } from '../shared'
+import { AiTokensException as AiTokensExceptionClass } from './errors'
 import type { AiTokensException } from './errors'
 import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
@@ -105,6 +106,12 @@ class ExportConsumer {
     @Inject(WalletService) readonly wallet: WalletService,
     @Inject(BudgetGuard) readonly budgetGuard: BudgetGuard,
   ) {}
+}
+
+/** Injects a service that only exists when its options block is set. */
+@Injectable()
+class WalletConsumer {
+  constructor(@Inject(WalletService) readonly wallet: WalletService) {}
 }
 
 /** A module that imports nothing from the library, relying on its global exports. */
@@ -410,18 +417,65 @@ describe('BymaxAiTokensModule.forRootAsync', () => {
     expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
   })
 
-  /** A disabled feature resolves to null (async cannot gate at definition time); optional ports resolve too. */
-  it('resolves feature services to null when disabled', async () => {
+  /**
+   * Async cannot leave a disabled feature unregistered, so it registers a non-null stand-in that
+   * throws AI_TOKENS_INVALID_CONFIG naming the missing block on use; optional ports still resolve.
+   */
+  it('registers stand-ins that throw a clear config error for disabled features', async () => {
     const tokenizer = { countTokens: () => 1 }
     const moduleRef = await Test.createTestingModule({
       imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeStore(), tokenizer, pricing: { seedFromSnapshot: false } }) })],
     }).compile()
-    expect(moduleRef.get(WalletService, { strict: false })).toBeNull()
-    expect(moduleRef.get(BudgetGuard, { strict: false })).toBeNull()
+    const wallets = moduleRef.get(WalletService, { strict: false })
+    const budgets = moduleRef.get(BudgetService, { strict: false })
+    const guard = moduleRef.get(BudgetGuard, { strict: false })
+    expect(wallets).not.toBeNull()
+    expect(() => wallets.getBalance({ tenantId: 't', ownerType: 'user', ownerId: 'u' })).toThrow(AiTokensExceptionClass)
+    expect(() => budgets.status('t', { type: 'user', id: 'u' })).toThrow(AiTokensExceptionClass)
+    expect(() => guard.canActivate({} as never)).toThrow(AiTokensExceptionClass)
+    try {
+      void wallets.getBalance({ tenantId: 't', ownerType: 'user', ownerId: 'u' })
+    } catch (error) {
+      expect((error as AiTokensException).getResponse()).toMatchObject({
+        error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'wallets not configured: set options.wallets to enable WalletService' } },
+      })
+    }
     expect(moduleRef.get(BYMAX_AI_TOKENS_TOKENIZER, { strict: false })).toBe(tokenizer)
     expect(moduleRef.get(BYMAX_AI_TOKENS_CONTENT_STORE, { strict: false })).toBeNull()
     expect(moduleRef.get(BYMAX_AI_TOKENS_EVENT_SINK, { strict: false })).toBeNull()
     expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /** The stand-ins never reach the module's own wiring: metering still rates and posts without wallets or budgets. */
+  it('keeps metering working when wallets and budgets are disabled', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeLiveStore(), pricing: { seedFromSnapshot: false } }) })],
+    }).compile()
+    await moduleRef.init()
+    await moduleRef.get(PricingService).upsertPrice({
+      provider: 'openai',
+      model: 'gpt-5',
+      operation: 'chat',
+      inputNanoUsdPerMillion: 1_250_000_000n,
+      outputNanoUsdPerMillion: 10_000_000_000n,
+      effectiveFrom: new Date(0),
+    })
+    const record = await moduleRef.get(MeteringService).record({
+      usage: { model: 'gpt-5', usage: { prompt_tokens: 1000, completion_tokens: 500 } },
+      preset: providerPresets.openaiChat,
+      context: { tenantId: 't1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', idempotencyKey: 'k-standin' },
+    })
+    expect(record.billedCostNanoUsd).toBe(6_250_000n)
+  })
+
+  /** forRoot leaves a disabled service unregistered, so injecting it fails at boot with Nest's own error. */
+  it('fails injection of a disabled service at compile time with forRoot', async () => {
+    await expect(
+      Test.createTestingModule({
+        imports: [BymaxAiTokensModule.forRoot({ store: makeStore(), pricing: { seedFromSnapshot: false } })],
+        providers: [WalletConsumer],
+      }).compile(),
+    ).rejects.toThrow(/WalletService/)
   })
 
   /** useClass boots via the factory class. */

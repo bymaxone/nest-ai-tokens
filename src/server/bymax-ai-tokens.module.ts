@@ -38,6 +38,7 @@ import {
   createWalletEventHooks,
 } from './events/event-hooks'
 import { BudgetGuard, MeteringInterceptor } from './enforcement'
+import { disabledService, liveService } from './disabled-service'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type {
   BymaxAiTokensModuleAsyncOptions,
@@ -135,7 +136,7 @@ function buildServiceProviders(): Provider[] {
         wallets?: WalletService | null,
         budgets?: BudgetService | null,
       ): MeteringService =>
-        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), wallets, budgets, undefined, new TelemetryEmitter(telemetrySink), new ContentCapture(options.content)),
+        new MeteringService(ledger, pricing, markup, options, createMeteringEventHooks(dispatcher), liveService(wallets), liveService(budgets), undefined, new TelemetryEmitter(telemetrySink), new ContentCapture(options.content)),
       inject: [
         LedgerService,
         PricingService,
@@ -164,32 +165,32 @@ function buildServiceProviders(): Provider[] {
   ]
 }
 
-/** The wallet service provider — an instance when wallets are enabled, else `null`. */
+/** The wallet service provider — an instance when wallets are enabled, else a stand-in that throws on use. */
 function walletServiceProvider(): Provider {
   return {
     provide: WalletService,
-    useFactory: (options: ResolvedAiTokensOptions, store: IWalletStore, dispatcher: EventDispatcher): WalletService | null =>
-      options.wallets.enabled ? new WalletService(store, options.wallets, createWalletEventHooks(dispatcher)) : null,
+    useFactory: (options: ResolvedAiTokensOptions, store: IWalletStore, dispatcher: EventDispatcher): WalletService =>
+      options.wallets.enabled ? new WalletService(store, options.wallets, createWalletEventHooks(dispatcher)) : disabledService(WalletService, 'wallets'),
     inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_WALLET_STORE, EventDispatcher],
   }
 }
 
-/** The budget service provider — an instance when budgets are enabled, else `null`. */
+/** The budget service provider — an instance when budgets are enabled, else a stand-in that throws on use. */
 function budgetServiceProvider(): Provider {
   return {
     provide: BudgetService,
-    useFactory: (options: ResolvedAiTokensOptions, store: IBudgetStore, ledger: LedgerService, dispatcher: EventDispatcher): BudgetService | null =>
-      options.budgets.enabled ? new BudgetService(store, ledger, options.budgets, undefined, createBudgetEventHooks(dispatcher)) : null,
+    useFactory: (options: ResolvedAiTokensOptions, store: IBudgetStore, ledger: LedgerService, dispatcher: EventDispatcher): BudgetService =>
+      options.budgets.enabled ? new BudgetService(store, ledger, options.budgets, undefined, createBudgetEventHooks(dispatcher)) : disabledService(BudgetService, 'budgets'),
     inject: [BYMAX_AI_TOKENS_OPTIONS, BYMAX_AI_TOKENS_BUDGET_STORE, LedgerService, EventDispatcher],
   }
 }
 
-/** The budget guard provider — an instance when budgets are enabled, else `null`. */
+/** The budget guard provider — an instance when budgets are enabled, else a stand-in that throws on use. */
 function budgetGuardProvider(): Provider {
   return {
     provide: BudgetGuard,
-    useFactory: (options: ResolvedAiTokensOptions, budgets: BudgetService, metering: MeteringService, reflector: Reflector): BudgetGuard | null =>
-      options.budgets.enabled ? new BudgetGuard(budgets, metering, reflector, options) : null,
+    useFactory: (options: ResolvedAiTokensOptions, budgets: BudgetService, metering: MeteringService, reflector: Reflector): BudgetGuard =>
+      options.budgets.enabled ? new BudgetGuard(budgets, metering, reflector, options) : disabledService(BudgetGuard, 'budgets'),
     inject: [BYMAX_AI_TOKENS_OPTIONS, BudgetService, MeteringService, Reflector],
   }
 }
@@ -247,7 +248,7 @@ async function safeResolve(load: Promise<BymaxAiTokensModuleOptions>): Promise<R
 /** Build the `BYMAX_AI_TOKENS_OPTIONS` provider (+ the factory class, for `useClass`) from the async descriptor. */
 function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions): Provider[] {
   if (descriptor.useFactory !== undefined) {
-    const factory = descriptor.useFactory
+    const factory = descriptor.useFactory.bind(descriptor)
     return [
       {
         provide: BYMAX_AI_TOKENS_OPTIONS,
