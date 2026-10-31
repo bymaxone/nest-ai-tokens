@@ -135,7 +135,7 @@ Two composable channels (spec §12.1):
 ## Testing strategy
 
 - **Unit:** Jest, 100% line/branch/function/statement coverage (the global threshold in `jest.config.ts`). Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
-- **E2E:** Testcontainers (PostgreSQL 16 + Redis 7), specs in `test/e2e/`: alias resolution, anchored windows, concurrency, count quotas, idempotency, Prisma migrations, wallets and budgets, the hold reaper, reversal, seed idempotence, stream abort. Jest runs them with `maxWorkers: 1`, so one container set is up at a time.
+- **E2E:** Testcontainers (PostgreSQL 16 + Redis 7), specs in `test/e2e/`. Jest runs them with `maxWorkers: 1`, so one container set is up at a time.
 - **Mutation:** Stryker (break 100); scope is `mutate` in `stryker.config.json`.
 
 ---
