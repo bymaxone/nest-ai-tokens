@@ -24,9 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   `WalletService`, `BudgetService` and `BudgetGuard` even when the options leave them out, and it
   used to inject `null`: a consumer got `TypeError: Cannot read properties of null` at its first
   call, with a type that said `WalletService`. It now injects a stand-in whose methods throw
-  `AI_TOKENS_INVALID_CONFIG` with `wallets not configured: set options.wallets to enable
-WalletService` (or the `budgets` equivalent). The module's own wiring is unchanged and still
-  treats the feature as absent. `forRoot` is unchanged: it does not register a disabled service,
+  `AI_TOKENS_INVALID_CONFIG`; the reason names the missing options block, `wallets` or
+  `budgets`. The module's own wiring is unchanged and still treats the feature as absent. `forRoot` is unchanged: it does not register a disabled service,
   and injecting one fails at boot with Nest's "can't resolve dependencies" error.
 
   **Apply:** code that tested the injected service for `null` to detect a disabled feature must
