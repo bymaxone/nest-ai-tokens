@@ -16,7 +16,7 @@
 
 import { Prisma } from '@prisma/client'
 
-import { PG_UNIQUE_VIOLATION, isUniqueViolation } from './adapter-sql'
+import { PG_UNIQUE_VIOLATION, isUniqueViolation, priceLockKey } from './adapter-sql'
 
 /**
  * Build a known-request error with an arbitrary `meta`, as a driver would.
@@ -88,5 +88,20 @@ describe('isUniqueViolation', () => {
     ['undefined', undefined],
   ])('rejects %s, which no driver produced', (_label, error) => {
     expect(isUniqueViolation(error)).toBe(false)
+  })
+})
+
+describe('priceLockKey', () => {
+  /** Two tuples whose joined text is equal must still lock separately. */
+  it('keeps provider and model apart when one contains the delimiter', () => {
+    expect(priceLockKey('a|b', 'c', 'chat', 'standard')).not.toBe(priceLockKey('a', 'b|c', 'chat', 'standard'))
+  })
+
+  /** The key is a function of the whole tuple, so any differing field changes it. */
+  it('differs when any field differs and repeats for equal tuples', () => {
+    const base = priceLockKey('openai', 'gpt-5', 'chat', 'standard')
+    expect(priceLockKey('openai', 'gpt-5', 'chat', 'standard')).toBe(base)
+    expect(priceLockKey('openai', 'gpt-5', 'chat', 'batch')).not.toBe(base)
+    expect(priceLockKey('openai', 'gpt-5', 'embeddings', 'standard')).not.toBe(base)
   })
 })

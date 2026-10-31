@@ -73,6 +73,7 @@ import {
   mapUsageRow,
   mapWalletEntryRow,
   mapWalletRow,
+  priceLockKey,
   priceValues,
   spendableBalanceSql,
   statusAssignments,
@@ -206,7 +207,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
     const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
     const effectiveFrom = input.effectiveFrom ?? new Date()
-    const key = `${input.provider}|${input.model}|${input.operation}|${serviceTier}`
+    const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
       await tx.$executeRaw(Prisma.sql`
@@ -232,7 +233,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async seedPrice(input: NewPriceVersion): Promise<boolean> {
     const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
     const effectiveFrom = input.effectiveFrom ?? new Date()
-    const key = `${input.provider}|${input.model}|${input.operation}|${serviceTier}`
+    const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
       const existing = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
@@ -274,10 +275,9 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /**
    * Session-scoped advisory lock: the first caller on a connection wins, and the lock is held
-   * until that connection closes, so it is not released at the end of a boot.
+   * until that connection closes, not when a boot ends.
    *
-   * @deprecated The snapshot seed no longer takes it; it relies on {@link seedPrice}, whose
-   * transaction-scoped lock ends with the transaction.
+   * @deprecated Use {@link seedPrice}, which seeds atomically under a transaction-scoped lock.
    */
   async acquireSeedLock(key: string): Promise<boolean> {
     const rows = await this.prisma.$queryRaw<{ acquired: boolean }[]>(
