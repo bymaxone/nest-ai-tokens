@@ -180,6 +180,20 @@ npm i @prisma/adapter-pg
 > moves to a `prisma.config.ts` at your project root. Neither change reaches this
 > library's API — `PrismaAiTokensStore` receives whatever client you built.
 
+#### Create the tables
+
+`PrismaAiTokensStore` needs seven tables, and the package ships what creates them, inside the
+installed package:
+
+- `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0001_init.sql` — the SQL for all
+  seven tables. Apply it with `psql -f` or `prisma db execute --file` before the first boot.
+- `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/schema.prisma.fragment` — the same models
+  for merging into your own Prisma schema if you manage migrations with `prisma migrate`.
+
+The SQL also creates two partial indexes (exactly one open price row per model, and a fast scan
+of pending holds) that a Prisma schema cannot express. If you migrate from the fragment, add them
+yourself.
+
 ### 2 — Register the module
 
 ```typescript
@@ -293,11 +307,17 @@ export class AiController {
 | `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Add seed rows only for combinations with no price row; never changes a price    |
 | `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                    |
 | `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                              |
-| `budgets.defaultPolicy`     | `'block' \| 'alert'`                  | `'block'`        | Default enforcement when a budget is exhausted                                  |
+| `budgets.defaultPolicy`     | `'block' \| 'throttle' \| 'allow'`    | `'block'`        | Default enforcement when a budget is exhausted                                  |
 | `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                        |
 | `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                  |
 | `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it |
 | `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                    |
+
+With `forRootAsync`, the options arrive after the providers are declared, so `WalletService`,
+`BudgetService` and `BudgetGuard` are always registered. When the options leave `wallets` or
+`budgets` out, the injected object throws `AI_TOKENS_INVALID_CONFIG` on any method call, with a
+reason naming the missing block. With `forRoot` they are not registered, so injecting one fails
+when the application boots.
 
 ---
 
@@ -544,6 +564,28 @@ The sections above document each of these with a runnable example. This is the i
 | `UsageReportService`   | `summarize` · `export`                                                                                                               |
 | `StreamUsageCollector` | Accumulates streamed chunks; prefers the provider's final usage over its own count                                                   |
 
+`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`: `{ valid: true }`
+or `{ valid: false, brokenAtRecordId }`. It checks the chain that `ledger.hashChain: true` writes.
+
+### Decorators, helpers and catalogs
+
+| Export                                                                                         | Role                                                                                                                       |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@Meter` · `@RequireBudget` · `@AiFeature(name)`                                               | Handler metadata read by the interceptor and the guard; `@AiFeature` only tags the feature name                            |
+| `deriveIdempotencyKey` · `toJsonSafe` · `formatNanoUsd`                                        | Idempotency key from content, `bigint` to decimal strings for JSON, and display formatting                                 |
+| `floatUsdToNanoUsd` · `perMillion` · `computeCostNanoUsd`                                      | The money math: the only float-to-`bigint` entry, a cost at a nano-USD-per-million rate, and a usage priced against a rate |
+| `applyMarkup` · `resolveMultiplier4dp`                                                         | A markup applied in exact `bigint`, and a multiplier validated and rounded to 4 decimal places                             |
+| `isLegalLedgerTransition` · `isLegalTransitionPatchKey`                                        | The ledger lifecycle rules a custom store can reuse: which status changes and which columns each may touch                 |
+| `PROVIDER_IDS` · `SERVICE_TIERS` · `AI_OPERATIONS` · `TOKEN_CATEGORIES` · `WALLET_ENTRY_TYPES` | The catalogs the types are derived from                                                                                    |
+| `CounterValueOutOfRangeError` (`./redis`)                                                      | Thrown when a counter value leaves the safe-integer range; the budget service then falls back to the database consume      |
+
+### Injection tokens
+
+`BYMAX_AI_TOKENS_OPTIONS` (the resolved options) and the port tokens `BYMAX_AI_TOKENS_LEDGER_STORE`,
+`_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
+`_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. Bind a token yourself to replace one port. The wallet
+and budget tokens exist only when their options block is set (with `forRoot`; `forRootAsync` always exports them).
+
 ### Request-scoped enforcement
 
 | Class                 | Role                                                                                                                                                                                                      |
@@ -668,7 +710,9 @@ There is one place text can be persisted, and it is opt-in: `IContentStore`, the
 sidecar. A host that enables it stores **masked** text under a short TTL, separate from the
 ledger, with a `purge()` that deletes by tenant, record or subject so an erasure request can
 be honoured without touching the accounting. It is off unless you provide a store — and if
-you do, text is being written, and where it is written is your implementation.
+you do, text is being written, and where it is written is your implementation. The library ships
+no `IContentStore` implementation and creates no table for one: you bring the store, its schema
+and its retention job.
 
 ### Budget checks are atomic
 

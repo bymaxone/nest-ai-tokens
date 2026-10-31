@@ -142,8 +142,8 @@ export interface BymaxAiTokensModuleOptionsFactory {
 
 /**
  * Asynchronous configuration for `BymaxAiTokensModule.forRootAsync()` — the
- * standard NestJS async dynamic-module options shape (the async factory is not
- * yet wired; the contract is defined here).
+ * standard NestJS async dynamic-module options shape. One of `useFactory`, `useClass`
+ * or `useExisting` is required, and `useFactory` takes precedence.
  */
 export interface BymaxAiTokensModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
   /**

@@ -28,6 +28,7 @@ export type {
 } from './services'
 export { toJsonSafe } from './utils/to-json-safe'
 export type { JsonSafe } from './utils/to-json-safe'
+export type { ChainVerification } from './utils/hash-chain'
 export { StreamUsageCollector } from './streaming/stream-usage-collector'
 export type { StreamUsageCollectorOptions } from './streaming/stream-usage-collector'
 export { providerPresets } from './config/provider-presets'

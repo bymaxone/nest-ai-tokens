@@ -69,7 +69,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   A row from the second query is a rate you set; re-enter it with `upsertPrice` at its original
   `effectiveFrom`.
 
+### Added
+
+- `ChainVerification`, the result of `LedgerService.verifyChain`, is exported by name from the
+  package root (a type only).
+
 ### Documentation
+
+- **The README says how to create the tables and what the public API is.** The SQL migration and
+  the Prisma schema fragment ship in the package under `dist/prisma/` but were not mentioned; the
+  setup section now names both. The API reference lists the decorators (including `@AiFeature`),
+  the money and ledger helpers, the catalogs, the injection tokens and `CounterValueOutOfRangeError`.
+  The `budgets.defaultPolicy` Type column read `'block' | 'alert'`; the type is
+  `'block' | 'throttle' | 'allow'`, and the defaults spec now pins the Type column of the
+  literal-union options. The content sidecar section states that the library ships no
+  `IContentStore` implementation or table, and the configuration section describes the
+  `forRootAsync` and `forRoot` behaviour for a disabled wallet or budget block. The 1.0.0 entries
+  that named an `OtelTelemetrySink` and a six-step resolution chain were corrected to the code.
 
 - **The README now matches the code.** The configuration table gave the wrong default for
   `pricing.seedFromSnapshot` (`true`, not `false`), `budgets.defaultPolicy` (`'block'`, not
@@ -281,7 +297,7 @@ have regressed from. They are kept because the reasoning is worth having.
 ### Added
 
 - **Nine provider normalizers** — OpenAI Chat Completions, OpenAI Responses API, OpenAI-compatible (DeepSeek, xAI, Groq, Azure OpenAI), Anthropic Messages, Google Gemini / Vertex AI, AWS Bedrock Converse, Mistral, OpenRouter, Vercel AI SDK v5/v6. All are pure functions over plain objects; no provider SDK peer dependency.
-- **Versioned effective-dated pricing** — `PricingService` with a six-step model-resolution chain, in-memory TTL cache, `upsertPrice()`, and idempotent `MODEL_PRICES_SEED` snapshot seed. Rates are bigint nano-USD per million tokens; past records are never re-rated.
+- **Versioned effective-dated pricing** — `PricingService` with a model-resolution chain (exact, `baseModel`, alias map, normalized id, longest prefix), in-memory TTL cache, `upsertPrice()`, and idempotent `MODEL_PRICES_SEED` snapshot seed. Rates are bigint nano-USD per million tokens; past records are never re-rated.
 - **Immutable append-only ledger** — `LedgerService` with content-derived idempotency (`deriveIdempotencyKey`), exactly-once semantics (payload-hash replay detection), lifecycle transitions (pending → posted → reversed/released), filtered queries, and optional per-tenant tamper-evident hash chain (`verifyChain()`).
 - **First-class markup / margin** — `MarkupResolver` with a fixed multiplier or a per-call `IMarkupPolicy`. Every record stores both `rawCostNanoUsd` (provider cost) and `billedCostNanoUsd` (after markup). The resale lever is a first-class configuration option, not application code.
 - **Prepaid wallets** — `WalletService` with grant/debit/refund/adjust entries, configurable burn order (expiry/priority/FIFO), overdraft support, and debit-allocation tracking.
@@ -292,7 +308,7 @@ have regressed from. They are kept because the reasoning is worth having.
 - **NestJS enforcement** — `BudgetGuard` (CanActivate), `MeteringInterceptor` (NestInterceptor), and the `@Meter`, `@RequireBudget`, `@AiFeature` decorators for declarative controller-level metering.
 - **Usage reporting** — `UsageReportService` with SQL-aggregated `summarize()`, CSV/JSON `export()`, paginated history, per-model analytics, and currency conversion.
 - **Events** — Typed domain events (`ai_tokens.*`) delivered to `@nestjs/event-emitter` (optional peer) and/or an `IEventSink` port.
-- **OpenTelemetry** — Optional `ITelemetrySink` / `OtelTelemetrySink` via `@opentelemetry/api` (optional peer).
+- **OpenTelemetry** — The `ITelemetrySink` port, which you implement over `@opentelemetry/api` (optional peer); the library ships no sink and imports nothing from `@opentelemetry/api`.
 - **PostgreSQL adapter** — `PrismaAiTokensStore` (`./prisma` subpath) implementing all four storage ports via parameterized raw SQL. Seven-table schema with migrations.
 - **Five subpaths** — `.` (server), `./shared` (zero-dep), `./prices` (data-only), `./prisma` (adapter), `./redis` (counter).
 - **Zero runtime dependencies** — `"dependencies": {}`. All runtime functionality via peer dependencies.
