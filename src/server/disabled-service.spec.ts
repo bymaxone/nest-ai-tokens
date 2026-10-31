@@ -1,3 +1,5 @@
+import 'reflect-metadata'
+import { inspect } from 'node:util'
 import { AiTokensException } from './errors'
 import { disabledService, liveService } from './disabled-service'
 
@@ -21,18 +23,46 @@ describe('disabledService', () => {
     }
   })
 
-  /** Properties the class does not define read as undefined, so lifecycle and promise checks skip it. */
-  it('reads undefined for anything the class does not define', () => {
+  /** The stand-in is an instance of the service, so `constructor` and `instanceof` are the real ones. */
+  it('has the service as its constructor and prototype', () => {
+    const stub = disabledService(Thing, 'budgets')
+    expect(stub.constructor).toBe(Thing)
+    expect(stub).toBeInstanceOf(Thing)
+  })
+
+  /** Discovery libraries read metadata off `instance.constructor` for every provider; that must not throw. */
+  it('lets Reflect read metadata from its constructor', () => {
+    const stub = disabledService(Thing, 'budgets')
+    expect(() => {
+      Reflect.getOwnMetadata('any-key', stub.constructor)
+    }).not.toThrow()
+  })
+
+  /** Nothing the host probes a provider for runs the throwing methods or reads as present. */
+  it('reads undefined for lifecycle hooks, then, toJSON and iterators', () => {
     const stub = disabledService(Thing, 'budgets') as unknown as {
       onModuleInit?: unknown
+      onApplicationBootstrap?: unknown
+      onModuleDestroy?: unknown
       then?: unknown
-      constructor?: unknown
-      [Symbol.toPrimitive]?: unknown
+      toJSON?: unknown
+      [Symbol.iterator]?: unknown
     }
     expect(stub.onModuleInit).toBeUndefined()
+    expect(stub.onApplicationBootstrap).toBeUndefined()
+    expect(stub.onModuleDestroy).toBeUndefined()
     expect(stub.then).toBeUndefined()
-    expect(stub.constructor).toBeUndefined()
-    expect(stub[Symbol.toPrimitive]).toBeUndefined()
+    expect(stub.toJSON).toBeUndefined()
+    expect(stub[Symbol.iterator]).toBeUndefined()
+  })
+
+  /** Printing, serializing and awaiting it behave as for any plain provider. */
+  it('stringifies, serializes, inspects and awaits without throwing', async () => {
+    const stub = disabledService(Thing, 'wallets')
+    expect(() => Object.prototype.toString.call(stub)).not.toThrow()
+    expect(JSON.stringify(stub)).toBe('{}')
+    expect(() => inspect(stub)).not.toThrow()
+    await expect(Promise.resolve(stub)).resolves.toBe(stub)
   })
 })
 
