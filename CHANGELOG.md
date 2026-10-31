@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- The GitHub Release body is now the tag's own `CHANGELOG.md` section instead of the generated
+  pull-request list, and the release stops before publishing when the version has no section.
+  No change to the package.
+
 ## [1.1.3] - 2026-10-31
 
 **Billing:** if you set prices with `upsertPrice` for a model the snapshot also prices while
