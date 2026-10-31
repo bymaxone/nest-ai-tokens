@@ -10,6 +10,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Fixed
 
+- **`forRootAsync({ useFactory })` accepts a factory with typed parameters.** The declared
+  signature `(...args: unknown[]) => ...` rejected the form Nest code normally writes,
+  `useFactory: (config: ConfigService) => ...`, so every consumer had to take `unknown` and cast.
+  The member is now declared with method syntax, which makes its parameters bivariant, and the
+  variadic form still compiles. No runtime change.
+
+  **Apply:** no action required. A cast such as `(prisma: unknown) => ... prisma as PrismaService`
+  can be replaced by a typed parameter.
+
+- **A disabled wallet, budget or guard service no longer injects as `null` with `forRootAsync`.**
+  `forRootAsync` resolves its options after the providers are declared, so it registers
+  `WalletService`, `BudgetService` and `BudgetGuard` even when the options leave them out, and it
+  used to inject `null`: a consumer got `TypeError: Cannot read properties of null` at its first
+  call, with a type that said `WalletService`. It now injects a stand-in whose methods throw
+  `AI_TOKENS_INVALID_CONFIG`; the reason names the missing options block, `wallets` or
+  `budgets`. `forRoot` is unchanged: it does not register a disabled service.
+
+  **Apply:** code that tested the injected service for `null` to detect a disabled feature must
+  check its own options instead.
+
+- **`AI_TOKENS_NOT_CONFIGURED` is documented as reserved.** Nest finishes resolving the async
+  options before it builds any service, so nothing raises it.
+
 - **A restart no longer reverts prices the host set, and the snapshot seed no longer adds rows.**
   With `pricing.seedFromSnapshot` on (the default), every boot re-ran each seed row through
   `upsertPrice`, which closes the open row of that model and inserts a new one. A second boot
@@ -61,8 +84,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   exist: `wallets.getOrCreate` (the method is `getBalance`, and it returns `nanoUsd` and
   `credits`), `metering.summarize` (it is `UsageReportService.summarize`), `reports.export`
   with a `format` property (the format is the second argument), and a markup policy typed on
-  `MeteringContext` (its `resolve` takes the narrower call context). `useFactory` is now shown
-  with a parameter typed `unknown`, the only form its `(...args: unknown[])` signature accepts.
+  `MeteringContext` (its `resolve` takes the narrower call context).
 
 ## [1.1.2] - 2026-10-30
 
