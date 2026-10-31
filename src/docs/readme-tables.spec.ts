@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_AI_TOKENS_OPTIONS } from '../server/config/default-options.constants'
+import type { BymaxAiTokensModuleOptions } from '../server/interfaces'
+import type { BudgetPolicy, RatingMode } from '../shared'
 
 const README = readFileSync(join(process.cwd(), 'README.md'), 'utf8')
 
@@ -76,6 +78,23 @@ const DOCUMENTED_DEFAULTS = [
   'telemetry.metrics',
 ]
 
+/** Every member of a literal-union option, kept exhaustive by the compiler: a new member fails to compile until it is listed. */
+const MEMBERS: Record<string, string[]> = {
+  ratingMode: Object.keys({ 'rate-table': true, 'provider-reported': true } satisfies Record<
+    RatingMode,
+    true
+  >),
+  'budgets.defaultPolicy': Object.keys({
+    block: true,
+    throttle: true,
+    allow: true,
+  } satisfies Record<BudgetPolicy, true>),
+  'wallets.burnOrder': Object.keys({ expiry: true, priority: true, fifo: true } satisfies Record<
+    NonNullable<NonNullable<BymaxAiTokensModuleOptions['wallets']>['burnOrder']>,
+    true
+  >),
+}
+
 describe('README configuration table', () => {
   const rows = tableAfter('## ⚙️ Configuration')
   const documented = new Map(rows.map((cells) => [code(cells[0]), code(cells[2])]))
@@ -98,5 +117,12 @@ describe('README configuration table', () => {
       .filter((cells) => code(cells[2]) !== undefined)
       .map((cells) => code(cells[0]))
     expect(withDefault.sort()).toEqual([...DOCUMENTED_DEFAULTS].sort())
+  })
+
+  /** The Type column lists every member of a literal-union option, and no other. */
+  it.each(Object.keys(MEMBERS))('lists exactly the members of %s in its Type column', (path) => {
+    const row = rows.find((cells) => code(cells[0]) === path)
+    const listed = [...(row?.[1] ?? '').matchAll(/'([^']+)'/g)].map((match) => match[1])
+    expect(listed.sort()).toEqual([...(MEMBERS[path] ?? [])].sort())
   })
 })

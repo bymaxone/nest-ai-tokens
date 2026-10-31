@@ -1,6 +1,6 @@
 /**
  * @fileoverview `PricingService` — effective-dated rate resolution with the §6.6
- * six-step model-resolution chain, an in-memory TTL cache, price upserts, and the
+ * model-resolution chain, an in-memory TTL cache, price upserts, and the
  * idempotent snapshot seed (§6.3/§6.4). A call is priced at the rate in effect at
  * its timestamp; batch/flex/priority tiers must find their own row (no silent
  * fallback to standard rates).
@@ -31,7 +31,7 @@ export interface ResolveRateInput {
 const SEED_EFFECTIVE_FROM = new Date(0)
 
 /**
- * Effective-dated rate resolution with a six-step model-resolution chain, an
+ * Effective-dated rate resolution with a model-resolution chain, an
  * in-memory TTL cache, price upserts, and idempotent snapshot seed. Past
  * records are never re-rated (point-in-time pricing). See file overview.
  */
@@ -137,7 +137,7 @@ export class PricingService implements OnModuleInit {
     this.cache.clear()
   }
 
-  /** The §6.6 six-step model-resolution chain (exact → baseModel → alias → normalized → prefix). */
+  /** The §6.6 model-resolution chain (exact → baseModel → alias → normalized → prefix). */
   private async resolveUncached(
     provider: ProviderId,
     model: string,
