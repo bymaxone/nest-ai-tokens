@@ -13,9 +13,13 @@ import { AiTokensException } from './errors'
 const DISABLED = Symbol('bymax.ai-tokens.disabled-service')
 
 /**
- * A stand-in for `Service`: every method the class defines throws `AI_TOKENS_INVALID_CONFIG`
- * naming the missing options block; any other property reads as `undefined`, which keeps Nest's
- * lifecycle-hook and promise checks from invoking it.
+ * A stand-in for `Service`: a real object whose prototype is the service's own, so `constructor`,
+ * `instanceof`, `toString`, `JSON.stringify` and every probe a provider-discovery library makes
+ * (`Reflect.getOwnMetadata(key, instance.constructor)`, lifecycle hooks, `then`) behave as they do
+ * for any provider. Only the methods the class defines are replaced, each with one that throws
+ * `AI_TOKENS_INVALID_CONFIG` naming the missing options block. Provider discovery requires
+ * `instance.constructor` to be a valid metadata target, so the stand-in keeps the service's own
+ * prototype. It is built without running the constructor, which needs the stores the feature lacks.
  *
  * @param service The class being stood in for (its prototype names the methods).
  * @param block The options block that enables it, for the error message.
@@ -25,20 +29,17 @@ export function disabledService<Service extends object>(
   service: abstract new (...args: never[]) => Service,
   block: 'wallets' | 'budgets',
 ): Service {
-  const methods = new Set(
-    Object.getOwnPropertyNames(service.prototype).filter((name) => name !== 'constructor'),
-  )
   const fail = (): never => {
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
       reason: `${block} not configured: set options.${block} to enable ${service.name}`,
     })
   }
-  return new Proxy({} as Service, {
-    get: (_target, property) => {
-      if (property === DISABLED) return true
-      return typeof property === 'string' && methods.has(property) ? fail : undefined
-    },
-  })
+  const standIn = Object.create(service.prototype as object) as Service
+  for (const name of Object.getOwnPropertyNames(service.prototype)) {
+    if (name !== 'constructor') Object.defineProperty(standIn, name, { value: fail, enumerable: false })
+  }
+  Object.defineProperty(standIn, DISABLED, { value: true, enumerable: false })
+  return standIn
 }
 
 /** `null` for a stand-in or an absent service, the service itself otherwise. */

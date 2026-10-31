@@ -1,4 +1,5 @@
 import { Inject, Injectable, Module } from '@nestjs/common'
+import { DiscoveryModule, DiscoveryService } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import {
   applyMarkup,
@@ -444,6 +445,28 @@ describe('BymaxAiTokensModule.forRootAsync', () => {
     expect(moduleRef.get(BYMAX_AI_TOKENS_CONTENT_STORE, { strict: false })).toBeNull()
     expect(moduleRef.get(BYMAX_AI_TOKENS_EVENT_SINK, { strict: false })).toBeNull()
     expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+  })
+
+  /**
+   * A provider-discovery library walks every provider and reads metadata from `instance.constructor`
+   * (nest-queue's processor discovery does). A stand-in whose `constructor` is undefined makes
+   * `Reflect.getOwnMetadata` throw and the application fail to boot.
+   */
+  it('boots beside a discovery walk over every provider with the features disabled', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        DiscoveryModule,
+        BymaxAiTokensModule.forRootAsync({ useFactory: () => ({ store: makeStore(), pricing: { seedFromSnapshot: false } }) }),
+      ],
+    }).compile()
+    await moduleRef.init()
+    const providers = moduleRef.get(DiscoveryService).getProviders()
+    const walked = providers.flatMap((wrapper) => {
+      const instance = wrapper.instance as { constructor: object } | null | undefined
+      if (instance === null || instance === undefined || typeof instance !== 'object') return []
+      return [Reflect.getOwnMetadata('discovery-probe', instance.constructor) as unknown]
+    })
+    expect(walked.length).toBeGreaterThan(0)
   })
 
   /** The stand-ins never reach the module's own wiring: metering still rates and posts without wallets or budgets. */

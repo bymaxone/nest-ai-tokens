@@ -31,7 +31,7 @@ snapshot. Run the two queries under the seed entry below to look for affected ro
   used to inject `null`: a consumer got `TypeError: Cannot read properties of null` at its first
   call, with a type that said `WalletService`. It now injects a stand-in whose methods throw
   `AI_TOKENS_INVALID_CONFIG`; the reason names the missing options block, `wallets` or
-  `budgets`. `forRoot` is unchanged: it does not register a disabled service.
+  `budgets`. The stand-in is an instance of the service's class. `forRoot` is unchanged: it does not register a disabled service.
 
   **Apply:** code that tested the injected service for `null` to detect a disabled feature must
   check its own options instead.
