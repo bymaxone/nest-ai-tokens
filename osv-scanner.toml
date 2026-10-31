@@ -3,3 +3,14 @@
 id = "GHSA-gcqx-w48m-w2h4"
 ignoreUntil = 2027-01-27T00:00:00Z
 reason = "deepmerge <=4.3.1 (prototype poisoning in mergeObject) has no patched release. Reached only through jest-config (test tooling, devDependency); not in the published package. Remove when a fixed deepmerge ships or jest drops it."
+
+# glob and minimatch have no fixed release inside the majors in use. Re-evaluate at the date below.
+[[IgnoredVulns]]
+id = "GHSA-3g3m-2fjr-6pw4"
+ignoreUntil = 2026-11-30T00:00:00Z
+reason = "glob >=9.0.0 <=14.0.1: Dev tooling only (pnpm why --prod is empty); no fixed release inside the majors in use. Re-evaluate on an in-major backport or at expiry."
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-11-30T00:00:00Z
+reason = "minimatch <11.0.1: Dev tooling only (pnpm why --prod is empty); no fixed release inside the majors in use. Re-evaluate on an in-major backport or at expiry."
