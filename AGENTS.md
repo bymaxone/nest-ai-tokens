@@ -18,7 +18,7 @@ Deep-dive for AI agents and engineers working on this library. Read CLAUDE.md fi
 
 `EventDispatcher.onModuleInit()` lazily discovers the optional `@nestjs/event-emitter` instance via `ModuleRef` — the emitter is absent without error when the peer is not installed.
 
-`HoldReaper` sweeps expired holds on the configurable interval (`holds.sweepIntervalSeconds`, default 60 s) starting from `onApplicationBootstrap()` and stopping at `onApplicationShutdown()`.
+`HoldReaper` sweeps expired holds on the configurable interval (`holds.reaperIntervalSeconds`, default 300 s) starting from `onApplicationBootstrap()` and stopping at `onApplicationShutdown()`.
 
 ---
 
@@ -31,7 +31,7 @@ raw response usage
        ↓
   normalizer  (provider-specific pure function → NormalizedUsage)
        ↓
-  PricingService.resolveRate()  (§6.6 six-step chain: exact → tier-wildcard → canonical-alias → modelId-normalize → prefix-match → not-found)
+  PricingService.resolveRate()  (§6.6 chain: exact → `baseModel` → alias map → normalized id → longest prefix; a miss returns `null`, or throws `AI_TOKENS_PRICE_NOT_FOUND` in strict mode)
        ↓
   computeCostNanoUsd(usage, rate)  (bigint nano-USD, token + surcharge breakdown)
        ↓
@@ -128,14 +128,14 @@ Two composable channels (spec §12.1):
 
 ## Telemetry
 
-`ITelemetrySink` is injected via `telemetry.sink`. The library ships `OtelTelemetrySink` (wraps `@opentelemetry/api`) and `NoOpTelemetrySink`. Every `meter()` / `record()` / `hold()` / `capture()` / `release()` creates a span. Missing peer → automatic no-op.
+`ITelemetrySink` is a port the host implements and injects via `telemetry.sink`; the library ships no OpenTelemetry sink and imports nothing from `@opentelemetry/api`. `TelemetryEmitter` calls `recordUsage` (and `recordDuration` when the sink has it) with `gen_ai.*` attributes for each posted record. No sink → telemetry is disabled and every call is a no-op.
 
 ---
 
 ## Testing strategy
 
-- **Unit:** Jest, 100% line/branch per implemented file. Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
-- **E2E:** Testcontainers (PostgreSQL 16 + Redis 7). 10 scenarios: record/hold/capture/release, streaming, wallets, budgets, reporting, multi-tenant isolation. One `GenericContainer` set at a time — never concurrent.
+- **Unit:** Jest, 100% line/branch/function/statement coverage (the global threshold in `jest.config.ts`). Pure functions tested with `fast-check` property tests (money math, markup composition, normalizer invariants). Services tested with in-memory fakes implementing the storage ports.
+- **E2E:** Testcontainers (PostgreSQL 16 + Redis 7), specs in `test/e2e/`: alias resolution, anchored windows, concurrency, count quotas, idempotency, Prisma migrations, wallets and budgets, the hold reaper, reversal, seed idempotence, stream abort. Jest runs them with `maxWorkers: 1`, so one container set is up at a time.
 - **Mutation:** Stryker (break 100); scope is `mutate` in `stryker.config.json`.
 
 ---
