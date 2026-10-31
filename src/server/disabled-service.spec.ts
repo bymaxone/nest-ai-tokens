@@ -38,6 +38,15 @@ describe('disabledService', () => {
     }).not.toThrow()
   })
 
+  /** Copying or spreading the stand-in carries no property, so neither the methods nor the marker leak. */
+  it('has no enumerable own property, string or symbol', () => {
+    const stub = disabledService(Thing, 'wallets')
+    const copy = Object.assign({}, stub)
+    expect(Object.keys(stub)).toEqual([])
+    expect(Object.keys(copy)).toEqual([])
+    expect(Object.getOwnPropertySymbols(copy)).toEqual([])
+  })
+
   /** Nothing the host probes a provider for runs the throwing methods or reads as present. */
   it('reads undefined for lifecycle hooks, then, toJSON and iterators', () => {
     const stub = disabledService(Thing, 'budgets') as unknown as {
