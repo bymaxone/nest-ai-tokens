@@ -8,6 +8,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- **A restart no longer reverts prices the host set, and the snapshot seed no longer adds rows.**
+  With `pricing.seedFromSnapshot` on (the default), every boot re-ran each seed row through
+  `upsertPrice`, which closes the open row of that model and inserts a new one. A second boot
+  against a seeded database added one closed zero-length row and one new open row per seed row
+  (34 rows after two boots, 17 closed), and a rate the host had set with `upsertPrice` was
+  closed before its own start date while the snapshot row became the open row again, so the
+  snapshot price silently replaced the host's price on every restart. The seed now inserts
+  only the model, operation and tier combinations that have no row at all, in one transaction
+  under a per-combination `pg_advisory_xact_lock`, and never touches existing history. The
+  session-scoped `pg_try_advisory_lock` the seed used is no longer taken: a session lock stays
+  held until its connection closes, so whether a boot seeded depended on which old connections
+  were still alive. `PrismaAiTokensStore.acquireSeedLock` stays for compatibility and is
+  deprecated. `IPricingStore` gains the optional method `seedPrice`; a custom store without it
+  is seeded from `getPriceHistory` and `upsertPrice`, which is not atomic across replicas.
+
+  **Apply:** a 1.1.x database may hold duplicated zero-length rows and reverted overrides. Find
+  them with the queries below; deleting or re-entering rows is your call, nothing here changes
+  data.
+
+  ```sql
+  -- Rows the old seed closed at the instant they began (one per extra boot).
+  SELECT "provider", "model", "operation", "serviceTier", COUNT(*) AS "rows"
+  FROM "ai_model_prices"
+  WHERE "effectiveTo" = "effectiveFrom"
+  GROUP BY 1, 2, 3, 4;
+
+  -- Rows closed before their own start: a price set with upsertPrice that a later boot reverted.
+  SELECT "provider", "model", "operation", "serviceTier", "inputNanoUsdPerMillion",
+         "effectiveFrom", "effectiveTo"
+  FROM "ai_model_prices"
+  WHERE "effectiveTo" < "effectiveFrom";
+  ```
+
+  A row from the second query is a rate you set; re-enter it with `upsertPrice` at its original
+  `effectiveFrom`.
+
 ### Documentation
 
 - **The README now matches the code.** The configuration table gave the wrong default for

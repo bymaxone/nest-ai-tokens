@@ -73,6 +73,7 @@ import {
   mapUsageRow,
   mapWalletEntryRow,
   mapWalletRow,
+  priceLockKey,
   priceValues,
   spendableBalanceSql,
   statusAssignments,
@@ -206,7 +207,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
     const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
     const effectiveFrom = input.effectiveFrom ?? new Date()
-    const key = `${input.provider}|${input.model}|${input.operation}|${serviceTier}`
+    const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
       await tx.$executeRaw(Prisma.sql`
@@ -219,6 +220,34 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         RETURNING *
       `)
       return mapPriceRow(firstOrThrow(rows))
+    })
+  }
+
+  /**
+   * Insert a price row only when its (provider, model, operation, serviceTier) tuple has no
+   * row yet. The check and the insert run in one transaction under the same per-tuple
+   * `pg_advisory_xact_lock` as {@link upsertPrice}, so concurrent boots serialize on the
+   * tuple, the loser finds the winner's row and inserts nothing, and the lock is released
+   * when the transaction ends rather than when the connection does.
+   */
+  async seedPrice(input: NewPriceVersion): Promise<boolean> {
+    const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
+    const effectiveFrom = input.effectiveFrom ?? new Date()
+    const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
+      const existing = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT "id" FROM "ai_model_prices"
+        WHERE "provider" = ${input.provider} AND "model" = ${input.model} AND "operation" = ${input.operation}
+          AND "serviceTier" = ${serviceTier}
+        LIMIT 1
+      `)
+      if (existing.length > 0) return false
+      await tx.$queryRaw(Prisma.sql`
+        INSERT INTO "ai_model_prices" (${PRICE_COLUMNS_SQL}) VALUES (${Prisma.join(priceValues(input, serviceTier, effectiveFrom))})
+        RETURNING *
+      `)
+      return true
     })
   }
 
@@ -244,7 +273,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return rows.map((row) => ({ model: row.model, operation: row.operation as AiOperation, serviceTier: row.serviceTier as ServiceTier }))
   }
 
-  /** Advisory seed lock (§6.4): the first caller wins; concurrent boots seed exactly once. */
+  /**
+   * Session-scoped advisory lock: the first caller on a connection wins, and the lock is held
+   * until that connection closes, not when a boot ends.
+   *
+   * @deprecated Use {@link seedPrice}, which seeds atomically under a transaction-scoped lock.
+   */
   async acquireSeedLock(key: string): Promise<boolean> {
     const rows = await this.prisma.$queryRaw<{ acquired: boolean }[]>(
       Prisma.sql`SELECT pg_try_advisory_lock(hashtext(${key})::bigint) AS "acquired"`,

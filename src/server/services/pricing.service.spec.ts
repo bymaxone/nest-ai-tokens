@@ -375,12 +375,11 @@ describe('PricingService.upsertPrice / getPriceHistory', () => {
 })
 
 describe('PricingService.seedFromSnapshot', () => {
-  /** Seeding populates the registry once and records one lock acquisition. */
-  it('seeds the snapshot under an advisory lock', async () => {
+  /** Seeding adds one open row for a tuple that has none. */
+  it('seeds the snapshot into an empty registry', async () => {
     const store = new InMemoryPricingStore()
     const service = new PricingService(options({ seedFromSnapshot: true }), store)
     await service.seedFromSnapshot()
-    expect(store.seedLockAcquisitions).toBe(1)
     const history = await service.getPriceHistory('openai', 'gpt-5', 'chat', 'standard')
     expect(history).toHaveLength(1)
   })
@@ -391,32 +390,92 @@ describe('PricingService.seedFromSnapshot', () => {
     const a = new PricingService(options({ seedFromSnapshot: true }), store)
     const b = new PricingService(options({ seedFromSnapshot: true }), store)
     await Promise.all([a.seedFromSnapshot(), b.seedFromSnapshot()])
-    expect(store.seedLockAcquisitions).toBe(1)
     const history = await store.getPriceHistory('anthropic', 'claude-opus-4', 'chat', 'standard')
     expect(history).toHaveLength(1)
   })
 
-  /** A store without the advisory-lock extension still seeds. */
-  it('seeds a store lacking the seed-lock extension', async () => {
+  /** A second seed writes nothing: no new rows and no closed rows. */
+  it('adds no rows when the registry is already seeded', async () => {
+    const store = new InMemoryPricingStore()
+    const service = new PricingService(options({ seedFromSnapshot: true }), store)
+    await service.seedFromSnapshot()
+    await service.seedFromSnapshot()
+    const history = await store.getPriceHistory('openai', 'gpt-5', 'chat', 'standard')
+    expect(history).toHaveLength(1)
+    expect(history[0]?.effectiveTo).toBeNull()
+  })
+
+  /** A rate the host set with upsertPrice is still the open row after a later seed. */
+  it('leaves a host price override in place', async () => {
+    const store = new InMemoryPricingStore()
+    const service = new PricingService(options({ seedFromSnapshot: true }), store)
+    await service.seedFromSnapshot()
+    const seeded = (await store.getPriceHistory('openai', 'gpt-5', 'chat', 'standard'))[0]
+    if (seeded === undefined) throw new Error('seed row missing')
+    await service.upsertPrice({
+      ...seeded,
+      inputNanoUsdPerMillion: 999n,
+      effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+    })
+    await service.seedFromSnapshot()
+    const history = await store.getPriceHistory('openai', 'gpt-5', 'chat', 'standard')
+    expect(history).toHaveLength(2)
+    expect(
+      history.filter((row) => row.effectiveTo === null).map((row) => row.inputNanoUsdPerMillion),
+    ).toEqual([999n])
+  })
+
+  /** A store without seedPrice is seeded from its history, and a tuple with history is skipped. */
+  it('seeds a store lacking seedPrice only where it has no history', async () => {
     const upsert = jest.fn((_input: NewPriceVersion) => Promise.resolve({} as PriceVersion))
-    const noLockStore: IPricingStore = {
+    const history = jest.fn((_provider: string, model: string) =>
+      Promise.resolve(model === 'gpt-5' ? [{} as PriceVersion] : []),
+    )
+    const plainStore: IPricingStore = {
       resolveRate: () => Promise.resolve(null),
       upsertPrice: upsert,
-      getPriceHistory: () => Promise.resolve([]),
+      getPriceHistory: history,
       listModels: () => Promise.resolve([]),
     }
-    await new PricingService(options({ seedFromSnapshot: true }), noLockStore).seedFromSnapshot()
+    await new PricingService(options({ seedFromSnapshot: true }), plainStore).seedFromSnapshot()
     expect(upsert).toHaveBeenCalled()
+    expect(upsert.mock.calls.some(([input]) => input.model === 'gpt-5')).toBe(false)
+    expect(upsert.mock.calls.some(([input]) => input.model === 'claude-opus-4')).toBe(true)
+  })
+
+  /** A seed clears the resolution cache so the seeded rows are visible at once. */
+  it('clears the cache after seeding', async () => {
+    const store = new InMemoryPricingStore()
+    const service = new PricingService(options({ seedFromSnapshot: true, strict: false }), store)
+    const miss = await service.resolveRate({
+      provider: 'openai',
+      model: 'gpt-5',
+      operation: 'chat',
+      at: AT,
+    })
+    await service.seedFromSnapshot()
+    const hit = await service.resolveRate({
+      provider: 'openai',
+      model: 'gpt-5',
+      operation: 'chat',
+      at: AT,
+    })
+    expect(miss).toBeNull()
+    expect(hit).not.toBeNull()
   })
 
   /** onModuleInit seeds when enabled and does nothing when disabled. */
   it('seeds from onModuleInit only when enabled', async () => {
     const enabledStore = new InMemoryPricingStore()
     await new PricingService(options({ seedFromSnapshot: true }), enabledStore).onModuleInit()
-    expect(enabledStore.seedLockAcquisitions).toBe(1)
+    expect(await enabledStore.getPriceHistory('openai', 'gpt-5', 'chat', 'standard')).toHaveLength(
+      1,
+    )
 
     const disabledStore = new InMemoryPricingStore()
     await new PricingService(options({ seedFromSnapshot: false }), disabledStore).onModuleInit()
-    expect(disabledStore.seedLockAcquisitions).toBe(0)
+    expect(await disabledStore.getPriceHistory('openai', 'gpt-5', 'chat', 'standard')).toHaveLength(
+      0,
+    )
   })
 })

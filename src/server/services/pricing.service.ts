@@ -27,16 +27,8 @@ export interface ResolveRateInput {
   baseModel?: string
 }
 
-/** The optional advisory-lock extension the official adapters implement (§6.4). */
-interface SeedLockCapableStore {
-  acquireSeedLock(key: string): Promise<boolean>
-}
-
 /** All seed rows are effective from the epoch so they form the baseline for any timestamp. */
 const SEED_EFFECTIVE_FROM = new Date(0)
-/** The advisory-lock key guarding the one-time snapshot seed. */
-// Stryker disable next-line StringLiteral: seed lock key is internal observability; tests check the seeding behavior, not the lock key value
-const SEED_LOCK_KEY = 'ai-tokens:model-prices'
 
 /**
  * Effective-dated rate resolution with a six-step model-resolution chain, an
@@ -125,16 +117,22 @@ export class PricingService implements OnModuleInit {
     return this.store.getPriceHistory(provider, model, operation, serviceTier)
   }
 
-  /** Seed the registry from the pinned snapshot; idempotent and advisory-locked. */
+  /**
+   * Seed the registry from the pinned snapshot, adding only the tuples that have no row at
+   * all. A tuple that already has history, including one the host re-priced with
+   * `upsertPrice`, is left exactly as it is, so running this on every boot is a no-op once
+   * the registry is seeded.
+   */
   async seedFromSnapshot(): Promise<void> {
-    const lockable = this.store as Partial<SeedLockCapableStore>
-    if (typeof lockable.acquireSeedLock === 'function') {
-      const acquired = await lockable.acquireSeedLock(SEED_LOCK_KEY)
-      if (!acquired) return
-    }
     const { MODEL_PRICES_SEED } = await import('@bymax-one/nest-ai-tokens/prices')
     for (const row of MODEL_PRICES_SEED) {
-      await this.store.upsertPrice({ ...row, effectiveFrom: SEED_EFFECTIVE_FROM })
+      const input = { ...row, effectiveFrom: SEED_EFFECTIVE_FROM }
+      if (typeof this.store.seedPrice === 'function') {
+        await this.store.seedPrice(input)
+        continue
+      }
+      const history = await this.store.getPriceHistory(row.provider, row.model, row.operation, row.serviceTier)
+      if (history.length === 0) await this.store.upsertPrice(input)
     }
     this.cache.clear()
   }

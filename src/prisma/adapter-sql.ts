@@ -226,6 +226,15 @@ export function mapPriceRow(row: PriceRow): PriceVersion {
   }
 }
 
+/**
+ * The advisory-lock key of one price tuple. Provider and model are free strings, so each field is
+ * encoded as a JSON array element: a `|` inside either cannot move the boundary between them, and
+ * two different tuples never share a key.
+ */
+export function priceLockKey(provider: string, model: string, operation: string, serviceTier: string): string {
+  return JSON.stringify([provider, model, operation, serviceTier])
+}
+
 /** Return the first row, or raise a store error when a `RETURNING` query yielded none. */
 export function firstOrThrow<T>(rows: T[]): T {
   const row = rows[0]

@@ -26,6 +26,15 @@ export interface IPricingStore {
   ): Promise<PriceVersion | null>
   /** Close the current open row (`effectiveTo = now`) and insert the new open row. */
   upsertPrice(input: NewPriceVersion): Promise<PriceVersion>
+  /**
+   * Insert `input` only when no row, open or closed, exists for its
+   * (provider, model, operation, serviceTier) tuple; resolves `true` when it inserted.
+   * Atomic per tuple, so concurrent boots cannot both insert, and it never closes or
+   * alters an existing row. The snapshot seed uses it so a restart cannot revert a rate
+   * the host set with {@link IPricingStore.upsertPrice}. A store without it is seeded
+   * from {@link IPricingStore.getPriceHistory} and `upsertPrice`, which is not atomic.
+   */
+  seedPrice?(input: NewPriceVersion): Promise<boolean>
   /** Full effective-dated history for a tuple (newest first). */
   getPriceHistory(
     provider: ProviderId,
