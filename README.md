@@ -491,7 +491,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 
 | Code                             | HTTP | When                                                                                  |
 | -------------------------------- | ---- | ------------------------------------------------------------------------------------- |
-| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it today                                                     |
+| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it                                                           |
 | `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                      |
 | `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                       |
 | `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                       |
