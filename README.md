@@ -518,7 +518,7 @@ import { toJsonSafe } from '@bymax-one/nest-ai-tokens'
 
 // In your controller:
 return toJsonSafe(await metering.getStatus(tenantId, scope))
-// bigint fields (billedCostNanoUsd, rawCostNanoUsd, etc.) become decimal strings.
+// bigint fields (wallet.balanceNanoUsd, budgets[].spent.nanoUsd, etc.) become decimal strings.
 
 // For display/formatting:
 import { formatNanoUsd } from '@bymax-one/nest-ai-tokens/shared'
