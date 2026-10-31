@@ -8,9 +8,9 @@ reason = "deepmerge <=4.3.1 (prototype poisoning in mergeObject) has no patched 
 [[IgnoredVulns]]
 id = "GHSA-3g3m-2fjr-6pw4"
 ignoreUntil = 2026-11-30T00:00:00Z
-reason = "Dev tooling only (pnpm why --prod is empty); no patched release inside the majors in use; cross-major override breaks the eslint/jest chain. Re-evaluate on an in-major backport or at expiry (DEC-052)."
+reason = "glob >=9.0.0 <=14.0.1: Dev tooling only (pnpm why --prod is empty); no patched release inside the majors in use; cross-major override breaks the eslint/jest chain. Re-evaluate on an in-major backport or at expiry."
 
 [[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"
 ignoreUntil = 2026-11-30T00:00:00Z
-reason = "Dev tooling only (pnpm why --prod is empty); no patched release inside the majors in use; cross-major override breaks the eslint/jest chain. Re-evaluate on an in-major backport or at expiry (DEC-052)."
+reason = "minimatch <11.0.1: Dev tooling only (pnpm why --prod is empty); no patched release inside the majors in use; cross-major override breaks the eslint/jest chain. Re-evaluate on an in-major backport or at expiry."
