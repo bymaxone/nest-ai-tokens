@@ -657,15 +657,32 @@ function checkSnippets() {
    * the declaration in the same snippet rather than by guessing from the code. */
   const isAbbreviatedLocalType = (line, sources) => {
     const m = /Property '[^']+' does not exist on type '([^']+)'/.exec(line)
-    if (!m) return false
+    // Only a plain identifier can name a class the snippet declares; anything else
+    // (`Foo<T>`, a literal type, a union) is never a local declaration.
+    if (!m || !/^[A-Za-z_$][\w$]*$/.test(m[1])) return false
     const file = /^([^(]+)\(/.exec(line)?.[1]
     // Paths may carry backslashes on Windows, so the basename is taken on either.
     const own = sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
-    return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(own)
+    // A declaration starts a line. `import { type X }` also contains `type X`, and
+    // an imported type is the package's, not the snippet's.
+    return new RegExp(
+      `^\\s*(export\\s+)?(declare\\s+)?(abstract\\s+)?(class|interface|type|enum)\\s+${m[1]}\\b`,
+      'm',
+    ).test(own)
   }
-  /** An import of some OTHER package the fixture does not install — a documented
-   * optional integration. Reported as uncovered, not as a failure. */
-  const isForeignModule = (line) => /error TS2307/.test(line) && !line.includes(PKG.name)
+  /** An import of an optional peer the fixture does not install. Only the peers
+   * `package.json` marks optional are ignorable, so a relative import or a mistyped
+   * package name stays an error instead of resolving to `any`. */
+  const OPTIONAL_PEERS = Object.entries(PKG.peerDependenciesMeta ?? {})
+    .filter(([, meta]) => meta.optional === true)
+    .map(([name]) => name)
+  const isOptionalPeer = (line) => {
+    const specifier = /error TS2307: Cannot find module '([^']+)'/.exec(line)?.[1]
+    return (
+      specifier !== undefined &&
+      OPTIONAL_PEERS.some((name) => specifier === name || specifier.startsWith(`${name}/`))
+    )
+  }
 
   try {
     const lines = compileGate()
@@ -673,7 +690,7 @@ function checkSnippets() {
     const real = lines.filter(
       (l) =>
         !CONTEXT_ONLY.has((/error (TS\d+)/.exec(l) ?? [])[1]) &&
-        !isForeignModule(l) &&
+        !isOptionalPeer(l) &&
         !isAbbreviatedLocalType(l, sources),
     )
     const context = lines.length - real.length
@@ -686,7 +703,7 @@ function checkSnippets() {
     console.log(
       `  snippets: ${subjects.length} README snippets compiled against dist/` +
         (context > 0
-          ? ` (${context} diagnostic(s) ignored: an abbreviated local class, a peer the fixture does not install, or a parse-level elision)`
+          ? ` (${context} diagnostic(s) ignored: an abbreviated local class, an optional peer the fixture does not install, or a parse-level elision)`
           : ''),
     )
   } finally {
