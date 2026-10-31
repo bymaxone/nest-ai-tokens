@@ -192,8 +192,8 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
     BymaxAiTokensModule.forRootAsync({
       imports: [PrismaModule],
       inject: [PrismaService],
-      useFactory: (prisma: PrismaService) => ({
-        store: new PrismaAiTokensStore(prisma),
+      useFactory: (prisma: unknown) => ({
+        store: new PrismaAiTokensStore(prisma as PrismaService),
         // The resale lever — end-users pay 4× provider cost:
         markup: 4.0,
         wallets: { creditRateNanoUsd: 5_000_000_000n }, // 1 credit = $5
@@ -326,8 +326,8 @@ The fundamental difference between "what the provider charged you" and "what you
 ```typescript
 // Configure at module level:
 BymaxAiTokensModule.forRootAsync({
-  useFactory: (prisma) => ({
-    store: new PrismaAiTokensStore(prisma),
+  useFactory: (prisma: unknown) => ({
+    store: new PrismaAiTokensStore(prisma as PrismaService),
     markup: 4.0, // 4× resale margin
     wallets: { creditRateNanoUsd: 5_000_000_000n }, // sell credits at $5 each
   }),
@@ -343,7 +343,7 @@ For per-tenant or per-feature pricing, implement `IMarkupPolicy`:
 
 ```typescript
 class MyMarkupPolicy implements IMarkupPolicy {
-  resolve(ctx: MeteringContext): number | Promise<number> {
+  resolve(ctx: { feature?: string }): number | Promise<number> {
     return ctx.feature === 'premium.summarize' ? 5.0 : 3.0
   }
 }
@@ -371,8 +371,8 @@ await wallets.grant(
 
 // Credits are debited automatically when the ledger posts a billed cost.
 // Check balance:
-const wallet = await wallets.getOrCreate({ tenantId, ownerType: 'user', ownerId: userId })
-console.log(wallet.balanceNanoUsd) // current balance
+const balance = await wallets.getBalance({ tenantId, ownerType: 'user', ownerId: userId })
+console.log(balance.nanoUsd) // current balance
 ```
 
 ### Multi-Dimension Budgets
@@ -444,7 +444,7 @@ On abort, the collector falls back to a tokenizer estimate of the output tokens 
 
 ```typescript
 // Usage summary — by feature, for the last 30 days:
-const summary = await metering.summarize({
+const summary = await reports.summarize({
   tenantId,
   scope: { type: 'user', id: userId },
   from: thirtyDaysAgo,
@@ -453,12 +453,7 @@ const summary = await metering.summarize({
 })
 
 // Export as CSV (streaming):
-const csv = await reports.export({
-  tenantId,
-  from,
-  to,
-  format: 'csv',
-})
+const csv = await reports.export({ tenantId, from, to }, 'csv')
 csv.pipe(res)
 
 // Access status / remaining budget:
@@ -523,7 +518,7 @@ import { toJsonSafe } from '@bymax-one/nest-ai-tokens'
 
 // In your controller:
 return toJsonSafe(await metering.getStatus(tenantId, scope))
-// bigint fields (balanceNanoUsd, billedCostNanoUsd, etc.) become decimal strings.
+// bigint fields (wallet.balanceNanoUsd, budgets[].spent.nanoUsd, etc.) become decimal strings.
 
 // For display/formatting:
 import { formatNanoUsd } from '@bymax-one/nest-ai-tokens/shared'

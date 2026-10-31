@@ -19,6 +19,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   `providerPresets.bedrock`, not `providerPresets.bedrockConverse`. The artifact-size table,
   the stack list (it named a `ConfigurableModuleBuilder` the module does not use) and the
   `AI_TOKENS_PRICE_NOT_FOUND` description (it counted resolution steps) were corrected too.
+- **The README examples compile.** Some examples called methods or read fields that do not
+  exist: `wallets.getOrCreate` (the method is `getBalance`, and it returns `nanoUsd` and
+  `credits`), `metering.summarize` (it is `UsageReportService.summarize`), `reports.export`
+  with a `format` property (the format is the second argument), and a markup policy typed on
+  `MeteringContext` (its `resolve` takes the narrower call context). `useFactory` is now shown
+  with a parameter typed `unknown`, the only form its `(...args: unknown[])` signature accepts.
 
 ## [1.1.2] - 2026-10-30
 
