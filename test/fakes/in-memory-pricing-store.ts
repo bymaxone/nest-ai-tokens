@@ -1,8 +1,8 @@
 /**
  * @fileoverview An in-memory {@link IPricingStore} for tests — a faithful stand-in
  * for the Prisma adapter: effective-dated rows, one open row per
- * (provider, model, operation, serviceTier), and a modeled advisory seed lock
- * (with a `seedLockAcquisitions` counter) so concurrent seeding runs exactly once.
+ * (provider, model, operation, serviceTier), and an insert-if-absent `seedPrice`
+ * so concurrent seeding runs exactly once.
  * Lives under `test/` so it is not collected for coverage.
  * @layer test
  */
@@ -16,19 +16,22 @@ import type {
 } from '@bymax-one/nest-ai-tokens/shared'
 import type { IPricingStore, PricedModel } from '@bymax-one/nest-ai-tokens'
 
-/** An in-memory pricing store plus the seed-lock extension the service feature-detects. */
+/** An in-memory pricing store, including the optional `seedPrice` the service feature-detects. */
 export class InMemoryPricingStore implements IPricingStore {
   private readonly rows: PriceVersion[] = []
   private idSeq = 0
-  /** Number of successful seed-lock acquisitions (asserted by the concurrency test). */
-  public seedLockAcquisitions = 0
-  private readonly heldLocks = new Set<string>()
-
-  /** Model the advisory lock the official adapter uses; the first caller wins. */
-  acquireSeedLock(key: string): Promise<boolean> {
-    if (this.heldLocks.has(key)) return Promise.resolve(false)
-    this.heldLocks.add(key)
-    this.seedLockAcquisitions += 1
+  /** Insert only when the tuple has no row at all; synchronous, so it is atomic here. */
+  seedPrice(input: NewPriceVersion): Promise<boolean> {
+    const serviceTier = input.serviceTier ?? 'standard'
+    const exists = this.rows.some(
+      (row) =>
+        row.provider === input.provider &&
+        row.model === input.model &&
+        row.operation === input.operation &&
+        row.serviceTier === serviceTier,
+    )
+    if (exists) return Promise.resolve(false)
+    void this.upsertPrice(input)
     return Promise.resolve(true)
   }
 

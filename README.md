@@ -290,7 +290,7 @@ export class AiController {
 | `scopeResolver`             | `(ctx) => MeteringContext`            | —                | Resolves the caller's scope from the request (required for guard/interceptor)   |
 | `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'`   | Default cost rating mode                                                        |
 | `markup`                    | `number \| IMarkupPolicy`             | `1.0`            | The resale multiplier (e.g. `4.0` = 4× provider cost)                           |
-| `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Seed `MODEL_PRICES_SEED` into the registry at boot                              |
+| `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Add seed rows for unpriced models at boot; never changes a price                |
 | `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                    |
 | `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                              |
 | `budgets.defaultPolicy`     | `'block' \| 'alert'`                  | `'block'`        | Default enforcement when a budget is exhausted                                  |
