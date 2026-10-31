@@ -134,10 +134,10 @@ the feature that needs them is enabled.
 
 | Artifact                                    | Brotli size | Budget  |
 | ------------------------------------------- | ----------- | ------- |
-| server (`@bymax-one/nest-ai-tokens`)        | 37 KB       | < 40 KB |
+| server (`@bymax-one/nest-ai-tokens`)        | 38 KB       | < 40 KB |
 | shared (`@bymax-one/nest-ai-tokens/shared`) | 5 KB        | < 10 KB |
 | prisma (`@bymax-one/nest-ai-tokens/prisma`) | 10 KB       | < 15 KB |
-| redis (`@bymax-one/nest-ai-tokens/redis`)   | 1.1 KB      | < 5 KB  |
+| redis (`@bymax-one/nest-ai-tokens/redis`)   | 1.3 KB      | < 5 KB  |
 | prices (data-only, exempt from budget)      | 1.3 KB      | exempt  |
 
 ---
@@ -284,19 +284,20 @@ export class AiController {
 
 `BymaxAiTokensModule.forRoot(options)` / `.forRootAsync({ useFactory })` accept `BymaxAiTokensModuleOptions`:
 
-| Option                      | Type                                  | Default        | Purpose                                                                       |
-| --------------------------- | ------------------------------------- | -------------- | ----------------------------------------------------------------------------- |
-| `store`                     | `IAiTokensStore`                      | — (required)   | Persistence adapter (use `PrismaAiTokensStore`)                               |
-| `scopeResolver`             | `(ctx) => MeteringContext`            | —              | Resolves the caller's scope from the request (required for guard/interceptor) |
-| `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'` | Default cost rating mode                                                      |
-| `markup`                    | `number \| IMarkupPolicy`             | `1.0`          | The resale multiplier (e.g. `4.0` = 4× provider cost)                         |
-| `pricing.seedFromSnapshot`  | `boolean`                             | `false`        | Seed `MODEL_PRICES_SEED` into the registry on first boot                      |
-| `wallets.creditRateNanoUsd` | `bigint`                              | —              | Exchange rate: 1 credit = this many nano-USD                                  |
-| `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`     | Order in which grants are consumed                                            |
-| `budgets.defaultPolicy`     | `'block' \| 'alert'`                  | `'alert'`      | Default enforcement when a budget is exhausted                                |
-| `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`   | Soft-threshold events at these fractions                                      |
-| `holds.ttlSeconds`          | `number`                              | `300`          | Spend-hold TTL; the reaper voids expired holds                                |
-| `telemetry`                 | `ITelemetrySink`                      | no-op          | OpenTelemetry sink (pass `OtelTelemetrySink`)                                 |
+| Option                      | Type                                  | Default          | Purpose                                                                         |
+| --------------------------- | ------------------------------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `store`                     | `IAiTokensStore`                      | — (required)     | Persistence adapter (use `PrismaAiTokensStore`)                                 |
+| `scopeResolver`             | `(ctx) => MeteringContext`            | —                | Resolves the caller's scope from the request (required for guard/interceptor)   |
+| `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'`   | Default cost rating mode                                                        |
+| `markup`                    | `number \| IMarkupPolicy`             | `1.0`            | The resale multiplier (e.g. `4.0` = 4× provider cost)                           |
+| `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Seed `MODEL_PRICES_SEED` into the registry at boot                              |
+| `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                    |
+| `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                              |
+| `budgets.defaultPolicy`     | `'block' \| 'alert'`                  | `'block'`        | Default enforcement when a budget is exhausted                                  |
+| `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                        |
+| `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                  |
+| `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it |
+| `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                    |
 
 ---
 
@@ -309,7 +310,7 @@ export class AiController {
 | OpenAI-compatible | DeepSeek, xAI, Groq, Azure OpenAI | `normalizeOpenAiCompatibleUsage` / `providerPresets.openaiCompatible`              |
 | Anthropic         | Messages API                      | `normalizeAnthropicUsage` / `providerPresets.anthropic`                            |
 | Google            | Gemini / Vertex AI                | `normalizeGeminiUsage` / `providerPresets.gemini`                                  |
-| AWS               | Bedrock Converse                  | `normalizeBedrockConverseUsage` / `providerPresets.bedrockConverse`                |
+| AWS               | Bedrock Converse                  | `normalizeBedrockConverseUsage` / `providerPresets.bedrock`                        |
 | Mistral           | Chat API                          | `normalizeMistralUsage` / `providerPresets.mistral`                                |
 | OpenRouter        | Chat                              | `normalizeOpenRouterUsage` / `providerPresets.openrouter` (provider-reported cost) |
 | Vercel            | AI SDK v5/v6                      | `normalizeVercelAiSdkUsage` / `providerPresets.vercelAiSdk`                        |
@@ -499,7 +500,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                      |
 | `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                       |
 | `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                       |
-| `AI_TOKENS_PRICE_NOT_FOUND`      | 422  | No effective-dated rate after 6-step resolution chain (strict mode)                   |
+| `AI_TOKENS_PRICE_NOT_FOUND`      | 422  | No effective-dated rate after the model-resolution chain (strict mode)                |
 | `AI_TOKENS_FX_REQUIRED`          | 500  | `currency !== 'USD'` with no `fx` resolver                                            |
 | `AI_TOKENS_BUDGET_EXCEEDED`      | 402  | A hard spend budget blocks the call                                                   |
 | `AI_TOKENS_QUOTA_EXCEEDED`       | 429  | A hard token/count quota blocks the call                                              |
@@ -713,7 +714,7 @@ that reads a tenant id from request input lets a caller bill someone else.
 ## 🧱 Tech Stack
 
 - **Runtime:** Node.js 24+
-- **Framework:** NestJS 11 (guard + interceptor, `ConfigurableModuleBuilder`, `Symbol()` tokens)
+- **Framework:** NestJS 11 (guard + interceptor, `Symbol()` tokens)
 - **Persistence:** `@prisma/client ^6 || ^7` (peer) over PostgreSQL — both majors supported
 - **Budget acceleration:** `ioredis ^6` (peer), optional
 - **Events:** `@nestjs/event-emitter >=2` (peer), optional
