@@ -81,8 +81,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   setup section now names both. The API reference lists the decorators (including `@AiFeature`),
   the money and ledger helpers, the catalogs, the injection tokens and `CounterValueOutOfRangeError`.
   The `budgets.defaultPolicy` Type column read `'block' | 'alert'`; the type is
-  `'block' | 'throttle' | 'allow'`, and the defaults spec now pins the Type column of the
-  literal-union options. The content sidecar section states that the library ships no
+  `'block' | 'throttle' | 'allow'`. The content sidecar section states that the library ships no
   `IContentStore` implementation or table, and the configuration section describes the
   `forRootAsync` and `forRoot` behaviour for a disabled wallet or budget block. The 1.0.0 entries
   that named an `OtelTelemetrySink` and a six-step resolution chain were corrected to the code.

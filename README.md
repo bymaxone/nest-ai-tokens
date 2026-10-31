@@ -583,8 +583,8 @@ or `{ valid: false, brokenAtRecordId }`. It checks the chain that `ledger.hashCh
 
 `BYMAX_AI_TOKENS_OPTIONS` (the resolved options) and the port tokens `BYMAX_AI_TOKENS_LEDGER_STORE`,
 `_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
-`_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. Bind a token yourself to replace one port. The wallet
-and budget tokens exist only when their options block is set (with `forRoot`; `forRootAsync` always exports them).
+`_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. The wallet and budget tokens exist only when their
+options block is set (with `forRoot`; `forRootAsync` always exports them).
 
 ### Request-scoped enforcement
 
