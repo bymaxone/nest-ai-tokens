@@ -10,9 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.1.3] - 2026-10-31
 
-**Billing:** if you set prices with `upsertPrice` while `pricing.seedFromSnapshot` was on, every
-restart of an earlier version could replace them with the snapshot. Run the two queries under the
-seed entry below to find the affected rows.
+**Billing:** if you set prices with `upsertPrice` for a model the snapshot also prices while
+`pricing.seedFromSnapshot` was on, a restart of an earlier version could replace them with the
+snapshot. Run the two queries under the seed entry below to look for affected rows.
 
 ### Fixed
 
