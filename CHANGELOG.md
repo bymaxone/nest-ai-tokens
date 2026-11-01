@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-11-01
+
 **Apply:** `record()` and `meter()` now treat a second call with an `idempotencyKey` the ledger already
 holds as a replay of the first when the request is the same: it returns the stored record and does
 nothing else. A retry that used to fail with `AI_TOKENS_IDEMPOTENCY_CONFLICT` only because its
@@ -22,6 +24,13 @@ rows to `openai` or `gemini`, or pass the provider in the estimate (`{ provider,
 `record()` never read those rows, and the `azureOpenai` and `vertex` presets now carry the provider
 their records already had.
 
+**Apply:** `providerPresets.openaiCompatible(id)` now records `id` as the provider, where it recorded
+an empty one. A `record()` call for a response that carries no model, such as a Bedrock Converse
+response, now stores `context.baseModel` as the model when you pass one, as `hold()` and `capture()`
+already did. A retry, with the same `idempotencyKey`, of a call that an earlier version stored with
+`pricing.strict: false` and an empty provider now fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. No
+exported type or signature changes, and no schema or store change.
+
 ### Fixed
 
 - **A retry of `record({ enforce: true })` consumed the budget a second time.** Every published
@@ -35,7 +44,7 @@ their records already had.
   `usage.recorded` event, a second usage measurement and a second content capture were produced,
   and the wallet balance did not move again because its debit is keyed by the record. A host that
   passes `occurredAt` and enables budgets was affected on any retry. A retry now returns the stored
-  record and runs none of it, `meter()` records no duration for it, and a test pins every one of
+  record and runs none of it, `meter()` called without an estimate records no duration for it, and a test pins every one of
   those counts.
 - **A retry that left out `occurredAt`, or came after a price change, failed with a conflict.**
   `occurredAt` defaults to the current time and the ledger's payload hash included it, together with
@@ -530,7 +539,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...v1.1.2
 [1.1.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...v1.1.3
 [1.1.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...v1.1.4
+[1.1.5]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...v1.1.5
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...HEAD
