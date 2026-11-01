@@ -78,9 +78,7 @@ their records already had.
   shared field-role table) takes the bundle from 39,423 B to about 40,360 B. The other budgets are
   unchanged.
 - The declaration build strips members tagged `@internal`, and the published-surface gate fails when a
-  name tagged `@internal` in `src` reaches a built `.d.ts` or `.d.cts`. The only members tagged are
-  the four private ones that serialize and resolve a keyed `record()`, so the published declarations
-  match 1.1.4.
+  name tagged `@internal` in `src` reaches a built `.d.ts` or `.d.cts`.
 
 ### Documentation
 
