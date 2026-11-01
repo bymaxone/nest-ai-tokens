@@ -593,8 +593,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 An `AiTokensException` body is what a client receives, so it holds the code, a fixed message and, for some codes, a
 few safe details. The error that actually failed (a driver error, a refused connection) is the exception's standard
 `cause`, which is never part of the body. Nest's default exception filter does not log an `HttpException`, so it prints
-nothing of it. With `@bymax-one/nest-logger`'s `HttpExceptionFilter` the `cause` chain is logged. With another setup,
-log it yourself:
+nothing of it. Log it yourself:
 
 ```typescript
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common'
