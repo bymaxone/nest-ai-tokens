@@ -8,10 +8,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-01
+
+**Apply:** a debit or `reconcile()` that 1.1.6 refused with `AI_TOKENS_STORE_ERROR` because an entry the
+store did not write holds a key it needs (`expiry:<grantId>` for an expired grant, `activate:<grantId>`
+for a grant that has fallen due) is now refused with `AI_TOKENS_INVALID_CONFIG`, status 500. If you
+alert on the old code for this case, alert on the new one. The response body holds the code and a fixed
+reason; the wallet, the key and the grant are on the error's `cause`, which is not part of the body, so
+log `exception.cause` on the server (the README shows a minimal filter).
+
+**Apply:** the store used to take any entry that held the key `activate:<grantId>` as proof that the
+grant was credited. An entry written outside the store with that key (a marker of amount zero, say)
+therefore made the grant look credited, and it was never credited. An activation is now the
+`adjustment` entry with the reason `grant activated` and the grant's amount, and a key held by an entry
+of another shape refuses the debit and the `reconcile()` that need it, as above. The query on the
+1.1.6 Release page matches the key, the type and the reason but not the amount, so it does not find an
+entry of the right type and reason with another amount; the query on the 1.1.7 Release page does. Entries the store wrote
+in 1.1.6 have the shape the store looks for, so an upgrade changes none of them. No exported type or
+signature changes, and no schema or migration.
+
 ### Fixed
 
-- A store error keeps the failure that caused it as its `cause`, outside the response body.
-- A wallet activation entry is recognised by its shape, and a reserved key held by another entry refuses the debit with the wallet, key and grant on the cause.
+- **A store error lost the failure that caused it.** The store, the wallet service and the fail-closed
+  budget path replaced the original error with an `AI_TOKENS_STORE_ERROR` that held at most the Prisma
+  code, so no log could show what had failed. The original error is now the exception's standard
+  `cause`: it is not enumerable and is never in the response body or in the serialized exception. A
+  logger that prints `cause` shows it; Nest's default exception filter does not log an `HttpException`
+  at all. On Prisma 7 with the `pg` adapter the cause of a rejected password names the user and not the
+  password, and the cause of a refused connection holds no password, which the end-to-end suite asserts.
+- **A key held by another entry made a grant look credited, or an expired grant look swept.** See the
+  second note above: the activation is recognised by its shape, and both cases refuse the debit with the
+  wallet, key and grant on the cause.
+
+### Documentation
+
+- The README says that `getBalance()` reads the stored balance, so it can trail the clock until a debit
+  or `reconcile()` credits a grant that has just fallen due, and shows how to log the cause of a store
+  error.
 
 ## [1.1.6] - 2026-11-01
 
@@ -596,7 +629,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...v1.1.4
 [1.1.5]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...v1.1.5
 [1.1.6]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...v1.1.6
+[1.1.7]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...v1.1.7
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...HEAD
