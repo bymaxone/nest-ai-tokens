@@ -51,6 +51,7 @@ export function requireReportedCost(usage: NormalizedUsage): bigint {
  */
 export function unratedFor(normalized: NormalizedUsage, basis: ReplayBasis): RatingResult {
   const raw = basis.providerReported ? requireReportedCost(normalized) : 0n
+  // Stryker disable next-line BooleanLiteral: priceMissing is a derived field that the replay comparison never reads, so either value compares the same
   return { rawCostNanoUsd: raw, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
 }
 
