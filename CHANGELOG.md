@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- Wallet crediting follows a grant's effective time, judged on the database clock in one time zone.
+
 ## [1.1.5] - 2026-11-01
 
 **Apply:** `record()` and `meter()` now treat a second call with an `idempotencyKey` the ledger already

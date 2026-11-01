@@ -33,6 +33,7 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // server's four `instanceof AiTokensException` guards would stop matching
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { ACTIVATION_KEY_PREFIX } from '../server/utils/wallet-keys'
 
 /** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
 export interface UsageRow {
@@ -514,12 +515,11 @@ export function walletAutoCreatable(entry: NewWalletEntry): boolean {
 }
 
 /**
- * The materialized-balance delta for a STORED entry. A grant contributes only while it
- * is spendable at its PERSISTED append instant — the row's `createdAt` (`CURRENT_TIMESTAMP`),
- * never a fresh application-clock read that would depend on clock skew and could miscount
- * grants around their `effectiveAt`/`expiresAt` boundaries. This mirrors the append-instant
- * rule `sweepExpiredGrants` applies (it compares `effectiveAt`/`expiresAt` against the
- * grant's `createdAt`), so the balance stays anchored to the persisted instant.
+ * The materialized-balance delta for a STORED entry. A grant contributes only if it was due as
+ * it was appended: judged on the row's persisted `createdAt` (`CURRENT_TIMESTAMP`), never on an
+ * application-clock read that depends on clock skew. A grant that was not due then is credited
+ * later by the `activate:<grantId>` entry that `activateDueGrants` writes, which carries the
+ * amount itself; every other entry contributes its signed amount.
  */
 export function walletBalanceDelta(entry: WalletEntry): bigint {
   if (entry.type !== 'grant') return entry.amountNanoUsd
@@ -555,18 +555,47 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): P
   return Prisma.join(parts, ' AND ')
 }
 
-/** The time-aware spendable-balance expression for `reconcile` (over the outer `w` alias). */
-export function spendableBalanceSql(now: Date): Prisma.Sql {
-  return Prisma.sql`(
-    SELECT COALESCE(SUM(CASE WHEN e."type" = 'grant'
-                             THEN (CASE WHEN e."effectiveAt" <= ${now} THEN e."amountNanoUsd" ELSE 0 END)
-                             ELSE e."amountNanoUsd" END), 0)
-    FROM "ai_wallet_entries" e WHERE e."walletId" = w."id"
-  ) - (
-    SELECT COALESCE(SUM(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0)), 0)
+/**
+ * The database clock every spendability decision is judged on, so no application clock enters it, as a
+ * UTC wall-clock timestamp. The entry timestamps are `TIMESTAMP` columns without a zone: the application
+ * writes `effectiveAt` and `expiresAt` as UTC instants, so the clock they are compared with, and the
+ * `createdAt` the store writes, must be UTC too whatever zone the database session uses.
+ */
+export const DB_NOW_SQL = Prisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
+
+/** Whether the grant aliased `g` was due as it was appended (judged on its stored `createdAt`). */
+export const DUE_AT_APPEND_SQL = Prisma.sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
+
+/** Whether an `activate:<grantId>` entry has credited the grant aliased `g`. */
+export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id")`
+
+/** Whether the grant aliased `g` is part of the materialized balance: due at append, or activated since. */
+export const CREDITED_SQL = Prisma.sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`
+
+/** The unspent remainder of the grant aliased `g`. */
+export const GRANT_REMAINING_SQL = Prisma.sql`(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))`
+
+/**
+ * The signed sum of a wallet's entries (over the outer `w` alias): every entry counts in full except a
+ * grant, which counts only if it was due as it was appended; a grant credited later is counted by its
+ * activation entry. This is what the materialized balance equals before any grant has expired.
+ */
+export const SIGNED_BALANCE_SQL = Prisma.sql`(
+  SELECT COALESCE(SUM(g."amountNanoUsd"), 0)
+  FROM "ai_wallet_entries" g WHERE g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL})
+)`
+
+/**
+ * The spendable-balance expression for `reconcile` (over the outer `w` alias): the signed sum of the
+ * entries minus the unspent remainder of any credited grant that has expired. Judged on the database
+ * clock, like the debit path.
+ */
+export function spendableBalanceSql(): Prisma.Sql {
+  return Prisma.sql`${SIGNED_BALANCE_SQL} - (
+    SELECT COALESCE(SUM(${GRANT_REMAINING_SQL}), 0)
     FROM "ai_wallet_entries" g
-    WHERE g."walletId" = w."id" AND g."type" = 'grant' AND g."effectiveAt" <= ${now}
-      AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${now}
+    WHERE g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL}
+      AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${DB_NOW_SQL}
   )`
 }
 

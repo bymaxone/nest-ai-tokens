@@ -215,6 +215,21 @@ describe('WalletService', () => {
     await expectRejectCode(service.refund(REF, { amountNanoUsd: 0n, idempotencyKey: 'r1', reason: 'x' }), 'AI_TOKENS_INVALID_CONFIG')
   })
 
+  /** An entry key in the namespace the store keeps for itself (activation and expiry keys) is refused with a typed configuration error, whatever the operation. */
+  it.each([
+    ['grant', (key: string, service: WalletService) => service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
+    ['refund', (key: string, service: WalletService) => service.refund(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
+    ['adjust', (key: string, service: WalletService) => service.adjust(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
+    ['debit', (key: string, service: WalletService) => service.debit(REF, { amountNanoUsd: 1n, idempotencyKey: key, reason: 'x' })],
+  ])('refuses a %s whose key is in the store namespace', async (_name, call) => {
+    const { service } = makeService()
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'base', reason: 'seed' })
+
+    await expectRejectCode(call('activate:grant-1', service), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(call('expiry:grant-1', service), 'AI_TOKENS_INVALID_CONFIG')
+    expect((await service.getBalance(REF)).nanoUsd).toBe(100n)
+  })
+
   /** adjust applies a signed correction and emits audit. */
   it('adjusts and emits audit', async () => {
     const { service, audits } = makeService()
@@ -432,13 +447,19 @@ describe('WalletService — grant burn-down (§9.3)', () => {
 })
 
 runWalletStoreContract('in-memory fake', () => {
-  // A fixed injected clock stamps every entry's persisted append instant deterministically,
-  // so the balance-contribution decision never depends on the wall clock at read time.
-  const store = new InMemoryWalletStore({ now: () => new Date('2026-06-15T00:00:00.000Z') })
+  // An injected clock stamps every entry's persisted append instant deterministically, so the
+  // balance-contribution decision never depends on the wall clock at read time; `advance` moves it.
+  let clock = new Date('2026-06-15T00:00:00.000Z')
+  const store = new InMemoryWalletStore({ now: () => clock })
   return {
     store,
     skew: (ref, value): Promise<void> => {
       store.forceBalance(ref, value)
+      return Promise.resolve()
+    },
+    now: (): Promise<Date> => Promise.resolve(clock),
+    advance: (ms): Promise<void> => {
+      clock = new Date(clock.getTime() + ms)
       return Promise.resolve()
     },
   }

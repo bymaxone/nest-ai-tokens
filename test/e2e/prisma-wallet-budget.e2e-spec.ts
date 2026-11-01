@@ -84,6 +84,11 @@ runWalletStoreContract('Prisma / PostgreSQL', async () => {
     skew: async (ref: WalletRef, value: bigint): Promise<void> => {
       await prisma.$executeRaw`UPDATE "ai_wallets" SET "balanceNanoUsd" = ${value} WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId}`
     },
+    now: async (): Promise<Date> => {
+      const rows = await prisma.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS "now"`
+      return rows[0]?.now ?? new Date()
+    },
+    advance: (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms)),
   }
 })
 
@@ -145,6 +150,17 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     await expect(store.appendEntry(ref, grantEntry({ idempotencyKey: 'idem', amountNanoUsd: 99n }))).rejects.toMatchObject({
       isAiTokensLedgerConflict: true,
     })
+  })
+
+  /** An entry that holds an expired grant's expiry key (written outside the store) refuses the debit instead of keeping the expired credit spendable. */
+  it('refuses a debit when the expiry key of an expired grant is taken by another entry', async () => {
+    await truncateWallets()
+    const grant = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'exp', amountNanoUsd: 100n, expiresAt: new Date(Date.now() + 1_000) }))
+    const wallet = await store.getWallet(ref)
+    await prisma.$executeRaw`INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "idempotencyKey") VALUES ('foreign', ${wallet?.id}, 'refund', 1, ${`expiry:${grant.id}`})`
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    await expect(store.conditionalDebit(ref, debitEntry(50n, { idempotencyKey: 'after' }), 0n)).rejects.toThrow()
+    expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
   })
 
   /** A debit with no headroom affects no row and returns null (never a store error, §15.2). */

@@ -87,6 +87,26 @@ const main = async () => {
     )
   }
 
+  // A key in the namespace the store keeps for itself is refused before any query, so the refusal is
+  // reachable without a database. The store builds the error from the class it imports from the package
+  // root; a second copy of that class, bundled in through a relative import, would fail the check below.
+  let refused
+  try {
+    await store.appendEntry(
+      { tenantId: 't', ownerType: 'user', ownerId: 'u' },
+      { walletId: '', type: 'refund', amountNanoUsd: 1n, priority: 0, effectiveAt: new Date(), idempotencyKey: 'activate:probe' },
+    )
+  } catch (error) {
+    refused = error
+  }
+
+  if (refused === undefined) {
+    failures.push('appendEntry accepted a key in the reserved activation namespace')
+  } else if (!(refused instanceof root.AiTokensException)) {
+    const name = refused && refused.constructor ? refused.constructor.name : String(refused)
+    failures.push('./prisma refused a reserved key with ' + name + ' which is not an instanceof the root AiTokensException')
+  }
+
   if (failures.length) {
     for (const failure of failures) console.error('  ✗ ' + failure)
     process.exit(1)
