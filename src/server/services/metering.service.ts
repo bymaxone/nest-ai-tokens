@@ -31,6 +31,7 @@ import { computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
+import { withHashedModel } from '../utils/hashed-model'
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
@@ -278,7 +279,8 @@ export class MeteringService {
         reason: 'enforce requires the wallets or budgets feature to be enabled',
       })
     }
-    const normalized = withBaseModel(this.resolveNormalizedUsage(input), context.baseModel)
+    const parsed = this.resolveNormalizedUsage(input)
+    const normalized = withBaseModel(parsed, context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
     const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
@@ -287,10 +289,8 @@ export class MeteringService {
 
     const rating = await this.rate(usageForRating, serviceTier, occurredAt, mode, context.baseModel)
     const markup = await this.resolveMarkup(context, normalized, serviceTier)
-    const record = await this.ledger.append(
-      buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing }),
-      context.idempotencyKey,
-    )
+    const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
+    const record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), context.idempotencyKey)
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)

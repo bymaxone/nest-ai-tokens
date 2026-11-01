@@ -231,11 +231,12 @@ import { deriveIdempotencyKey } from '@bymax-one/nest-ai-tokens/shared'
 export class WorkoutAiService {
   constructor(private readonly metering: MeteringService) {}
 
-  async generate(tenantId: string, userId: string, jobId: string) {
+  async generate(tenantId: string, userId: string, jobId: string, startedAt: Date) {
     const res = await this.openai.chat.completions.create({ model: 'gpt-5-mini', messages: [] })
     await this.metering.record({
       usage: res, // the whole response: the normalizer reads its `model` and `usage`
       preset: providerPresets.openaiChat,
+      occurredAt: startedAt, // the job's own start time: a retry repeats it
       context: {
         tenantId,
         scope: { type: 'user', id: userId },
@@ -247,6 +248,12 @@ export class WorkoutAiService {
   }
 }
 ```
+
+A retry with the same `idempotencyKey` returns the stored record only when it repeats the same
+call: the same `occurredAt` (it defaults to the current time, so a retry that leaves it out is a
+different payload) and the same price. A retry after a price change, or without a repeated
+`occurredAt`, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of returning the stored record;
+nothing is charged twice either way.
 
 ### 4 — Enforced metering via guard + interceptor
 

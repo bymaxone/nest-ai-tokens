@@ -20,6 +20,7 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, LedgerCostSummary } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
+import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
@@ -115,7 +116,8 @@ export class LedgerService {
       idempotencyKey: ctxKey ?? randomUUID(),
       totalTokens: sumTokens(input),
     }
-    const payloadHash = computePayloadHash(record)
+    const hashedModel = hashedModelOf(input)
+    const payloadHash = computePayloadHash(hashedModel === undefined ? record : { ...record, model: hashedModel })
     try {
       return await this.store.append(record, payloadHash, this.hashChainEnabled)
     } catch (error) {
