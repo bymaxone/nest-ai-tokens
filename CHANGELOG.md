@@ -44,8 +44,7 @@ exported type or signature changes, and no schema or store change.
   `usage.recorded` event, a second usage measurement and a second content capture were produced,
   and the wallet balance did not move again because its debit is keyed by the record. A host that
   passes `occurredAt` and enables budgets was affected on any retry. A retry now returns the stored
-  record and runs none of it, `meter()` called without an estimate records no duration for it, and a test pins every one of
-  those counts.
+  record and runs none of it, and `meter()` called without an estimate records no duration for it.
 - **A retry that left out `occurredAt`, or came after a price change, failed with a conflict.**
   `occurredAt` defaults to the current time and the ledger's payload hash included it, together with
   the price version and the costs, so a retry made a moment later was a different payload. The
