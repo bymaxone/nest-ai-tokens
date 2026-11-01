@@ -13,6 +13,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - The GitHub Release body is now the tag's own `CHANGELOG.md` section instead of the generated
   pull-request list, and the release stops before publishing when the version has no section.
   No change to the package.
+- The unused optional peer `@opentelemetry/api` is removed from `peerDependencies` and
+  `peerDependenciesMeta`. The package imports nothing from it; telemetry goes through the
+  `ITelemetrySink` you implement. Consumers lose only an install hint.
+
+### Documentation
+
+- The README says that `MODEL_PRICES_SEED` has no rows for `azure-openai`, `vertex`, `bedrock` or
+  `openrouter`, so with `pricing.strict` on the first call through those presets throws
+  `AI_TOKENS_PRICE_NOT_FOUND` until the host adds a price, and shows a minimal `upsertPrice` call.
 
 ## [1.1.3] - 2026-10-31
 

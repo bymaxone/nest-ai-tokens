@@ -337,6 +337,11 @@ when the application boots.
 
 All normalizers are pure functions over plain objects — no provider SDK peer dependency. Pass the raw response object and get back a `NormalizedUsage`.
 
+`MODEL_PRICES_SEED` has no rows for `azure-openai`, `vertex`, `bedrock` or `openrouter`; it covers
+`openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`. With `pricing.strict` on
+(the default), the first call through a preset of an unseeded provider throws
+`AI_TOKENS_PRICE_NOT_FOUND` until you add its price. See [Pricing & Markup](#-pricing--markup).
+
 ---
 
 ## 💰 Pricing & Markup
@@ -357,6 +362,20 @@ BymaxAiTokensModule.forRootAsync({
 // Provider cost: $0.005 (5_000_000n nano-USD)
 // Billed to user: $0.020 (20_000_000n nano-USD, after 4× markup)
 // Margin: $0.015 per call
+```
+
+A provider or model the snapshot does not price needs a rate before it can be rated. Add one with
+`PricingService.upsertPrice`; the new row closes the previous one at its `effectiveFrom`, which
+defaults to now. Rates are nano-USD per million tokens:
+
+```typescript
+await pricing.upsertPrice({
+  provider: 'bedrock',
+  model: 'my-model', // the model id your calls report
+  operation: 'chat',
+  inputNanoUsdPerMillion: 3_000_000_000n, // $3 per million input tokens
+  outputNanoUsdPerMillion: 15_000_000_000n, // $15 per million output tokens
+})
 ```
 
 For per-tenant or per-feature pricing, implement `IMarkupPolicy`:

@@ -12,6 +12,7 @@ import type {
   MeteringContext,
   MeteringScope,
   MeteringService,
+  PricingService,
   UsageReportService,
   WalletService,
 } from '@bymax-one/nest-ai-tokens'
@@ -27,12 +28,14 @@ declare global {
     wallets: WalletService
     budgets: BudgetService
     reports: UsageReportService
+    pricing: PricingService
   }
 
   const metering: MeteringService
   const wallets: WalletService
   const budgets: BudgetService
   const reports: UsageReportService
+  const pricing: PricingService
 
   const tenantId: string
   const userId: string
