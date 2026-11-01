@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Documentation
+
+- The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
+  `AI_TOKENS_USAGE_MALFORMED` because the normalizer reads `model` and `usage` from the whole
+  response; it now passes `res`.
+- The README now says which presets are priced from which seeded rows. The `azureOpenai` and
+  `vertex` presets record provider `openai` and `gemini` (the normalizer sets the provider), so only
+  `bedrock` has no seeded rows. It also says that a Bedrock Converse response carries no model id, so
+  the record's model is `''` unless the caller passes one.
+
 ## [1.1.4] - 2026-11-01
 
 **Apply:** `verifyChain` has a new result, `{ valid: false, status: 'never-enabled' }`, which has no

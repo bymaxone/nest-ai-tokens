@@ -234,7 +234,7 @@ export class WorkoutAiService {
   async generate(tenantId: string, userId: string, jobId: string) {
     const res = await this.openai.chat.completions.create({ model: 'gpt-4o', messages: [] })
     await this.metering.record({
-      usage: res.usage,
+      usage: res, // the whole response: the normalizer reads its `model` and `usage`
       preset: providerPresets.openaiChat,
       context: {
         tenantId,
@@ -337,12 +337,17 @@ when the application boots.
 
 All normalizers are pure functions over plain objects — no provider SDK peer dependency. Pass the raw response object and get back a `NormalizedUsage`.
 
-`MODEL_PRICES_SEED` has no rows for `azure-openai`, `vertex`, `bedrock` or `openrouter`; it covers
-`openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`. With `pricing.strict` on
-(the default), a call through the `azure-openai`, `vertex` or `bedrock` preset throws
-`AI_TOKENS_PRICE_NOT_FOUND` until you add its price. The `openrouter` preset rates from the cost the
-provider reports, so it needs no price unless a call sets `ratingMode: 'rate-table'`. See
-[Pricing & Markup](#-pricing--markup).
+`MODEL_PRICES_SEED` covers `openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`. A
+record takes its provider from the normalizer, not from the preset: the `azureOpenai` preset records
+provider `openai` and the `vertex` preset records `gemini`, so a call is priced from those seeded rows
+when its model id matches one (for example `gpt-5-mini` or `gemini-2.5-flash`). A name that matches
+nothing, such as an Azure deployment name, throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on
+(the default); give the context a `baseModel` or add a price with `upsertPrice`. The `bedrock` preset
+records provider `bedrock`, which has no seeded rows, so every Bedrock call throws until you add a
+price. A Converse response carries no model id: pass `{ model, ...response }`, or the record's model is
+`''` (with `strict: false` it is stored at cost 0 and marked `priceMissing`). The `openrouter` preset
+rates from the cost the provider reports, so it needs no price unless a call sets
+`ratingMode: 'rate-table'`. See [Pricing & Markup](#-pricing--markup).
 
 ---
 
