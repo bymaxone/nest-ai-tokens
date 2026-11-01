@@ -253,8 +253,8 @@ nothing else: no second event, metric, content capture or budget and wallet move
 is what the caller supplied and the provider reported: scope, tags, feature, models, token counts,
 and `occurredAt` when the retry passes one. The price, the markup and a defaulted `occurredAt` are
 computed while the call is served and are not compared, so a retry after a price change returns the
-original record at its original cost. A retry whose request differs fails with
-`AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+original record at its original cost. A retry whose request differs, or whose key belongs to a hold
+that has not been captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
 
 Calls with one key run one at a time within one service instance. A replay does not repeat the
 effects of the first call, so if the first call stopped after writing the record and before its

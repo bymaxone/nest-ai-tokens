@@ -6,7 +6,7 @@
  * @layer server
  */
 
-import type { AiTokensErrorResponse, NewUsageRecord, NormalizedUsage, UsageRecord } from '../../shared'
+import type { AiTokensErrorResponse, NewUsageRecord, NormalizedUsage, UsageRecord, UsageStatus } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameRequest } from '../utils/replay-match'
@@ -61,9 +61,12 @@ export function isIdempotencyConflict(error: unknown): boolean {
   return body.error.code === 'AI_TOKENS_IDEMPOTENCY_CONFLICT'
 }
 
-/** The stored record when it is the same request as this call, else the idempotency conflict. */
+/** The statuses of a recorded call. A hold that has not been captured is not one, whatever its fields say. */
+const RECORDED: ReadonlySet<UsageStatus> = new Set<UsageStatus>(['posted', 'reversed'])
+
+/** The stored record when it is a recorded call with the same request as this call, else the idempotency conflict. */
 export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: ReplayBasis): UsageRecord {
-  if (sameRequest(stored, request, basis)) return stored
+  if (RECORDED.has(stored.status) && sameRequest(stored, request, basis)) return stored
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey })
 }

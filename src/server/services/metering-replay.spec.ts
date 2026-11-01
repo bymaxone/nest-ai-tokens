@@ -123,7 +123,7 @@ function conflictCode(error: unknown): string | undefined {
 }
 
 /** Fields a store assigns or a later transition changes; the rest is what a caller appends. */
-const STORE_FIELDS = new Set(['id', 'status', 'hash', 'prevHash', 'createdAt', 'updatedAt', 'idempotencyKey', 'totalTokens', 'reversedByRecordId'])
+const STORE_FIELDS = new Set(['id', 'hash', 'prevHash', 'createdAt', 'updatedAt', 'idempotencyKey', 'totalTokens', 'reversedByRecordId'])
 
 /** The append input of a record, so a spec can store the row another version would have written. */
 function appendInputOf(record: UsageRecord, over: Partial<LedgerAppendInput> = {}): LedgerAppendInput {
@@ -268,6 +268,41 @@ describe('record(): a retry of a different request', () => {
     const { idempotencyKey: _unused, ...keyless } = CONTEXT
     await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: keyless })
     expect(find).not.toHaveBeenCalled()
+  })
+})
+
+describe('record(): a key that belongs to a hold', () => {
+  const ESTIMATE = { provider: 'openai', model: 'gpt-5-mini', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 } as const
+  const HOLD_CONTEXT: MeteringContext = { ...CONTEXT, preset: providerPresets.openaiChat }
+
+  /** A hold that has not settled is not a recorded call, so reusing its key to record is a different request. */
+  it.each([
+    ['pending', async (_booted: Booted, _hold: Awaited<ReturnType<MeteringService['hold']>>): Promise<void> => undefined],
+    ['released', async (booted: Booted, hold: Awaited<ReturnType<MeteringService['hold']>>): Promise<void> => booted.metering.release(hold, 'test')],
+  ])('conflicts with a %s hold and leaves it as it was', async (status, settle) => {
+    const booted = await boot()
+    const hold = await booted.metering.hold(HOLD_CONTEXT, ESTIMATE)
+    await settle(booted, hold)
+    const afterHold = await snapshot(booted)
+
+    const error = await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT }).catch((e: unknown) => e)
+
+    expect(conflictCode(error)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect((await booted.ledger.findById(hold.id))?.status).toBe(status)
+    expect(await snapshot(booted)).toEqual(afterHold)
+  })
+
+  /** A hold that was captured is a recorded call; recording it again under its key is a replay. */
+  it('returns the settled record of a captured hold and moves nothing', async () => {
+    const booted = await boot()
+    const hold = await booted.metering.hold(HOLD_CONTEXT, ESTIMATE)
+    const captured = await booted.metering.capture(hold, RAW, providerPresets.openaiChat)
+    const afterCapture = await snapshot(booted)
+
+    const replay = await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT })
+
+    expect(replay.id).toBe(captured.id)
+    expect(await snapshot(booted)).toEqual(afterCapture)
   })
 })
 
