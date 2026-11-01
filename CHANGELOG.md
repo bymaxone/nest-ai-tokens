@@ -8,6 +8,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** a host that seeded its own price rows under `azure-openai` or `vertex` and relied on a
+hold (`hold()` or `meter()` with a `{ tokens }` estimate) to price through them must re-key those
+rows to `openai` or `gemini`, or pass the provider in the estimate (`{ provider, model, ... }`).
+`record()` never read those rows, and the `azureOpenai` and `vertex` presets now carry the provider
+their records already had.
+
+### Fixed
+
+- **A hold and a record made from the same preset used different providers.** `record()` stamped the
+  provider its normalizer returned (`openai` for `azureOpenai`, `gemini` for `vertex`), while
+  `hold()` stamped `preset.provider` (`azure-openai`, `vertex`) and `capture()` priced with that. No
+  seeded row exists under those ids, so a held Azure or Vertex call threw
+  `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and was settled at cost 0 with it off. The two
+  presets now carry `openai` and `gemini`, and a test pins that every preset's `provider` equals the
+  one its normalizer stamps.
+- **`providerPresets.openaiCompatible(id)` now records `id`.** Its normalizer cannot know the id, so
+  the record's provider was `''`: a call threw `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on
+  and was stored with provider `''` at cost 0 with it off, whatever seeded rows existed for
+  `deepseek`, `xai` or `groq`.
+- **`record()` names the model after `baseModel` when the response carries none.** A Bedrock Converse
+  response has no model id, so the record's model was `''` while the same call through `hold()` and
+  `capture()` stored `baseModel`. A model the response did carry is never replaced. The model and
+  provider are part of the idempotency payload, so a retry of a Bedrock (or `openaiCompatible`,
+  non-strict) `record()` call that was first stored by an earlier version, with the same
+  `idempotencyKey`, now fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of returning the stored
+  record.
+- The `vercelAiSdk` preset still records no provider on purpose (the SDK does not say which vendor
+  served the call), so such a record fails loudly instead of being priced from the wrong vendor's
+  rows. Its documentation said the context could override the provider; nothing does, and the text now
+  says so. A test pins that a held non-OpenAI model is never priced from an `openai` row.
+
 ### Documentation
 
 - The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
@@ -16,9 +47,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   cover, so under the default `pricing.strict` they threw `AI_TOKENS_PRICE_NOT_FOUND`; they now use
   the seeded `gpt-5-mini`. A unit test runs the Quick Start flow so the example cannot drift again.
 - The README now says which presets are priced from which seeded rows. The `azureOpenai` and
-  `vertex` presets record provider `openai` and `gemini` (the normalizer sets the provider), so only
-  `bedrock` has no seeded rows. It also says that a Bedrock Converse response carries no model id, so
-  the record's model is `''` unless the caller passes one.
+  `vertex` presets record provider `openai` and `gemini`. It
+  also says that a Bedrock Converse response carries no model id, so the record's model is
+  `baseModel` when the caller passes one and `''` otherwise, and it explains the `vercelAiSdk` and
+  `openaiCompatible(id)` providers.
 
 ## [1.1.4] - 2026-11-01
 

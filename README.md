@@ -337,17 +337,25 @@ when the application boots.
 
 All normalizers are pure functions over plain objects — no provider SDK peer dependency. Pass the raw response object and get back a `NormalizedUsage`.
 
-`MODEL_PRICES_SEED` covers `openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`. A
-record takes its provider from the normalizer, not from the preset: the `azureOpenai` preset records
-provider `openai` and the `vertex` preset records `gemini`, so a call is priced from those seeded rows
-when its model id matches one (for example `gpt-5-mini` or `gemini-2.5-flash`). A name that matches
-nothing, such as an Azure deployment name, throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on
-(the default); give the context a `baseModel` or add a price with `upsertPrice`. The `bedrock` preset
-records provider `bedrock`, which has no seeded rows, so every Bedrock call throws until you add a
-price. A Converse response carries no model id: pass `{ model, ...response }`, or the record's model is
-`''` (with `strict: false` it is stored at cost 0 and marked `priceMissing`). The `openrouter` preset
-rates from the cost the provider reports, so it needs no price unless a call sets
-`ratingMode: 'rate-table'`. See [Pricing & Markup](#-pricing--markup).
+`MODEL_PRICES_SEED` covers `openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`.
+A preset's `provider` is the id its normalizer stamps, so a record and a hold sized from the same
+preset are priced from the same rows. The `azureOpenai` preset records provider `openai` and the
+`vertex` preset records `gemini`, so a call is priced from those seeded rows when its model id
+matches one (for example `gpt-5-mini` or `gemini-2.5-flash`). A name that matches nothing, such as
+an Azure deployment name, throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on (the
+default); give the context a `baseModel` or add a price with `upsertPrice`. A price row you add for
+Azure or Vertex belongs under `openai` or `gemini`, not under `azure-openai` or `vertex`.
+`providerPresets.openaiCompatible(id)` records the `id` you chose, so `openaiCompatible('deepseek')`
+is priced from the seeded `deepseek` rows. The `vercelAiSdk` preset records no provider, because the
+AI SDK does not say which vendor served the call and pricing it from one vendor's rows would be
+wrong for the others: such a record throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and
+is stored at cost 0 and marked `priceMissing` with it off. To price an AI SDK call, pass a normalized
+usage whose `provider` you set. The `bedrock` preset records provider `bedrock`, which has no seeded
+rows, so with `pricing.strict` on every Bedrock call throws until you add a price. A Converse response carries no model id:
+pass `baseModel` in the context (the record's model is then that `baseModel`), or `{ model, ...response }`;
+with neither, the record's model is `''` (with `strict: false` it is stored at cost 0 and marked
+`priceMissing`). The `openrouter` preset rates from the cost the provider reports, so it needs no
+price unless a call sets `ratingMode: 'rate-table'`. See [Pricing & Markup](#-pricing--markup).
 
 ---
 

@@ -496,10 +496,10 @@ import { providerPresets } from '@bymax-one/nest-ai-tokens'
 
 providerPresets.openaiChat          // { provider: 'openai',       normalizeOpenAiChatUsage,      'rate-table' }
 providerPresets.openaiResponses     // { provider: 'openai',       normalizeOpenAiResponsesUsage, 'rate-table' }
-providerPresets.azureOpenai         // { provider: 'azure-openai', normalizeOpenAiChatUsage,      'rate-table' } — pass baseModel! (§6.6)
+providerPresets.azureOpenai         // { provider: 'openai',       normalizeOpenAiChatUsage,      'rate-table' } — pass baseModel! (§6.6)
 providerPresets.anthropic           // { provider: 'anthropic',    normalizeAnthropicUsage,       'rate-table' }
 providerPresets.gemini              // { provider: 'gemini',       normalizeGeminiUsage,          'rate-table' }
-providerPresets.vertex              // { provider: 'vertex',       normalizeGeminiUsage,          'rate-table' }
+providerPresets.vertex              // { provider: 'gemini',       normalizeGeminiUsage,          'rate-table' }
 providerPresets.bedrock             // { provider: 'bedrock',      normalizeBedrockConverseUsage, 'rate-table' }
 providerPresets.mistral             // { provider: 'mistral',      normalizeMistralUsage,         'rate-table' }
 providerPresets.vercelAiSdk         // { provider: 'openai'*,      normalizeVercelAiSdkUsage,     'rate-table' } — *override per call
@@ -644,7 +644,7 @@ export interface NormalizedUsage {
 | **Azure OpenAI**         | Same shape as OpenAI Chat; model identity comes from the deployment name → callers MUST pass `baseModel` (§6.6). |
 | **Anthropic Messages**   | `usage.input_tokens`, `output_tokens` (thinking already included; `reasoningTokens: 0`), `cache_creation_input_tokens`, `cache_read_input_tokens`, `cache_creation.{ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}`, `usage.service_tier` (standard/priority/batch), `usage.server_tool_use.web_search_requests` → `serverToolUse`. |
 | **Google Gemini**        | `usageMetadata.{promptTokenCount, candidatesTokenCount, cachedContentTokenCount, thoughtsTokenCount, toolUsePromptTokenCount}`. `candidatesTokenCount` EXCLUDES thoughts → maps directly to `outputTokens`; `thoughtsTokenCount → reasoningTokens`; `toolUsePromptTokenCount` folds into `inputTokens` (billed at input rate). |
-| **Vertex AI (Gemini)**   | Same `usageMetadata` shape → reuses the Gemini normalizer with `provider: 'vertex'`; model IDs aliased (§6.6). |
+| **Vertex AI (Gemini)**   | Same `usageMetadata` shape → reuses the Gemini normalizer (records provider `gemini`); model IDs aliased (§6.6). |
 | **AWS Bedrock Converse** | `usage.{inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, cacheDetails[]}` — `cacheDetails` TTL entries map to `cacheWrite5m/1h`; model IDs like `us.anthropic.claude-…-v1:0` aliased (§6.6). |
 | **Mistral**              | `usage.{prompt_tokens, completion_tokens}`; additional audio/cache detail fields are preserved in `raw` (their exact shape is version-dependent and not normatively mapped in v0.1). |
 | **OpenRouter**           | `usage.{prompt_tokens, completion_tokens, cost}`, `cost_details.upstream_inference_cost`, `prompt_tokens_details.{cached_tokens, cache_write_tokens}`, `completion_tokens_details.reasoning_tokens` (same subtraction rule). `cost` (float USD) → `providerReportedCostNanoUsd = BigInt(Math.round(cost × 1e9))`. |

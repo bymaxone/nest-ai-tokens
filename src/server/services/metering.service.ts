@@ -176,6 +176,15 @@ function buildAppendInput(args: {
   }
 }
 
+/**
+ * Name the model after `baseModel` when the response carried none (a Bedrock Converse
+ * response has no model id), so a record stores the same model a hold + capture does.
+ * A model the response did carry is never replaced.
+ */
+function withBaseModel(usage: NormalizedUsage, baseModel: string | undefined): NormalizedUsage {
+  return usage.model === '' && baseModel !== undefined ? { ...usage, model: baseModel } : usage
+}
+
 /** The attribution/identity columns shared by settled and pending appends. */
 function baseColumns(
   usage: Pick<NormalizedUsage, 'provider' | 'model' | 'operation'>,
@@ -269,7 +278,7 @@ export class MeteringService {
         reason: 'enforce requires the wallets or budgets feature to be enabled',
       })
     }
-    const normalized = this.resolveNormalizedUsage(input)
+    const normalized = withBaseModel(this.resolveNormalizedUsage(input), context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
     const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode

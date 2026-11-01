@@ -5,7 +5,6 @@ import {
   applyMarkup,
   computeCostNanoUsd,
   normalizeOpenAiChatUsage,
-  normalizeOpenAiCompatibleUsage,
 } from '../shared'
 import type { AiTokensEvent, AiTokensErrorResponse } from '../shared'
 import { AiTokensException as AiTokensExceptionClass } from './errors'
@@ -316,14 +315,14 @@ describe('BymaxAiTokensModule', () => {
       normalizer: normalizeOpenAiChatUsage,
       ratingMode: 'rate-table',
     })
-    expect(providerPresets.azureOpenai.provider).toBe('azure-openai')
+    expect(providerPresets.azureOpenai.provider).toBe('openai')
+    expect(providerPresets.vertex.provider).toBe('gemini')
     expect(providerPresets.openrouter.ratingMode).toBe('provider-reported')
     expect(providerPresets.vercelAiSdk.provider).toBe('openai')
-    expect(providerPresets.openaiCompatible('deepseek')).toEqual({
-      provider: 'deepseek',
-      normalizer: normalizeOpenAiCompatibleUsage,
-      ratingMode: 'rate-table',
-    })
+    const compatible = providerPresets.openaiCompatible('deepseek')
+    expect(compatible.provider).toBe('deepseek')
+    expect(compatible.ratingMode).toBe('rate-table')
+    expect(compatible.normalizer({ model: 'm', usage: { prompt_tokens: 1, completion_tokens: 1 } }).provider).toBe('deepseek')
   })
 
   /**
