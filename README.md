@@ -256,10 +256,11 @@ computed while the call is served and are not compared, so a retry after a price
 original record at its original cost. A retry whose request differs fails with
 `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
 
-Calls with one key run one at a time within a process. A replay does not repeat the effects of the
-first call, so if the first call stopped after writing the record and before its budget or wallet
-movement, a retry returns that record without making the movement. Across replicas, two
-simultaneous calls with one key can still both run their effects.
+Calls with one key run one at a time within one service instance. A replay does not repeat the
+effects of the first call, so if the first call stopped after writing the record and before its
+budget or wallet movement, a retry returns that record without making the movement. Two
+simultaneous calls with one key on different instances, in this process or another, can still both
+run their effects.
 
 ### 4 — Enforced metering via guard + interceptor
 

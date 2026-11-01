@@ -12,6 +12,7 @@ import { BymaxAiTokensModule } from '../bymax-ai-tokens.module'
 import { providerPresets } from '../config/provider-presets'
 import { AiTokensException } from '../errors'
 import type { IAiTokensStore, MeteringContext } from '../interfaces'
+import { KeyedSerial } from '../utils/keyed-serial'
 import { BudgetService, LedgerService, MeteringService, PricingService, WalletService } from './index'
 import type { LedgerAppendInput } from './ledger.service'
 
@@ -26,6 +27,7 @@ const CONTENT = { prompt: 'p', completion: 'c' }
 interface Probe {
   events: string[]
   telemetry: number
+  durations: number
   content: number
 }
 
@@ -42,7 +44,7 @@ interface Booted {
 
 /** Boot a module with wallets, budgets and counting sinks, and give the payer a wallet and a budget. */
 async function boot(strict = true, store: IAiTokensStore = makeFullStore()): Promise<Booted> {
-  const probe: Probe = { events: [], telemetry: 0, content: 0 }
+  const probe: Probe = { events: [], telemetry: 0, durations: 0, content: 0 }
   const moduleRef = await Test.createTestingModule({
     imports: [
       BymaxAiTokensModule.forRoot({
@@ -64,6 +66,9 @@ async function boot(strict = true, store: IAiTokensStore = makeFullStore()): Pro
           sink: {
             recordUsage: (): void => {
               probe.telemetry += 1
+            },
+            recordDuration: (): void => {
+              probe.durations += 1
             },
           },
         },
@@ -281,18 +286,38 @@ describe('record(): a provider-reported cost is part of the request', () => {
     expect(conflictCode(error)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
   })
 
-  /** Rating still refuses a provider-reported call that carries no cost, replay lookup or not. */
-  it('refuses a call that reports no cost', async () => {
+  /** A provider-reported call without a cost is malformed whether or not the key is already stored. */
+  it.each([
+    ['a stored cost of zero', 0],
+    ['a stored cost above zero', 0.01],
+    ['no stored row', undefined],
+  ])('refuses a retry that reports no cost, with %s', async (_name, storedCost) => {
     const booted = await boot()
-    await expect(booted.metering.record({ usage: reported(), preset: providerPresets.openrouter, context: CONTEXT })).rejects.toBeInstanceOf(AiTokensException)
+    if (storedCost !== undefined) await booted.metering.record({ usage: reported(storedCost), preset: providerPresets.openrouter, context: CONTEXT })
+
+    const error = await booted.metering.record({ usage: reported(), preset: providerPresets.openrouter, context: CONTEXT }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_USAGE_MALFORMED')
+    expect(await booted.ledger.query({ tenantId: 't' })).toHaveLength(storedCost === undefined ? 0 : 1)
   })
 })
 
 describe('record(): calls with one idempotency key run one at a time', () => {
-  /** The number of keys with a call in flight. */
-  function inflight(metering: MeteringService): number {
-    return (metering as unknown as { inflight: Map<string, unknown> }).inflight.size
+  /** Record the serializer the next calls run on. */
+  function watchSerializer(): jest.SpyInstance {
+    return jest.spyOn(KeyedSerial.prototype, 'run')
   }
+
+  /** The number of keys with a call in flight in the serializer a service ran its calls on. */
+  function inflight(run: jest.SpyInstance): number {
+    const serializer: unknown = run.mock.contexts[0]
+    return serializer instanceof KeyedSerial ? serializer.size : -1
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
 
   /**
    * Two simultaneous calls with one key would both miss the lookup and both append. Running them in
@@ -301,6 +326,7 @@ describe('record(): calls with one idempotency key run one at a time', () => {
    */
   it('produces one set of effects and one record for two concurrent calls', async () => {
     const booted = await boot()
+    const serializer = watchSerializer()
     const call = (): Promise<UsageRecord> => booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT, content: CONTENT, occurredAt: OCCURRED_AT })
 
     const [a, b] = await Promise.all([call(), call()])
@@ -311,12 +337,13 @@ describe('record(): calls with one idempotency key run one at a time', () => {
     expect(booted.probe.events.filter((type) => type === 'ai_tokens.usage.recorded')).toHaveLength(1)
     expect(booted.probe.telemetry).toBe(1)
     expect(booted.probe.content).toBe(2)
-    expect(inflight(booted.metering)).toBe(0)
+    expect(inflight(serializer)).toBe(0)
   })
 
   /** The second call never inherits the first one's failure. */
   it('records normally when the call ahead of it failed before appending', async () => {
     const booted = await boot()
+    const serializer = watchSerializer()
     const failing = booted.metering.record({ usage: { ...RAW, model: 'unpriced-model' }, preset: providerPresets.openaiChat, context: CONTEXT })
     const following = booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT })
 
@@ -324,12 +351,13 @@ describe('record(): calls with one idempotency key run one at a time', () => {
     const record = await following
     expect(record.model).toBe('gpt-5-mini')
     expect(await booted.ledger.query({ tenantId: 't' })).toHaveLength(1)
-    expect(inflight(booted.metering)).toBe(0)
+    expect(inflight(serializer)).toBe(0)
   })
 
   /** Calls with different keys, and the same key in another tenant, never queue behind each other. */
   it('lets calls with other keys run while one waits', async () => {
     const booted = await boot()
+    const serializer = watchSerializer()
     let release: () => void = () => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -344,10 +372,10 @@ describe('record(): calls with one idempotency key run one at a time', () => {
     const other = await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: { ...CONTEXT, idempotencyKey: 'other' } })
 
     expect(other.idempotencyKey).toBe('other')
-    expect(inflight(booted.metering)).toBe(1)
+    expect(inflight(serializer)).toBe(1)
     release()
     await held
-    expect(inflight(booted.metering)).toBe(0)
+    expect(inflight(serializer)).toBe(0)
   })
 
   /** The map holds only keys with a call in flight, however the call ends. */
@@ -356,16 +384,18 @@ describe('record(): calls with one idempotency key run one at a time', () => {
     ['is rejected by the store', new Error('store down')],
   ])('holds no key once a call that %s has settled', async (_name, failure) => {
     const booted = await boot()
+    const serializer = watchSerializer()
     if (failure !== undefined) jest.spyOn(booted.ledger, 'append').mockRejectedValueOnce(failure)
     await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT }).catch(() => undefined)
-    expect(inflight(booted.metering)).toBe(0)
+    expect(inflight(serializer)).toBe(0)
   })
 
   /** A call that fails validation before any lookup also leaves nothing behind. */
   it('holds no key once a call that throws has settled', async () => {
     const booted = await boot()
+    const serializer = watchSerializer()
     await expect(booted.metering.record({ usage: { not: 'usage' }, preset: providerPresets.openaiChat, context: CONTEXT })).rejects.toBeInstanceOf(AiTokensException)
-    expect(inflight(booted.metering)).toBe(0)
+    expect(inflight(serializer)).toBe(0)
   })
 })
 
@@ -373,16 +403,11 @@ describe('meter(): a retry', () => {
   /** The duration metric belongs to the call that did the work, not to a replay of it. */
   it('records no duration for a replay', async () => {
     const booted = await boot()
-    const durations: number[] = []
-    const telemetry = (booted.metering as unknown as { telemetry: { recordDuration: (...args: unknown[]) => void } }).telemetry
-    jest.spyOn(telemetry, 'recordDuration').mockImplementation((_usage, ms) => {
-      durations.push(ms as number)
-    })
     const run = (): Promise<unknown> => booted.metering.meter(() => Promise.resolve(RAW), { ...CONTEXT, preset: providerPresets.openaiChat }, (response) => response)
 
     await run()
     await run()
 
-    expect(durations).toHaveLength(1)
+    expect(booted.probe.durations).toBe(1)
   })
 })

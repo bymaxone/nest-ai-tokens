@@ -81,11 +81,10 @@ their records already had.
 
 ### Documentation
 
-- The Quick Start now passes the job's own start time as `occurredAt`, and the README says when a
-  retry returns the stored record: only when it repeats the same `occurredAt` and meets the same
-  price. A retry that leaves `occurredAt` out (it defaults to the current time) or follows a price
-  change fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A test runs the Quick Start twice and pins both
-  outcomes.
+- The README says what a retry with the same `idempotencyKey` returns and what it leaves alone, that
+  calls with one key run one at a time within one service instance, and that two simultaneous calls
+  with one key on different instances can still both run their effects. A test runs the Quick Start
+  twice, also after a price change, and pins that it stores one record.
 - The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
   `AI_TOKENS_USAGE_MALFORMED` because the normalizer reads `model` and `usage` from the whole
   response; it now passes `res`. The examples also used `gpt-4o`, which the price seed does not

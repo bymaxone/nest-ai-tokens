@@ -17,7 +17,6 @@ import { Injectable, Logger } from '@nestjs/common'
 import type {
   AccessStatus,
   AiOperation,
-  AiTokensErrorResponse,
   BudgetStatus,
   MeteringScope,
   NewUsageRecord,
@@ -34,12 +33,14 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
 import { withHashedModel } from '../utils/hashed-model'
+import { KeyedSerial } from '../utils/keyed-serial'
 import type { ReplayBasis } from '../utils/replay-match'
-import { sameRequest } from '../utils/replay-match'
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
+import type { RatingResult, RecordOutcome } from './record-replay'
+import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
@@ -116,14 +117,6 @@ export type MeteringServiceOptions = Pick<ResolvedAiTokensOptions, 'ratingMode'>
   wallets?: ResolvedAiTokensOptions['wallets']
 }
 
-/** The resolved rating of one call, in exact bigint nano-USD. */
-interface RatingResult {
-  rawCostNanoUsd: bigint
-  surchargeNanoUsd: bigint
-  priceVersionId: string | null
-  priceMissing: boolean
-}
-
 /** The no-op hooks used until the event dispatcher is wired. */
 const NOOP_EVENT_HOOKS: MeteringEventHooks = {
   usageRecorded: (): Promise<void> => Promise.resolve(),
@@ -181,38 +174,6 @@ function buildAppendInput(args: {
   }
 }
 
-/** The result of one `record()` call: the record and whether it was a replay of an earlier call. */
-interface RecordOutcome {
-  record: UsageRecord
-  replayed: boolean
-}
-
-/** Swallows a settled promise's value or rejection, so a chain built from it never rejects. */
-const noop = (): undefined => undefined
-
-/** The markup of a call that is only being compared, not billed. */
-const NEUTRAL_MARKUP: ResolvedMarkup = { multiplier: 1, apply: (raw: bigint): bigint => raw }
-
-/** The rating of a call that is only being compared: the raw cost is part of the request only when the provider reports it. */
-function unratedFor(normalized: NormalizedUsage, basis: ReplayBasis): RatingResult {
-  const raw = basis.providerReported ? (normalized.providerReportedCostNanoUsd ?? 0n) : 0n
-  return { rawCostNanoUsd: raw, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
-}
-
-/** Whether an error is the ledger reporting a key already used for a different payload. */
-function isIdempotencyConflict(error: unknown): boolean {
-  if (!(error instanceof AiTokensException)) return false
-  const body = error.getResponse() as AiTokensErrorResponse
-  return body.error.code === 'AI_TOKENS_IDEMPOTENCY_CONFLICT'
-}
-
-/** The stored record when it is the same request as this call, else the idempotency conflict. */
-function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: ReplayBasis): UsageRecord {
-  if (sameRequest(stored, request, basis)) return stored
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-  throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey })
-}
-
 /**
  * Name the model after `baseModel` when the response carried none (a Bedrock Converse
  * response has no model id), so a record stores the same model a hold + capture does.
@@ -262,7 +223,7 @@ export class MeteringService {
    * The newest settlement of each in-flight `(tenantId, idempotencyKey)`; a later call with the same key waits on it.
    * @internal
    */
-  private readonly inflight = new Map<string, Promise<void>>()
+  private readonly inflight = new KeyedSerial()
   /** The wallet service, or `undefined` when the wallet feature is disabled. */
   private readonly wallets: WalletService | undefined
   /** The budget service, or `undefined` when the budget feature is disabled. */
@@ -318,22 +279,14 @@ export class MeteringService {
    * Run {@link recordOnce} one call at a time per `(tenantId, idempotencyKey)`: a second call with
    * the same key waits for the first to settle, whatever its outcome, then runs its own path, so it
    * finds the row the first one wrote or, if the first failed before writing, records normally. The
-   * map holds only keys with a call in flight. The guarantee holds within this process; another
-   * replica is not serialized with it.
+   * map holds only keys with a call in flight. The guarantee holds within one service instance;
+   * another instance, in this process or another, is not serialized with it.
    * @internal
    */
   private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
     if (key === undefined) return this.recordOnce(input, undefined)
-    const slot = JSON.stringify([input.context.tenantId, key])
-    const turn = (this.inflight.get(slot) ?? Promise.resolve()).then(() => this.recordOnce(input, key))
-    const settled = turn.then(noop, noop)
-    this.inflight.set(slot, settled)
-    try {
-      return await turn
-    } finally {
-      if (this.inflight.get(slot) === settled) this.inflight.delete(slot)
-    }
+    return this.inflight.run(JSON.stringify([input.context.tenantId, key]), () => this.recordOnce(input, key))
   }
 
   /**
@@ -795,11 +748,7 @@ export class MeteringService {
   /** Rate a call in the resolved mode; a non-strict rate miss yields zero cost + `priceMissing`. */
   private async rate(usage: NormalizedUsage, serviceTier: ServiceTier, occurredAt: Date, mode: RatingMode, baseModel?: string): Promise<RatingResult> {
     if (mode === 'provider-reported') {
-      const cost = usage.providerReportedCostNanoUsd
-      if (cost === undefined) {
-        // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check error code only
-        throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'provider-reported rating requires providerReportedCostNanoUsd' })
-      }
+      const cost = requireReportedCost(usage)
       return { rawCostNanoUsd: cost, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
     }
     const rate = await this.pricing.resolveRate({
