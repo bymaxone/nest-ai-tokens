@@ -11,7 +11,7 @@ import type { AiTokensErrorResponse, UsageRecord, WalletRef } from '../../shared
 import { BymaxAiTokensModule } from '../bymax-ai-tokens.module'
 import { providerPresets } from '../config/provider-presets'
 import { AiTokensException } from '../errors'
-import type { IAiTokensStore, MeteringContext } from '../interfaces'
+import type { BymaxAiTokensModuleOptions, IAiTokensStore, MeteringContext } from '../interfaces'
 import { KeyedSerial } from '../utils/keyed-serial'
 import { BudgetService, LedgerService, MeteringService, PricingService, WalletService } from './index'
 import type { LedgerAppendInput } from './ledger.service'
@@ -42,48 +42,52 @@ interface Booted {
   store: IAiTokensStore
 }
 
+/** The event, telemetry and content sinks, each counting into `probe`. */
+function countingSinks(probe: Probe): Pick<BymaxAiTokensModuleOptions, 'events' | 'telemetry' | 'content'> {
+  return {
+    events: {
+      emitter: false,
+      sink: {
+        deliver: (event): Promise<void> => {
+          probe.events.push(event.type)
+          return Promise.resolve()
+        },
+      },
+    },
+    telemetry: {
+      sink: {
+        recordUsage: (): void => {
+          probe.telemetry += 1
+        },
+        recordDuration: (): void => {
+          probe.durations += 1
+        },
+      },
+    },
+    content: {
+      store: {
+        put: (): Promise<void> => {
+          probe.content += 1
+          return Promise.resolve()
+        },
+        purge: (): Promise<number> => Promise.resolve(0),
+      },
+    },
+  }
+}
+
 /** Boot a module with wallets, budgets and counting sinks, and give the payer a wallet and a budget. */
 async function boot(strict = true, store: IAiTokensStore = makeFullStore()): Promise<Booted> {
   const probe: Probe = { events: [], telemetry: 0, durations: 0, content: 0 }
-  const moduleRef = await Test.createTestingModule({
-    imports: [
-      BymaxAiTokensModule.forRoot({
-        store,
-        wallets: {},
-        budgets: {},
-        scopeResolver: () => ({ tenantId: 't', scope: SCOPE, feature: 'f' }),
-        pricing: { strict },
-        events: {
-          emitter: false,
-          sink: {
-            deliver: (event): Promise<void> => {
-              probe.events.push(event.type)
-              return Promise.resolve()
-            },
-          },
-        },
-        telemetry: {
-          sink: {
-            recordUsage: (): void => {
-              probe.telemetry += 1
-            },
-            recordDuration: (): void => {
-              probe.durations += 1
-            },
-          },
-        },
-        content: {
-          store: {
-            put: (): Promise<void> => {
-              probe.content += 1
-              return Promise.resolve()
-            },
-            purge: (): Promise<number> => Promise.resolve(0),
-          },
-        },
-      }),
-    ],
-  }).compile()
+  const options: BymaxAiTokensModuleOptions = {
+    store,
+    wallets: {},
+    budgets: {},
+    scopeResolver: () => ({ tenantId: 't', scope: SCOPE, feature: 'f' }),
+    pricing: { strict },
+    ...countingSinks(probe),
+  }
+  const moduleRef = await Test.createTestingModule({ imports: [BymaxAiTokensModule.forRoot(options)] }).compile()
   await moduleRef.init()
   const booted: Booted = {
     metering: moduleRef.get(MeteringService),
