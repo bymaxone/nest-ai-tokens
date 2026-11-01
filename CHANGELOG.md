@@ -15,7 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   hash, so the first record written before the chain was enabled failed verification and ended the
   walk, and the chained records after it were never checked. It now follows the chain by its links:
   records without a hash are counted in the new `unchainedCount` and reported as not protected, the
-  hashed records must form one chain with a genesis, no gap and no fork, and a record whose hash was
+  hashed records must start at one genesis with no gap in the links, and a record whose hash was
   removed while its `prevHash` stayed is reported as broken. A ledger with settled records and no
   hashed one returns `{ valid: false, status: 'never-enabled' }`. The result type gains
   `unchainedCount` and an optional `chainStartsAtRecordId`; the new `never-enabled` variant has no

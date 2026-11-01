@@ -63,8 +63,9 @@ export function chainHash(prevHash: string | null, record: NewUsageRecord & { id
  *
  * Every hashed record must recompute from its own `prevHash`. With `structural` set (an unbounded
  * call), the hashed records must also form one chain: exactly one head, the record whose
- * `prevHash` is not another record's hash, and that head must be the genesis (no `prevHash`); two
- * records may not share a predecessor.
+ * `prevHash` is not another record's hash, and that head must be the genesis (no `prevHash`).
+ * Two records may share a predecessor: the official adapter links each new record to the hashed
+ * record created last, so a hold that settles after a later record leaves two children of one parent.
  * Records without a hash are counted as unchained; one that still carries a `prevHash` is a chained
  * record whose hash was removed and is reported as broken. A `from`/`to` window can cut the chain
  * anywhere, so a bounded call checks each record's own hash and skips the structural rules.
@@ -89,15 +90,8 @@ export function verifyChainRecords(records: UsageRecord[], structural: boolean):
   const heads = hashed.filter((record) => record.prevHash === undefined || !hashes.has(record.prevHash))
   const genesis = heads.find((record) => record.prevHash === undefined)
   if (structural) {
-    const linked = new Set<string>()
-    const forked = hashed.find((record) => {
-      if (record.prevHash === undefined) return false
-      const seen = linked.has(record.prevHash)
-      linked.add(record.prevHash)
-      return seen
-    })
     // With a genesis, any other head is a gap; without one, the first head lost its predecessor.
-    const offending = forked ?? (genesis === undefined ? heads[0] : heads.find((record) => record !== genesis))
+    const offending = genesis === undefined ? heads[0] : heads.find((record) => record !== genesis)
     if (offending !== undefined) return { valid: false, brokenAtRecordId: offending.id, unchainedCount }
   }
   return genesis === undefined

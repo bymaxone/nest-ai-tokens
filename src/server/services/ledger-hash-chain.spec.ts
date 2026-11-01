@@ -226,11 +226,11 @@ describe('verifyChainRecords structure', () => {
     return [a, b, c]
   }
 
-  /** Two rows claiming the same predecessor are a fork: broken at the second claimant. */
-  it('flags a fork at the second row that claims the same predecessor', async () => {
+  /** A hold that settles after a later record links to the same predecessor as the next record; that is normal, not a fork. */
+  it('accepts two records that share a predecessor', async () => {
     const [a, b] = await chained()
-    const rival = { ...b, id: 'rival', hash: chainHash(a.hash ?? null, { ...b, id: 'rival' }) }
-    expect(verifyChainRecords([a, b, rival], true)).toEqual({ valid: false, brokenAtRecordId: 'rival', unchainedCount: 0 })
+    const sibling = { ...b, id: 'sibling', hash: chainHash(a.hash ?? null, { ...b, id: 'sibling' }) }
+    expect(verifyChainRecords([a, b, sibling], true)).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: a.id })
   })
 
   /** Without its first rows the earliest hashed row has no genesis: its predecessor is missing. */
