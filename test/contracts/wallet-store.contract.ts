@@ -282,6 +282,33 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(140n)
     })
 
+    /** The key `activate:<grantId>` belongs to the store: a caller's entry cannot use it, as a refund or as a debit. */
+    it('rejects a caller entry whose key is in the activation namespace', async () => {
+      const c = await make()
+      const grant = await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n }))
+      const reserved = { response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } }
+
+      await expect(c.store.appendEntry(ref, { ...debitEntry(1n, { idempotencyKey: `activate:${grant.id}` }), type: 'refund', amountNanoUsd: 1n })).rejects.toMatchObject(reserved)
+      await expect(c.store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: `activate:${grant.id}` }), 0n)).rejects.toMatchObject(reserved)
+      expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+    })
+
+    /** A caller that tried the activation key of a scheduled grant does not stop the store from crediting it. */
+    it('still credits a scheduled grant after a caller tried its activation key', async () => {
+      const c = await make()
+      const at = new Date((await c.now()).getTime() + 1_500)
+      const scheduled = await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'sched', amountNanoUsd: 100n, effectiveAt: at }))
+      await expect(
+        c.store.appendEntry(ref, { ...debitEntry(1n, { idempotencyKey: `activate:${scheduled.id}` }), type: 'refund', amountNanoUsd: 1n }),
+      ).rejects.toBeDefined()
+      await c.advance(2_000)
+
+      expect(await c.store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: 'after' }), 0n)).not.toBeNull()
+      expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(99n)
+      const markers = await entriesWithKey(c.store, 'adjustment', 'activate:')
+      expect(markers.map((m) => m.reason)).toEqual(['grant activated'])
+    })
+
     /** A due grant that is not credited yet is not open; once a debit credits it, it burns in order with an exact trail. */
     it('burns a late-credited grant in order and keeps the allocation trail exact', async () => {
       const c = await make()

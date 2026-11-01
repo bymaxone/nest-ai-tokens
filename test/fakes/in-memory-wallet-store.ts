@@ -30,6 +30,7 @@ import type {
   WalletEntryPage,
 } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict } from '../../src/server/services/ledger-idempotency-conflict'
+import { activationKey, assertCallerKey } from '../../src/server/utils/wallet-keys'
 
 /** A persisted debit→grant allocation (the audit trail of §9.3). */
 export interface WalletAllocation {
@@ -106,6 +107,7 @@ export class InMemoryWalletStore implements IWalletStore {
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
   ): Promise<WalletEntry> {
+    assertCallerKey(entry.idempotencyKey)
     const autoCreate = entry.type === 'grant' || (entry.type === 'adjustment' && entry.amountNanoUsd > 0n)
     const wallet = this.resolveWallet(ref, autoCreate)
     if (wallet === null) throw new WalletMissingError()
@@ -116,6 +118,7 @@ export class InMemoryWalletStore implements IWalletStore {
 
   // eslint-disable-next-line @typescript-eslint/require-await -- async so a conflict throw surfaces as a rejected promise; the reserve critical section below stays synchronous (atomic).
   async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null> {
+    assertCallerKey(entry.idempotencyKey)
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return null
     const replay = this.replayOrConflict(ref, wallet, entry)
@@ -242,14 +245,9 @@ export class InMemoryWalletStore implements IWalletStore {
     return grant.effectiveAt <= grant.createdAt && (grant.expiresAt === undefined || grant.expiresAt > grant.createdAt)
   }
 
-  /** The key of the entry that credits a grant that was not due as it was appended. */
-  private static activationKey(grantId: string): string {
-    return `activate:${grantId}`
-  }
-
   /** Whether a grant's amount is part of the materialized column: due at append, or credited since. */
   private isCredited(wallet: Wallet, grant: WalletEntry): boolean {
-    return this.wasCountedAtAppend(grant) || this.idempotency.has(InMemoryWalletStore.replayKey(wallet.id, InMemoryWalletStore.activationKey(grant.id)))
+    return this.wasCountedAtAppend(grant) || this.idempotency.has(InMemoryWalletStore.replayKey(wallet.id, activationKey(grant.id)))
   }
 
   /**
@@ -269,7 +267,7 @@ export class InMemoryWalletStore implements IWalletStore {
         amountNanoUsd: grant.amountNanoUsd,
         priority: grant.priority,
         effectiveAt: now,
-        idempotencyKey: InMemoryWalletStore.activationKey(grant.id),
+        idempotencyKey: activationKey(grant.id),
         reason: 'grant activated',
       }, [])
       activated = true

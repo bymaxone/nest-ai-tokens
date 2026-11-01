@@ -55,6 +55,7 @@ import type {
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
+import { activationKey, assertCallerKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -370,6 +371,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
   ): Promise<WalletEntry> {
+    assertCallerKey(entry.idempotencyKey)
     try {
       return await this.prisma.$transaction(async (tx) => {
         const wallet = await this.ensureWallet(tx, ref, walletAutoCreatable(entry))
@@ -387,6 +389,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null> {
+    assertCallerKey(entry.idempotencyKey)
     try {
       return await this.prisma.$transaction(async (tx) => {
         const wallet = (await this.getWalletWithin(tx, ref)) ?? null
@@ -633,7 +636,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         type: 'adjustment',
         amountNanoUsd: grant.amountNanoUsd,
         priority: grant.priority,
-        idempotencyKey: `activate:${grant.id}`,
+        idempotencyKey: activationKey(grant.id),
         reason: 'grant activated',
       })
       if (activation !== undefined) activated = true

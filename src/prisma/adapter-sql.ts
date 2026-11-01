@@ -33,6 +33,7 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // server's four `instanceof AiTokensException` guards would stop matching
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { ACTIVATION_KEY_PREFIX } from '../server/utils/wallet-keys'
 
 /** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
 export interface UsageRow {
@@ -566,7 +567,7 @@ export const DB_NOW_SQL = Prisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
 export const DUE_AT_APPEND_SQL = Prisma.sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
 
 /** Whether an `activate:<grantId>` entry has credited the grant aliased `g`. */
-export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = 'activate:' || g."id")`
+export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id")`
 
 /** Whether the grant aliased `g` is part of the materialized balance: due at append, or activated since. */
 export const CREDITED_SQL = Prisma.sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`
