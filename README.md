@@ -448,8 +448,13 @@ due as it is appended counts at once. One that is not yet due is credited when i
 debit or `reconcile()`: the store writes an `adjustment` entry keyed `activate:<grantId>` with the reason
 `grant activated`, which carries the grant's amount into the balance. That entry is bookkeeping, not an
 operator adjustment, so a report that lists adjustments should skip it. Idempotency keys that start with
-`activate:` or `expiry:` belong to the store, and a wallet entry that uses one is refused. `getBalance()` reads the stored
-balance, which changes at a debit or a `reconcile()`, so it can trail the clock until the next one.
+`activate:` or `expiry:` belong to the store, and a wallet entry that uses one is refused. If an entry the store
+did not write already holds one of those keys for a grant, the debit or `reconcile()` that needs it is refused with
+`AI_TOKENS_INVALID_CONFIG`, and the wallet, the key and the grant are on the error's `cause`.
+
+> **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
+> `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
+> when you need the figure that includes every due grant.
 
 ### Multi-Dimension Budgets
 
@@ -582,6 +587,30 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed record |
 | `AI_TOKENS_STREAM_USAGE_MISSING` | 422  | Stream ended without provider usage and no tokenizer fallback available          |
 | `AI_TOKENS_STORE_ERROR`          | 502  | Persistence adapter raised an unmapped error                                     |
+
+### Logging the cause of a store error
+
+An `AiTokensException` body is what a client receives, so it holds the code, a fixed message and, for some codes, a
+few safe details. The error that actually failed (a driver error, a refused connection) is the exception's standard
+`cause`, which is never part of the body. Nest's default exception filter does not log an `HttpException`, so it prints
+nothing of it. Log it yourself:
+
+```typescript
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common'
+
+@Catch(HttpException)
+export class LogCauseFilter implements ExceptionFilter {
+  private readonly logger = new Logger('AiTokens')
+
+  catch(exception: HttpException, host: ArgumentsHost): void {
+    if (exception.getStatus() >= 500 && exception.cause !== undefined) this.logger.error(exception.message, exception.cause)
+    const response = host.switchToHttp().getResponse()
+    response.status(exception.getStatus()).json(exception.getResponse())
+  }
+}
+```
+
+The cause of a database failure can name the host, a statement or a row; keep it in the server log and out of the response.
 
 ---
 

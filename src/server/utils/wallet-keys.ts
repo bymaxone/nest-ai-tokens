@@ -20,6 +20,12 @@ export const EXPIRY_KEY_PREFIX = 'expiry:'
 /** Why a caller's entry key is refused. */
 export const RESERVED_KEY_REASON = `wallet entry keys starting with "${ACTIVATION_KEY_PREFIX}" or "${EXPIRY_KEY_PREFIX}" are reserved`
 
+/** The reason of the entry that credits a grant that was not due as it was appended. */
+export const ACTIVATION_REASON = 'grant activated'
+
+/** Why a debit is refused when an entry the store did not write holds a key the store needs. */
+export const RESERVED_KEY_HELD_REASON = 'a reserved wallet entry key is held by an entry the store did not write'
+
 /**
  * The key of the entry that credits a grant.
  *

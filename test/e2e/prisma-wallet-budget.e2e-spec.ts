@@ -15,6 +15,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import type { WalletRef } from '@bymax-one/nest-ai-tokens/shared'
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { grantEntry, debitEntry, runWalletStoreContract } from '../contracts/wallet-store.contract'
 import { delta, runBudgetStoreContract } from '../contracts/budget-store.contract'
@@ -152,15 +153,87 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     })
   })
 
-  /** An entry that holds an expired grant's expiry key (written outside the store) refuses the debit instead of keeping the expired credit spendable. */
+  /**
+   * An entry that holds an expired grant's expiry key (written outside the store) refuses the debit instead of
+   * keeping the expired credit spendable. The operator learns which wallet, key and grant from the error's cause,
+   * which a server-side log reads; the response body carries neither.
+   */
   it('refuses a debit when the expiry key of an expired grant is taken by another entry', async () => {
     await truncateWallets()
     const grant = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'exp', amountNanoUsd: 100n, expiresAt: new Date(Date.now() + 1_000) }))
     const wallet = await store.getWallet(ref)
     await prisma.$executeRaw`INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "idempotencyKey") VALUES ('foreign', ${wallet?.id}, 'refund', 1, ${`expiry:${grant.id}`})`
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    await expect(store.conditionalDebit(ref, debitEntry(50n, { idempotencyKey: 'after' }), 0n)).rejects.toThrow()
+    const error = (await store.conditionalDebit(ref, debitEntry(50n, { idempotencyKey: 'after' }), 0n).catch((e: unknown) => e)) as AiTokensException
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG' } })
+    const body = JSON.stringify(error.getResponse())
+    for (const id of [wallet?.id, grant.id, `expiry:${grant.id}`]) expect(body).not.toContain(id)
+    const cause = (error.cause as Error).message
+    for (const id of [wallet?.id, grant.id, `expiry:${grant.id}`]) expect(cause).toContain(id)
     expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+  })
+
+  /**
+   * A connection-level failure becomes a store error whose body names no host or password, and whose cause chain
+   * (what a server-side log prints) carries no password either, whether the server refuses the password or is
+   * not listening.
+   */
+  it.each([
+    ['rejected password', (uri: URL) => uri],
+    ['closed port', (uri: URL) => { uri.port = '1'; return uri }],
+  ])('keeps the database password out of the cause chain on a %s', async (_name, break_) => {
+    const password = 'S3cretPw-9f2c'
+    const uri = new URL(container.getConnectionUri())
+    uri.password = password
+    const bad = clientFor(break_(uri).toString())
+    try {
+      const error = (await new PrismaAiTokensStore(bad).appendEntry(ref, grantEntry({ idempotencyKey: 'pw', amountNanoUsd: 1n })).catch((e: unknown) => e)) as AiTokensException
+      expect(error).toBeInstanceOf(AiTokensException)
+      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
+      expect(JSON.stringify(error.getResponse())).not.toContain(password)
+      let walked = ''
+      let link: unknown = error.cause
+      for (let depth = 0; typeof link === 'object' && link !== null && depth < 8; depth++) {
+        const node = link as { message?: unknown; stack?: unknown; cause?: unknown; errors?: unknown[] }
+        for (const member of node.errors ?? []) walked += `${String((member as { message?: unknown }).message)}\n${String((member as { stack?: unknown }).stack)}\n`
+        walked += `${String(node.message)}\n${String(node.stack)}\n${JSON.stringify(link, Object.getOwnPropertyNames(link))}\n`
+        link = node.cause
+      }
+      expect(walked.length).toBeGreaterThan(0)
+      expect(walked).not.toContain(password)
+    } finally {
+      await bad.$disconnect()
+    }
+  })
+
+  /**
+   * The store recognises its activation entry by its shape (type, reason and the grant's amount), not by the key alone.
+   * A row that holds the key with another shape, written outside the store, refuses the debit and the reconcile with
+   * the wallet, key and grant on the cause, instead of making the grant look credited and never crediting it.
+   */
+  it.each([
+    ['a host marker of amount zero', 'adjustment', 'host marker', 0n],
+    ['the store reason with another amount', 'adjustment', 'grant activated', 1n],
+    ['the store reason and amount with another type', 'refund', 'grant activated', 100n],
+  ])('refuses a debit and a reconcile when a due grant\'s activation key holds %s', async (_name, type, reason, amount) => {
+    await truncateWallets()
+    const scheduled = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'sched', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() + 1_500) }))
+    const wallet = await store.getWallet(ref)
+    await prisma.$executeRaw`INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "idempotencyKey", "reason") VALUES ('foreign-marker', ${wallet?.id}, ${type}, ${amount}, ${`activate:${scheduled.id}`}, ${reason})`
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    for (const call of [
+      () => store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'after' }), 0n),
+      () => store.reconcile(ref),
+    ]) {
+      const error = (await call().catch((e: unknown) => e)) as AiTokensException
+      expect(error).toBeInstanceOf(AiTokensException)
+      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG' } })
+      for (const id of [wallet?.id, scheduled.id, `activate:${scheduled.id}`]) {
+        expect(JSON.stringify(error.getResponse())).not.toContain(id)
+        expect((error.cause as Error).message).toContain(id)
+      }
+    }
   })
 
   /** A debit with no headroom affects no row and returns null (never a store error, §15.2). */

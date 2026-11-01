@@ -33,7 +33,8 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // server's four `instanceof AiTokensException` guards would stop matching
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
-import { ACTIVATION_KEY_PREFIX } from '../server/utils/wallet-keys'
+import { attachCause } from '../server/errors/attach-cause'
+import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
 /** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
 export interface UsageRow {
@@ -276,10 +277,11 @@ export function isUniqueViolation(error: unknown): boolean {
   return cause?.originalCode === PG_UNIQUE_VIOLATION || cause?.kind === 'UniqueConstraintViolation'
 }
 
-/** Map an unknown driver error to a domain store error (never leaks connection details). */
+/** Map an unknown driver error to a domain store error: the body keeps the code, the original error rides as `cause`. */
 export function storeError(error: unknown): AiTokensException {
+  if (error instanceof AiTokensException) return error
   const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined
-  return new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code })
+  return attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code }), error)
 }
 
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
@@ -567,7 +569,7 @@ export const DB_NOW_SQL = Prisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
 export const DUE_AT_APPEND_SQL = Prisma.sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
 
 /** Whether an `activate:<grantId>` entry has credited the grant aliased `g`. */
-export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id")`
+export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id" AND m."type" = 'adjustment' AND m."reason" = ${ACTIVATION_REASON} AND m."amountNanoUsd" = g."amountNanoUsd")`
 
 /** Whether the grant aliased `g` is part of the materialized balance: due at append, or activated since. */
 export const CREDITED_SQL = Prisma.sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`

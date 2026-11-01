@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- A store error keeps the failure that caused it as its `cause`, outside the response body.
+- A wallet activation entry is recognised by its shape, and a reserved key held by another entry refuses the debit with the wallet, key and grant on the cause.
+
 ## [1.1.6] - 2026-11-01
 
 **Apply:** the first `debit` or `reconcile()` on a wallet after the upgrade credits every grant that
