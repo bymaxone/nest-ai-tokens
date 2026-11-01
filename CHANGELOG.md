@@ -12,7 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 - The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
   `AI_TOKENS_USAGE_MALFORMED` because the normalizer reads `model` and `usage` from the whole
-  response; it now passes `res`.
+  response; it now passes `res`. The examples also used `gpt-4o`, which the price seed does not
+  cover, so under the default `pricing.strict` they threw `AI_TOKENS_PRICE_NOT_FOUND`; they now use
+  the seeded `gpt-5-mini`. A unit test runs the Quick Start flow so the example cannot drift again.
 - The README now says which presets are priced from which seeded rows. The `azureOpenai` and
   `vertex` presets record provider `openai` and `gemini` (the normalizer sets the provider), so only
   `bedrock` has no seeded rows. It also says that a Bedrock Converse response carries no model id, so

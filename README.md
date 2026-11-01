@@ -232,7 +232,7 @@ export class WorkoutAiService {
   constructor(private readonly metering: MeteringService) {}
 
   async generate(tenantId: string, userId: string, jobId: string) {
-    const res = await this.openai.chat.completions.create({ model: 'gpt-4o', messages: [] })
+    const res = await this.openai.chat.completions.create({ model: 'gpt-5-mini', messages: [] })
     await this.metering.record({
       usage: res, // the whole response: the normalizer reads its `model` and `usage`
       preset: providerPresets.openaiChat,
@@ -451,13 +451,13 @@ const status = await metering.getStatus(tenantId, { type: 'user', id: userId })
 ```typescript
 const collector = new StreamUsageCollector({
   provider: 'openai',
-  model: 'gpt-4o',
+  model: 'gpt-5-mini',
   preset: providerPresets.openaiChat,
 })
 
 const hold = await metering.hold(ctx, {
   provider: 'openai',
-  model: 'gpt-4o',
+  model: 'gpt-5-mini',
   operation: 'chat',
   inputTokens: estimatedInput,
   maxOutputTokens: 1024,
@@ -465,7 +465,7 @@ const hold = await metering.hold(ctx, {
 
 try {
   const stream = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-5-mini',
     messages,
     stream: true,
     stream_options: { include_usage: true },
