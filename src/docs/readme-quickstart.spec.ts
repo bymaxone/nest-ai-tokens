@@ -12,7 +12,8 @@ import { deriveIdempotencyKey } from '../shared'
 import { BymaxAiTokensModule } from '../server/bymax-ai-tokens.module'
 import { providerPresets } from '../server/config/provider-presets'
 import type { IAiTokensStore } from '../server/interfaces'
-import { LedgerService, MeteringService } from '../server/services'
+import { AiTokensException } from '../server/errors'
+import { LedgerService, MeteringService, PricingService } from '../server/services'
 
 /** A store with working ledger and pricing halves; the wallet and budget halves are unused here. */
 function makeStore(): IAiTokensStore {
@@ -66,11 +67,12 @@ class WorkoutAiService {
 
   constructor(@Inject(MeteringService) private readonly metering: MeteringService) {}
 
-  async generate(tenantId: string, userId: string, jobId: string): Promise<string | undefined> {
+  async generate(tenantId: string, userId: string, jobId: string, startedAt: Date): Promise<string | undefined> {
     const res = await this.openai.chat.completions.create()
     await this.metering.record({
       usage: res,
       preset: providerPresets.openaiChat,
+      occurredAt: startedAt,
       context: {
         tenantId,
         scope: { type: 'user', id: userId },
@@ -82,6 +84,18 @@ class WorkoutAiService {
   }
 }
 
+const STARTED_AT = new Date('2026-06-01T12:00:00.000Z')
+
+/** Boot the Quick Start module over a fresh in-memory store. */
+async function bootQuickStart(): Promise<{ workout: WorkoutAiService; ledger: LedgerService; pricing: PricingService }> {
+  const moduleRef = await Test.createTestingModule({
+    imports: [BymaxAiTokensModule.forRoot({ store: makeStore() })],
+    providers: [WorkoutAiService],
+  }).compile()
+  await moduleRef.init()
+  return { workout: moduleRef.get(WorkoutAiService), ledger: moduleRef.get(LedgerService), pricing: moduleRef.get(PricingService) }
+}
+
 describe('README Quick Start: record usage', () => {
   /**
    * Guards README section "3 — Record usage (post-hoc, observe-only)". The service above mirrors that
@@ -90,14 +104,10 @@ describe('README Quick Start: record usage', () => {
    * covers, because `pricing.strict` is on by default and an unpriced model throws.
    */
   it('rates the response the Quick Start passes to record()', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [BymaxAiTokensModule.forRoot({ store: makeStore() })],
-      providers: [WorkoutAiService],
-    }).compile()
-    await moduleRef.init()
+    const { workout, ledger } = await bootQuickStart()
 
-    const content = await moduleRef.get(WorkoutAiService).generate('tenant-1', 'user-1', 'job-1')
-    const records = await moduleRef.get(LedgerService).query({ tenantId: 'tenant-1' })
+    const content = await workout.generate('tenant-1', 'user-1', 'job-1', STARTED_AT)
+    const records = await ledger.query({ tenantId: 'tenant-1' })
 
     expect(content).toBe('Squat 3x5.')
     expect(records).toHaveLength(1)
@@ -110,5 +120,45 @@ describe('README Quick Start: record usage', () => {
       rawCostNanoUsd: 1_250_000n,
       priceMissing: false,
     })
+  })
+
+  /** The README calls this call retry-safe: repeating it, `occurredAt` included, stores nothing new. */
+  it('stores one record when the Quick Start call is retried', async () => {
+    const { workout, ledger } = await bootQuickStart()
+
+    await workout.generate('tenant-1', 'user-1', 'job-1', STARTED_AT)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await expect(workout.generate('tenant-1', 'user-1', 'job-1', STARTED_AT)).resolves.toBe('Squat 3x5.')
+
+    expect(await ledger.query({ tenantId: 'tenant-1' })).toHaveLength(1)
+  })
+
+  /** The README says a retry that leaves out the repeated `occurredAt`, or follows a price change, conflicts. */
+  it.each([
+    ['a different occurredAt', async (_pricing: PricingService): Promise<Date> => Promise.resolve(new Date(STARTED_AT.getTime() + 5))],
+    [
+      'a price change',
+      async (pricing: PricingService): Promise<Date> => {
+        await pricing.upsertPrice({
+          provider: 'openai',
+          model: 'gpt-5-mini',
+          operation: 'chat',
+          serviceTier: 'standard',
+          inputNanoUsdPerMillion: 2_000_000_000n,
+          outputNanoUsdPerMillion: 10_000_000_000n,
+          effectiveFrom: new Date('2026-02-01T00:00:00.000Z'),
+        })
+        return STARTED_AT
+      },
+    ],
+  ])('rejects a retry after %s with a conflict instead of a second charge', async (_name, change) => {
+    const { workout, ledger, pricing } = await bootQuickStart()
+    await workout.generate('tenant-1', 'user-1', 'job-1', STARTED_AT)
+
+    const retryAt = await change(pricing)
+    const error = await workout.generate('tenant-1', 'user-1', 'job-1', retryAt).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect(await ledger.query({ tenantId: 'tenant-1' })).toHaveLength(1)
   })
 })

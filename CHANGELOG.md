@@ -29,11 +29,15 @@ their records already had.
   `deepseek`, `xai` or `groq`.
 - **`record()` names the model after `baseModel` when the response carries none.** A Bedrock Converse
   response has no model id, so the record's model was `''` while the same call through `hold()` and
-  `capture()` stored `baseModel`. A model the response did carry is never replaced. The model and
-  provider are part of the idempotency payload, so a retry of a Bedrock (or `openaiCompatible`,
-  non-strict) `record()` call that was first stored by an earlier version, with the same
-  `idempotencyKey`, now fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of returning the stored
-  record.
+  `capture()` stored `baseModel`. A model the response did carry is never replaced. The
+  idempotency payload keeps hashing the model the response carried, so a retry of a Bedrock call
+  whose first attempt an earlier version stored with the empty model still returns that stored
+  record, and a different call under the same key still conflicts.
+- `providerPresets.openaiCompatible(id)` stamps `id` into the idempotency payload, which earlier
+  versions left empty. A retry, with the same `idempotencyKey`, of a call that an earlier version
+  stored with `pricing.strict: false` (provider `''`, cost 0, `priceMissing`) now fails with
+  `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of returning the stored record. Under the default
+  `pricing.strict` such a call threw and stored nothing.
 - The `vercelAiSdk` preset still records no provider on purpose (the SDK does not say which vendor
   served the call), so such a record fails loudly instead of being priced from the wrong vendor's
   rows. Its documentation said the context could override the provider; nothing does, and the text now
@@ -41,6 +45,11 @@ their records already had.
 
 ### Documentation
 
+- The Quick Start now passes the job's own start time as `occurredAt`, and the README says when a
+  retry returns the stored record: only when it repeats the same `occurredAt` and meets the same
+  price. A retry that leaves `occurredAt` out (it defaults to the current time) or follows a price
+  change fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A test runs the Quick Start twice and pins both
+  outcomes.
 - The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
   `AI_TOKENS_USAGE_MALFORMED` because the normalizer reads `model` and `usage` from the whole
   response; it now passes `res`. The examples also used `gpt-4o`, which the price seed does not

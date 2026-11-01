@@ -13,6 +13,8 @@ import { BymaxAiTokensModule } from '../bymax-ai-tokens.module'
 import { providerPresets } from '../config/provider-presets'
 import { AiTokensException } from '../errors'
 import type { IAiTokensStore, MeteringContext } from '../interfaces'
+import type { LedgerAppendInput } from './ledger.service'
+import { LedgerService } from './ledger.service'
 import { MeteringService } from './metering.service'
 
 /** A store with working ledger and pricing halves; the wallet and budget halves are unused here. */
@@ -74,10 +76,10 @@ const PRICED: [string, ProviderPreset, Sample][] = [
 const CONTEXT: MeteringContext = { tenantId: 'tenant-1', scope: { type: 'user', id: 'user-1' }, feature: 'agreement' }
 
 /** Boot a module over a fresh store and return its metering service. */
-async function boot(strict: boolean, store: IAiTokensStore = makeStore()): Promise<{ metering: MeteringService; store: IAiTokensStore }> {
+async function boot(strict: boolean, store: IAiTokensStore = makeStore()): Promise<{ metering: MeteringService; ledger: LedgerService; store: IAiTokensStore }> {
   const moduleRef = await Test.createTestingModule({ imports: [BymaxAiTokensModule.forRoot({ store, pricing: { strict } })] }).compile()
   await moduleRef.init()
-  return { metering: moduleRef.get(MeteringService), store }
+  return { metering: moduleRef.get(MeteringService), ledger: moduleRef.get(LedgerService), store }
 }
 
 /** Settle a call through hold then capture, sized by a bare token count. */
@@ -199,5 +201,64 @@ describe('vercelAiSdk fails loudly instead of mispricing', () => {
     const record = await metering.record({ usage, preset: providerPresets.vercelAiSdk, context: CONTEXT })
     expect(record.provider).toBe('')
     expect(record.priceMissing).toBe(true)
+  })
+})
+
+describe('a Bedrock retry keeps the idempotency key of the row it repeats', () => {
+  const raw = { usage: { inputTokens: 1000, outputTokens: 500 } }
+  const occurredAt = new Date('2026-11-01T00:00:00.000Z')
+  const context: MeteringContext = { ...CONTEXT, baseModel: 'claude-sonnet-4-5', idempotencyKey: 'bedrock-retry' }
+  /** Fields a store assigns or a later transition changes; the rest is what a caller appends. */
+  const STORE_FIELDS = new Set(['id', 'status', 'hash', 'prevHash', 'createdAt', 'updatedAt', 'idempotencyKey', 'totalTokens', 'reversedByRecordId'])
+
+  /** The append input of a record, with the model the response carried (none for Converse). */
+  function appendInputOf(record: UsageRecord, model: string): LedgerAppendInput {
+    const fields = Object.fromEntries(Object.entries(record).filter(([key]) => !STORE_FIELDS.has(key)))
+    return { ...fields, model } as LedgerAppendInput
+  }
+
+  /**
+   * A row stored with the empty model a response without a model id used to produce, so a retry of
+   * the same call must find that row, not conflict with it.
+   */
+  it('returns the stored row when the same call is retried against an empty-model row', async () => {
+    const filled = await (await boot(false)).metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+    const target = await boot(false)
+    const stored = await target.ledger.append(appendInputOf(filled, ''), context.idempotencyKey)
+
+    const replay = await target.metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+
+    expect(replay.id).toBe(stored.id)
+    expect(replay.model).toBe('')
+  })
+
+  /** Two retries made by the same version find the row the first one stored. */
+  it('returns the stored row when the same call is retried against a filled row', async () => {
+    const { metering } = await boot(false)
+    const first = await metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+    const replay = await metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+    expect(replay.id).toBe(first.id)
+    expect(replay.model).toBe('claude-sonnet-4-5')
+  })
+
+  /** Hashing the response model instead of the stored one must not let a different call reuse the key. */
+  it.each([
+    ['other token counts', { usage: { inputTokens: 1001, outputTokens: 500 } }, context],
+    ['another baseModel', raw, { ...context, baseModel: 'claude-haiku-4-5' }],
+  ])('still conflicts when the same key carries %s', async (_name, otherRaw, otherContext) => {
+    const { metering } = await boot(false)
+    await metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+    const error = await metering.record({ usage: otherRaw, preset: providerPresets.bedrock, context: otherContext, occurredAt }).catch((e: unknown) => e)
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+  })
+
+  /** A response that carried a model hashes that model, so an empty-model row is a different request. */
+  it('conflicts when an empty-model row is retried with a response that names a model', async () => {
+    const filled = await (await boot(false)).metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
+    const target = await boot(false)
+    await target.ledger.append(appendInputOf(filled, ''), context.idempotencyKey)
+    const named = { model: 'claude-sonnet-4-5', ...raw }
+    const error = await target.metering.record({ usage: named, preset: providerPresets.bedrock, context, occurredAt }).catch((e: unknown) => e)
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
   })
 })
