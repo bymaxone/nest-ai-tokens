@@ -3,7 +3,16 @@
  * grant, and which caller keys are in that namespace.
  * @layer server
  */
-import { ACTIVATION_KEY_PREFIX, EXPIRY_KEY_PREFIX, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from './wallet-keys'
+import {
+  ACTIVATION_KEY_PREFIX,
+  ACTIVATION_REASON,
+  EXPIRY_KEY_PREFIX,
+  RESERVED_KEY_HELD_REASON,
+  RESERVED_KEY_REASON,
+  activationKey,
+  expiryKey,
+  isReservedWalletKey,
+} from './wallet-keys'
 
 describe('wallet keys', () => {
   /** The activation key is the prefix and the grant id, so the store can look it up from the grant alone. */
@@ -35,5 +44,18 @@ describe('wallet keys', () => {
   it('names the prefixes in the reason', () => {
     expect(RESERVED_KEY_REASON).toContain('"activate:"')
     expect(RESERVED_KEY_REASON).toContain('"expiry:"')
+  })
+
+  /**
+   * The activation reason is part of the stored contract: the store recognises its own activation entry by it, and
+   * the query that finds foreign rows matches on the same text, so the exact value is pinned.
+   */
+  it('pins the reason of the activation entry by value', () => {
+    expect(ACTIVATION_REASON).toBe('grant activated')
+  })
+
+  /** The reason in the body of the refusal for a held key is fixed text with no identifier in it. */
+  it('pins the reason of the held-key refusal by value', () => {
+    expect(RESERVED_KEY_HELD_REASON).toBe('a reserved wallet entry key is held by an entry the store did not write')
   })
 })
