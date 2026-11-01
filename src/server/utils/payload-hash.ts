@@ -21,6 +21,11 @@
 
 import type { NewUsageRecord } from '../../shared'
 import { deriveIdempotencyKey } from '../../shared'
+import type { FieldRole } from './payload-fields'
+import { pickByRole } from './payload-fields'
+
+/** Every field that describes the metered call, request or derived. */
+const HASHED_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(['request', 'derived', 'rated-cost', 'occurred-at'])
 
 /**
  * Compute the canonical payload hash for a ledger record. Equal metered content
@@ -30,42 +35,5 @@ import { deriveIdempotencyKey } from '../../shared'
  * @returns A 64-character lowercase hex SHA-256 digest of the record's content.
  */
 export function computePayloadHash(record: NewUsageRecord): string {
-  return deriveIdempotencyKey({
-    scope: record.scope,
-    beneficiary: record.beneficiary,
-    requestedBy: record.requestedBy,
-    provider: record.provider,
-    model: record.model,
-    requestedModel: record.requestedModel,
-    operation: record.operation,
-    serviceTier: record.serviceTier,
-    feature: record.feature,
-    tags: record.tags,
-    inputTokens: record.inputTokens,
-    outputTokens: record.outputTokens,
-    cacheReadTokens: record.cacheReadTokens,
-    cacheWrite5mTokens: record.cacheWrite5mTokens,
-    cacheWrite1hTokens: record.cacheWrite1hTokens,
-    reasoningTokens: record.reasoningTokens,
-    audioInTokens: record.audioInTokens,
-    audioOutTokens: record.audioOutTokens,
-    imageInTokens: record.imageInTokens,
-    imageOutTokens: record.imageOutTokens,
-    totalTokens: record.totalTokens,
-    extraUnits: record.extraUnits,
-    priceVersionId: record.priceVersionId,
-    rawCostNanoUsd: record.rawCostNanoUsd,
-    surchargeNanoUsd: record.surchargeNanoUsd,
-    billedCostNanoUsd: record.billedCostNanoUsd,
-    markupMultiplier: record.markupMultiplier,
-    currency: record.currency,
-    priceMissing: record.priceMissing,
-    correlationId: record.correlationId,
-    requestId: record.requestId,
-    isSystemCost: record.isSystemCost,
-    systemCostCategory: record.systemCostCategory,
-    enforced: record.enforced,
-    reversesRecordId: record.reversesRecordId,
-    occurredAt: record.occurredAt,
-  })
+  return deriveIdempotencyKey(pickByRole(record, HASHED_ROLES))
 }

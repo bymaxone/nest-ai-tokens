@@ -17,8 +17,10 @@ import { Injectable, Logger } from '@nestjs/common'
 import type {
   AccessStatus,
   AiOperation,
+  AiTokensErrorResponse,
   BudgetStatus,
   MeteringScope,
+  NewUsageRecord,
   NormalizedUsage,
   ProviderId,
   ProviderPreset,
@@ -32,6 +34,8 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
 import { withHashedModel } from '../utils/hashed-model'
+import type { ReplayBasis } from '../utils/replay-match'
+import { sameRequest } from '../utils/replay-match'
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
@@ -177,6 +181,38 @@ function buildAppendInput(args: {
   }
 }
 
+/** The result of one `record()` call: the record and whether it was a replay of an earlier call. */
+interface RecordOutcome {
+  record: UsageRecord
+  replayed: boolean
+}
+
+/** Swallows a settled promise's value or rejection, so a chain built from it never rejects. */
+const noop = (): undefined => undefined
+
+/** The markup of a call that is only being compared, not billed. */
+const NEUTRAL_MARKUP: ResolvedMarkup = { multiplier: 1, apply: (raw: bigint): bigint => raw }
+
+/** The rating of a call that is only being compared: the raw cost is part of the request only when the provider reports it. */
+function unratedFor(normalized: NormalizedUsage, basis: ReplayBasis): RatingResult {
+  const raw = basis.providerReported ? (normalized.providerReportedCostNanoUsd ?? 0n) : 0n
+  return { rawCostNanoUsd: raw, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
+}
+
+/** Whether an error is the ledger reporting a key already used for a different payload. */
+function isIdempotencyConflict(error: unknown): boolean {
+  if (!(error instanceof AiTokensException)) return false
+  const body = error.getResponse() as AiTokensErrorResponse
+  return body.error.code === 'AI_TOKENS_IDEMPOTENCY_CONFLICT'
+}
+
+/** The stored record when it is the same request as this call, else the idempotency conflict. */
+function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: ReplayBasis): UsageRecord {
+  if (sameRequest(stored, request, basis)) return stored
+  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
+  throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey })
+}
+
 /**
  * Name the model after `baseModel` when the response carried none (a Bedrock Converse
  * response has no model id), so a record stores the same model a hold + capture does.
@@ -222,6 +258,8 @@ function baseColumns(
 export class MeteringService {
   private readonly logger = new Logger(MeteringService.name)
   private readonly effects: MeteringEffects
+  /** The newest settlement of each in-flight `(tenantId, idempotencyKey)`; a later call with the same key waits on it. */
+  private readonly inflight = new Map<string, Promise<void>>()
   /** The wallet service, or `undefined` when the wallet feature is disabled. */
   private readonly wallets: WalletService | undefined
   /** The budget service, or `undefined` when the budget feature is disabled. */
@@ -270,6 +308,32 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
   async record(input: RecordInput): Promise<UsageRecord> {
+    return (await this.recordSettled(input)).record
+  }
+
+  /**
+   * Run {@link recordOnce} one call at a time per `(tenantId, idempotencyKey)`: a second call with
+   * the same key waits for the first to settle, whatever its outcome, then runs its own path, so it
+   * finds the row the first one wrote or, if the first failed before writing, records normally. The
+   * map holds only keys with a call in flight. The guarantee holds within this process; another
+   * replica is not serialized with it.
+   */
+  private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
+    const key = input.context.idempotencyKey
+    if (key === undefined) return this.recordOnce(input, undefined)
+    const slot = JSON.stringify([input.context.tenantId, key])
+    const turn = (this.inflight.get(slot) ?? Promise.resolve()).then(() => this.recordOnce(input, key))
+    const settled = turn.then(noop, noop)
+    this.inflight.set(slot, settled)
+    try {
+      return await turn
+    } finally {
+      if (this.inflight.get(slot) === settled) this.inflight.delete(slot)
+    }
+  }
+
+  /** The body of {@link record}, for one call. */
+  private async recordOnce(input: RecordInput, key: string | undefined): Promise<RecordOutcome> {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
@@ -287,16 +351,36 @@ export class MeteringService {
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating: NormalizedUsage = { ...normalized, serverToolUse: ratedUnits }
 
+    const basis: ReplayBasis = { providerReported: mode === 'provider-reported', occurredAtSupplied: input.occurredAt !== undefined, responseModel: parsed.model }
+    if (key !== undefined) {
+      const request = this.requestRecord(buildAppendInput({ normalized, context, serviceTier, occurredAt, rating: unratedFor(normalized, basis), markup: NEUTRAL_MARKUP, ratedUnits, enforced: enforcing }), key)
+      const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
+      if (stored !== null) return { record: replayOf(stored, request, basis), replayed: true }
+    }
+
     const rating = await this.rate(usageForRating, serviceTier, occurredAt, mode, context.baseModel)
     const markup = await this.resolveMarkup(context, normalized, serviceTier)
     const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
-    const record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), context.idempotencyKey)
+    let record: UsageRecord
+    try {
+      record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), key)
+    } catch (error) {
+      if (key === undefined || !isIdempotencyConflict(error)) throw error
+      const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
+      if (stored === null) throw error
+      return { record: replayOf(stored, this.requestRecord(appendInput, key), basis), replayed: true }
+    }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
     await this.captureContent(record.id, context.tenantId, input.content)
     if (enforcing) await this.effects.enforceRecord(record)
-    return record
+    return { record, replayed: false }
+  }
+
+  /** The record a call would append, shaped as the ledger stores it. */
+  private requestRecord(input: LedgerAppendInput, key: string): NewUsageRecord {
+    return { ...input, idempotencyKey: key, totalTokens: sumTokenCounts(input) }
   }
 
   /**
@@ -450,8 +534,8 @@ export class MeteringService {
     if (estimate === undefined) {
       const result = await fn()
       // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-      const usage = await this.record({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
-      this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
+      const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
+      if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     }
     const hold = await this.hold(context, estimate)

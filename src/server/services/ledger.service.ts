@@ -103,7 +103,9 @@ export class LedgerService {
    * otherwise, in which case the record is still written once but retries are NOT
    * deduplicated. A replay with a matching payload hash returns the stored record
    * unchanged and writes nothing; the same key with a different payload throws
-   * `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+   * `AI_TOKENS_IDEMPOTENCY_CONFLICT`. This method compares the whole payload, including the values
+   * computed while serving the call (the price, the cost, a defaulted `occurredAt`); `record()`
+   * resolves a repeated key by comparing only the request fields before it reaches here.
    *
    * @param input The record content (without `idempotencyKey`/`totalTokens`).
    * @param ctxKey The host-supplied idempotency key, when available.

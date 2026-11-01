@@ -231,12 +231,11 @@ import { deriveIdempotencyKey } from '@bymax-one/nest-ai-tokens/shared'
 export class WorkoutAiService {
   constructor(private readonly metering: MeteringService) {}
 
-  async generate(tenantId: string, userId: string, jobId: string, startedAt: Date) {
+  async generate(tenantId: string, userId: string, jobId: string) {
     const res = await this.openai.chat.completions.create({ model: 'gpt-5-mini', messages: [] })
     await this.metering.record({
       usage: res, // the whole response: the normalizer reads its `model` and `usage`
       preset: providerPresets.openaiChat,
-      occurredAt: startedAt, // the job's own start time: a retry repeats it
       context: {
         tenantId,
         scope: { type: 'user', id: userId },
@@ -249,11 +248,18 @@ export class WorkoutAiService {
 }
 ```
 
-A retry with the same `idempotencyKey` returns the stored record only when it repeats the same
-call: the same `occurredAt` (it defaults to the current time, so a retry that leaves it out is a
-different payload) and the same price. A retry after a price change, or without a repeated
-`occurredAt`, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of returning the stored record;
-nothing is charged twice either way.
+A retry with the same `idempotencyKey` and the same request returns the stored record and does
+nothing else: no second event, metric, content capture or budget and wallet movement. The request
+is what the caller supplied and the provider reported: scope, tags, feature, models, token counts,
+and `occurredAt` when the retry passes one. The price, the markup and a defaulted `occurredAt` are
+computed while the call is served and are not compared, so a retry after a price change returns the
+original record at its original cost. A retry whose request differs fails with
+`AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+
+Calls with one key run one at a time within a process. A replay does not repeat the effects of the
+first call, so if the first call stopped after writing the record and before its budget or wallet
+movement, a retry returns that record without making the movement. Across replicas, two
+simultaneous calls with one key can still both run their effects.
 
 ### 4 — Enforced metering via guard + interceptor
 
@@ -550,23 +556,23 @@ All event payloads use `bigint` nano-USD internally and `string` decimal at JSON
 
 All errors are `AiTokensException extends HttpException`. Use the exported `AI_TOKENS_ERROR_CODES` catalog in switch/catch:
 
-| Code                             | HTTP | When                                                                                  |
-| -------------------------------- | ---- | ------------------------------------------------------------------------------------- |
-| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it                                                           |
-| `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                      |
-| `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                       |
-| `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                       |
-| `AI_TOKENS_PRICE_NOT_FOUND`      | 422  | No effective-dated rate after the model-resolution chain (strict mode)                |
-| `AI_TOKENS_FX_REQUIRED`          | 500  | `currency !== 'USD'` with no `fx` resolver                                            |
-| `AI_TOKENS_BUDGET_EXCEEDED`      | 402  | A hard spend budget blocks the call                                                   |
-| `AI_TOKENS_QUOTA_EXCEEDED`       | 429  | A hard token/count quota blocks the call                                              |
-| `AI_TOKENS_INSUFFICIENT_CREDITS` | 402  | Wallet debit failed (balance + overdraft below amount)                                |
-| `AI_TOKENS_HOLD_NOT_FOUND`       | 404  | `capture()`/`release()` on an unknown or cross-tenant hold                            |
-| `AI_TOKENS_HOLD_EXPIRED`         | 410  | `capture()` after the reaper swept the hold (retry via `record()`)                    |
-| `AI_TOKENS_HOLD_ALREADY_SETTLED` | 409  | `capture()` after `release()`                                                         |
-| `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different payload hash; or reversing an already-reversed record |
-| `AI_TOKENS_STREAM_USAGE_MISSING` | 422  | Stream ended without provider usage and no tokenizer fallback available               |
-| `AI_TOKENS_STORE_ERROR`          | 502  | Persistence adapter raised an unmapped error                                          |
+| Code                             | HTTP | When                                                                             |
+| -------------------------------- | ---- | -------------------------------------------------------------------------------- |
+| `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it                                                      |
+| `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                 |
+| `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                  |
+| `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                  |
+| `AI_TOKENS_PRICE_NOT_FOUND`      | 422  | No effective-dated rate after the model-resolution chain (strict mode)           |
+| `AI_TOKENS_FX_REQUIRED`          | 500  | `currency !== 'USD'` with no `fx` resolver                                       |
+| `AI_TOKENS_BUDGET_EXCEEDED`      | 402  | A hard spend budget blocks the call                                              |
+| `AI_TOKENS_QUOTA_EXCEEDED`       | 429  | A hard token/count quota blocks the call                                         |
+| `AI_TOKENS_INSUFFICIENT_CREDITS` | 402  | Wallet debit failed (balance + overdraft below amount)                           |
+| `AI_TOKENS_HOLD_NOT_FOUND`       | 404  | `capture()`/`release()` on an unknown or cross-tenant hold                       |
+| `AI_TOKENS_HOLD_EXPIRED`         | 410  | `capture()` after the reaper swept the hold (retry via `record()`)               |
+| `AI_TOKENS_HOLD_ALREADY_SETTLED` | 409  | `capture()` after `release()`                                                    |
+| `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed record |
+| `AI_TOKENS_STREAM_USAGE_MISSING` | 422  | Stream ended without provider usage and no tokenizer fallback available          |
+| `AI_TOKENS_STORE_ERROR`          | 502  | Persistence adapter raised an unmapped error                                     |
 
 ---
 
