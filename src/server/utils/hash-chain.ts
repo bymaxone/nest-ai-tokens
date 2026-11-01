@@ -87,11 +87,11 @@ export function verifyChainRecords(records: UsageRecord[], structural: boolean):
       : { valid: false, status: 'never-enabled', unchainedCount }
   }
   const hashes = new Set(hashed.map((record) => record.hash))
-  const heads = hashed.filter((record) => record.prevHash === undefined || !hashes.has(record.prevHash))
+  const heads = hashed.filter((record) => !hashes.has(record.prevHash))
   const genesis = heads.find((record) => record.prevHash === undefined)
   if (structural) {
-    // With a genesis, any other head is a gap; without one, the first head lost its predecessor.
-    const offending = genesis === undefined ? heads[0] : heads.find((record) => record !== genesis)
+    // Any head other than the genesis lost its predecessor: a gap, or a front that was cut off.
+    const offending = heads.find((record) => record !== genesis)
     if (offending !== undefined) return { valid: false, brokenAtRecordId: offending.id, unchainedCount }
   }
   return genesis === undefined
