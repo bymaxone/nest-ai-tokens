@@ -3,8 +3,9 @@
  * v5 shape (`usage.{inputTokens, outputTokens, cachedInputTokens, reasoningTokens}`)
  * and the v6 shape (`inputTokenDetails.{cacheReadTokens, cacheWriteTokens}`,
  * `outputTokenDetails.reasoningTokens`). `outputTokens` includes reasoning tokens,
- * so they are subtracted. The provider id and model are supplied by the caller's
- * preset/context and default to empty here (spec §5.3).
+ * so they are subtracted. The SDK does not say which vendor served the call, so the
+ * provider is left empty: a record built from this usage has no provider and is not
+ * priced from any vendor's rows (spec §5.3).
  * @layer shared
  */
 
@@ -15,7 +16,7 @@ import { asObject, buildUsage, num, readResponse, requireNum, str } from './usag
  * Normalize a Vercel AI SDK response into {@link NormalizedUsage}.
  *
  * @param raw The provider response object (with a nested `usage`).
- * @returns The canonical usage; `provider` is `''` unless the context overrides it.
+ * @returns The canonical usage; `provider` is always `''`.
  * @throws {Error} When the `usage` object or its required token fields are absent.
  * @example
  * normalizeVercelAiSdkUsage({ usage: { inputTokens: 100, outputTokens: 40 } })
