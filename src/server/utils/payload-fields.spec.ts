@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Pins the role of every ledger record field: the payload hash covers the fields that
+ * describe the call and none of the identity or lifecycle fields, the replay fingerprint covers the
+ * request fields plus a conditional field only when the new request controls it, and a stored row
+ * matches a new request through the model-name allowance. Each field is changed in turn.
+ * @layer server
+ */
 import type { NewUsageRecord } from '../../shared'
 import type { FieldRole } from './payload-fields'
 import { ROLE_FIELDS } from './payload-fields'

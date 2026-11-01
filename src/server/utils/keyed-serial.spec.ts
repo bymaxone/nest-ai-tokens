@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Pins the per-key serializer: work under one key runs one piece at a time in order,
+ * work under another key never waits, a piece neither inherits the previous value nor its failure,
+ * and a key is held only while work under it is in flight.
+ * @layer server
+ */
 import { KeyedSerial } from './keyed-serial'
 
 /** A promise settled from outside, so a test controls when a piece of work finishes. */
