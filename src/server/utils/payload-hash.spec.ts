@@ -79,4 +79,43 @@ describe('computePayloadHash', () => {
       computePayloadHash(makeRecord()),
     )
   })
+
+  /**
+   * The digest is a stored compatibility value: a row written by an earlier version is replayed by
+   * comparing this digest, so the formula must not drift. These digests were produced by the
+   * explicit field list the hash was first written with.
+   */
+  const EVERY_OPTIONAL_FIELD: Partial<NewUsageRecord> = {
+    beneficiary: { type: 'team', id: 't1' },
+    requestedBy: 'rb',
+    requestedModel: 'rm',
+    extraUnits: { web: 2, a: 1 },
+    correlationId: 'c1',
+    requestId: 'r1',
+    systemCostCategory: 'cat',
+    reversesRecordId: 'rev1',
+    reversedByRecordId: 'ignored',
+  }
+  it.each<[string, Partial<NewUsageRecord>, string]>([
+    ['a plain record', {}, 'd9f4f636643075b5d061bac5635339daa101584dc49021c4e37aa8cdc72f6564'],
+    ['a record with every optional field', EVERY_OPTIONAL_FIELD, '87b2364a43f05a368f052a8fd7278ea703bf243df96c742121d304f37592b15e'],
+    ['a price-missing record', { priceMissing: true, priceVersionId: null }, 'c961d7c2d3aca1205e9395f0d383acac790db51548a7c169426fe775d49d0ed0'],
+  ])('keeps the stored digest for %s', (_name, over, digest) => {
+    const record = makeRecord({
+      tags: ['b', 'a'],
+      cacheReadTokens: 1,
+      cacheWrite5mTokens: 2,
+      cacheWrite1hTokens: 3,
+      reasoningTokens: 4,
+      audioInTokens: 5,
+      audioOutTokens: 6,
+      imageInTokens: 7,
+      imageOutTokens: 8,
+      totalTokens: 1536,
+      surchargeNanoUsd: 5n,
+      enforced: true,
+      ...over,
+    })
+    expect(computePayloadHash(record)).toBe(digest)
+  })
 })

@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** `record()` and `meter()` now treat a second call with an `idempotencyKey` the ledger already
+holds as a replay of the first when the request is the same: it returns the stored record and does
+nothing else. A retry that used to fail with `AI_TOKENS_IDEMPOTENCY_CONFLICT` only because its
+defaulted `occurredAt` or the price had changed now returns the stored record, so code that handled
+that conflict by recording again no longer reaches that branch. A request that differs still fails
+with the conflict. The effects of a replay are not repeated: if the first call stopped after writing
+the record and before its budget or wallet movement, the retry will not make it.
+
 **Apply:** a host that seeded its own price rows under `azure-openai` or `vertex` and relied on a
 hold (`hold()` or `meter()` with a `{ tokens }` estimate) to price through them must re-key those
 rows to `openai` or `gemini`, or pass the provider in the estimate (`{ provider, model, ... }`).
@@ -16,6 +24,26 @@ their records already had.
 
 ### Fixed
 
+- **A retry of `record({ enforce: true })` consumed the budget a second time.** Every published
+  version from 1.0.0 to 1.1.4 runs the same sequence after the ledger write: the events, the
+  telemetry, the content capture, then the budget consume and the wallet debit. When the retry
+  repeated the stored request exactly (the same `idempotencyKey` and the same `occurredAt`, which is
+  how a backfill or a job-start timestamp retries), the ledger returned the stored row and the whole
+  sequence ran again. Measured on the code after 1.1.4, which leaves this path as it was, with budgets, wallets, an event sink, a telemetry
+  sink and a content store attached: the budget spend, call count and token count doubled
+  (1,250,000 nano-USD, 1 call, 1,500 tokens became 2,500,000, 2 calls, 3,000 tokens), a second
+  `usage.recorded` event, a second usage measurement and a second content capture were produced,
+  and the wallet balance did not move again because its debit is keyed by the record. A host that
+  passes `occurredAt` and enables budgets was affected on any retry. A retry now returns the stored
+  record and runs none of it, `meter()` records no duration for it, and a test pins every one of
+  those counts.
+- **A retry that left out `occurredAt`, or came after a price change, failed with a conflict.**
+  `occurredAt` defaults to the current time and the ledger's payload hash included it, together with
+  the price version and the costs, so a retry made a moment later was a different payload. The
+  README Quick Start's `idempotencyKey: deriveIdempotencyKey({ jobId })` therefore did not make the
+  retry return the stored record. A retry is now compared on what the caller supplied and the
+  provider reported (every request field, and `occurredAt` only when the retry passes one), not on
+  what was computed while serving the call, and returns the stored record at its original cost.
 - **A hold and a record made from the same preset used different providers.** `record()` stamped the
   provider its normalizer returned (`openai` for `azureOpenai`, `gemini` for `vertex`), while
   `hold()` stamped `preset.provider` (`azure-openai`, `vertex`) and `capture()` priced with that. No
@@ -43,13 +71,20 @@ their records already had.
   rows. Its documentation said the context could override the provider; nothing does, and the text now
   says so. A test pins that a held non-OpenAI model is never priced from an `openai` row.
 
+### Changed
+
+- The `server` bundle size budget in `scripts/check-size.mjs` is 41,000 B brotli (it was 40,000 B).
+  The idempotent replay path in `record()` (per-key serialization, request-field matching, the
+  shared field-role table) outgrew the previous budget. The other budgets are unchanged.
+- The declaration build strips members tagged `@internal`, and the published-surface gate fails when a
+  name tagged `@internal` in `src` reaches a built `.d.ts` or `.d.cts`.
+
 ### Documentation
 
-- The Quick Start now passes the job's own start time as `occurredAt`, and the README says when a
-  retry returns the stored record: only when it repeats the same `occurredAt` and meets the same
-  price. A retry that leaves `occurredAt` out (it defaults to the current time) or follows a price
-  change fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A test runs the Quick Start twice and pins both
-  outcomes.
+- The README says what a retry with the same `idempotencyKey` returns and what it leaves alone, that
+  calls with one key run one at a time within one service instance, and that two simultaneous calls
+  with one key on different instances can still both run their effects. A test runs the Quick Start
+  twice, also after a price change, and pins that it stores one record.
 - The Quick Start passed `res.usage` to `record()` with the OpenAI preset, which throws
   `AI_TOKENS_USAGE_MALFORMED` because the normalizer reads `model` and `usage` from the whole
   response; it now passes `res`. The examples also used `gpt-4o`, which the price seed does not

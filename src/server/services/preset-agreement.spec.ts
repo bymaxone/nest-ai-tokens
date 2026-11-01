@@ -209,7 +209,7 @@ describe('a Bedrock retry keeps the idempotency key of the row it repeats', () =
   const occurredAt = new Date('2026-11-01T00:00:00.000Z')
   const context: MeteringContext = { ...CONTEXT, baseModel: 'claude-sonnet-4-5', idempotencyKey: 'bedrock-retry' }
   /** Fields a store assigns or a later transition changes; the rest is what a caller appends. */
-  const STORE_FIELDS = new Set(['id', 'status', 'hash', 'prevHash', 'createdAt', 'updatedAt', 'idempotencyKey', 'totalTokens', 'reversedByRecordId'])
+  const STORE_FIELDS = new Set(['id', 'hash', 'prevHash', 'createdAt', 'updatedAt', 'idempotencyKey', 'totalTokens', 'reversedByRecordId'])
 
   /** The append input of a record, with the model the response carried (none for Converse). */
   function appendInputOf(record: UsageRecord, model: string): LedgerAppendInput {

@@ -19,6 +19,7 @@ import type {
   AiOperation,
   BudgetStatus,
   MeteringScope,
+  NewUsageRecord,
   NormalizedUsage,
   ProviderId,
   ProviderPreset,
@@ -32,10 +33,14 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
 import { withHashedModel } from '../utils/hashed-model'
+import { KeyedSerial } from '../utils/keyed-serial'
+import type { ReplayBasis } from '../utils/replay-match'
 import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
+import type { RatingResult, RecordOutcome } from './record-replay'
+import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
@@ -110,14 +115,6 @@ export type MeteringServiceOptions = Pick<ResolvedAiTokensOptions, 'ratingMode'>
   holds?: ResolvedAiTokensOptions['holds']
   /** Absent when the wallet feature is disabled. */
   wallets?: ResolvedAiTokensOptions['wallets']
-}
-
-/** The resolved rating of one call, in exact bigint nano-USD. */
-interface RatingResult {
-  rawCostNanoUsd: bigint
-  surchargeNanoUsd: bigint
-  priceVersionId: string | null
-  priceMissing: boolean
 }
 
 /** The no-op hooks used until the event dispatcher is wired. */
@@ -222,6 +219,11 @@ function baseColumns(
 export class MeteringService {
   private readonly logger = new Logger(MeteringService.name)
   private readonly effects: MeteringEffects
+  /**
+   * The newest settlement of each in-flight `(tenantId, idempotencyKey)`; a later call with the same key waits on it.
+   * @internal
+   */
+  private readonly inflight = new KeyedSerial()
   /** The wallet service, or `undefined` when the wallet feature is disabled. */
   private readonly wallets: WalletService | undefined
   /** The budget service, or `undefined` when the budget feature is disabled. */
@@ -270,6 +272,28 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
   async record(input: RecordInput): Promise<UsageRecord> {
+    return (await this.recordSettled(input)).record
+  }
+
+  /**
+   * Run {@link recordOnce} one call at a time per `(tenantId, idempotencyKey)`: a second call with
+   * the same key waits for the first to settle, whatever its outcome, then runs its own path, so it
+   * finds the row the first one wrote or, if the first failed before writing, records normally. The
+   * map holds only keys with a call in flight. The guarantee holds within one service instance;
+   * another instance, in this process or another, is not serialized with it.
+   * @internal
+   */
+  private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
+    const key = input.context.idempotencyKey
+    if (key === undefined) return this.recordOnce(input, undefined)
+    return this.inflight.run(JSON.stringify([input.context.tenantId, key]), () => this.recordOnce(input, key))
+  }
+
+  /**
+   * The body of {@link record}, for one call.
+   * @internal
+   */
+  private async recordOnce(input: RecordInput, key: string | undefined): Promise<RecordOutcome> {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
@@ -287,16 +311,39 @@ export class MeteringService {
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating: NormalizedUsage = { ...normalized, serverToolUse: ratedUnits }
 
+    const basis: ReplayBasis = { providerReported: mode === 'provider-reported', occurredAtSupplied: input.occurredAt !== undefined, responseModel: parsed.model }
+    if (key !== undefined) {
+      const request = this.requestRecord(buildAppendInput({ normalized, context, serviceTier, occurredAt, rating: unratedFor(normalized, basis), markup: NEUTRAL_MARKUP, ratedUnits, enforced: enforcing }), key)
+      const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
+      if (stored !== null) return { record: replayOf(stored, request, basis), replayed: true }
+    }
+
     const rating = await this.rate(usageForRating, serviceTier, occurredAt, mode, context.baseModel)
     const markup = await this.resolveMarkup(context, normalized, serviceTier)
     const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
-    const record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), context.idempotencyKey)
+    let record: UsageRecord
+    try {
+      record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), key)
+    } catch (error) {
+      if (key === undefined || !isIdempotencyConflict(error)) throw error
+      const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
+      if (stored === null) throw error
+      return { record: replayOf(stored, this.requestRecord(appendInput, key), basis), replayed: true }
+    }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
     await this.captureContent(record.id, context.tenantId, input.content)
     if (enforcing) await this.effects.enforceRecord(record)
-    return record
+    return { record, replayed: false }
+  }
+
+  /**
+   * The record a call would append, shaped as the ledger stores it.
+   * @internal
+   */
+  private requestRecord(input: LedgerAppendInput, key: string): NewUsageRecord {
+    return { ...input, idempotencyKey: key, totalTokens: sumTokenCounts(input) }
   }
 
   /**
@@ -450,8 +497,8 @@ export class MeteringService {
     if (estimate === undefined) {
       const result = await fn()
       // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-      const usage = await this.record({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
-      this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
+      const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
+      if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     }
     const hold = await this.hold(context, estimate)
@@ -701,11 +748,7 @@ export class MeteringService {
   /** Rate a call in the resolved mode; a non-strict rate miss yields zero cost + `priceMissing`. */
   private async rate(usage: NormalizedUsage, serviceTier: ServiceTier, occurredAt: Date, mode: RatingMode, baseModel?: string): Promise<RatingResult> {
     if (mode === 'provider-reported') {
-      const cost = usage.providerReportedCostNanoUsd
-      if (cost === undefined) {
-        // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check error code only
-        throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'provider-reported rating requires providerReportedCostNanoUsd' })
-      }
+      const cost = requireReportedCost(usage)
       return { rawCostNanoUsd: cost, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
     }
     const rate = await this.pricing.resolveRate({

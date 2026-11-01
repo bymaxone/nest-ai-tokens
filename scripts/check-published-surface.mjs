@@ -13,6 +13,8 @@
  *   fixture happened to use a workaround form.
  * - A pull request deleted a `## [x.y.z]` heading while adding the next one,
  *   which silently turns the release notes into the generic fallback.
+ * - A member tagged `@internal` is meant to be absent from the declarations a consumer
+ *   installs; a build that stops stripping them would publish it as part of the class.
  * - README examples are checked against the types a consumer sees, so the compile of
  *   the snippets keeps three constraints:
  *   1. Syntactic and semantic diagnostics are collected together. The `tsc` command
@@ -38,6 +40,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -752,11 +755,57 @@ function checkSnippets() {
   }
 }
 
+/** Every file under `dir` whose name ends with one of `suffixes`. */
+function filesUnder(dir, suffixes) {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return filesUnder(path, suffixes)
+    return suffixes.some((suffix) => entry.name.endsWith(suffix)) ? [path] : []
+  })
+}
+
+/** The names of the members and declarations tagged `@internal` in the sources. */
+function internalNames() {
+  const names = new Set()
+  const tagged =
+    /@internal[\s\S]*?\*\/\s*(?:(?:export|declare|private|protected|public|readonly|static|async|abstract)\s+)*([A-Za-z_$][\w$]*)/g
+  for (const file of filesUnder(join(ROOT, 'src'), ['.ts'])) {
+    if (file.endsWith('.spec.ts')) continue
+    for (const match of readFileSync(file, 'utf8').matchAll(tagged))
+      if (match[1] !== undefined) names.add(match[1])
+  }
+  return names
+}
+
+/** Declarations a consumer installs must not carry anything the sources tag `@internal`. */
+function checkDeclarations() {
+  const names = internalNames()
+  const files = filesUnder(join(ROOT, 'dist'), ['.d.ts', '.d.cts'])
+  const leaks = []
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8')
+    for (const name of names)
+      if (new RegExp(`\\b${name}\\b`).test(text)) leaks.push(`${name} in ${relative(ROOT, file)}`)
+  }
+  if (leaks.length > 0) {
+    fail(
+      'declarations',
+      `${leaks.length} @internal name(s) reach the built declarations:\n${leaks.map((l) => `      ${l}`).join('\n')}`,
+    )
+    return
+  }
+  console.log(
+    `  declarations: ${names.size} @internal name(s) absent from ${files.length} built declaration file(s)`,
+  )
+}
+
 // ---------------------------------------------------------------------------
 
 console.log(`Published-surface gate — ${PKG.name}@${PKG.version}`)
 await checkLinks()
 checkChangelog()
+checkDeclarations()
 checkSnippets()
 
 if (failures.length > 0) {
