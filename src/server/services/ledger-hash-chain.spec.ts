@@ -214,6 +214,17 @@ describe('LedgerService hash chain over a mixed ledger', () => {
     await service.append(makeInput({ inputTokens: 9, occurredAt: new Date('2026-06-20T00:00:00.000Z') }), 'c')
     expect(await service.verifyChain('tenant-1', new Date('2026-06-05T00:00:00.000Z'))).toEqual({ valid: true, unchainedCount: 0 })
   })
+
+  /** An upper bound can cut the chain too when occurredAt is out of order: the structural rules are skipped there as well. */
+  it('skips the structural rules for a call bounded only by an upper date', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = makeService(store, true)
+    await service.append(makeInput({ occurredAt: new Date('2026-06-20T00:00:00.000Z') }), 'a')
+    await service.append(makeInput({ inputTokens: 5, occurredAt: new Date('2026-06-01T00:00:00.000Z') }), 'b')
+    await service.append(makeInput({ inputTokens: 9, occurredAt: new Date('2026-06-10T00:00:00.000Z') }), 'c')
+    expect(await service.verifyChain('tenant-1', undefined, new Date('2026-06-12T00:00:00.000Z'))).toEqual({ valid: true, unchainedCount: 0 })
+    expect((await service.verifyChain('tenant-1')).valid).toBe(true)
+  })
 })
 
 describe('verifyChainRecords structure', () => {
