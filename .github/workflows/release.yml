@@ -66,14 +66,15 @@ jobs:
         # sees are the ones reviewed in the release PR. It runs before the build and the
         # publish: a version with no section stops the release before anything is published,
         # and there is no fallback text. The version is matched as a literal, so the dots in
-        # `1.1.3` match only dots. The notes go through a file, never through a shell or an
+        # `1.1.3` match only dots, and only the heading's own first bracket counts, so a
+        # second bracketed token on another heading cannot start the section. The notes go through a file, never through a shell or an
         # output variable, so nothing inside the CHANGELOG is evaluated or can end the value.
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           awk -v ver="$VERSION" '
             /^## \[/ {
               if (found) exit
-              if (index($0, "[" ver "]")) { found = 1; next }
+              if (index($0, "## [" ver "]") == 1) { found = 1; next }
             }
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"

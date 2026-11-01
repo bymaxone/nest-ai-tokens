@@ -56,8 +56,6 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: ioredis
         update-types: [version-update:semver-major]
-      - dependency-name: '@opentelemetry/api'
-        update-types: [version-update:semver-major]
       # TypeScript 6 and ESLint 10 are known to break the lint/typecheck gate and
       # are intentionally held back until revisited.
       - dependency-name: typescript
