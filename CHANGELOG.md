@@ -31,7 +31,7 @@ does not record which, and this release cannot repair it. Review the wallets of 
 against your own records. Entries written from now on are in UTC.
 
 **Apply:** wallet entry keys that start with `activate:` or `expiry:` belong to the store, and
-`grant`, `refund`, `adjust` and `debit` on the wallet service now refuse them with
+the PostgreSQL store now refuses them, for `grant`, `refund`, `adjust` and `debit`, with
 `AI_TOKENS_INVALID_CONFIG`. A key of yours in those namespaces that is already stored is not
 touched, except an `expiry:<grantId>` key held by an entry other than the store's own expiry of that
 grant: the debit that would sweep that grant is refused until the entry is corrected. No exported
