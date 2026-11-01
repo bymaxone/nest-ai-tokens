@@ -55,7 +55,7 @@ import type {
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
-import { activationKey, assertCallerKey } from '../server/utils/wallet-keys'
+import { RESERVED_KEY_REASON, activationKey, isReservedWalletKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -94,6 +94,16 @@ import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, Wall
 
 /** A SQL executor — either the client or an interactive-transaction client. */
 type SqlExecutor = Prisma.TransactionClient
+
+/**
+ * Refuse a caller's entry whose key is in the namespace the store writes for itself. The error is built
+ * here, from the class this entry point takes from the package root.
+ */
+function assertCallerKey(idempotencyKey: string): void {
+  if (!isReservedWalletKey(idempotencyKey)) return
+  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check the error code only
+  throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_REASON })
+}
 
 /**
  * The official PostgreSQL adapter. Construct it with the host's `PrismaClient`

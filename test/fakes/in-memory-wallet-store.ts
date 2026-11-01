@@ -30,7 +30,8 @@ import type {
   WalletEntryPage,
 } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict } from '../../src/server/services/ledger-idempotency-conflict'
-import { activationKey, assertCallerKey } from '../../src/server/utils/wallet-keys'
+import { AiTokensException } from '../../src/server/errors'
+import { RESERVED_KEY_REASON, activationKey, isReservedWalletKey } from '../../src/server/utils/wallet-keys'
 
 /** A persisted debit→grant allocation (the audit trail of §9.3). */
 export interface WalletAllocation {
@@ -48,6 +49,11 @@ export interface InMemoryWalletStoreOptions {
   burnOrder?: BurnOrder
   /** Injected clock; defaults to the real wall clock. */
   now?: () => Date
+}
+
+/** Refuse a caller's entry whose key is in the namespace the store writes for itself. */
+function assertCallerKey(idempotencyKey: string): void {
+  if (isReservedWalletKey(idempotencyKey)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_REASON })
 }
 
 /** A Map-backed materialized-balance wallet store for unit/contract tests. */
