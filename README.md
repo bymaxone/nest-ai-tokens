@@ -339,7 +339,7 @@ All normalizers are pure functions over plain objects — no provider SDK peer d
 
 `MODEL_PRICES_SEED` has no rows for `azure-openai`, `vertex`, `bedrock` or `openrouter`; it covers
 `openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`. With `pricing.strict` on
-(the default), the first call through a preset of an unseeded provider throws
+(the default), a call through a preset of an unseeded provider throws
 `AI_TOKENS_PRICE_NOT_FOUND` until you add its price. See [Pricing & Markup](#-pricing--markup).
 
 ---
