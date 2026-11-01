@@ -585,8 +585,31 @@ The sections above document each of these with a runnable example. This is the i
 | `UsageReportService`   | `summarize` · `export`                                                                                                               |
 | `StreamUsageCollector` | Accumulates streamed chunks; prefers the provider's final usage over its own count                                                   |
 
-`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`: `{ valid: true }`
-or `{ valid: false, brokenAtRecordId }`. It checks the chain that `ledger.hashChain: true` writes.
+#### Verifying the hash chain
+
+`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
+
+- `{ valid: true, unchainedCount, chainStartsAtRecordId? }` — every hashed record recomputes and the hashed
+  records form one chain. `chainStartsAtRecordId` is the first chained record when the verified records
+  include it.
+- `{ valid: false, brokenAtRecordId, unchainedCount }` — the first record that fails: a changed record, a
+  record whose hash was removed while its link stayed, a gap or fork in the links, or a chain that does not
+  start at a genesis record.
+- `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none is hashed. This
+  is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
+
+Enable `ledger.hashChain` before the first write. Records written before it was enabled are **unchained**:
+they are counted in `unchainedCount`, not verified and not protected. The chain follows the order records
+settle, which can differ from the order they were created.
+
+What it does not catch, plainly:
+
+1. Removing the hash of the newest record looks the same as that record being unchained.
+2. The chain is unkeyed. Someone with write access who recomputes the whole tail is not detected, so
+   anchor the latest hash outside the database.
+3. An `unchainedCount` that rises after the chain was enabled is a signal to investigate. A rolling deploy
+   with mixed `hashChain` settings can also cause it.
+4. A call with `from` or `to` checks each record's own hash only, not the links between records.
 
 ### Decorators, helpers and catalogs
 

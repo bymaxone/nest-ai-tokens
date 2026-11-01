@@ -225,6 +225,26 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     await service.append(makeRecord({ tenantId: 'chain-t' }), 'c1')
     await service.append(makeRecord({ tenantId: 'chain-t', inputTokens: 5 }), 'c2')
     const result = await service.verifyChain('chain-t')
-    expect(result).toEqual({ valid: true })
+    expect(result).toMatchObject({ valid: true, unchainedCount: 0 })
+  })
+
+  /** Rows written before the chain was enabled are reported as unchained; the chain verifies from its first hashed row. */
+  it('reports rows from before enablement as unchained and verifies the chain after them', async () => {
+    const off = new LedgerService(store, { ledger: { hashChain: false } })
+    await off.append(makeRecord({ tenantId: 'mixed-t' }), 'm1')
+    await off.append(makeRecord({ tenantId: 'mixed-t', inputTokens: 2 }), 'm2')
+    const on = new LedgerService(store, { ledger: { hashChain: true } })
+    const first = await on.append(makeRecord({ tenantId: 'mixed-t', inputTokens: 3 }), 'm3')
+    await on.append(makeRecord({ tenantId: 'mixed-t', inputTokens: 4 }), 'm4')
+    expect(await on.verifyChain('mixed-t')).toEqual({ valid: true, unchainedCount: 2, chainStartsAtRecordId: first.id })
+  })
+
+  /** A hold created before a record that settled first still verifies: the chain follows settlement, not creation. */
+  it('verifies a chain whose hold settles after a later record', async () => {
+    const service = new LedgerService(store, { ledger: { hashChain: true } })
+    const hold = await service.append(makeRecord({ tenantId: 'order-t', status: 'pending' }), 'o1')
+    const quick = await service.append(makeRecord({ tenantId: 'order-t', inputTokens: 7 }), 'o2')
+    await service.transition(hold.id, 'pending', 'posted', { billedCostNanoUsd: 5n })
+    expect(await service.verifyChain('order-t')).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: quick.id })
   })
 })
