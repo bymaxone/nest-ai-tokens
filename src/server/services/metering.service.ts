@@ -323,7 +323,7 @@ export class MeteringService {
     const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
     let record: UsageRecord
     try {
-      record = await this.ledger.append(normalized.model === parsed.model ? appendInput : withHashedModel(appendInput, parsed.model), key)
+      record = await this.ledger.append(withHashedModel(appendInput, parsed.model), key)
     } catch (error) {
       if (key === undefined || !isIdempotencyConflict(error)) throw error
       const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)

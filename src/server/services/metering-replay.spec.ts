@@ -7,12 +7,13 @@
  */
 import { Test } from '@nestjs/testing'
 import { makeFullStore } from '../../../test/fakes/full-store'
-import type { AiTokensErrorResponse, UsageRecord, WalletRef } from '../../shared'
+import type { AiTokensErrorResponse, NewUsageRecord, UsageRecord, WalletRef } from '../../shared'
 import { BymaxAiTokensModule } from '../bymax-ai-tokens.module'
 import { providerPresets } from '../config/provider-presets'
 import { AiTokensException } from '../errors'
 import type { BymaxAiTokensModuleOptions, IAiTokensStore, MeteringContext } from '../interfaces'
 import { KeyedSerial } from '../utils/keyed-serial'
+import { computePayloadHash } from '../utils/payload-hash'
 import { BudgetService, LedgerService, MeteringService, PricingService, WalletService } from './index'
 import type { LedgerAppendInput } from './ledger.service'
 
@@ -448,5 +449,98 @@ describe('meter(): a retry', () => {
     await run()
 
     expect(booted.probe.durations).toBe(1)
+  })
+})
+
+describe('record(): what a replay, a keyless call and a store failure must not do', () => {
+  /** The first call under the key, with a fixed `occurredAt`, so a later call can repeat or differ from it. */
+  function first(booted: Booted): Promise<UsageRecord> {
+    return booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT, occurredAt: OCCURRED_AT })
+  }
+
+  /** Make the next `findByIdempotencyKey` miss, so the call reaches `append` even though the key is stored. */
+  function missTheLookup(booted: Booted): void {
+    jest.spyOn(booted.ledger, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+  }
+
+  /** Without a key there is nothing to serialize on, so a held call never delays another. */
+  it('does not queue a call without a key behind another call without a key', async () => {
+    const booted = await boot()
+    const { idempotencyKey: _unused, ...keyless } = CONTEXT
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    jest.spyOn(booted.ledger, 'append').mockImplementationOnce(async () => {
+      await gate
+      throw new Error('held call abandoned')
+    })
+    const held = booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: keyless }).catch(() => undefined)
+
+    const waited = new Promise<'waited'>((resolve) => setTimeout(() => resolve('waited'), 300))
+    const other = await Promise.race([booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: keyless }), waited])
+
+    release()
+    await held
+    expect(other).not.toBe('waited')
+  })
+
+  /**
+   * The payload hash covers the model the response carried, so the stored model, which `baseModel`
+   * may have named, does not change what an earlier row is compared against. Read at the store
+   * boundary, because a same-version retry is decided by the lookup and never reaches the hash.
+   */
+  it.each([
+    ['names an empty model after baseModel', { usage: { inputTokens: 1000, outputTokens: 500 } }, providerPresets.bedrock, { baseModel: 'claude-sonnet-4-5' }, ''],
+    ['keeps the model the response carried', RAW, providerPresets.openaiChat, { baseModel: 'gpt-5-mini' }, 'gpt-5-mini'],
+  ])('hashes the response model when record() %s', async (_name, usage, preset, extra, hashedModel) => {
+    const store = makeFullStore()
+    const seen: { record: NewUsageRecord; hash: string }[] = []
+    const append = store.append.bind(store)
+    store.append = (record, hash, chain): Promise<UsageRecord> => {
+      seen.push({ record, hash })
+      return append(record, hash, chain)
+    }
+    const booted = await boot(false, store)
+
+    await booted.metering.record({ usage, preset, context: { ...CONTEXT, ...extra, enforce: false }, occurredAt: OCCURRED_AT })
+
+    const call = seen[0]
+    expect(call?.hash).toBe(computePayloadHash({ ...call!.record, model: hashedModel }))
+  })
+
+  /** A replay resolved from the store's conflict did no work, so it has no duration to record. */
+  it('records no duration for a meter() replay that the store reported as a conflict', async () => {
+    const booted = await boot()
+    const run = (): Promise<unknown> => booted.metering.meter(() => Promise.resolve(RAW), { ...CONTEXT, preset: providerPresets.openaiChat }, (response) => response)
+    await run()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    missTheLookup(booted)
+
+    await run()
+
+    expect(booted.probe.durations).toBe(1)
+  })
+
+  /** Only the idempotency conflict is resolved against the stored row; a failing store reaches the caller as it is. */
+  it('lets a generic store failure through even when the key is stored', async () => {
+    const booted = await boot()
+    await first(booted)
+    const failure = new Error('store down')
+    missTheLookup(booted)
+    jest.spyOn(booted.ledger, 'append').mockRejectedValueOnce(failure)
+
+    await expect(first(booted)).rejects.toBe(failure)
+  })
+
+  /** Nor is every typed error the idempotency conflict. */
+  it('lets another typed error through even when the key is stored', async () => {
+    const booted = await boot()
+    await first(booted)
+    const failure = new AiTokensException('AI_TOKENS_STORE_ERROR')
+    missTheLookup(booted)
+    jest.spyOn(booted.ledger, 'append').mockRejectedValueOnce(failure)
+
+    await expect(first(booted)).rejects.toBe(failure)
   })
 })

@@ -43,5 +43,5 @@ export function requestFingerprint(record: NewUsageRecord, basis: Pick<ReplayBas
 export function sameRequest(stored: NewUsageRecord, candidate: NewUsageRecord, basis: ReplayBasis): boolean {
   const stand = requestFingerprint(stored, basis)
   if (requestFingerprint(candidate, basis) === stand) return true
-  return candidate.model !== basis.responseModel && requestFingerprint({ ...candidate, model: basis.responseModel }, basis) === stand
+  return requestFingerprint({ ...candidate, model: basis.responseModel }, basis) === stand
 }
