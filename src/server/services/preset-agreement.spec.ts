@@ -1,8 +1,8 @@
 /**
  * @fileoverview Pins that every provider preset names the provider its normalizer stamps, and that
  * `record()` and a hold followed by `capture()` store the same provider and model and rate the same
- * call. Before this, `azureOpenai` and `vertex` recorded `openai` / `gemini` but their holds were
- * stamped `azure-openai` / `vertex`, which have no seeded rows.
+ * call. A hold reads `preset.provider` while a record reads the normalizer's, so the two must be
+ * the same id for both paths to select the same price rows.
  * @layer server
  */
 import { Test } from '@nestjs/testing'
@@ -138,7 +138,7 @@ describe('record() and hold + capture agree per preset', () => {
     expect(settled.provider).toBe(recorded.provider)
   })
 
-  /** Without a `baseModel` there is nothing to name the model after, so it stays empty as before. */
+  /** Without a `baseModel` there is nothing to name the model after, so it stays empty. */
   it('bedrock: leaves the model empty when there is no baseModel', async () => {
     const { metering } = await boot(false)
     const record = await metering.record({ usage: { usage: { inputTokens: 1, outputTokens: 1 } }, preset: providerPresets.bedrock, context: CONTEXT })
