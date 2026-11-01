@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-11-01
+
 **Apply:** a host that seeded its own price rows under `azure-openai` or `vertex` and relied on a
 hold (`hold()` or `meter()` with a `{ tokens }` estimate) to price through them must re-key those
 rows to `openai` or `gemini`, or pass the provider in the estimate (`{ provider, model, ... }`).
@@ -495,7 +497,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...v1.1.2
 [1.1.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...v1.1.3
 [1.1.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...v1.1.4
+[1.1.5]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...v1.1.5
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...HEAD
