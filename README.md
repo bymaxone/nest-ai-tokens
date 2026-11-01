@@ -351,7 +351,7 @@ AI SDK does not say which vendor served the call and pricing it from one vendor'
 wrong for the others: such a record throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and
 is stored at cost 0 and marked `priceMissing` with it off. To price an AI SDK call, pass a normalized
 usage whose `provider` you set. The `bedrock` preset records provider `bedrock`, which has no seeded
-rows, so every Bedrock call throws until you add a price. A Converse response carries no model id:
+rows, so with `pricing.strict` on every Bedrock call throws until you add a price. A Converse response carries no model id:
 pass `baseModel` in the context (the record's model is then that `baseModel`), or `{ model, ...response }`;
 with neither, the record's model is `''` (with `strict: false` it is stored at cost 0 and marked
 `priceMissing`). The `openrouter` preset rates from the cost the provider reports, so it needs no

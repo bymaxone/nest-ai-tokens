@@ -47,7 +47,7 @@ their records already had.
   cover, so under the default `pricing.strict` they threw `AI_TOKENS_PRICE_NOT_FOUND`; they now use
   the seeded `gpt-5-mini`. A unit test runs the Quick Start flow so the example cannot drift again.
 - The README now says which presets are priced from which seeded rows. The `azureOpenai` and
-  `vertex` presets record provider `openai` and `gemini`, so only `bedrock` has no seeded rows. It
+  `vertex` presets record provider `openai` and `gemini`. It
   also says that a Bedrock Converse response carries no model id, so the record's model is
   `baseModel` when the caller passes one and `''` otherwise, and it explains the `vercelAiSdk` and
   `openaiCompatible(id)` providers.
