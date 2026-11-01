@@ -55,7 +55,7 @@ import type {
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
-import { RESERVED_KEY_REASON, activationKey, isReservedWalletKey } from '../server/utils/wallet-keys'
+import { RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -671,10 +671,15 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         type: 'expiry',
         amountNanoUsd: -grant.remaining,
         priority: grant.priority,
-        idempotencyKey: `expiry:${grant.id}`,
+        idempotencyKey: expiryKey(grant.id),
         reason: 'grant expired',
       })
-      if (expiry === undefined) continue
+      // The wallet row is locked and a swept grant has no remainder, so a taken key here is an entry
+      // written outside the store (before the namespace was reserved). Skipping would keep the expired
+      // credit spendable, so the debit is refused instead.
+      if (expiry === undefined) {
+        throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `the expiry key of grant ${grant.id} is taken by another entry` })
+      }
       await this.insertAllocations(tx, expiry.id, [{ grantEntryId: grant.id, amountNanoUsd: grant.remaining }])
       await this.applyBalanceDelta(tx, walletId, -grant.remaining)
     }

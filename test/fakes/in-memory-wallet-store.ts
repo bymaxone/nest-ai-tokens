@@ -31,7 +31,7 @@ import type {
 } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict } from '../../src/server/services/ledger-idempotency-conflict'
 import { AiTokensException } from '../../src/server/errors'
-import { RESERVED_KEY_REASON, activationKey, isReservedWalletKey } from '../../src/server/utils/wallet-keys'
+import { RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../../src/server/utils/wallet-keys'
 
 /** A persisted debit→grant allocation (the audit trail of §9.3). */
 export interface WalletAllocation {
@@ -298,7 +298,7 @@ export class InMemoryWalletStore implements IWalletStore {
           amountNanoUsd: -remaining,
           priority: grant.priority,
           effectiveAt: now,
-          idempotencyKey: `expiry:${grant.id}`,
+          idempotencyKey: expiryKey(grant.id),
           reason: 'grant expired',
         },
         [{ grantEntryId: grant.id, amountNanoUsd: remaining }],

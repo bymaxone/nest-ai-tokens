@@ -152,6 +152,17 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     })
   })
 
+  /** An entry that holds an expired grant's expiry key (written outside the store) refuses the debit instead of keeping the expired credit spendable. */
+  it('refuses a debit when the expiry key of an expired grant is taken by another entry', async () => {
+    await truncateWallets()
+    const grant = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'exp', amountNanoUsd: 100n, expiresAt: new Date(Date.now() + 1_000) }))
+    const wallet = await store.getWallet(ref)
+    await prisma.$executeRaw`INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "idempotencyKey") VALUES ('foreign', ${wallet?.id}, 'refund', 1, ${`expiry:${grant.id}`})`
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    await expect(store.conditionalDebit(ref, debitEntry(50n, { idempotencyKey: 'after' }), 0n)).rejects.toThrow()
+    expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+  })
+
   /** A debit with no headroom affects no row and returns null (never a store error, §15.2). */
   it('returns null on an insufficient conditional debit', async () => {
     await truncateWallets()

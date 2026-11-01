@@ -215,17 +215,18 @@ describe('WalletService', () => {
     await expectRejectCode(service.refund(REF, { amountNanoUsd: 0n, idempotencyKey: 'r1', reason: 'x' }), 'AI_TOKENS_INVALID_CONFIG')
   })
 
-  /** An entry key in the namespace the store keeps for itself is refused with a typed configuration error, whatever the operation. */
+  /** An entry key in the namespace the store keeps for itself (activation and expiry keys) is refused with a typed configuration error, whatever the operation. */
   it.each([
     ['grant', (key: string, service: WalletService) => service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
     ['refund', (key: string, service: WalletService) => service.refund(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
     ['adjust', (key: string, service: WalletService) => service.adjust(REF, { amountNanoUsd: 10n, idempotencyKey: key, reason: 'x' })],
     ['debit', (key: string, service: WalletService) => service.debit(REF, { amountNanoUsd: 1n, idempotencyKey: key, reason: 'x' })],
-  ])('refuses a %s whose key is in the activation namespace', async (_name, call) => {
+  ])('refuses a %s whose key is in the store namespace', async (_name, call) => {
     const { service } = makeService()
     await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'base', reason: 'seed' })
 
     await expectRejectCode(call('activate:grant-1', service), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(call('expiry:grant-1', service), 'AI_TOKENS_INVALID_CONFIG')
     expect((await service.getBalance(REF)).nanoUsd).toBe(100n)
   })
 

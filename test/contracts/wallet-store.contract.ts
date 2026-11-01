@@ -293,6 +293,17 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
     })
 
+    /** The key `expiry:<grantId>` belongs to the store as well: a caller's entry cannot take it, so an expired grant always leaves the balance. */
+    it('rejects a caller entry whose key is in the expiry namespace', async () => {
+      const c = await make()
+      const grant = await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n }))
+      const reserved = { response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } }
+
+      await expect(c.store.appendEntry(ref, { ...debitEntry(1n, { idempotencyKey: `expiry:${grant.id}` }), type: 'refund', amountNanoUsd: 1n })).rejects.toMatchObject(reserved)
+      await expect(c.store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: `expiry:${grant.id}` }), 0n)).rejects.toMatchObject(reserved)
+      expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+    })
+
     /** A caller that tried the activation key of a scheduled grant does not stop the store from crediting it. */
     it('still credits a scheduled grant after a caller tried its activation key', async () => {
       const c = await make()
