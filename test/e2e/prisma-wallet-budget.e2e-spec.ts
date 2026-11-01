@@ -207,6 +207,35 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     }
   })
 
+  /**
+   * The store recognises its activation entry by its shape (type, reason and the grant's amount), not by the key alone.
+   * A row that holds the key with another shape, written outside the store, refuses the debit and the reconcile with
+   * the wallet, key and grant on the cause, instead of making the grant look credited and never crediting it.
+   */
+  it.each([
+    ['a host marker of amount zero', 'adjustment', 'host marker', 0n],
+    ['the store reason with another amount', 'adjustment', 'grant activated', 1n],
+    ['the store reason and amount with another type', 'refund', 'grant activated', 100n],
+  ])('refuses a debit and a reconcile when a due grant\'s activation key holds %s', async (_name, type, reason, amount) => {
+    await truncateWallets()
+    const scheduled = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'sched', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() + 1_500) }))
+    const wallet = await store.getWallet(ref)
+    await prisma.$executeRaw`INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "idempotencyKey", "reason") VALUES ('foreign-marker', ${wallet?.id}, ${type}, ${amount}, ${`activate:${scheduled.id}`}, ${reason})`
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    for (const call of [
+      () => store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'after' }), 0n),
+      () => store.reconcile(ref),
+    ]) {
+      const error = (await call().catch((e: unknown) => e)) as AiTokensException
+      expect(error).toBeInstanceOf(AiTokensException)
+      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG' } })
+      for (const id of [wallet?.id, scheduled.id, `activate:${scheduled.id}`]) {
+        expect(JSON.stringify(error.getResponse())).not.toContain(id)
+        expect((error.cause as Error).message).toContain(id)
+      }
+    }
+  })
+
   /** A debit with no headroom affects no row and returns null (never a store error, §15.2). */
   it('returns null on an insufficient conditional debit', async () => {
     await truncateWallets()

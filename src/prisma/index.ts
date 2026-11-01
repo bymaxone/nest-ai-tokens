@@ -56,7 +56,7 @@ import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
-import { RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
+import { ACTIVATION_REASON, RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -653,18 +653,19 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         AND g."effectiveAt" <= ${DB_NOW_SQL} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${DB_NOW_SQL})
         AND NOT ${ACTIVATED_SQL}
     `)
-    let activated = false
     for (const grant of due) {
       const activation = await this.insertSystemEntry(tx, walletId, {
         type: 'adjustment',
         amountNanoUsd: grant.amountNanoUsd,
         priority: grant.priority,
         idempotencyKey: activationKey(grant.id),
-        reason: 'grant activated',
+        reason: ACTIVATION_REASON,
       })
-      if (activation !== undefined) activated = true
+      // The wallet row is locked and the grants listed are not activated by shape, so a taken key is an entry the
+      // store did not write: crediting without the marker would credit the grant again at the next reconcile.
+      if (activation === undefined) throw reservedKeyHeld(walletId, activationKey(grant.id), grant.id)
     }
-    if (!activated) return
+    if (due.length === 0) return
     await tx.$executeRaw(Prisma.sql`
       UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${SIGNED_BALANCE_SQL}, "updatedAt" = CURRENT_TIMESTAMP WHERE w."id" = ${walletId}
     `)
