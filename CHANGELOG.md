@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-11-01
+
+**Apply:** `verifyChain` has a new result, `{ valid: false, status: 'never-enabled' }`, which has no
+`brokenAtRecordId`; handle it wherever you read that field. Enable `ledger.hashChain` before the
+first write: records written earlier are reported as unchained and are not protected.
+
 ### Fixed
 
 - **Enabling `ledger.hashChain` on a ledger that already has records no longer makes `verifyChain`
@@ -435,7 +441,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.0]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.4...v1.1.0
 [1.1.2]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.1...v1.1.2
 [1.1.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...v1.1.3
+[1.1.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...v1.1.4
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...HEAD
