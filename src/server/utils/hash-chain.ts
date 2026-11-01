@@ -19,12 +19,21 @@
  * @layer server
  */
 
-import type { NewUsageRecord } from '../../shared'
+import type { NewUsageRecord, UsageRecord } from '../../shared'
 import { deriveIdempotencyKey } from '../../shared'
 import { computePayloadHash } from './payload-hash'
 
-/** The outcome of {@link LedgerService.verifyChain}: intact, or the first broken record. */
-export type ChainVerification = { valid: true } | { valid: false; brokenAtRecordId: string }
+/**
+ * The outcome of {@link LedgerService.verifyChain}. `unchainedCount` is the number of settled
+ * records that carry no chain hash (written before the chain was enabled): they are counted, not
+ * verified, and the chain does not protect them. `chainStartsAtRecordId` is the genesis record when
+ * the verified records include it. The third variant means settled records exist and none carries a hash or a `prevHash`,
+ * i.e. the chain was never enabled for this tenant, which is not evidence of tampering.
+ */
+export type ChainVerification =
+  | { valid: true; unchainedCount: number; chainStartsAtRecordId?: string }
+  | { valid: false; brokenAtRecordId: string; unchainedCount: number }
+  | { valid: false; status: 'never-enabled'; unchainedCount: number }
 
 /**
  * Compute a settled record's position in its tenant's tamper-evident chain:
@@ -44,4 +53,48 @@ export function chainHash(prevHash: string | null, record: NewUsageRecord & { id
     id: record.id,
     content: computePayloadHash(record),
   })
+}
+
+/**
+ * Verify a tenant's settled records against the hash chain. The chain is walked by its links
+ * (`prevHash` to `hash`), not by row order, because a record links to the hashed record created
+ * last while rows are listed by creation time: a hold created before a record that settled first
+ * sits ahead of it in the listing yet links to it.
+ *
+ * Every hashed record must recompute from its own `prevHash`. With `structural` set (an unbounded
+ * call), the hashed records must also form one chain: exactly one head, the record whose
+ * `prevHash` is not another record's hash, and that head must be the genesis (no `prevHash`).
+ * Two records may share a predecessor: the official adapter links each new record to the hashed
+ * record created last, so a hold that settles after a later record leaves two children of one parent.
+ * Records without a hash are counted as unchained; one that still carries a `prevHash` is a chained
+ * record whose hash was removed and is reported as broken. A `from`/`to` window can cut the chain
+ * anywhere, so a bounded call checks each record's own hash and skips the structural rules.
+ *
+ * @param records The tenant's settled (`posted` and `reversed`) records in listing order.
+ * @param structural Whether the records are the whole chain (no `from`/`to` bounds).
+ * @returns The verification outcome.
+ */
+export function verifyChainRecords(records: UsageRecord[], structural: boolean): ChainVerification {
+  const hashed = records.filter((record) => record.hash !== undefined)
+  const unchainedCount = records.length - hashed.length
+  const stripped = records.find((record) => record.hash === undefined && record.prevHash !== undefined)
+  if (stripped !== undefined) return { valid: false, brokenAtRecordId: stripped.id, unchainedCount }
+  const forged = hashed.find((record) => record.hash !== chainHash(record.prevHash ?? null, record))
+  if (forged !== undefined) return { valid: false, brokenAtRecordId: forged.id, unchainedCount }
+  if (hashed.length === 0) {
+    return records.length === 0
+      ? { valid: true, unchainedCount }
+      : { valid: false, status: 'never-enabled', unchainedCount }
+  }
+  const hashes = new Set(hashed.map((record) => record.hash))
+  const heads = hashed.filter((record) => !hashes.has(record.prevHash))
+  const genesis = heads.find((record) => record.prevHash === undefined)
+  if (structural) {
+    // Any head other than the genesis lost its predecessor: a gap, or a front that was cut off.
+    const offending = heads.find((record) => record !== genesis)
+    if (offending !== undefined) return { valid: false, brokenAtRecordId: offending.id, unchainedCount }
+  }
+  return genesis === undefined
+    ? { valid: true, unchainedCount }
+    : { valid: true, unchainedCount, chainStartsAtRecordId: genesis.id }
 }

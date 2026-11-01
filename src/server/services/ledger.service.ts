@@ -19,7 +19,7 @@ import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, LedgerCostSummary } from '../interfaces'
-import { chainHash, type ChainVerification } from '../utils/hash-chain'
+import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
@@ -222,18 +222,27 @@ export class LedgerService {
   }
 
   /**
-   * Verify a tenant's tamper-evident hash chain (§8.6). Walks its settled records
-   * (`posted` + `reversed`) in append order and recomputes each record's chain hash
-   * from its stored `prevHash` link, comparing it to the stored `hash`; reports the
-   * first record whose hash does not match (a post-hoc content modification).
-   * Recomputing from each record's own stored link makes verification independent
-   * of walk order and of any `from`/`to` window (the first in-range record keeps
-   * its real predecessor link). Always emits an `ai_tokens.audit` hook.
+   * Verify a tenant's tamper-evident hash chain (§8.6) over its settled records (`posted` +
+   * `reversed`). The chain is followed by its links (`prevHash` to `hash`), not by row order.
+   * Every hashed record must recompute from its own `prevHash`; a record that has lost its hash
+   * but kept its `prevHash` is reported as broken. Records with no hash and no `prevHash` were
+   * written before the chain was enabled: they are counted in `unchainedCount`, are not verified
+   * and are not protected. With no `from`/`to` bound the hashed records must also form one chain:
+   * one genesis (no `prevHash`) and no gap. If settled records exist and none carries a hash or a `prevHash`
+   * the result is `{ valid: false, status: 'never-enabled' }`, which is not evidence of tampering.
+   *
+   * Limits: a record that no other record names as its predecessor (the newest one, and a hold that
+   * settled while a later-created record was already hashed) can be deleted without detection;
+   * the chain is unkeyed, so someone with write access who recomputes the whole tail is not
+   * detected (anchor the latest hash outside the database); a bounded call (`from`/`to`) checks
+   * each record's own hash only; and an `unchainedCount` that rises after the chain was enabled is
+   * a signal to investigate (a rolling deploy with mixed `hashChain` settings can also cause it).
+   * Always emits an `ai_tokens.chain.verified` audit hook.
    *
    * @param tenantId The tenant whose chain to verify.
    * @param from Optional inclusive lower bound on `occurredAt`.
    * @param to Optional inclusive upper bound on `occurredAt`.
-   * @returns `{ valid: true }`, or `{ valid: false, brokenAtRecordId }`.
+   * @returns The verification outcome; see {@link ChainVerification}.
    */
   async verifyChain(tenantId: string, from?: Date, to?: Date): Promise<ChainVerification> {
     const filter: LedgerFilter = { tenantId, status: ['posted', 'reversed'] }
@@ -241,16 +250,13 @@ export class LedgerService {
     if (to !== undefined) filter.to = to
 
     const settled = await this.store.query(filter)
-    let result: ChainVerification = { valid: true }
-    for (const record of settled) {
-      if (record.hash !== chainHash(record.prevHash ?? null, record)) {
-        result = { valid: false, brokenAtRecordId: record.id }
-        break
-      }
-    }
+    const result = verifyChainRecords(settled, from === undefined && to === undefined)
 
-    const details: Record<string, unknown> = { tenantId, valid: result.valid }
-    if (!result.valid) details.brokenAtRecordId = result.brokenAtRecordId
+    const details: Record<string, unknown> = { tenantId, valid: result.valid, unchainedCount: result.unchainedCount }
+    if (!result.valid) {
+      if ('status' in result) details.status = result.status
+      else details.brokenAtRecordId = result.brokenAtRecordId
+    }
     this.audit('ai_tokens.chain.verified', details)
     return result
   }

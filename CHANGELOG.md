@@ -8,6 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Enabling `ledger.hashChain` on a ledger that already has records no longer makes `verifyChain`
+  report the oldest record as tampered.** `verifyChain` required every settled record to carry a
+  hash, so the first record written before the chain was enabled failed verification and ended the
+  walk, and the chained records after it were never checked. It now follows the chain by its links:
+  records without a hash are counted in the new `unchainedCount` and reported as not protected, the
+  hashed records must start at one genesis with no gap in the links, and a record whose hash was
+  removed while its `prevHash` stayed is reported as broken. A ledger with settled records and no
+  hashed one returns `{ valid: false, status: 'never-enabled' }`. The result type gains
+  `unchainedCount` and an optional `chainStartsAtRecordId`; the new `never-enabled` variant has no
+  `brokenAtRecordId`. A `from`/`to` call still checks each record's own hash only. A record that no other
+  record names as its predecessor (the newest one, and a hold that settled while a later-created record
+  was already hashed) can be deleted without detection, and the chain is unkeyed; both limits are in the README.
+
+  **Apply:** code that reads `brokenAtRecordId` after `valid === false` must also handle the
+  `never-enabled` variant, which has none. Enable the chain before the first write; a rise in
+  `unchainedCount` after enabling is worth investigating.
+
 ### Changed
 
 - The GitHub Release body is now the tag's own `CHANGELOG.md` section instead of the generated

@@ -585,8 +585,35 @@ The sections above document each of these with a runnable example. This is the i
 | `UsageReportService`   | `summarize` · `export`                                                                                                               |
 | `StreamUsageCollector` | Accumulates streamed chunks; prefers the provider's final usage over its own count                                                   |
 
-`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`: `{ valid: true }`
-or `{ valid: false, brokenAtRecordId }`. It checks the chain that `ledger.hashChain: true` writes.
+#### Verifying the hash chain
+
+`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
+
+- `{ valid: true, unchainedCount, chainStartsAtRecordId? }` — every hashed record recomputes and, on a call
+  without `from`/`to`, the hashed records form one chain. `chainStartsAtRecordId` is the genesis record
+  when the verified records include it.
+- `{ valid: false, brokenAtRecordId, unchainedCount }` — the record that fails: a record whose hash was
+  removed while its link stayed, a changed record, or, without `from`/`to`, a gap (a second chain start)
+  or a chain that does not start at a genesis record (its first head). Those checks run in that order,
+  and within each the earliest record in listing order is reported. Two records may share a predecessor:
+  a hold that settles after a later record links to the record created last, as the next record does.
+- `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none carries a hash or a link. This
+  is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
+
+Enable `ledger.hashChain` before the first write. Records written before it was enabled are **unchained**:
+they are counted in `unchainedCount`, not verified and not protected.
+
+What it does not catch, plainly:
+
+1. A record that no other record names as its predecessor can be deleted without detection. That is
+   the newest record, and a hold that settled while a later-created record was already hashed (a record
+   links to the hashed record created last, so that hold is never linked to). A hold that settles as
+   the newest-created record is linked by the next record and is not affected.
+2. The chain is unkeyed. Someone with write access who recomputes the whole tail is not detected, so
+   anchor the latest hash outside the database.
+3. An `unchainedCount` that rises after the chain was enabled is a signal to investigate. A rolling deploy
+   with mixed `hashChain` settings can also cause it.
+4. A call with `from` or `to` checks each record's own hash only, not the links between records.
 
 ### Decorators, helpers and catalogs
 
