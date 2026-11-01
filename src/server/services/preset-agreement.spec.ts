@@ -218,8 +218,9 @@ describe('a Bedrock retry keeps the idempotency key of the row it repeats', () =
   }
 
   /**
-   * A row stored with the empty model a response without a model id used to produce, so a retry of
-   * the same call must find that row, not conflict with it.
+   * The payload hash covers the model the response carried, not the model filled in from `baseModel`,
+   * so replaying the same call against an existing empty-model row finds that row instead of
+   * conflicting with it.
    */
   it('returns the stored row when the same call is retried against an empty-model row', async () => {
     const filled = await (await boot(false)).metering.record({ usage: raw, preset: providerPresets.bedrock, context, occurredAt })
