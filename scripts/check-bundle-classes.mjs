@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Bundle class gate.
+ * @fileoverview Bundle class gate.
+ * @layer scripts
  *
  * The entry points are separate, self-contained bundles. A module that one of them imports by a relative
  * path is copied into it, and so is every class that module reaches: a copy of a class the package root

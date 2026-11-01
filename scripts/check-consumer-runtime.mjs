@@ -88,8 +88,8 @@ const main = async () => {
   }
 
   // A key in the namespace the store keeps for itself is refused before any query, so the refusal is
-  // reachable without a database. It is raised by code the store shares with the server, which is
-  // exactly where a second copy of the class would come from.
+  // reachable without a database. The store builds the error from the class it imports from the package
+  // root; a second copy of that class, bundled in through a relative import, would fail the check below.
   let refused
   try {
     await store.appendEntry(
