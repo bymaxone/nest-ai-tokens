@@ -16,7 +16,7 @@
 
 import { Prisma } from '@prisma/client'
 
-import { PG_UNIQUE_VIOLATION, isUniqueViolation, priceLockKey } from './adapter-sql'
+import { PG_UNIQUE_VIOLATION, isUniqueViolation, priceLockKey, storeError } from './adapter-sql'
 
 /**
  * Build a known-request error with an arbitrary `meta`, as a driver would.
@@ -103,5 +103,21 @@ describe('priceLockKey', () => {
     expect(priceLockKey('openai', 'gpt-5', 'chat', 'standard')).toBe(base)
     expect(priceLockKey('openai', 'gpt-5', 'chat', 'batch')).not.toBe(base)
     expect(priceLockKey('openai', 'gpt-5', 'embeddings', 'standard')).not.toBe(base)
+  })
+})
+
+describe('storeError', () => {
+  /** The driver error that failed rides on the typed error as its cause, and the body keeps only the code. */
+  it('keeps the driver error as the cause and the Prisma code in the body', () => {
+    const driver = knownError('P2010')
+    const error = storeError(driver)
+    expect(error.cause).toBe(driver)
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR', details: { code: 'P2010' } } })
+  })
+
+  /** An error that is already typed passes through, so a specific refusal is not flattened into a store error. */
+  it('returns a typed error as it is', () => {
+    const typed = storeError(new Error('x'))
+    expect(storeError(typed)).toBe(typed)
   })
 })

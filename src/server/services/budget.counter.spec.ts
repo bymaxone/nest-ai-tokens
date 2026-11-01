@@ -261,6 +261,18 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_ERROR')
   })
 
+  /** The database failure that made the budget fail closed rides on the store error as its cause. */
+  it('keeps the database failure as the cause of the fail-closed store error', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    const original = new Error('db down')
+    jest.spyOn(store, 'conditionalConsume').mockRejectedValue(original)
+    const error = await service.consume(context(), delta(40n)).catch((e: unknown) => e)
+    expect((error as { cause?: unknown }).cause).toBe(original)
+  })
+
   /** A database outage with failClosed disabled allows the call (fail open) after rolling the counter back. */
   it('allows on a database outage when failClosed is disabled', async () => {
     const counter = new FakeCounter()

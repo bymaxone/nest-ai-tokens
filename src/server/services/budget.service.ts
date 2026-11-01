@@ -27,6 +27,7 @@ import type {
 } from '../../shared'
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { attachCause } from '../errors/attach-cause'
 import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey, type CounterDimensionName } from './budget.keys'
 import type {
   BudgetDelta,
@@ -464,11 +465,11 @@ export class BudgetService {
         return { ok: false, increments: [] }
       }
       return { ok: true, increments: counterAvailable ? increments : [] }
-    } catch {
+    } catch (error) {
       // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
       if (counterAvailable) await this.decrCounters(counter, increments)
       // Stryker disable next-line ObjectLiteral: empty error context {} is the intended shape for STORE_ERROR
-      if (this.options.failClosed) throw new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, {})
+      if (this.options.failClosed) throw attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, {}), error)
       // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`budget store unavailable for ${located.budget.id}; allowing (failClosed disabled)`)
       return { ok: true, increments: [] }

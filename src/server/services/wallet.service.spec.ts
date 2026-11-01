@@ -308,6 +308,16 @@ describe('WalletService', () => {
     await expectRejectCode(service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }), 'AI_TOKENS_STORE_ERROR')
   })
 
+  /** The original store failure rides on the store error as its cause, for a server-side log, and never in the body. */
+  it('keeps the original store failure as the cause of the store error', async () => {
+    const original = new Error('driver down: connect ECONNREFUSED db.internal:5432')
+    const service = new WalletService(throwingStore('appendEntry', original), OPTIONS)
+    const error = await service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect((error as AiTokensException).cause).toBe(original)
+    expect(JSON.stringify((error as AiTokensException).getResponse())).not.toContain('db.internal')
+  })
+
   /** A non-object store throw becomes a store error (guards reject non-objects). */
   it('maps a non-object store throw to a store error', async () => {
     const service = new WalletService(throwingStore('appendEntry', 'boom'), OPTIONS)

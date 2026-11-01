@@ -33,6 +33,7 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // server's four `instanceof AiTokensException` guards would stop matching
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { attachCause } from '../server/errors/attach-cause'
 import { ACTIVATION_KEY_PREFIX } from '../server/utils/wallet-keys'
 
 /** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
@@ -276,10 +277,11 @@ export function isUniqueViolation(error: unknown): boolean {
   return cause?.originalCode === PG_UNIQUE_VIOLATION || cause?.kind === 'UniqueConstraintViolation'
 }
 
-/** Map an unknown driver error to a domain store error (never leaks connection details). */
+/** Map an unknown driver error to a domain store error: the body keeps the code, the original error rides as `cause`. */
 export function storeError(error: unknown): AiTokensException {
+  if (error instanceof AiTokensException) return error
   const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined
-  return new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code })
+  return attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code }), error)
 }
 
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
