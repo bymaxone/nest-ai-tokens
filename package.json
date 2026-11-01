@@ -78,7 +78,7 @@
     "check:exports": "attw --pack . --profile strict",
     "check:mutants": "node scripts/check-mutation-directives.mjs",
     "check:published": "node scripts/check-published-surface.mjs",
-    "check:runtime": "node scripts/check-consumer-runtime.mjs",
+    "check:runtime": "node scripts/check-bundle-classes.mjs && node scripts/check-consumer-runtime.mjs",
     "clean": "node -e \"const {rmSync}=require('node:fs');for(const d of ['dist','coverage'])rmSync(d,{recursive:true,force:true})\"",
     "db:generate": "prisma generate",
     "docs:check": "node scripts/check-jsdoc.mjs && tsc --noEmit -p tsconfig.e2e.json",
