@@ -84,6 +84,11 @@ runWalletStoreContract('Prisma / PostgreSQL', async () => {
     skew: async (ref: WalletRef, value: bigint): Promise<void> => {
       await prisma.$executeRaw`UPDATE "ai_wallets" SET "balanceNanoUsd" = ${value} WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId}`
     },
+    now: async (): Promise<Date> => {
+      const rows = await prisma.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS "now"`
+      return rows[0]?.now ?? new Date()
+    },
+    advance: (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms)),
   }
 })
 

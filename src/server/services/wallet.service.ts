@@ -113,10 +113,10 @@ export class WalletService {
   ) {}
 
   /**
-   * The current balance (§9.2). Reads the materialized balance; expiry is applied
-   * lazily on debit, so a grant that lapses purely with the passage of time is still
-   * counted until the next debit or `reconcile` (the documented §9.3
-   * lazy-materialization trade-off).
+   * The current balance (§9.2). Reads the materialized balance; crediting a grant that falls due
+   * and expiring one that lapses are applied lazily on debit and on `reconcile`, so a grant that
+   * becomes effective or lapses purely with the passage of time is counted or still counted
+   * until the next debit or `reconcile` (the documented §9.3 lazy-materialization trade-off).
    *
    * @param ref The wallet owner (a `'tenant' | 'team' | 'user'`, never `'key'`).
    * @returns The nano-USD balance and its presentation credits.
@@ -301,7 +301,9 @@ export class WalletService {
 
   /**
    * Paginated entry history with type/date filters — the transaction listing a
-   * usage meter renders.
+   * usage meter renders. An `adjustment` entry keyed `activate:<grantId>` (reason
+   * `grant activated`) is not an operator adjustment: the store writes it when it credits
+   * a grant that was not yet due as it was appended, and its amount is that grant's.
    *
    * @param ref The wallet owner.
    * @param filter Optional type/date filters and pagination.

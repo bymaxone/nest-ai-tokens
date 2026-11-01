@@ -443,6 +443,13 @@ const balance = await wallets.getBalance({ tenantId, ownerType: 'user', ownerId:
 console.log(balance.nanoUsd) // current balance
 ```
 
+A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`. A grant that is
+due as it is appended counts at once. One that is not yet due is credited when it falls due, at the next
+debit or `reconcile()`: the store writes an `adjustment` entry keyed `activate:<grantId>` with the reason
+`grant activated`, which carries the grant's amount into the balance. That entry is bookkeeping, not an
+operator adjustment, so a report that lists adjustments should skip it. `getBalance()` reads the stored
+balance, which changes at a debit or a `reconcile()`, so it can trail the clock until the next one.
+
 ### Multi-Dimension Budgets
 
 ```typescript

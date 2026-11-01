@@ -10,11 +10,13 @@
  * under `test/` so it is not collected for coverage.
  *
  * Balance model (single source of truth = the entries, §9.4): the materialized
- * column equals the signed sum of every entry. A read-side `computeBalance(now)`
- * additionally subtracts the unspent remainder of any grant that is future-effective
- * or already expired, so `getBalance()` never reports credit that cannot be spent —
- * the conditional debit first sweeps expired grants (writing their `expiry` entries),
- * which brings the materialized column into agreement before the atomic reserve.
+ * column equals the signed sum of every entry, with a grant counted once it is
+ * CREDITED: when it was due as it was appended (its `effectiveAt` and `expiresAt`
+ * against the store's own clock), or when an `adjustment` entry keyed
+ * `activate:<grantId>` credited it later. The conditional debit and `reconcile`
+ * first activate every due, uncredited, unexpired grant, then sweep expired credited
+ * grants (writing their `expiry` entries), so the column agrees with the clock
+ * before the atomic reserve.
  * @layer test
  */
 
@@ -119,8 +121,9 @@ export class InMemoryWalletStore implements IWalletStore {
     const replay = this.replayOrConflict(ref, wallet, entry)
     if (replay !== null) return replay
     // Critical section — synchronous, no await: the fake's model of the atomic §9.4
-    // conditional UPDATE. Expired grants are swept first so the materialized column
-    // reflects only spendable credit before the reserve is checked.
+    // conditional UPDATE. Due grants are credited and expired grants swept first so the
+    // materialized column reflects only spendable credit before the reserve is checked.
+    this.activateDueGrants(wallet)
     this.sweepExpiredGrants(wallet)
     // `entry.amountNanoUsd` is negative for a debit, so the reserve adds it: this is
     // the fake's model of `balance - cost >= -overdraft` from the §9.4 conditional UPDATE.
@@ -148,6 +151,7 @@ export class InMemoryWalletStore implements IWalletStore {
   reconcile(ref: WalletRef): Promise<Wallet> {
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return Promise.reject(new WalletMissingError())
+    this.activateDueGrants(wallet)
     wallet.balanceNanoUsd = this.spendableBalance(wallet)
     wallet.updatedAt = this.now()
     return Promise.resolve(wallet)
@@ -223,13 +227,10 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /**
-   * The materialized-column delta for an entry. A grant contributes only while it is
-   * spendable at its PERSISTED append instant (the stamped `createdAt`, not a fresh
-   * clock read) — future-dated and born-expired grants add nothing; every other entry
-   * contributes its full signed amount. This uses the SAME {@link wasCountedAtAppend}
-   * rule as {@link sweepExpiredGrants}, so the fake stays internally consistent and
-   * matches the Prisma adapter's persisted-instant balance decision. Expiry of an
-   * initially-spendable grant is applied lazily as an `expiry` entry by the sweep.
+   * The materialized-column delta for an entry. A grant contributes only if it was due as it
+   * was appended (judged on the stamped `createdAt`, the store's own clock, not a later read);
+   * every other entry contributes its full signed amount, so a grant credited later gets its
+   * amount from the `activate:<grantId>` entry that credits it.
    */
   private balanceDelta(entry: WalletEntry): bigint {
     if (entry.type !== 'grant') return entry.amountNanoUsd
@@ -241,13 +242,41 @@ export class InMemoryWalletStore implements IWalletStore {
     return grant.effectiveAt <= grant.createdAt && (grant.expiresAt === undefined || grant.expiresAt > grant.createdAt)
   }
 
+  /** The key of the entry that credits a grant that was not due as it was appended. */
+  private static activationKey(grantId: string): string {
+    return `activate:${grantId}`
+  }
+
+  /** Whether a grant's amount is part of the materialized column: due at append, or credited since. */
+  private isCredited(wallet: Wallet, grant: WalletEntry): boolean {
+    return this.wasCountedAtAppend(grant) || this.idempotency.has(InMemoryWalletStore.replayKey(wallet.id, InMemoryWalletStore.activationKey(grant.id)))
+  }
+
+  /** Credit, once each, every grant that is now due, not yet credited and not yet expired. */
+  private activateDueGrants(wallet: Wallet): void {
+    const now = this.now()
+    for (const grant of this.entries.get(wallet.id) ?? []) {
+      if (grant.type !== 'grant' || this.isCredited(wallet, grant)) continue
+      if (grant.effectiveAt > now || (grant.expiresAt !== undefined && grant.expiresAt <= now)) continue
+      this.insert(wallet, {
+        walletId: wallet.id,
+        type: 'adjustment',
+        amountNanoUsd: grant.amountNanoUsd,
+        priority: grant.priority,
+        effectiveAt: now,
+        idempotencyKey: InMemoryWalletStore.activationKey(grant.id),
+        reason: 'grant activated',
+      }, [])
+    }
+  }
+
   /** Write an `expiry` entry (with its allocation) for every expired grant with a remainder. */
   private sweepExpiredGrants(wallet: Wallet): void {
     const now = this.now()
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant') continue
       if (grant.expiresAt === undefined || grant.expiresAt > now) continue
-      if (!this.wasCountedAtAppend(grant)) continue
+      if (!this.isCredited(wallet, grant)) continue
       const remaining = grant.amountNanoUsd - this.allocatedOf(grant.id)
       if (remaining <= 0n) continue
       this.insert(
@@ -283,7 +312,13 @@ export class InMemoryWalletStore implements IWalletStore {
   private spendableGrants(wallet: Wallet, order: BurnOrder): OpenGrant[] {
     const now = this.now()
     const open = (this.entries.get(wallet.id) ?? [])
-      .filter((entry) => entry.type === 'grant' && entry.effectiveAt <= now && (entry.expiresAt === undefined || entry.expiresAt > now))
+      .filter(
+        (entry) =>
+          entry.type === 'grant' &&
+          this.isCredited(wallet, entry) &&
+          entry.effectiveAt <= now &&
+          (entry.expiresAt === undefined || entry.expiresAt > now),
+      )
       .map((grant) => ({ ...grant, remainingNanoUsd: grant.amountNanoUsd - this.allocatedOf(grant.id) }))
       .filter((grant) => grant.remainingNanoUsd > 0n)
     return open.sort((a, b) => compareGrants(a, b, order))
@@ -301,21 +336,21 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /**
-   * The time-aware spendable balance recomputed from the entry ledger (§9.4): every
-   * effective grant and non-grant entry counts in full, minus the unspent remainder
-   * of any grant that has expired (whether or not its `expiry` entry has been swept
-   * yet). Future-dated grants are ignored. `reconcile` writes this back to the
-   * materialized column, healing any drift.
+   * The balance recomputed from the entry ledger (§9.4): every other entry counts in full, and
+   * a grant counts in full only if it was due as it was appended (a grant credited later is
+   * counted by its activation entry), minus the unspent remainder of any credited grant that
+   * has expired (whether or not its `expiry` entry has been swept yet). A grant that is not
+   * credited counts for nothing. `reconcile` writes this back to the materialized column,
+   * healing any drift.
    */
   private spendableBalance(wallet: Wallet): bigint {
     const now = this.now()
     let total = 0n
     for (const entry of this.entries.get(wallet.id) ?? []) {
-      if (entry.type !== 'grant') total += entry.amountNanoUsd
-      else if (entry.effectiveAt <= now) total += entry.amountNanoUsd
+      if (entry.type !== 'grant' || this.wasCountedAtAppend(entry)) total += entry.amountNanoUsd
     }
     for (const grant of this.entries.get(wallet.id) ?? []) {
-      if (grant.type !== 'grant' || grant.effectiveAt > now) continue
+      if (grant.type !== 'grant' || !this.isCredited(wallet, grant)) continue
       if (grant.expiresAt === undefined || grant.expiresAt > now) continue
       const remaining = grant.amountNanoUsd - this.allocatedOf(grant.id)
       if (remaining > 0n) total -= remaining

@@ -432,13 +432,19 @@ describe('WalletService — grant burn-down (§9.3)', () => {
 })
 
 runWalletStoreContract('in-memory fake', () => {
-  // A fixed injected clock stamps every entry's persisted append instant deterministically,
-  // so the balance-contribution decision never depends on the wall clock at read time.
-  const store = new InMemoryWalletStore({ now: () => new Date('2026-06-15T00:00:00.000Z') })
+  // An injected clock stamps every entry's persisted append instant deterministically, so the
+  // balance-contribution decision never depends on the wall clock at read time; `advance` moves it.
+  let clock = new Date('2026-06-15T00:00:00.000Z')
+  const store = new InMemoryWalletStore({ now: () => clock })
   return {
     store,
     skew: (ref, value): Promise<void> => {
       store.forceBalance(ref, value)
+      return Promise.resolve()
+    },
+    now: (): Promise<Date> => Promise.resolve(clock),
+    advance: (ms): Promise<void> => {
+      clock = new Date(clock.getTime() + ms)
       return Promise.resolve()
     },
   }

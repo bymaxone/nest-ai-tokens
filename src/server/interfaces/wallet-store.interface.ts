@@ -38,12 +38,17 @@ export interface IWalletStore {
     entry: NewWalletEntry,
     allocations?: { grantEntryId: string; amountNanoUsd: bigint }[],
   ): Promise<WalletEntry>
-  /** Atomic conditional debit against the materialized balance. `null` = insufficient (§9.4). */
+  /**
+   * Atomic conditional debit against the materialized balance. `null` = insufficient (§9.4). On the
+   * store's own clock it first credits, once each, the grants that have fallen due and were not
+   * credited as they were appended (an `adjustment` entry keyed `activate:<grantId>`), then expires
+   * the credited grants that have lapsed, then reserves and allocates.
+   */
   conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null>
-  /** Open grants with remaining value, ordered per `order` — feeds allocation. */
+  /** Credited, effective, unexpired grants with remaining value, ordered per `order` — feeds allocation. */
   openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo'): Promise<OpenGrant[]>
   /** A page of entries for a ref. */
   listEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage>
-  /** Recompute the materialized balance from Σ entries. */
+  /** Credit due grants as a debit does, then recompute the materialized balance from Σ entries. */
   reconcile(ref: WalletRef): Promise<Wallet>
 }
