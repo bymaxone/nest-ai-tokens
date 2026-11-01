@@ -75,8 +75,7 @@ their records already had.
 
 - The `server` bundle size budget in `scripts/check-size.mjs` is 41,000 B brotli (it was 40,000 B).
   The idempotent replay path in `record()` (per-key serialization, request-field matching, the
-  shared field-role table) takes the bundle from 39,423 B to about 40,360 B. The other budgets are
-  unchanged.
+  shared field-role table) outgrew the previous budget. The other budgets are unchanged.
 - The declaration build strips members tagged `@internal`, and the published-surface gate fails when a
   name tagged `@internal` in `src` reaches a built `.d.ts` or `.d.cts`.
 
