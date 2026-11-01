@@ -575,16 +575,22 @@ export const CREDITED_SQL = Prisma.sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL}
 export const GRANT_REMAINING_SQL = Prisma.sql`(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))`
 
 /**
- * The spendable-balance expression for `reconcile` (over the outer `w` alias): every entry counts in
- * full except a grant, which counts only if it was due as it was appended (a grant credited later is
- * counted by its activation entry), minus the unspent remainder of any credited grant that has
- * expired. Judged on the database clock, like the debit path.
+ * The signed sum of a wallet's entries (over the outer `w` alias): every entry counts in full except a
+ * grant, which counts only if it was due as it was appended; a grant credited later is counted by its
+ * activation entry. This is what the materialized balance equals before any grant has expired.
+ */
+export const SIGNED_BALANCE_SQL = Prisma.sql`(
+  SELECT COALESCE(SUM(g."amountNanoUsd"), 0)
+  FROM "ai_wallet_entries" g WHERE g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL})
+)`
+
+/**
+ * The spendable-balance expression for `reconcile` (over the outer `w` alias): the signed sum of the
+ * entries minus the unspent remainder of any credited grant that has expired. Judged on the database
+ * clock, like the debit path.
  */
 export function spendableBalanceSql(): Prisma.Sql {
-  return Prisma.sql`(
-    SELECT COALESCE(SUM(g."amountNanoUsd"), 0)
-    FROM "ai_wallet_entries" g WHERE g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL})
-  ) - (
+  return Prisma.sql`${SIGNED_BALANCE_SQL} - (
     SELECT COALESCE(SUM(${GRANT_REMAINING_SQL}), 0)
     FROM "ai_wallet_entries" g
     WHERE g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL}

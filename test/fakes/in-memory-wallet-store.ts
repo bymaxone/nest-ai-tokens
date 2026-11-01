@@ -252,9 +252,14 @@ export class InMemoryWalletStore implements IWalletStore {
     return this.wasCountedAtAppend(grant) || this.idempotency.has(InMemoryWalletStore.replayKey(wallet.id, InMemoryWalletStore.activationKey(grant.id)))
   }
 
-  /** Credit, once each, every grant that is now due, not yet credited and not yet expired. */
+  /**
+   * Credit, once each, every grant that is now due, not yet credited and not yet expired, then set the
+   * balance to the signed sum of the entries rather than incrementing it, so a balance that already
+   * counts a grant (as an earlier reconcile left it) is not credited a second time.
+   */
   private activateDueGrants(wallet: Wallet): void {
     const now = this.now()
+    let activated = false
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant' || this.isCredited(wallet, grant)) continue
       if (grant.effectiveAt > now || (grant.expiresAt !== undefined && grant.expiresAt <= now)) continue
@@ -267,7 +272,9 @@ export class InMemoryWalletStore implements IWalletStore {
         idempotencyKey: InMemoryWalletStore.activationKey(grant.id),
         reason: 'grant activated',
       }, [])
+      activated = true
     }
+    if (activated) wallet.balanceNanoUsd = this.signedBalance(wallet)
   }
 
   /** Write an `expiry` entry (with its allocation) for every expired grant with a remainder. */
@@ -336,19 +343,27 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /**
-   * The balance recomputed from the entry ledger (§9.4): every other entry counts in full, and
-   * a grant counts in full only if it was due as it was appended (a grant credited later is
-   * counted by its activation entry), minus the unspent remainder of any credited grant that
-   * has expired (whether or not its `expiry` entry has been swept yet). A grant that is not
-   * credited counts for nothing. `reconcile` writes this back to the materialized column,
-   * healing any drift.
+   * The signed sum of the entry ledger (§9.4): every other entry counts in full, and a grant counts in
+   * full only if it was due as it was appended (a grant credited later is counted by its activation
+   * entry). This is what the materialized column equals before any grant has expired.
    */
-  private spendableBalance(wallet: Wallet): bigint {
-    const now = this.now()
+  private signedBalance(wallet: Wallet): bigint {
     let total = 0n
     for (const entry of this.entries.get(wallet.id) ?? []) {
       if (entry.type !== 'grant' || this.wasCountedAtAppend(entry)) total += entry.amountNanoUsd
     }
+    return total
+  }
+
+  /**
+   * The balance recomputed from the entry ledger: the signed sum minus the unspent remainder of any
+   * credited grant that has expired (whether or not its `expiry` entry has been swept yet). A grant
+   * that is not credited counts for nothing. `reconcile` writes this back to the materialized column,
+   * healing any drift.
+   */
+  private spendableBalance(wallet: Wallet): bigint {
+    const now = this.now()
+    let total = this.signedBalance(wallet)
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant' || !this.isCredited(wallet, grant)) continue
       if (grant.expiresAt === undefined || grant.expiresAt > now) continue

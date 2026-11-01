@@ -80,6 +80,7 @@ import {
   CREDITED_SQL,
   DB_NOW_SQL,
   GRANT_REMAINING_SQL,
+  SIGNED_BALANCE_SQL,
   statusAssignments,
   storeError,
   usageValues,
@@ -611,8 +612,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /**
    * Credit, once each, every grant that is now due, not credited yet and not expired: an `adjustment`
-   * entry keyed `activate:<grantId>` carries the amount into the materialized balance. A grant that was
-   * due as it was appended is credited by its own row and is not touched here.
+   * entry keyed `activate:<grantId>` records the credit, and the stored balance is then set to the signed
+   * sum of the entries rather than incremented, so a balance that already counts a grant (as an earlier
+   * `reconcile` left it) is not credited a second time. A grant that was due as it was appended is
+   * credited by its own row and is not touched here.
    * @internal
    */
   private async activateDueGrants(tx: SqlExecutor, walletId: string): Promise<void> {
@@ -624,6 +627,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         AND g."effectiveAt" <= ${DB_NOW_SQL} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${DB_NOW_SQL})
         AND NOT ${ACTIVATED_SQL}
     `)
+    let activated = false
     for (const grant of due) {
       const activation = await this.insertSystemEntry(tx, walletId, {
         type: 'adjustment',
@@ -632,8 +636,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         idempotencyKey: `activate:${grant.id}`,
         reason: 'grant activated',
       })
-      if (activation !== undefined) await this.applyBalanceDelta(tx, walletId, grant.amountNanoUsd)
+      if (activation !== undefined) activated = true
     }
+    if (!activated) return
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${SIGNED_BALANCE_SQL}, "updatedAt" = CURRENT_TIMESTAMP WHERE w."id" = ${walletId}
+    `)
   }
 
   /** Write an `expiry` entry (with its allocation) for each credited, expired grant with a remainder. */

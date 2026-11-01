@@ -257,6 +257,31 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       expect(await entriesWithKey(c.store, 'adjustment', 'activate:')).toHaveLength(1)
     })
 
+    /**
+     * A stored balance written by an earlier reconcile can already count a grant that is credited late. The
+     * debit that credits it must leave the balance at the sum of the entries, not add the grant a second time.
+     */
+    it('does not credit a grant twice when the stored balance already counts it', async () => {
+      const c = await make()
+      await grantDueIn(c, 'late', 100n, 1_500)
+      await c.advance(2_000)
+      await c.skew(ref, 100n)
+      expect(await c.store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'once' }), 0n)).not.toBeNull()
+      expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(90n)
+      expect(await entriesWithKey(c.store, 'adjustment', 'activate:')).toHaveLength(1)
+    })
+
+    /** A stored balance that has drifted to some other value is re-derived from the ledger by the next activation. */
+    it('corrects a drifted stored balance when a grant is credited', async () => {
+      const c = await make()
+      await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'base', amountNanoUsd: 50n }))
+      await grantDueIn(c, 'late', 100n, 1_500)
+      await c.advance(2_000)
+      await c.skew(ref, 12_345n)
+      expect(await c.store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'repair' }), 0n)).not.toBeNull()
+      expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(140n)
+    })
+
     /** A due grant that is not credited yet is not open; once a debit credits it, it burns in order with an exact trail. */
     it('burns a late-credited grant in order and keeps the allocation trail exact', async () => {
       const c = await make()
