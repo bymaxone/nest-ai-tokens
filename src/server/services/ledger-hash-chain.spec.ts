@@ -226,7 +226,7 @@ describe('verifyChainRecords structure', () => {
     return [a, b, c]
   }
 
-  /** Deleting a record that no later record names as its predecessor goes unnoticed: here the settled hold. Pins the documented limit. */
+  /** Deleting a record that no other record names as its predecessor goes unnoticed: here the settled hold. Pins the documented limit. */
   it('does not notice a deleted record that no other record links to', async () => {
     const service = makeService(new InMemoryLedgerStore(), true)
     const hold = await service.append(makeInput({ status: 'pending' }), 'hold')

@@ -605,10 +605,10 @@ they are counted in `unchainedCount`, not verified and not protected.
 
 What it does not catch, plainly:
 
-1. A record that no later record names as its predecessor can be deleted, or lose its hash, without
-   detection. That is the newest record and any hold that settled after a later record was created, since
-   a record links to the hashed record created last. Settled holds are therefore not protected
-   against deletion.
+1. A record that no other record names as its predecessor can be deleted without detection. That is
+   the newest record, and a hold that settled while a later-created record was already hashed (a record
+   links to the hashed record created last, so that hold is never linked to). A hold that settles as
+   the newest-created record is linked by the next record and is not affected.
 2. The chain is unkeyed. Someone with write access who recomputes the whole tail is not detected, so
    anchor the latest hash outside the database.
 3. An `unchainedCount` that rises after the chain was enabled is a signal to investigate. A rolling deploy
