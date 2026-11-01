@@ -23,8 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 ### Documentation
 
 - The README says that `MODEL_PRICES_SEED` has no rows for `azure-openai`, `vertex`, `bedrock` or
-  `openrouter`, so with `pricing.strict` on a call through those presets throws
-  `AI_TOKENS_PRICE_NOT_FOUND` until the host adds a price, and shows a minimal `upsertPrice` call.
+  `openrouter`, so with `pricing.strict` on a call through the first three presets throws
+  `AI_TOKENS_PRICE_NOT_FOUND` until the host adds a price (the `openrouter` preset rates from the
+  provider-reported cost), and shows a minimal `upsertPrice` call.
 
 ## [1.1.3] - 2026-10-31
 
