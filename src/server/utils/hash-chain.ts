@@ -27,7 +27,7 @@ import { computePayloadHash } from './payload-hash'
  * The outcome of {@link LedgerService.verifyChain}. `unchainedCount` is the number of settled
  * records that carry no chain hash (written before the chain was enabled): they are counted, not
  * verified, and the chain does not protect them. `chainStartsAtRecordId` is the genesis record when
- * the verified records include it. The third variant means settled records exist and none is hashed,
+ * the verified records include it. The third variant means settled records exist and none carries a hash or a `prevHash`,
  * i.e. the chain was never enabled for this tenant, which is not evidence of tampering.
  */
 export type ChainVerification =

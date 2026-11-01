@@ -589,13 +589,15 @@ The sections above document each of these with a runnable example. This is the i
 
 `LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
 
-- `{ valid: true, unchainedCount, chainStartsAtRecordId? }` — every hashed record recomputes and the hashed
-  records form one chain. `chainStartsAtRecordId` is the first chained record when the verified records
-  include it.
-- `{ valid: false, brokenAtRecordId, unchainedCount }` — the first record that fails: a changed record, a
-  record whose hash was removed while its link stayed, a gap or fork in the links, or a chain that does not
-  start at a genesis record.
-- `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none is hashed. This
+- `{ valid: true, unchainedCount, chainStartsAtRecordId? }` — every hashed record recomputes and, on a call
+  without `from`/`to`, the hashed records form one chain. `chainStartsAtRecordId` is the genesis record
+  when the verified records include it.
+- `{ valid: false, brokenAtRecordId, unchainedCount }` — the record that fails: a record whose hash was
+  removed while its link stayed, a changed record, or, without `from`/`to`, a fork (the second record that
+  claims the same predecessor), a gap (a second chain start) or a chain that does not start at a genesis
+  record (its first head). Those checks run in that order, and within each the earliest record in
+  listing order is reported.
+- `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none carries a hash or a link. This
   is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
 
 Enable `ledger.hashChain` before the first write. Records written before it was enabled are **unchained**:

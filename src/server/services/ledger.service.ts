@@ -228,7 +228,7 @@ export class LedgerService {
    * but kept its `prevHash` is reported as broken. Records with no hash and no `prevHash` were
    * written before the chain was enabled: they are counted in `unchainedCount`, are not verified
    * and are not protected. With no `from`/`to` bound the hashed records must also form one chain:
-   * one genesis (no `prevHash`), no gap and no fork. If settled records exist and none is hashed
+   * one genesis (no `prevHash`), no gap and no fork. If settled records exist and none carries a hash or a `prevHash`
    * the result is `{ valid: false, status: 'never-enabled' }`, which is not evidence of tampering.
    *
    * Limits: removing the hash of the newest record is indistinguishable from it being unchained;
