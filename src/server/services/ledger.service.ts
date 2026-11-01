@@ -231,7 +231,8 @@ export class LedgerService {
    * one genesis (no `prevHash`) and no gap. If settled records exist and none carries a hash or a `prevHash`
    * the result is `{ valid: false, status: 'never-enabled' }`, which is not evidence of tampering.
    *
-   * Limits: removing the hash of the newest record is indistinguishable from it being unchained;
+   * Limits: a record that no later record names as its predecessor (the newest one, and a hold that
+   * settled after a later record was created) can be deleted, or lose its hash, without detection;
    * the chain is unkeyed, so someone with write access who recomputes the whole tail is not
    * detected (anchor the latest hash outside the database); a bounded call (`from`/`to`) checks
    * each record's own hash only; and an `unchainedCount` that rises after the chain was enabled is

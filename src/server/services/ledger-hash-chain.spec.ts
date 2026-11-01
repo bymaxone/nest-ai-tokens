@@ -142,7 +142,7 @@ describe('LedgerService hash chain over a mixed ledger', () => {
   })
 
   /** A hold created before a record that settled first sits ahead of it in the listing yet links to it: still valid. */
-  it('follows settlement order, not creation order', async () => {
+  it('follows the links, not the creation order', async () => {
     const store = new InMemoryLedgerStore()
     const service = makeService(store, true)
     const hold = await service.append(makeInput({ status: 'pending' }), 'hold')
@@ -225,6 +225,20 @@ describe('verifyChainRecords structure', () => {
     const c = await service.append(makeInput({ inputTokens: 9 }), 'c')
     return [a, b, c]
   }
+
+  /** Deleting a record that no later record names as its predecessor goes unnoticed: here the settled hold. Pins the documented limit. */
+  it('does not notice a deleted record that no other record links to', async () => {
+    const service = makeService(new InMemoryLedgerStore(), true)
+    const hold = await service.append(makeInput({ status: 'pending' }), 'hold')
+    const quick = await service.append(makeInput({ inputTokens: 7 }), 'quick')
+    await service.transition(hold.id, 'pending', 'posted', { billedCostNanoUsd: 5n })
+    const next = await service.append(makeInput({ inputTokens: 8 }), 'next')
+    const settledHold = (await service.query({ tenantId: 'tenant-1', status: ['posted'] })).find((record) => record.id === hold.id)
+    expect(settledHold?.prevHash).toBe(quick.hash)
+    expect(next.prevHash).toBe(quick.hash)
+    // The hold is deleted: no remaining record names it, so the rest still verifies.
+    expect(verifyChainRecords([quick, next], true)).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: quick.id })
+  })
 
   /** A hold that settles after a later record links to the same predecessor as the next record; that is normal, not a fork. */
   it('accepts two records that share a predecessor', async () => {

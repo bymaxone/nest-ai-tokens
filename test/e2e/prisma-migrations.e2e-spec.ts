@@ -239,7 +239,7 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     expect(await on.verifyChain('mixed-t')).toEqual({ valid: true, unchainedCount: 2, chainStartsAtRecordId: first.id })
   })
 
-  /** A hold created before a record that settled first still verifies: the chain follows settlement, not creation. */
+  /** A hold created before a record that settled first still verifies: the chain follows its links, not the creation order. */
   it('verifies a chain whose hold settles after a later record', async () => {
     const service = new LedgerService(store, { ledger: { hashChain: true } })
     const hold = await service.append(makeRecord({ tenantId: 'order-t', status: 'pending' }), 'o1')

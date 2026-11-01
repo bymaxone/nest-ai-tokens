@@ -57,9 +57,9 @@ export function chainHash(prevHash: string | null, record: NewUsageRecord & { id
 
 /**
  * Verify a tenant's settled records against the hash chain. The chain is walked by its links
- * (`prevHash` to `hash`), not by row order, because it is built in settlement order while rows are
- * listed by creation time: a hold created before a record that settled first sits ahead of it in
- * the listing yet links to it.
+ * (`prevHash` to `hash`), not by row order, because a record links to the hashed record created
+ * last while rows are listed by creation time: a hold created before a record that settled first
+ * sits ahead of it in the listing yet links to it.
  *
  * Every hashed record must recompute from its own `prevHash`. With `structural` set (an unbounded
  * call), the hashed records must also form one chain: exactly one head, the record whose

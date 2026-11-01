@@ -19,8 +19,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   removed while its `prevHash` stayed is reported as broken. A ledger with settled records and no
   hashed one returns `{ valid: false, status: 'never-enabled' }`. The result type gains
   `unchainedCount` and an optional `chainStartsAtRecordId`; the new `never-enabled` variant has no
-  `brokenAtRecordId`. A `from`/`to` call still checks each record's own hash only. Removing the hash
-  of the newest record is not detectable, and the chain is unkeyed; both limits are in the README.
+  `brokenAtRecordId`. A `from`/`to` call still checks each record's own hash only. A record that no later
+  record names as its predecessor (the newest one, and a hold that settled after a later record was
+  created) can be deleted without detection, and the chain is unkeyed; both limits are in the README.
 
   **Apply:** code that reads `brokenAtRecordId` after `valid === false` must also handle the
   `never-enabled` variant, which has none. Enable the chain before the first write; a rise in

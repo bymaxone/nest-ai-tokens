@@ -601,12 +601,14 @@ The sections above document each of these with a runnable example. This is the i
   is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
 
 Enable `ledger.hashChain` before the first write. Records written before it was enabled are **unchained**:
-they are counted in `unchainedCount`, not verified and not protected. The chain follows the order records
-settle, which can differ from the order they were created.
+they are counted in `unchainedCount`, not verified and not protected.
 
 What it does not catch, plainly:
 
-1. Removing the hash of the newest record looks the same as that record being unchained.
+1. A record that no later record names as its predecessor can be deleted, or lose its hash, without
+   detection. That is the newest record and any hold that settled after a later record was created, since
+   a record links to the hashed record created last. Settled holds are therefore not protected
+   against deletion.
 2. The chain is unkeyed. Someone with write access who recomputes the whole tail is not detected, so
    anchor the latest hash outside the database.
 3. An `unchainedCount` that rises after the chain was enabled is a signal to investigate. A rolling deploy
