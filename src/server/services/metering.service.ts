@@ -258,7 +258,10 @@ function baseColumns(
 export class MeteringService {
   private readonly logger = new Logger(MeteringService.name)
   private readonly effects: MeteringEffects
-  /** The newest settlement of each in-flight `(tenantId, idempotencyKey)`; a later call with the same key waits on it. */
+  /**
+   * The newest settlement of each in-flight `(tenantId, idempotencyKey)`; a later call with the same key waits on it.
+   * @internal
+   */
   private readonly inflight = new Map<string, Promise<void>>()
   /** The wallet service, or `undefined` when the wallet feature is disabled. */
   private readonly wallets: WalletService | undefined
@@ -317,6 +320,7 @@ export class MeteringService {
    * finds the row the first one wrote or, if the first failed before writing, records normally. The
    * map holds only keys with a call in flight. The guarantee holds within this process; another
    * replica is not serialized with it.
+   * @internal
    */
   private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
@@ -332,7 +336,10 @@ export class MeteringService {
     }
   }
 
-  /** The body of {@link record}, for one call. */
+  /**
+   * The body of {@link record}, for one call.
+   * @internal
+   */
   private async recordOnce(input: RecordInput, key: string | undefined): Promise<RecordOutcome> {
     const { context } = input
     const enforcing = context.enforce === true
@@ -378,7 +385,10 @@ export class MeteringService {
     return { record, replayed: false }
   }
 
-  /** The record a call would append, shaped as the ledger stores it. */
+  /**
+   * The record a call would append, shaped as the ledger stores it.
+   * @internal
+   */
   private requestRecord(input: LedgerAppendInput, key: string): NewUsageRecord {
     return { ...input, idempotencyKey: key, totalTokens: sumTokenCounts(input) }
   }

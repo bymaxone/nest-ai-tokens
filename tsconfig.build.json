@@ -4,6 +4,7 @@
     "declaration": true,
     "declarationMap": false,
     "sourceMap": false,
+    "stripInternal": true,
     "baseUrl": ".",
     "paths": {
       "@bymax-one/nest-ai-tokens": ["./src/server/index.ts"],
