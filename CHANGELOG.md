@@ -8,9 +8,56 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-01
+
+**Apply:** the first `debit` or `reconcile()` on a wallet after the upgrade credits every grant that
+is due, not expired and was never credited, which the previous store left out of the balance. On a
+database whose session time zone is west of UTC that includes grants that were refused for as many
+hours as the offset after they were appended, and on any zone it includes a grant written with a
+future `effectiveAt` that has since come due. The credit is one `adjustment` entry keyed
+`activate:<grantId>` with the reason `grant activated`; it is bookkeeping, so a report that lists
+adjustments should skip it. A wallet that `reconcile()` had already corrected is not credited a
+second time: after an activation the stored balance is set to the signed sum of the entries, so a
+balance that drifted from the ledger is also brought back to it. On a wallet with about 300,000
+entries the activation query takes 2.5 ms and that recompute about 90 to 140 ms, once, in the
+debit that activates a grant.
+
+**Apply:** the PostgreSQL store now compares and writes every wallet entry timestamp on one clock,
+`CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, where it wrote `createdAt` in the database session zone and
+`effectiveAt` in UTC. Nothing changes on a database whose zone is UTC. On a database east of UTC,
+the `createdAt` of entries written by earlier versions is ahead of UTC by the offset, so a grant
+appended then may have been credited, spent, or expired up to that many hours early; the history
+does not record which, and this release cannot repair it. Review the wallets of such a database
+against your own records. Entries written from now on are in UTC.
+
+**Apply:** wallet entry keys that start with `activate:` or `expiry:` belong to the store, and
+the PostgreSQL store now refuses them, for `grant`, `refund`, `adjust` and `debit`, with
+`AI_TOKENS_INVALID_CONFIG`. A key of yours in those namespaces that is already stored is not
+touched, except an `expiry:<grantId>` key held by an entry other than the store's own expiry of that
+grant: the debit that would sweep that grant is refused until the entry is corrected. No exported
+type or signature changes, and no schema or migration.
+
 ### Fixed
 
-- Wallet crediting follows a grant's effective time, judged on the database clock in one time zone.
+- **A grant that was not due when it was appended was never credited by a debit.** The store decided
+  once, at append, whether a grant counted toward the balance, by comparing its `effectiveAt` with
+  the row's `createdAt`. A grant that failed the comparison got a balance delta of 0 and nothing
+  credited it later: `debit` reads only the stored balance, and only `reconcile()` recomputed it,
+  by a different rule. A grant is now credited when it falls due, at the next debit or `reconcile()`,
+  exactly once, also when debits race for it.
+- **The two timestamps were in different time zones.** `effectiveAt` is written by the application
+  as a UTC instant and `createdAt` by the database from `CURRENT_TIMESTAMP`, in its session zone,
+  and both columns have no zone. Measured on three databases, an immediate grant was refused for
+  three hours on `America/Sao_Paulo`, and on `Asia/Tokyo` a future grant was credited nine hours early
+  and a live grant counted as expired nine hours early. The sweep, the burn-down and the open-grants
+  query now use the database clock in UTC, and the three zones pass the same cases.
+- **A grant credited by `reconcile()` never expired, and the burn-down could draw on a grant that was
+  not credited.** The expiry sweep only considered grants credited at append, and the burn-down
+  selected due grants whether or not the balance counted them. Both now consider credited grants
+  only, in the configured order.
+- **Two debits sweeping the same expired grant collided.** Both wrote `expiry:<grantId>` and one was
+  rejected with a ledger conflict. Debits, activations and sweeps of one wallet are now serialized on
+  the wallet row, so each expired grant is swept once and both debits succeed.
 
 ## [1.1.5] - 2026-11-01
 
@@ -543,7 +590,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.2...v1.1.3
 [1.1.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.3...v1.1.4
 [1.1.5]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...v1.1.5
+[1.1.6]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...v1.1.6
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...HEAD
