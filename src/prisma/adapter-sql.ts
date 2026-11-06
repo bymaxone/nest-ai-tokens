@@ -520,7 +520,7 @@ export function walletAutoCreatable(entry: NewWalletEntry): boolean {
 
 /**
  * The materialized-balance delta for a STORED entry. A grant contributes only if it was due as
- * it was appended: judged on the row's persisted `createdAt` (`CURRENT_TIMESTAMP`), never on an
+ * it was appended: judged on the row's persisted `createdAt` (written on the UTC clock), never on an
  * application-clock read that depends on clock skew. A grant that was not due then is credited
  * later by the `activate:<grantId>` entry that `activateDueGrants` writes, which carries the
  * amount itself; every other entry contributes its signed amount.
@@ -643,7 +643,7 @@ export function mapBudgetWindowRow(row: BudgetWindowRow): BudgetWindowSpend {
 /** The ordered column list for a budget insert (identifiers are trusted constants). */
 export const BUDGET_COLUMNS = [
   'id', 'tenantId', 'scopeType', 'scopeId', 'features', 'limitNanoUsd', 'limitTokens', 'limitCount',
-  'window', 'anchorAt', 'expiresAt', 'softThresholds', 'policy',
+  'window', 'anchorAt', 'expiresAt', 'softThresholds', 'policy', 'createdAt', 'updatedAt',
 ] as const
 
 /** The identifier list for a budget insert. */
@@ -662,6 +662,7 @@ export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>
     Prisma.sql`${tokenLimitSql(input.limitTokens)}`, Prisma.sql`${input.limitCount ?? null}`,
     Prisma.sql`${serializeWindow(input.window)}`, Prisma.sql`${input.anchorAt ?? null}`, Prisma.sql`${input.expiresAt ?? null}`,
     Prisma.sql`${JSON.stringify(input.softThresholds)}::jsonb`, Prisma.sql`${input.policy}`,
+    DB_NOW_SQL, DB_NOW_SQL,
   ]
 }
 
@@ -674,7 +675,7 @@ export function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>)
       Prisma.sql`"limitTokens" = ${tokenLimitSql(input.limitTokens)}`, Prisma.sql`"limitCount" = ${input.limitCount ?? null}`,
       Prisma.sql`"window" = ${serializeWindow(input.window)}`, Prisma.sql`"anchorAt" = ${input.anchorAt ?? null}`,
       Prisma.sql`"expiresAt" = ${input.expiresAt ?? null}`, Prisma.sql`"softThresholds" = ${JSON.stringify(input.softThresholds)}::jsonb`,
-      Prisma.sql`"policy" = ${input.policy}`, Prisma.sql`"updatedAt" = CURRENT_TIMESTAMP`,
+      Prisma.sql`"policy" = ${input.policy}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`,
     ],
     ', ',
   )
