@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** a hold now settles against the budget window it consumed. Before, `capture()`, `release()` and the hold
+reaper located the window from the current time, so a settlement after a window boundary (an hourly window and a
+one-hour hold lifetime make this ordinary) took spend off the new window, clamped at zero, and left the reservation in
+the old one for good. A tenant could then spend up to about twice a `'block'` limit inside one window: with a daily
+limit, a hold taken at 23:59 and released at 00:10 reduced the new day by the reserved amount. `BudgetService.release`
+and `BudgetService.adjust` accept an optional third argument, the instant that locates the windows; existing callers
+are unaffected, and the library passes the hold's own `occurredAt`. Reservations that an earlier version left in a
+past window stay there and no longer count against anything but that window. A reversal of a posted record still
+locates the window from the current time.
+
 **Apply:** `MeteringService.record()` and the post-hoc path of the interceptor now floor negative usage at zero, as
 `capture()` has since 1.0.4: every token count, every server-tool unit count and a provider-reported cost below zero is
 recorded as zero. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a

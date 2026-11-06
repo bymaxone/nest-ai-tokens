@@ -471,9 +471,11 @@ describe('MeteringEffects.settleCapture', () => {
 
     // reserved 15M nano-USD / 1500 tokens vs actual 10M / 1000 → delta -5M / -500, count 0.
     const effects = new MeteringEffects(undefined, budgets)
-    await effects.settleCapture(record({ billedCostNanoUsd: 10_000_000n }), 15_000_000n, 1500, 10_000_000n, 1000)
+    const settled = record({ billedCostNanoUsd: 10_000_000n, occurredAt: new Date('2026-06-10T23:59:00.000Z') })
+    await effects.settleCapture(settled, 15_000_000n, 1500, 10_000_000n, 1000)
 
-    expect(adjust).toHaveBeenCalledWith(expect.anything(), { nanoUsd: -5_000_000n, tokens: -500, count: 0 })
+    // The third argument locates the window the hold consumed, whenever the capture lands.
+    expect(adjust).toHaveBeenCalledWith(expect.anything(), { nanoUsd: -5_000_000n, tokens: -500, count: 0 }, settled.occurredAt)
   })
 })
 
@@ -561,8 +563,11 @@ describe('MeteringEffects.restoreHold', () => {
     const refund = jest.spyOn(wallets, 'refund')
 
     const effects = new MeteringEffects(wallets, budgets)
-    await effects.restoreHold(record({ billedCostNanoUsd: 10_000_000n }))
+    const held = record({ billedCostNanoUsd: 10_000_000n, occurredAt: new Date('2026-06-10T23:59:00.000Z') })
+    await effects.restoreHold(held)
 
+    // The third argument locates the window the hold consumed, whenever it is released.
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), held.occurredAt)
     expect(release).toHaveBeenCalledTimes(1)
     expect(refund).toHaveBeenCalledTimes(1)
   })
