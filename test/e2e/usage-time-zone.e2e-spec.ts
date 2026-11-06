@@ -108,8 +108,8 @@ describe.each(ZONES)('usage record timestamps on a database whose session zone i
   it('reports a hold created two hours ago as expired', async () => {
     const { store, client } = await storeInZone(zone)
     await store.append(makeRecord({ idempotencyKey: 'old', status: 'pending' }), 'hash-old')
-    // What the database would have written two hours ago: its own clock, in its own session zone.
-    await client.$executeRawUnsafe(`UPDATE "ai_usage_records" SET "createdAt" = CURRENT_TIMESTAMP - interval '2 hours'`)
+    // Two hours earlier than the store stamped it: what it would have stamped two hours ago on the same clock.
+    await client.$executeRawUnsafe(`UPDATE "ai_usage_records" SET "createdAt" = "createdAt" - interval '2 hours'`)
 
     const expired = await store.findExpiredHolds(new Date(Date.now() - HOUR_MS), 10)
 
