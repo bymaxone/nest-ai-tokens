@@ -56,7 +56,8 @@ import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
-import { ACTIVATION_REASON, RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
+import { setErrorMessage } from '../server/errors/set-error-message'
+import { ACTIVATION_REASON, RESERVED_KEY_HELD_MESSAGE, RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -113,7 +114,7 @@ function assertCallerKey(idempotencyKey: string): void {
 function reservedKeyHeld(walletId: string, key: string, grantId: string): AiTokensException {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context and cause text are internal diagnostics; tests check the code and the identifiers
   return attachCause(
-    new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_HELD_REASON }),
+    setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_HELD_REASON }), RESERVED_KEY_HELD_MESSAGE),
     new Error(`wallet ${walletId}: the reserved key ${key} of grant ${grantId} is held by an entry the store did not write`),
   )
 }

@@ -166,7 +166,8 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     await new Promise((resolve) => setTimeout(resolve, 1_500))
     const error = (await store.conditionalDebit(ref, debitEntry(50n, { idempotencyKey: 'after' }), 0n).catch((e: unknown) => e)) as AiTokensException
     expect(error).toBeInstanceOf(AiTokensException)
-    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG' } })
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG', message: expect.stringContaining('reserved wallet entry is held') } })
+    expect(error.message).toContain('reserved wallet entry is held')
     const body = JSON.stringify(error.getResponse())
     for (const id of [wallet?.id, grant.id, `expiry:${grant.id}`]) expect(body).not.toContain(id)
     const cause = (error.cause as Error).message
@@ -228,7 +229,8 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     ]) {
       const error = (await call().catch((e: unknown) => e)) as AiTokensException
       expect(error).toBeInstanceOf(AiTokensException)
-      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG' } })
+      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_INVALID_CONFIG', message: expect.stringContaining('reserved wallet entry is held') } })
+      expect(error.message).toContain('reserved wallet entry is held')
       for (const id of [wallet?.id, scheduled.id, `activate:${scheduled.id}`]) {
         expect(JSON.stringify(error.getResponse())).not.toContain(id)
         expect((error.cause as Error).message).toContain(id)
