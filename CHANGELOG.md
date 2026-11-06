@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-11-06
+
 **Apply:** a hold now settles against the budget window it consumed. Before, `capture()`, `release()` and the hold
 reaper located the window from the current time, so a settlement after a window boundary (an hourly window and a
 one-hour hold lifetime make this ordinary) took spend off the new window, clamped at zero, and left the reservation in
@@ -20,7 +22,7 @@ locates the window from the current time.
 
 **Apply:** `MeteringService.record()` and the post-hoc path of the interceptor now floor negative usage at zero, as
 `capture()` has since 1.0.4: every token count and a provider-reported cost below zero is recorded as zero. Server-tool
-unit counts take the same floor on `record()` and on `capture()`. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a
+unit counts below zero are floored on `record()` as well. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a
 negative `usage.cost`) was written as a negative ledger row, and an enforced call lowered the spend of a budget by that
 amount. Rows already written keep their negative values; list them with a query for a negative `billedCostNanoUsd` or
 token count on `ai_usage_records`.
@@ -31,6 +33,12 @@ a reconcile a budget with `limitCount` answered `AI_TOKENS_QUOTA_EXCEEDED` earli
 two records and one reversal reconciled to a count of 3. The cost and the tokens already netted to zero. A window that
 a reconcile of an earlier version inflated keeps the inflated count until it rotates or `reconcileWindow` runs again
 on this version, which recomputes the count from the ledger.
+
+### Fixed
+
+- **A hold settled after a budget window boundary took spend off the wrong window.** See the first note above.
+- **`record()` wrote negative usage that `capture()` already floored.** See the second note above.
+- **`reconcileWindow` counted a reversal twice in `spentCount`.** See the third note above.
 
 ### Documentation
 
@@ -764,7 +772,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.7]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...v1.1.7
 [1.1.8]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...v1.1.8
 [1.1.9]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...v1.1.9
+[1.1.10]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...v1.1.10
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.10...HEAD
