@@ -431,7 +431,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         await this.sweepExpiredGrants(tx, wallet.id)
         const cost = -entry.amountNanoUsd
         const reserved = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
-          UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" - ${cost}, "updatedAt" = CURRENT_TIMESTAMP
+          UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" - ${cost}, "updatedAt" = ${DB_NOW_SQL}
           WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${cost} >= ${-overdraftNanoUsd} RETURNING *
         `)
         if (reserved[0] === undefined) return null
@@ -475,7 +475,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       await this.lockWallet(tx, wallet.id)
       await this.activateDueGrants(tx, wallet.id)
       const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
-        UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${spendableBalanceSql()}, "updatedAt" = CURRENT_TIMESTAMP
+        UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${spendableBalanceSql()}, "updatedAt" = ${DB_NOW_SQL}
         WHERE w."id" = ${wallet.id} RETURNING *
       `)
       return mapWalletRow(firstOrThrow(rows))
@@ -522,7 +522,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         SET "spentNanoUsd" = "spentNanoUsd" + ${delta.nanoUsd},
             "spentTokens" = "spentTokens" + ${BigInt(delta.tokens)},
             "spentCount" = "spentCount" + ${delta.count},
-            "updatedAt" = CURRENT_TIMESTAMP
+            "updatedAt" = ${DB_NOW_SQL}
         WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
           AND (${limits.nanoUsd ?? null}::bigint IS NULL OR "spentNanoUsd" + ${delta.nanoUsd} <= ${limits.nanoUsd ?? null})
           AND (${limits.tokens === undefined ? null : BigInt(limits.tokens)}::bigint IS NULL OR "spentTokens" + ${BigInt(delta.tokens)} <= ${limits.tokens === undefined ? null : BigInt(limits.tokens)})
@@ -541,7 +541,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         SET "spentNanoUsd" = GREATEST(0, "spentNanoUsd" + ${delta.nanoUsd}),
             "spentTokens" = GREATEST(0, "spentTokens" + ${BigInt(delta.tokens)}),
             "spentCount" = GREATEST(0, "spentCount" + ${delta.count}),
-            "updatedAt" = CURRENT_TIMESTAMP
+            "updatedAt" = ${DB_NOW_SQL}
         WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
       `)
     })
@@ -557,8 +557,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async setWindowStart(budgetId: string, windowStart: Date): Promise<void> {
     await this.prisma.$executeRaw(Prisma.sql`
       INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
-      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, CURRENT_TIMESTAMP)
-      ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = CURRENT_TIMESTAMP
+      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
+      ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = ${DB_NOW_SQL}
     `)
   }
 
@@ -578,7 +578,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     if (!autoCreate) return null
     const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
       INSERT INTO "ai_wallets" ("id", "tenantId", "ownerType", "ownerId", "balanceNanoUsd", "createdAt", "updatedAt")
-      VALUES (${randomUUID()}, ${ref.tenantId}, ${ref.ownerType}, ${ref.ownerId}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (${randomUUID()}, ${ref.tenantId}, ${ref.ownerType}, ${ref.ownerId}, 0, ${DB_NOW_SQL}, ${DB_NOW_SQL})
       ON CONFLICT ("tenantId", "ownerType", "ownerId") DO UPDATE SET "updatedAt" = "ai_wallets"."updatedAt" RETURNING *
     `)
     return firstOrThrow(rows)
@@ -612,7 +612,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   private async applyBalanceDelta(tx: SqlExecutor, walletId: string, delta: bigint): Promise<void> {
     if (delta === 0n) return
     await tx.$executeRaw(Prisma.sql`
-      UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" + ${delta}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${walletId}
+      UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" + ${delta}, "updatedAt" = ${DB_NOW_SQL} WHERE "id" = ${walletId}
     `)
   }
 
@@ -674,7 +674,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     }
     if (due.length === 0) return
     await tx.$executeRaw(Prisma.sql`
-      UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${SIGNED_BALANCE_SQL}, "updatedAt" = CURRENT_TIMESTAMP WHERE w."id" = ${walletId}
+      UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${SIGNED_BALANCE_SQL}, "updatedAt" = ${DB_NOW_SQL} WHERE w."id" = ${walletId}
     `)
   }
 
@@ -750,7 +750,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   private async ensureWindow(tx: SqlExecutor, budgetId: string, windowStart: Date): Promise<void> {
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
-      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, CURRENT_TIMESTAMP)
+      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
       ON CONFLICT ("budgetId", "windowStart") DO NOTHING
     `)
   }
