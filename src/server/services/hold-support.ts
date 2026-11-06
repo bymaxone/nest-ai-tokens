@@ -99,10 +99,7 @@ export function sumTokenCounts(counts: TokenCounts): number {
 /** Floor every unit count of a record-unit map at zero. */
 function clampUnits(units: Record<string, number>): Record<string, number> {
   const clamped: Record<string, number> = {}
-  for (const [unit, count] of Object.entries(units)) {
-    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
-    clamped[unit] = count < 0 ? 0 : count
-  }
+  for (const [unit, count] of Object.entries(units)) clamped[unit] = Math.max(0, count)
   return clamped
 }
 
@@ -131,8 +128,7 @@ export function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
   const counts = tokenCountsOf(usage)
   const clamped = zeroTokenCounts()
   for (const field of TOKEN_FIELDS) {
-    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
-    clamped[field] = counts[field] < 0 ? 0 : counts[field]
+    clamped[field] = Math.max(0, counts[field])
   }
   const result: NormalizedUsage = { ...usage, ...clamped, ...(usage.serverToolUse !== undefined ? { serverToolUse: clampUnits(usage.serverToolUse) } : {}) }
   const cost = usage.providerReportedCostNanoUsd
