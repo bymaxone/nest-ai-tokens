@@ -7,6 +7,7 @@ import {
   ACTIVATION_KEY_PREFIX,
   ACTIVATION_REASON,
   EXPIRY_KEY_PREFIX,
+  RESERVED_KEY_HELD_MESSAGE,
   RESERVED_KEY_HELD_REASON,
   RESERVED_KEY_REASON,
   activationKey,
@@ -57,5 +58,12 @@ describe('wallet keys', () => {
   /** The reason in the body of the refusal for a held key is fixed text with no identifier in it. */
   it('pins the reason of the held-key refusal by value', () => {
     expect(RESERVED_KEY_HELD_REASON).toBe('a reserved wallet entry key is held by an entry the store did not write')
+  })
+
+  /** The message of the body of the held-key refusal names the ledger, not the configuration, and carries no identifier. */
+  it('pins the message of the held-key refusal by value', () => {
+    expect(RESERVED_KEY_HELD_MESSAGE).toBe(
+      'A reserved wallet entry is held by an entry the store did not write; see the logged cause for the wallet, the key and the grant.',
+    )
   })
 })

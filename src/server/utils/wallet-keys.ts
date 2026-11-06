@@ -20,6 +20,10 @@ export const EXPIRY_KEY_PREFIX = 'expiry:'
 /** Why a caller's entry key is refused. */
 export const RESERVED_KEY_REASON = `wallet entry keys starting with "${ACTIVATION_KEY_PREFIX}" or "${EXPIRY_KEY_PREFIX}" are reserved`
 
+/** The message of the body when a reserved key is held by an entry the store did not write: it names the wallet data, not the configuration. */
+export const RESERVED_KEY_HELD_MESSAGE =
+  'A reserved wallet entry is held by an entry the store did not write; see the logged cause for the wallet, the key and the grant.'
+
 /** The reason of the entry that credits a grant that was not due as it was appended. */
 export const ACTIVATION_REASON = 'grant activated'
 
