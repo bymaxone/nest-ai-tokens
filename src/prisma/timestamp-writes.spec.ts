@@ -3,9 +3,8 @@
  *
  * The timestamp columns are `TIMESTAMP` without a zone, and a column left to `DEFAULT CURRENT_TIMESTAMP`
  * takes the zone of the database session, so on a database east or west of UTC it no longer agrees with
- * the instants the application writes and compares against. Three tables slipped through that way (usage
- * records, then budgets), so the rule is pinned over the SQL text itself: a new insert, or a new column,
- * that leaves a timestamp to the default fails here instead of in production.
+ * the instants the application writes and compares against. The rule is pinned over the SQL text itself:
+ * a new insert, or a new column, that leaves a timestamp to the default fails here.
  * @layer test
  */
 

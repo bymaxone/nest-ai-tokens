@@ -128,7 +128,7 @@ describe.each(ZONES)('budget timestamps on a database whose session zone is %s',
   })
 })
 
-/** A budget inserted the way 1.1.8 did, leaving createdAt to the database default, is what the query exists to find. */
+/** A budget inserted without createdAt takes the session-zone default, which the query exposes as the zone's offset. */
 describe('detect-shifted-budget-timestamps.sql', () => {
   it.each([
     ['Asia/Tokyo', 9],
