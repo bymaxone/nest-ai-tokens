@@ -8,24 +8,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
-**Apply:** every timestamp column the store writes (`createdAt` and `updatedAt` of budgets, budget windows and
-wallets) is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
+**Apply:** every timestamp column the store writes (`createdAt` and `updatedAt` of budgets and wallets, `updatedAt` of
+budget windows) is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
 column default, in a `TIMESTAMP` column without a zone. A `'total'` budget, and a custom-window budget with no
-`anchorAt`, start their window at the budget's `createdAt`. On a database whose session zone is east of UTC (for
+`anchorAt`, anchor their window to the budget's `createdAt`. On a database whose session zone is east of UTC (for
 example `Asia/Tokyo`, +9 hours) that start lay in the future, so `BudgetService.reconcileWindow` found no record in
 the window, set its spend to zero, and a tenant that had reached its limit was allowed past it: with a limit of 1000
 tokens, two calls of 400, a `reconcileWindow` and a third call of 400, the third call was accepted. West of UTC
 (for example `America/Sao_Paulo`, -3 hours) the start lay in the past, so a recompute can count up to the offset of
 spend from before the budget existed. Nothing changes on a database whose zone is UTC. A budget written by an
 earlier version on a database whose zone is not UTC keeps its shifted `createdAt`: nothing marks it, so this
-release cannot repair it. The query below lists the budgets that start their window at `createdAt`, with the
+release cannot repair it. The query below lists the budgets that anchor their window to `createdAt`, with the
 zone of the session that runs it and the hours from the current UTC instant to `createdAt`. To repair a listed
-budget, upsert it again with `anchorAt` set to the instant it was created: the window then starts at `anchorAt`,
-and `reconcileWindow` for that start recomputes its spend from the ledger. Wallet `createdAt` and `updatedAt`
+budget, upsert it again with `anchorAt` set to the instant it was created: the window is then anchored to `anchorAt`,
+and `reconcileWindow` for the window start recomputes its spend from the ledger. Wallet `createdAt` and `updatedAt`
 are only reported, and no code path compares them with an instant.
 
 ```sql
--- Budgets whose window start comes from createdAt: a 'total' window, or a custom window, with no anchorAt. A budget
+-- Budgets whose window is anchored to createdAt: a 'total' window, or a custom window, with no anchorAt. A budget
 -- stamped by the database in its session zone has createdAt shifted by that zone's offset. hoursFromNow is createdAt
 -- less the current UTC instant, so it is conclusive for a budget created in the last day: about +9 for Asia/Tokyo and
 -- about -3 for America/Sao_Paulo. For an older budget, compare createdAt with the time you know it was created.
