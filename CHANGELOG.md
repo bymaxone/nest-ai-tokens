@@ -32,6 +32,16 @@ two records and one reversal reconciled to a count of 3. The cost and the tokens
 a reconcile of an earlier version inflated keeps the inflated count until it rotates or `reconcileWindow` runs again
 on this version, which recomputes the count from the ledger.
 
+### Documentation
+
+- README Quick Start section 2 registers the module with a `scopeResolver`; without one, enabling `budgets` fails at
+  boot with `AI_TOKENS_INVALID_CONFIG`, and the snippet did not boot. A test now boots the module that section
+  declares, so a README snippet that does not boot fails the build.
+- The README says that `enforce` is part of the request, so a retry with another value fails with
+  `AI_TOKENS_IDEMPOTENCY_CONFLICT`; that a `vercelAiSdk` hold and its capture are priced as `openai`, while a
+  `vercelAiSdk` record has no provider; and that a price row belongs to one provider id, so the same model id under
+  another provider is not priced from it. Tests run each statement.
+
 ## [1.1.9] - 2026-11-06
 
 **Apply:** every timestamp column the store writes is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
