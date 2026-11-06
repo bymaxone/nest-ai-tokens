@@ -130,7 +130,11 @@ export class MeteringEffects {
   async settleCapture(record: UsageRecord, reservedBilledNanoUsd: bigint, reservedTokens: number, actualBilledNanoUsd: bigint, actualTokens: number): Promise<void> {
     if (record.isSystemCost) return
     if (this.budgets !== undefined) {
-      await this.budgets.adjust(contextOf(record), { nanoUsd: actualBilledNanoUsd - reservedBilledNanoUsd, tokens: actualTokens - reservedTokens, count: 0 })
+      await this.budgets.adjust(
+        contextOf(record),
+        { nanoUsd: actualBilledNanoUsd - reservedBilledNanoUsd, tokens: actualTokens - reservedTokens, count: 0 },
+        record.occurredAt,
+      )
     }
     const walletDelta = reservedBilledNanoUsd - actualBilledNanoUsd
     const leg = this.legFor(record.tenantId, record.scope, walletDelta, true)
@@ -147,7 +151,7 @@ export class MeteringEffects {
   async restoreHold(record: UsageRecord): Promise<void> {
     if (record.isSystemCost) return
     if (this.budgets !== undefined) {
-      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
+      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt)
     }
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)

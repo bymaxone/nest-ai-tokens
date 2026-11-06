@@ -301,6 +301,33 @@ describe('MeteringService.record', () => {
     expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
+  /** A negative provider-reported cost is floored at zero on record(), as capture() floors it, so it never writes a negative billed row. */
+  it('floors a negative provider-reported cost at zero', async () => {
+    const built = build({ markup: 4, ratingMode: 'provider-reported' })
+    const record = await built.service.record({
+      usage: normalized({ provider: 'openrouter', providerReportedCostNanoUsd: -500_000_000n }),
+      context: context(),
+    })
+    expect(record.rawCostNanoUsd).toBe(0n)
+    expect(record.billedCostNanoUsd).toBe(0n)
+  })
+
+  /** A negative token count, as a subtracting normalizer can produce, is floored at zero on record() too. */
+  it('floors a negative token count at zero', async () => {
+    const record = await build({ strict: false }).service.record({ usage: normalized({ inputTokens: -990, outputTokens: 10 }), context: context() })
+    expect(record.inputTokens).toBe(0)
+    expect(record.totalTokens).toBe(10)
+  })
+
+  /** A negative server-tool unit count is floored at zero, and a positive one is kept. */
+  it('floors a negative server tool use count and keeps a positive one', async () => {
+    const record = await build({ strict: false }).service.record({
+      usage: normalized({ serverToolUse: { web_search: -3, code_run: 2 } }),
+      context: context(),
+    })
+    expect(record.extraUnits).toEqual({ web_search: 0, code_run: 2 })
+  })
+
   /** Provider-reported mode without a reported cost is malformed. */
   it('rejects provider-reported mode without a reported cost', async () => {
     const error = await build({ ratingMode: 'provider-reported' }).service.record({ usage: normalized(), context: context() }).catch((e: unknown) => e)
@@ -1579,5 +1606,68 @@ describe('MeteringService hold→capture money invariant', () => {
       }),
       { numRuns: 40 },
     )
+  })
+})
+
+describe('MeteringService hold settlement across a budget window boundary (§10.7)', () => {
+  const DAY_ONE = new Date('2026-06-10T23:59:00.000Z')
+  const DAY_TWO = new Date('2026-06-11T00:10:00.000Z')
+  const WINDOW_ONE = new Date('2026-06-10T00:00:00.000Z')
+  const WINDOW_TWO = new Date('2026-06-11T00:00:00.000Z')
+  /** The billed cost of ESTIMATE_A on the seeded gpt-5 price. */
+  const RESERVED = 6_250_000n
+
+  /** A shared mutable clock, a seeded price, a 'block' day budget with room for exactly one hold. */
+  async function boundaryFixture(): Promise<{ built: Built; clock: { at: Date }; budgetId: string }> {
+    const clock = { at: DAY_ONE }
+    const built = build({ budgets: true, clock: () => clock.at })
+    await seedGpt5(built.pricingStore)
+    const budget = await upsertBudget(built, { window: 'day', limitNanoUsd: RESERVED })
+    return { built, clock, budgetId: budget.id }
+  }
+
+  /** The nano-USD spent in a window, 0 when it has no row. */
+  async function spentIn(built: Built, budgetId: string, windowStart: Date): Promise<bigint> {
+    return (await built.budgetStore.getWindow(budgetId, windowStart))?.spentNanoUsd ?? 0n
+  }
+
+  /** A hold released after the boundary returns its reservation to the window it was taken in, and the next window stays full. */
+  it('releases the window the hold consumed, not the current one', async () => {
+    const { built, clock, budgetId } = await boundaryFixture()
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(RESERVED)
+
+    clock.at = DAY_TWO
+    await (built.budgets!).consume(context(), { nanoUsd: RESERVED, tokens: 0, count: 0 })
+    await built.service.release(hold, 'client gave up')
+
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
+    expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(RESERVED)
+    const next = await built.service.hold(context(), ESTIMATE_A).catch((e: unknown) => e)
+    expect(codeOf(next)).toBe('AI_TOKENS_BUDGET_EXCEEDED')
+  })
+
+  /** A capture that settles below the estimate after the boundary credits the window the hold consumed. */
+  it('settles a capture against the window the hold consumed', async () => {
+    const { built, clock, budgetId } = await boundaryFixture()
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+
+    clock.at = DAY_TWO
+    await (built.budgets!).consume(context(), { nanoUsd: RESERVED, tokens: 0, count: 0 })
+    await built.service.capture(hold, normalized({ inputTokens: 0, outputTokens: 0 }))
+
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
+    expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(RESERVED)
+  })
+
+  /** Control: the same flow inside one window releases that window. */
+  it('releases the current window when no boundary was crossed', async () => {
+    const { built, clock, budgetId } = await boundaryFixture()
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    clock.at = new Date('2026-06-10T23:59:30.000Z')
+
+    await built.service.release(hold, 'client gave up')
+
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
   })
 })

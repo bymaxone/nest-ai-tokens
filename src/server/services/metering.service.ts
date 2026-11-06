@@ -50,6 +50,7 @@ import { NO_OP_CONTENT_CAPTURE } from './content-capture'
 import type { ContentCapture } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
+  clampUsageCounts,
   isNormalizedUsage,
   normalizeCaptureUsage,
   resolveHoldEstimate,
@@ -720,8 +721,8 @@ export class MeteringService {
   /** Resolve the normalizer chain and produce the normalized usage. */
   private resolveNormalizedUsage(input: RecordInput): NormalizedUsage {
     const normalizer = input.normalizer ?? input.preset?.normalizer
-    if (normalizer !== undefined) return this.normalize(normalizer, input.usage)
-    if (isNormalizedUsage(input.usage)) return input.usage
+    if (normalizer !== undefined) return clampUsageCounts(this.normalize(normalizer, input.usage))
+    if (isNormalizedUsage(input.usage)) return clampUsageCounts(input.usage)
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER', undefined, {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics

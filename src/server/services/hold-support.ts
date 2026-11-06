@@ -96,6 +96,13 @@ export function sumTokenCounts(counts: TokenCounts): number {
   return TOKEN_FIELDS.reduce((total, field) => total + counts[field], 0)
 }
 
+/** Floor every unit count of a record-unit map at zero. */
+function clampUnits(units: Record<string, number>): Record<string, number> {
+  const clamped: Record<string, number> = {}
+  for (const [unit, count] of Object.entries(units)) clamped[unit] = Math.max(0, count)
+  return clamped
+}
+
 /**
  * Floor every token count — and the provider-reported cost — at zero.
  *
@@ -112,17 +119,18 @@ export function sumTokenCounts(counts: TokenCounts): number {
  * the raw cost, so a negative value credits the wallet/budget on capture just as a
  * negative token count would. Flooring it here covers both rating modes.
  *
+ * The server-tool unit counts take the same floor: they are rated like tokens.
+ *
  * @param usage - The normalized usage, whose counts or cost may include a negative.
- * @returns The same usage with every token count and the provider-reported cost floored at zero.
+ * @returns The same usage with every token count, tool unit count and the provider-reported cost floored at zero.
  */
-function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
+export function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
   const counts = tokenCountsOf(usage)
   const clamped = zeroTokenCounts()
   for (const field of TOKEN_FIELDS) {
-    // Stryker disable next-line EqualityOperator: `<= 0` and `< 0` differ only at exactly 0, where both branches yield 0, so the mutant is behavior-equivalent.
-    clamped[field] = counts[field] < 0 ? 0 : counts[field]
+    clamped[field] = Math.max(0, counts[field])
   }
-  const result: NormalizedUsage = { ...usage, ...clamped }
+  const result: NormalizedUsage = { ...usage, ...clamped, ...(usage.serverToolUse !== undefined ? { serverToolUse: clampUnits(usage.serverToolUse) } : {}) }
   const cost = usage.providerReportedCostNanoUsd
   // Stryker disable next-line EqualityOperator: `< 0n` and `<= 0n` differ only at exactly 0n, where both leave the cost 0n, so the mutant is behavior-equivalent.
   if (cost !== undefined && cost < 0n) {

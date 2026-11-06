@@ -246,9 +246,11 @@ export class BudgetService {
    *
    * @param context The metering context.
    * @param delta The spend to release.
+   * @param at The instant that locates the windows to release; defaults to now. A hold settles at its own
+   *   `occurredAt`, so a settlement after a window boundary releases the window the hold consumed.
    */
-  async release(context: MeteringContext, delta: BudgetDelta): Promise<void> {
-    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+  async release(context: MeteringContext, delta: BudgetDelta, at?: Date): Promise<void> {
+    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature, at)
     const counter = this.options.counter
     for (const located of windows) {
       await this.store.adjustWindow(located.budget.id, located.windowStart, negate(delta))
@@ -269,9 +271,11 @@ export class BudgetService {
    *
    * @param context The metering context (payer scope, feature).
    * @param delta The signed spend delta across the three dimensions.
+   * @param at The instant that locates the windows to adjust; defaults to now. A capture settles at the hold's
+   *   `occurredAt`, so a settlement after a window boundary adjusts the window the hold consumed.
    */
-  async adjust(context: MeteringContext, delta: BudgetDelta): Promise<void> {
-    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+  async adjust(context: MeteringContext, delta: BudgetDelta, at?: Date): Promise<void> {
+    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature, at)
     const counter = this.options.counter
     for (const located of windows) {
       const before = (await this.store.getWindow(located.budget.id, located.windowStart)) ?? ZERO_SPEND
@@ -339,7 +343,8 @@ export class BudgetService {
       if (!recordConsumesBudget(record, budget, windowStart, windowEnd)) continue
       computed.spentNanoUsd += record.billedCostNanoUsd
       computed.spentTokens += record.totalTokens
-      computed.spentCount += 1
+      // A compensating record undoes the count of the original it reverses, as the live release does.
+      computed.spentCount += record.reversesRecordId === undefined ? 1 : -1
     }
     const current = (await this.store.getWindow(budgetId, windowStart)) ?? ZERO_SPEND
     await this.store.adjustWindow(budgetId, windowStart, {
@@ -612,9 +617,9 @@ export class BudgetService {
   }
 
   /** The matching, feature-relevant budgets located in the current window. */
-  private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string): Promise<LocatedWindow[]> {
+  private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string, at?: Date): Promise<LocatedWindow[]> {
     const budgets = await this.store.findMatching(tenantId, scope)
-    const now = this.now()
+    const now = at ?? this.now()
     return budgets
       .filter((budget) => featureMatches(budget.features, feature))
       .map((budget) => {
