@@ -14,7 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 the UTC clock. Before, the database filled them in its session time zone, in a `TIMESTAMP` column without
 a zone, while the hold reaper compares `createdAt` with an application instant in UTC. On a database
 whose session zone is west of UTC (for example `America/Sao_Paulo`, -3 hours) every pending hold looked
-older than `holds.ttlSeconds`, so the reaper released it on its next tick whatever its age, and a
+older by the offset, so the reaper released it early (on its next tick when `holds.ttlSeconds` is shorter than the offset), and a
 `capture()` for it failed with `AI_TOKENS_HOLD_EXPIRED`. East of UTC (for example `Asia/Tokyo`, +9 hours)
 an expired hold kept its reservation for the offset past the TTL. The `createdAt` a record returned was
 off by the offset too. Nothing changes on a database whose zone is UTC. Records written by earlier
