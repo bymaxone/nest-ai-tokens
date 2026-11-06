@@ -1,8 +1,8 @@
 /**
- * @fileoverview E2E (red by design until fixed): the usage record's `createdAt` and `updatedAt` are
- * `TIMESTAMP` columns without a zone that the database fills with `CURRENT_TIMESTAMP` in the session
- * zone, while the hold reaper compares `createdAt` with an application instant in UTC. Each case runs on
- * a database whose session zone is UTC (control), west of UTC and east of UTC.
+ * @fileoverview E2E: a usage record's `createdAt` and `updatedAt` are `TIMESTAMP` columns without a zone, so they
+ * are only comparable with an application instant (the hold reaper's cutoff) if the store writes them in UTC,
+ * whatever zone the database session uses. Each case runs on a database whose session zone is UTC (control), west
+ * of UTC and east of UTC.
  * @layer test
  */
 
@@ -179,5 +179,57 @@ describe.each(['America/Sao_Paulo', 'Asia/Tokyo', 'UTC'] as const)('the query th
     expect(rows.map((row) => row.id)).toEqual(['earlier'])
     expect(rows[0]?.sessionZone).toBe(zone)
     expect(Number(rows[0]?.hoursApart)).toBe(zone === 'Asia/Tokyo' ? 9 : -3)
+  })
+})
+
+/**
+ * The chain tail comes from the chain's own links, not from creation times. A database east of UTC that stamped rows
+ * in its session zone holds older rows whose `createdAt` is hours in the future of newer rows stamped in UTC; ordering
+ * by `createdAt` would pick the older row as the tail again and again and fork the chain.
+ */
+describe('the hash chain on a database whose rows were stamped in a zone east of UTC before the clock changed', () => {
+  const FORK_QUERY = readFileSync(join(__dirname, 'sql/detect-forked-usage-chain.sql'), 'utf8')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
+
+  /** A chained posted record written outside the store, with the given links and creation time. */
+  async function insertChained(client: PrismaClient, id: string, hash: string, prevHash: string, createdAtSql: string): Promise<void> {
+    await client.$executeRawUnsafe(`
+      INSERT INTO "ai_usage_records" ("id", "tenantId", "scopeType", "scopeId", "provider", "model", "operation", "serviceTier", "feature", "tags",
+        "inputTokens", "outputTokens", "totalTokens", "rawCostNanoUsd", "surchargeNanoUsd", "billedCostNanoUsd", "markupMultiplier", "currency",
+        "priceMissing", "status", "idempotencyKey", "payloadHash", "isSystemCost", "enforced", "occurredAt", "prevHash", "hash", "createdAt", "updatedAt")
+      VALUES ('${id}', 't1', 'user', 'u1', 'openai', 'gpt-5', 'chat', 'standard', 'f', '{}', 1, 1, 2, 1, 0, 1, 1, 'USD', false, 'posted', '${id}', 'h',
+        false, false, now() AT TIME ZONE 'UTC', '${prevHash}', '${hash}', ${createdAtSql}, ${createdAtSql})`)
+  }
+
+  /** Each new record links to the newest, whatever the old rows' stamps say. */
+  it('links each new record to the previous one although an older row is stamped hours later', async () => {
+    const { store, client } = await storeInZone('Asia/Tokyo')
+    const first = await store.append(makeRecord({ idempotencyKey: 'A', status: 'posted' }), 'hash-a', true)
+    await client.$executeRawUnsafe(`UPDATE "ai_usage_records" SET "createdAt" = "createdAt" + interval '9 hours' WHERE "idempotencyKey" = 'A'`)
+
+    const second = await store.append(makeRecord({ idempotencyKey: 'B', status: 'posted' }), 'hash-b', true)
+    const third = await store.append(makeRecord({ idempotencyKey: 'C', status: 'posted' }), 'hash-c', true)
+
+    expect(first.prevHash).toBeUndefined()
+    expect(second.prevHash).toBe(first.hash)
+    expect(third.prevHash).toBe(second.hash)
+    expect(await client.$queryRawUnsafe(FORK_QUERY)).toEqual([])
+  })
+
+  /** A chain that already forked still gets a deterministic tail, and the query finds the fork. */
+  it('takes the newest of two tails when the chain has already forked, and the query lists the fork', async () => {
+    const { store, client } = await storeInZone('Asia/Tokyo')
+    const first = await store.append(makeRecord({ idempotencyKey: 'A', status: 'posted' }), 'hash-a', true)
+    const second = await store.append(makeRecord({ idempotencyKey: 'B', status: 'posted' }), 'hash-b', true)
+    await insertChained(client, 'fork', 'hash-of-the-fork', first.hash as string, `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + interval '1 minute'`)
+
+    const forks = await client.$queryRawUnsafe<{ tenantId: string; prevHash: string; records: bigint; ids: string[] }[]>(FORK_QUERY)
+    expect(forks.map((row) => [row.tenantId, row.prevHash, Number(row.records), row.ids.length])).toEqual([['t1', first.hash, 2, 2]])
+    expect(forks[0]?.ids).toContain(second.id)
+
+    const next = await store.append(makeRecord({ idempotencyKey: 'D', status: 'posted' }), 'hash-d', true)
+    expect(next.prevHash).toBe('hash-of-the-fork')
   })
 })

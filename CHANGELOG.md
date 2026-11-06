@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 - The message of the refusal for a reserved wallet key held by another entry names the wallet data instead of the configuration.
 - The creation and update times of a usage record are stamped on the UTC clock, so the hold reaper judges a hold's age correctly on a database whose session time zone is not UTC.
+- The tail of a hash chain is taken from the chain's own links instead of from the creation times of its records, so it is the same whichever clock stamped them.
 
 ## [1.1.7] - 2026-11-01
 
