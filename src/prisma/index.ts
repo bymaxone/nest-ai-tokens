@@ -372,12 +372,18 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return rows[0] === undefined ? null : mapUsageRow(rows[0])
   }
 
-  /** The tenant's last chain hash (most recently created settled row). */
+  /**
+   * The tenant's last chain hash: the hash that no other record of the tenant names as its predecessor. The tail is
+   * found by the chain's own links and not by creation time, because rows stamped by different clocks (a database
+   * that changed the zone it stamps in) do not sort in the order they were written. Should the chain already have
+   * forked, the newest of the tails is taken, ties broken by id.
+   */
   private async lastHashWithin(executor: SqlExecutor, tenantId: string): Promise<string | null> {
     const rows = await executor.$queryRaw<{ hash: string }[]>(Prisma.sql`
-      SELECT "hash" FROM "ai_usage_records"
-      WHERE "tenantId" = ${tenantId} AND "hash" IS NOT NULL
-      ORDER BY "createdAt" DESC, "id" DESC LIMIT 1
+      SELECT r."hash" FROM "ai_usage_records" r
+      WHERE r."tenantId" = ${tenantId} AND r."hash" IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM "ai_usage_records" n WHERE n."tenantId" = ${tenantId} AND n."prevHash" = r."hash")
+      ORDER BY r."createdAt" DESC, r."id" DESC LIMIT 1
     `)
     return rows[0]?.hash ?? null
   }

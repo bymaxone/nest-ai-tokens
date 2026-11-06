@@ -125,6 +125,7 @@ export const USAGE_COLUMNS = [
   'billedCostNanoUsd', 'markupMultiplier', 'currency', 'priceMissing', 'status',
   'reversedByRecordId', 'reversesRecordId', 'idempotencyKey', 'payloadHash', 'correlationId',
   'requestId', 'isSystemCost', 'systemCostCategory', 'enforced', 'prevHash', 'hash', 'occurredAt',
+  'createdAt', 'updatedAt',
 ] as const
 
 /** Rebuild a scope from its two columns, or `undefined` when absent. */
@@ -304,6 +305,7 @@ export function usageValues(id: string, record: NewUsageRecord, payloadHash: str
     Prisma.sql`${record.idempotencyKey}`, Prisma.sql`${payloadHash}`, Prisma.sql`${record.correlationId ?? null}`,
     Prisma.sql`${record.requestId ?? null}`, Prisma.sql`${record.isSystemCost}`, Prisma.sql`${record.systemCostCategory ?? null}`,
     Prisma.sql`${record.enforced}`, Prisma.sql`${prevHash}`, Prisma.sql`${hash}`, Prisma.sql`${record.occurredAt}`,
+    DB_NOW_SQL, DB_NOW_SQL,
   ]
 }
 
@@ -356,7 +358,7 @@ export function statusAssignments(
   prevHash: string | null,
   hash: string | null,
 ): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = CURRENT_TIMESTAMP`]
+  const parts: Prisma.Sql[] = [Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`]
   if (patch !== undefined) {
     for (const [key, value] of Object.entries(patch)) {
       if (!isLegalTransitionPatchKey(from, to, key)) {
@@ -561,7 +563,9 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): P
  * The database clock every spendability decision is judged on, so no application clock enters it, as a
  * UTC wall-clock timestamp. The entry timestamps are `TIMESTAMP` columns without a zone: the application
  * writes `effectiveAt` and `expiresAt` as UTC instants, so the clock they are compared with, and the
- * `createdAt` the store writes, must be UTC too whatever zone the database session uses.
+ * `createdAt` the store writes, must be UTC too whatever zone the database session uses. The usage
+ * records' `createdAt` and `updatedAt` are written with it as well: the hold reaper compares `createdAt`
+ * with an application instant.
  */
 export const DB_NOW_SQL = Prisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
 

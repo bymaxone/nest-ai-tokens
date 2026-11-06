@@ -71,7 +71,7 @@ export interface PostgresFixture {
 
 /** Start PostgreSQL, apply the migration, and open two client connections. */
 export async function startPostgres(): Promise<PostgresFixture> {
-  const container = await new PostgreSqlContainer('postgres:16').start()
+  const container = await new PostgreSqlContainer(process.env['AI_TOKENS_E2E_PG_IMAGE'] ?? 'postgres:16').start()
   const url = container.getConnectionUri()
   const prisma = clientFor(url)
   const prismaB = clientFor(url)
