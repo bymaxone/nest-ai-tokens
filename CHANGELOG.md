@@ -10,9 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.1.9] - 2026-11-06
 
-**Apply:** every timestamp column the store writes (`createdAt` and `updatedAt` of budgets and wallets, `updatedAt` of
-budget windows) is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
-column default, in a `TIMESTAMP` column without a zone. A `'total'` budget starts its window at the budget's
+**Apply:** every timestamp column the store writes is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
+column default, in a `TIMESTAMP` column without a zone. A `'total'` budget with no `anchorAt` starts its window at the budget's
 `createdAt`. On a database whose session zone is east of UTC (for example `Asia/Tokyo`, +9 hours) that start lay in
 the future, so `BudgetService.reconcileWindow` found no record in the window, set its spend to zero, and a tenant
 that had reached its limit was allowed past it: with a limit of 1000 tokens, two calls of 400, a `reconcileWindow`
