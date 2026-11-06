@@ -19,8 +19,8 @@ past window stay there and no longer count against anything but that window. A r
 locates the window from the current time.
 
 **Apply:** `MeteringService.record()` and the post-hoc path of the interceptor now floor negative usage at zero, as
-`capture()` has since 1.0.4: every token count, every server-tool unit count and a provider-reported cost below zero is
-recorded as zero. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a
+`capture()` has since 1.0.4: every token count and a provider-reported cost below zero is recorded as zero. Server-tool
+unit counts take the same floor on `record()` and on `capture()`. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a
 negative `usage.cost`) was written as a negative ledger row, and an enforced call lowered the spend of a budget by that
 amount. Rows already written keep their negative values; list them with a query for a negative `billedCostNanoUsd` or
 token count on `ai_usage_records`.
