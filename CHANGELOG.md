@@ -8,11 +8,69 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-06
+
+**Apply:** the creation and update times of a usage record (`createdAt`, `updatedAt`) are now stamped on
+the UTC clock. Before, the database filled them in its session time zone, in a `TIMESTAMP` column without
+a zone, while the hold reaper compares `createdAt` with an application instant in UTC. On a database
+whose session zone is west of UTC (for example `America/Sao_Paulo`, -3 hours) every pending hold looked
+older by the offset, so the reaper released it early (on its next tick when `holds.ttlSeconds` is shorter than the offset), and a
+`capture()` for it failed with `AI_TOKENS_HOLD_EXPIRED`. East of UTC (for example `Asia/Tokyo`, +9 hours)
+an expired hold kept its reservation for the offset past the TTL. The `createdAt` a record returned was
+off by the offset too. Nothing changes on a database whose zone is UTC. Records written by earlier
+versions on a database whose zone is not UTC keep their shifted values: nothing marks them, so this
+release cannot repair them, and the reaper cannot tell them from new ones. A pending hold created before
+the upgrade is judged on its old value until it ends, at most one TTL (east of UTC, the TTL plus the
+offset). The query below lists records whose `createdAt` is far from their `occurredAt`, with the zone of
+the session that runs it and the hours apart; a record backfilled with an old `occurredAt` is listed too,
+so compare the hours with the offset of the zone your connections use.
+
+```sql
+-- Usage records whose createdAt is far from their occurredAt. A record stamped by the database in its session zone
+-- has createdAt and updatedAt shifted by that zone's offset: hoursApart is about -3 for America/Sao_Paulo and +9
+-- for Asia/Tokyo. sessionZone is the zone of the session running this query: compare hoursApart with the offset of
+-- the zone your connections use. A record backfilled with an old occurredAt is also listed.
+SELECT current_setting('TimeZone') AS "sessionZone", r."id", r."tenantId", r."idempotencyKey", r."status",
+       r."occurredAt", r."createdAt",
+       round((extract(epoch FROM (r."createdAt" - r."occurredAt")) / 3600.0)::numeric, 1) AS "hoursApart"
+FROM "ai_usage_records" r
+WHERE abs(extract(epoch FROM (r."createdAt" - r."occurredAt"))) > 60
+ORDER BY r."createdAt";
+```
+
+**Apply:** the tail of a tenant's hash chain, the record the next chained record links to, is now the
+hash that no other record of the tenant names as its predecessor. Before, it was the settled record with
+the latest `createdAt`, which is wrong in the hour a daylight saving clock repeats, and which would have
+been wrong for records stamped by two clocks. `LedgerService.verifyChain` accepts a chain in which two
+records name the same predecessor (it recomputes each hash and checks that each predecessor exists), so a
+chain that forked is reported as valid. The query below lists the records that share a predecessor.
+
+```sql
+-- Hash-chained usage records that share a predecessor. A chain is a line, so two records with the same prevHash mean
+-- it forked. LedgerService.verifyChain recomputes each hash and checks that each predecessor exists, so it accepts a
+-- fork; this query finds it. "ids" lists the records that name the same predecessor, oldest first.
+SELECT r."tenantId", r."prevHash", count(*) AS "records", array_agg(r."id" ORDER BY r."createdAt", r."id") AS "ids"
+FROM "ai_usage_records" r
+WHERE r."prevHash" IS NOT NULL
+GROUP BY r."tenantId", r."prevHash"
+HAVING count(*) > 1;
+```
+
+A chained append now reads the tenant's rows twice instead of once (about 4 ms against 2
+ms at 10,000 rows, 20 ms against 10 ms at 100,000), under the per-tenant lock it already took. No exported
+type or signature changes, and no schema or migration.
+
+**Apply:** the body message and the `message` of the refusal for a reserved wallet key held by an entry the
+store did not write (`AI_TOKENS_INVALID_CONFIG`, as in 1.1.7) now say so, in place of the generic text that
+sent you to markup, limits and currency configuration. The code, the status, the `details.reason` and the
+`cause` are unchanged; if you match on the old message text, match on the code.
+
 ### Fixed
 
-- The message of the refusal for a reserved wallet key held by another entry names the wallet data instead of the configuration.
-- The creation and update times of a usage record are stamped on the UTC clock, so the hold reaper judges a hold's age correctly on a database whose session time zone is not UTC.
-- The tail of a hash chain is taken from the chain's own links instead of from the creation times of its records, so it is the same whichever clock stamped them.
+- **A pending hold was released on the next reaper tick on a database west of UTC, and kept past its TTL
+  east of it.** See the first note above.
+- **The tail of a hash chain depended on creation times in one clock.** See the second note above.
+- **The refusal for a held reserved key sent the operator to the configuration.** See the third note above.
 
 ## [1.1.7] - 2026-11-01
 
@@ -635,7 +693,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.5]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.4...v1.1.5
 [1.1.6]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...v1.1.6
 [1.1.7]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...v1.1.7
+[1.1.8]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...v1.1.8
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...HEAD
