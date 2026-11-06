@@ -19,19 +19,44 @@ older than `holds.ttlSeconds`, so the reaper released it on its next tick whatev
 an expired hold kept its reservation for the offset past the TTL. The `createdAt` a record returned was
 off by the offset too. Nothing changes on a database whose zone is UTC. Records written by earlier
 versions on a database whose zone is not UTC keep their shifted values: nothing marks them, so this
-release cannot repair them, and the reaper has no transition guard. A pending hold created before the
-upgrade is judged on its old value until it ends, at most one TTL (east of UTC, the TTL plus the offset).
-The query on the 1.1.8 Release page lists records whose `createdAt` is far from their `occurredAt`, with
-the session zone and the hours apart; a record backfilled with an old `occurredAt` is listed too, so
-compare the hours with the zone's offset.
+release cannot repair them, and the reaper cannot tell them from new ones. A pending hold created before
+the upgrade is judged on its old value until it ends, at most one TTL (east of UTC, the TTL plus the
+offset). The query below lists records whose `createdAt` is far from their `occurredAt`, with the zone of
+the session that runs it and the hours apart; a record backfilled with an old `occurredAt` is listed too,
+so compare the hours with the offset of the zone your connections use.
+
+```sql
+-- Usage records whose createdAt is far from their occurredAt. A record stamped by the database in its session zone
+-- has createdAt and updatedAt shifted by that zone's offset: hoursApart is about -3 for America/Sao_Paulo and +9
+-- for Asia/Tokyo. sessionZone is the zone of the session running this query: compare hoursApart with the offset of
+-- the zone your connections use. A record backfilled with an old occurredAt is also listed.
+SELECT current_setting('TimeZone') AS "sessionZone", r."id", r."tenantId", r."idempotencyKey", r."status",
+       r."occurredAt", r."createdAt",
+       round((extract(epoch FROM (r."createdAt" - r."occurredAt")) / 3600.0)::numeric, 1) AS "hoursApart"
+FROM "ai_usage_records" r
+WHERE abs(extract(epoch FROM (r."createdAt" - r."occurredAt"))) > 60
+ORDER BY r."createdAt";
+```
 
 **Apply:** the tail of a tenant's hash chain, the record the next chained record links to, is now the
 hash that no other record of the tenant names as its predecessor. Before, it was the settled record with
 the latest `createdAt`, which is wrong in the hour a daylight saving clock repeats, and which would have
 been wrong for records stamped by two clocks. `LedgerService.verifyChain` accepts a chain in which two
 records name the same predecessor (it recomputes each hash and checks that each predecessor exists), so a
-chain that forked is reported as valid. The query on the 1.1.8 Release page lists the records that share
-a predecessor. A chained append now reads the tenant's rows twice instead of once (about 4 ms against 2
+chain that forked is reported as valid. The query below lists the records that share a predecessor.
+
+```sql
+-- Hash-chained usage records that share a predecessor. A chain is a line, so two records with the same prevHash mean
+-- it forked. LedgerService.verifyChain recomputes each hash and checks that each predecessor exists, so it accepts a
+-- fork; this query finds it. "ids" lists the records that name the same predecessor, oldest first.
+SELECT r."tenantId", r."prevHash", count(*) AS "records", array_agg(r."id" ORDER BY r."createdAt", r."id") AS "ids"
+FROM "ai_usage_records" r
+WHERE r."prevHash" IS NOT NULL
+GROUP BY r."tenantId", r."prevHash"
+HAVING count(*) > 1;
+```
+
+A chained append now reads the tenant's rows twice instead of once (about 4 ms against 2
 ms at 10,000 rows, 20 ms against 10 ms at 100,000), under the per-tenant lock it already took. No exported
 type or signature changes, and no schema or migration.
 
