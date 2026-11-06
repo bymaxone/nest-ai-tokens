@@ -8,15 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
-**Apply:** every timestamp column the store writes (`createdAt` and `updatedAt` of budgets and wallets, `updatedAt` of
-budget windows) is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
-column default, in a `TIMESTAMP` column without a zone. A `'total'` budget, and a custom-window budget with no
-`anchorAt`, anchor their window to the budget's `createdAt`. On a database whose session zone is east of UTC (for
-example `Asia/Tokyo`, +9 hours) that start lay in the future, so `BudgetService.reconcileWindow` found no record in
-the window, set its spend to zero, and a tenant that had reached its limit was allowed past it: with a limit of 1000
-tokens, two calls of 400, a `reconcileWindow` and a third call of 400, the third call was accepted. West of UTC
-(for example `America/Sao_Paulo`, -3 hours) the start lay in the past, so a recompute can count up to the offset of
-spend from before the budget existed. Nothing changes on a database whose zone is UTC. A budget written by an
+## [1.1.9] - 2026-11-06
+
+**Apply:** every timestamp column the store writes is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
+column default, in a `TIMESTAMP` column without a zone. A `'total'` budget with no `anchorAt` starts its window at the budget's
+`createdAt`. On a database whose session zone is east of UTC (for example `Asia/Tokyo`, +9 hours) that start lay in
+the future, so `BudgetService.reconcileWindow` found no record in the window, set its spend to zero, and a tenant
+that had reached its limit was allowed past it: with a limit of 1000 tokens, two calls of 400, a `reconcileWindow`
+and a third call of 400, the third call was accepted. West of UTC (for example `America/Sao_Paulo`, -3 hours) the
+start lay in the past, so a recompute can count up to the offset of spend from before the budget existed. A custom
+window with no `anchorAt` is aligned to `createdAt` too, so its boundaries sat off by the offset. Nothing changes on a database whose zone is UTC. A budget written by an
 earlier version on a database whose zone is not UTC keeps its shifted `createdAt`: nothing marks it, so this
 release cannot repair it. The query below lists the budgets that anchor their window to `createdAt`, with the
 zone of the session that runs it and the hours from the current UTC instant to `createdAt`. To repair a listed
@@ -37,6 +38,10 @@ FROM "ai_budgets" b
 WHERE b."anchorAt" IS NULL AND (b."window" = 'total' OR b."window" LIKE 'custom:%')
 ORDER BY b."createdAt";
 ```
+
+### Fixed
+
+- **A `'total'` budget could lose its spend on a recompute east of UTC, so a tenant at its limit was allowed past it.** See the note above.
 
 ## [1.1.8] - 2026-11-06
 
@@ -724,7 +729,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.6]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...v1.1.6
 [1.1.7]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...v1.1.7
 [1.1.8]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...v1.1.8
+[1.1.9]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...v1.1.9
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...HEAD
