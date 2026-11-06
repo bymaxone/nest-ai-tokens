@@ -301,6 +301,33 @@ describe('MeteringService.record', () => {
     expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
+  /** A negative provider-reported cost is floored at zero on record(), as capture() floors it, so it never writes a negative billed row. */
+  it('floors a negative provider-reported cost at zero', async () => {
+    const built = build({ markup: 4, ratingMode: 'provider-reported' })
+    const record = await built.service.record({
+      usage: normalized({ provider: 'openrouter', providerReportedCostNanoUsd: -500_000_000n }),
+      context: context(),
+    })
+    expect(record.rawCostNanoUsd).toBe(0n)
+    expect(record.billedCostNanoUsd).toBe(0n)
+  })
+
+  /** A negative token count, as a subtracting normalizer can produce, is floored at zero on record() too. */
+  it('floors a negative token count at zero', async () => {
+    const record = await build({ strict: false }).service.record({ usage: normalized({ inputTokens: -990, outputTokens: 10 }), context: context() })
+    expect(record.inputTokens).toBe(0)
+    expect(record.totalTokens).toBe(10)
+  })
+
+  /** A negative server-tool unit count is floored at zero, and a positive one is kept. */
+  it('floors a negative server tool use count and keeps a positive one', async () => {
+    const record = await build({ strict: false }).service.record({
+      usage: normalized({ serverToolUse: { web_search: -3, code_run: 2 } }),
+      context: context(),
+    })
+    expect(record.extraUnits).toEqual({ web_search: 0, code_run: 2 })
+  })
+
   /** Provider-reported mode without a reported cost is malformed. */
   it('rejects provider-reported mode without a reported cost', async () => {
     const error = await build({ ratingMode: 'provider-reported' }).service.record({ usage: normalized(), context: context() }).catch((e: unknown) => e)

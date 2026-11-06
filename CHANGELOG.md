@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** `MeteringService.record()` and the post-hoc path of the interceptor now floor negative usage at zero, as
+`capture()` has since 1.0.4: every token count, every server-tool unit count and a provider-reported cost below zero is
+recorded as zero. Before, a payload that a normalizer turned into a negative count (OpenRouter's `prompt - cached`, a
+negative `usage.cost`) was written as a negative ledger row, and an enforced call lowered the spend of a budget by that
+amount. Rows already written keep their negative values; list them with a query for a negative `billedCostNanoUsd` or
+token count on `ai_usage_records`.
+
 **Apply:** `BudgetService.reconcileWindow` now counts a reversal once, as the live accounting does. Before, the
 reversed record and its compensating record each added 1 to `spentCount` while the live release took 1 away, so after
 a reconcile a budget with `limitCount` answered `AI_TOKENS_QUOTA_EXCEEDED` earlier than its limit: with a limit of 3,
