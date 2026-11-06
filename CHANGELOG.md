@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- The message of the refusal for a reserved wallet key held by another entry names the ledger instead of the configuration.
+
 ## [1.1.7] - 2026-11-01
 
 **Apply:** a debit that 1.1.6 refused with `AI_TOKENS_STORE_ERROR` because an entry the store did not
