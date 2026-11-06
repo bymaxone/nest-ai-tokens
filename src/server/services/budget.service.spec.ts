@@ -333,7 +333,7 @@ describe('BudgetService — thresholds & projection (§10.4)', () => {
 })
 
 describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
-  /** reconcileWindow recomputes the window from the ledger, including a reversal net. */
+  /** reconcileWindow recomputes the window from the ledger. */
   it('reconciles a window from the ledger', async () => {
     const { service, store, ledgerStore } = makeService()
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
@@ -347,6 +347,26 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     expect(window?.spentCount).toBe(2)
     // spentTokens: 100 + 100 = 200 (each usageRecord defaults to totalTokens: 100)
     expect(window?.spentTokens).toBe(200)
+  })
+
+  /** A reversed record and its compensating record net to zero in every counter, the count included, as live accounting does. */
+  it('reconciles a reversal to zero in the count, the cost and the tokens', async () => {
+    const { service, store, ledgerStore } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, limitCount: 3 }))
+    const windowStart = new Date('2026-06-01T00:00:00.000Z')
+    await ledgerStore.append(usageRecord({ idempotencyKey: 'a', billedCostNanoUsd: 25n }), 'ha')
+    await ledgerStore.append(usageRecord({ idempotencyKey: 'b', billedCostNanoUsd: 30n, status: 'reversed' }), 'hb')
+    await ledgerStore.append(
+      usageRecord({ idempotencyKey: 'reverse:b', billedCostNanoUsd: -30n, totalTokens: -100, reversesRecordId: 'b' }),
+      'hc',
+    )
+
+    await service.reconcileWindow(budget.id, windowStart)
+
+    const window = await store.getWindow(budget.id, windowStart)
+    expect(window).toEqual({ spentNanoUsd: 25n, spentTokens: 100, spentCount: 1 })
+    // The next consume passes: one of three used, not three of three.
+    await expect(service.consume(context(), delta(1n))).resolves.toBeUndefined()
   })
 
   /** A second reconcile recomputes the delta correctly (kills ArithmeticOperator + vs - mutations on delta calc). */

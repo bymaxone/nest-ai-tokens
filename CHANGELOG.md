@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** `BudgetService.reconcileWindow` now counts a reversal once, as the live accounting does. Before, the
+reversed record and its compensating record each added 1 to `spentCount` while the live release took 1 away, so after
+a reconcile a budget with `limitCount` answered `AI_TOKENS_QUOTA_EXCEEDED` earlier than its limit: with a limit of 3,
+two records and one reversal reconciled to a count of 3. The cost and the tokens already netted to zero. A window that
+a reconcile of an earlier version inflated keeps the inflated count until it rotates or `reconcileWindow` runs again
+on this version, which recomputes the count from the ledger.
+
 ## [1.1.9] - 2026-11-06
 
 **Apply:** every timestamp column the store writes is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the

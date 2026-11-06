@@ -339,7 +339,8 @@ export class BudgetService {
       if (!recordConsumesBudget(record, budget, windowStart, windowEnd)) continue
       computed.spentNanoUsd += record.billedCostNanoUsd
       computed.spentTokens += record.totalTokens
-      computed.spentCount += 1
+      // A compensating record undoes the count of the original it reverses, as the live release does.
+      computed.spentCount += record.reversesRecordId === undefined ? 1 : -1
     }
     const current = (await this.store.getWindow(budgetId, windowStart)) ?? ZERO_SPEND
     await this.store.adjustWindow(budgetId, windowStart, {
