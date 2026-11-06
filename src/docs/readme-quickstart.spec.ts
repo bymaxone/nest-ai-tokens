@@ -4,15 +4,20 @@
  * argument shape or an unpriced model in the example compiles and fails at run time.
  * @layer docs
  */
-import { Inject, Injectable } from '@nestjs/common'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { Inject, Injectable, Module } from '@nestjs/common'
+import type { ExecutionContext } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
+import { makeFullStore } from '../../test/fakes/full-store'
 import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
 import { deriveIdempotencyKey } from '../shared'
 import { BymaxAiTokensModule } from '../server/bymax-ai-tokens.module'
 import { providerPresets } from '../server/config/provider-presets'
-import type { IAiTokensStore } from '../server/interfaces'
-import { LedgerService, MeteringService, PricingService } from '../server/services'
+import type { IAiTokensStore, MeteringContext } from '../server/interfaces'
+import { LedgerService, MeteringService, PricingService, WalletService } from '../server/services'
+import type { AiTokensException } from '../server/errors'
 
 /** A store with working ledger and pricing halves; the wallet and budget halves are unused here. */
 function makeStore(): IAiTokensStore {
@@ -148,5 +153,122 @@ describe('README Quick Start: record usage', () => {
     const records = await ledger.query({ tenantId: 'tenant-1' })
     expect(records).toHaveLength(1)
     expect(records[0]?.rawCostNanoUsd).toBe(1_250_000n)
+  })
+})
+
+/** Stands in for the host's database module and service that section 2 injects. */
+@Injectable()
+class PrismaService {}
+
+/** Stands in for the host's `PrismaModule`. */
+@Module({ providers: [PrismaService], exports: [PrismaService] })
+class PrismaModule {}
+
+/** Boot the Quick Start module with wallets, budgets and the seeded prices, over the full in-memory store. */
+async function bootRegistered(strict = true): Promise<{ metering: MeteringService; wallets: WalletService }> {
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      BymaxAiTokensModule.forRoot({
+        store: makeFullStore(),
+        wallets: { creditRateNanoUsd: 5_000_000_000n },
+        budgets: { defaultPolicy: 'block' },
+        scopeResolver: () => ({ tenantId: 'tenant-1', scope: { type: 'user', id: 'user-1' }, feature: 'workout.generate' }),
+        pricing: { seedFromSnapshot: true, strict },
+      }),
+    ],
+  }).compile()
+  await moduleRef.init()
+  return { metering: moduleRef.get(MeteringService), wallets: moduleRef.get(WalletService) }
+}
+
+/** A request context for the default tenant and user; `over` replaces any field. */
+function requestContext(over: Partial<MeteringContext> = {}): MeteringContext {
+  return { tenantId: 'tenant-1', scope: { type: 'user', id: 'user-1' }, feature: 'workout.generate', idempotencyKey: 'key-1', ...over }
+}
+
+describe('README Quick Start: register the module', () => {
+  /**
+   * Guards README section "2 — Register the module": the module the snippet declares must boot. The
+   * factory below mirrors that snippet option for option, with the store replaced by an in-memory one.
+   */
+  it('boots the module the Quick Start registers', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRootAsync({
+          imports: [PrismaModule],
+          inject: [PrismaService],
+          useFactory: () => ({
+            store: makeFullStore(),
+            markup: 4.0,
+            wallets: { creditRateNanoUsd: 5_000_000_000n },
+            budgets: { defaultPolicy: 'block', alertThresholds: [0.8, 1.0] },
+            scopeResolver: (ctx: ExecutionContext) => {
+              const { user } = ctx.switchToHttp().getRequest<{ user: { tenantId: string; id: string } }>()
+              return { tenantId: user.tenantId, scope: { type: 'user' as const, id: user.id }, feature: 'workout.generate' }
+            },
+            pricing: { seedFromSnapshot: true },
+          }),
+        }),
+      ],
+    }).compile()
+
+    await expect(moduleRef.init()).resolves.toBeDefined()
+    await moduleRef.close()
+  })
+
+  /** The factory above only stays the README's if the README still declares each option it uses. */
+  it('declares in the README every option the booted module uses', () => {
+    const readme = readFileSync(join(__dirname, '../../README.md'), 'utf8')
+    const section = readme.slice(readme.indexOf('### 2 — Register the module'), readme.indexOf('### 3 — Record usage'))
+
+    for (const option of ['markup:', 'wallets:', 'budgets:', 'scopeResolver:', 'pricing:']) expect(section).toContain(option)
+  })
+})
+
+describe('README behaviours around record(), holds and prices', () => {
+  const RESPONSE = { id: 'chatcmpl-1', model: 'gpt-5-mini', choices: [], usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 } }
+  const VERCEL_RESULT = { text: 'hi', usage: { inputTokens: 1000, outputTokens: 500, totalTokens: 1500 }, response: { modelId: 'gpt-5-mini' } }
+
+  /** README section 3: a retry has to repeat `enforce`, and an omitted one counts as false. */
+  it('replays a retry with the same enforce and refuses one with another', async () => {
+    const { metering } = await bootRegistered()
+    const first = await metering.record({ usage: RESPONSE, preset: providerPresets.openaiChat, context: requestContext({ enforce: false }) })
+
+    const omitted = await metering.record({ usage: RESPONSE, preset: providerPresets.openaiChat, context: requestContext() })
+    const flipped = await metering
+      .record({ usage: RESPONSE, preset: providerPresets.openaiChat, context: requestContext({ enforce: true }) })
+      .catch((error: unknown) => error)
+
+    expect(omitted.id).toBe(first.id)
+    expect((flipped as AiTokensException).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_IDEMPOTENCY_CONFLICT' } })
+  })
+
+  /** README Providers Matrix: record() with vercelAiSdk has no provider, a hold sized with it is `openai`. */
+  it('prices a vercelAiSdk token-sized hold and its capture as openai, and refuses a vercelAiSdk record', async () => {
+    const { metering, wallets } = await bootRegistered()
+    await wallets.grant(
+      { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'user-1' },
+      { amountNanoUsd: 50_000_000n, idempotencyKey: 'grant-1', reason: 'seed', effectiveAt: new Date(0) },
+    )
+
+    const hold = await metering.hold(requestContext({ idempotencyKey: 'hold-1', preset: providerPresets.vercelAiSdk, baseModel: 'gpt-5-mini' }), { tokens: 1500 })
+    const captured = await metering.capture(hold, VERCEL_RESULT, providerPresets.vercelAiSdk)
+    const recorded = await metering
+      .record({ usage: VERCEL_RESULT, preset: providerPresets.vercelAiSdk, context: requestContext({ idempotencyKey: 'record-1' }) })
+      .catch((error: unknown) => error)
+
+    expect(captured).toMatchObject({ provider: 'openai', model: 'gpt-5-mini', status: 'posted' })
+    expect((recorded as AiTokensException).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_PRICE_NOT_FOUND' } })
+  })
+
+  /** README Providers Matrix: a price row belongs to one provider id, so the same model id under another provider has none. */
+  it('does not price a model id from another provider\'s row', async () => {
+    const { metering } = await bootRegistered()
+
+    const refused = await metering
+      .record({ usage: RESPONSE, preset: providerPresets.openaiCompatible('together'), context: requestContext() })
+      .catch((error: unknown) => error)
+
+    expect((refused as AiTokensException).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_PRICE_NOT_FOUND', details: { provider: 'together', model: 'gpt-5-mini' } } })
   })
 })

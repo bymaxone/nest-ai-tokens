@@ -212,6 +212,18 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
         markup: 4.0,
         wallets: { creditRateNanoUsd: 5_000_000_000n }, // 1 credit = $5
         budgets: { defaultPolicy: 'block', alertThresholds: [0.8, 1.0] },
+        // Required whenever `budgets` is on: the module refuses to boot without it. Read the caller
+        // from your verified auth context, never from the request body or query.
+        scopeResolver: (ctx) => {
+          const { user } = ctx
+            .switchToHttp()
+            .getRequest<{ user: { tenantId: string; id: string } }>()
+          return {
+            tenantId: user.tenantId,
+            scope: { type: 'user', id: user.id },
+            feature: 'workout.generate',
+          }
+        },
         pricing: { seedFromSnapshot: true }, // seed price table on first boot
       }),
     }),
@@ -219,6 +231,9 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 })
 export class AppModule {}
 ```
+
+Without a `scopeResolver`, enabling `budgets` fails at boot with `AI_TOKENS_INVALID_CONFIG`
+(`BudgetGuard requires options.scopeResolver to resolve the caller scope`).
 
 ### 3 — Record usage (post-hoc, observe-only)
 
@@ -255,6 +270,12 @@ and `occurredAt` when the retry passes one. The price, the markup and a defaulte
 computed while the call is served and are not compared, so a retry after a price change returns the
 original record at its original cost. A retry whose request differs, or whose key belongs to a hold
 that has not been captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+
+`enforce` is part of the request. The record stores it as `enforced`, and a retry has to send the
+same value: a key first used with `enforce: true` and retried without it (or the other way round,
+where an omitted `enforce` counts as `false`) fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of
+replaying. Set it in your own code, not from a request field the caller controls: a caller who can
+send `enforce: false` turns the budget and wallet checks off for that call.
 
 Calls with one key run one at a time within one service instance. A replay does not repeat the
 effects of the first call, so if the first call stopped after writing the record and before its
@@ -360,11 +381,20 @@ an Azure deployment name, throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.stric
 default); give the context a `baseModel` or add a price with `upsertPrice`. A price row you add for
 Azure or Vertex belongs under `openai` or `gemini`, not under `azure-openai` or `vertex`.
 `providerPresets.openaiCompatible(id)` records the `id` you chose, so `openaiCompatible('deepseek')`
-is priced from the seeded `deepseek` rows. The `vercelAiSdk` preset records no provider, because the
+is priced from the seeded `deepseek` rows. A price row belongs to one provider id, one model id,
+one operation and one service tier, so the same model id under another provider id is a different
+row: `openaiCompatible('together')` with the model `gpt-5-mini` is not priced from the `openai` row
+of that model and throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on, until you add a
+price for `together`. The `vercelAiSdk` preset records no provider, because the
 AI SDK does not say which vendor served the call and pricing it from one vendor's rows would be
 wrong for the others: such a record throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and
-is stored at cost 0 and marked `priceMissing` with it off. To price an AI SDK call, pass a normalized
-usage whose `provider` you set. The `bedrock` preset records provider `bedrock`, which has no seeded
+is stored at cost 0 and marked `priceMissing` with it off. A hold is different: a hold sized with a `{ tokens }` or `{ amountNanoUsd }` estimate takes the
+preset's provider, so a `vercelAiSdk` hold is stored as `openai`, and the `capture()`
+that settles it keeps that provider. The call is then billed from the OpenAI rows whichever vendor
+the AI SDK called. A hold sized with a full estimate (`provider`, `model`, `inputTokens`,
+`maxOutputTokens`) takes the provider that estimate names. For a vendor with other prices, size the
+hold with that provider named, or use that vendor's preset or `openaiCompatible(id)`. To price an AI SDK call with `record()`, pass a normalized usage whose
+`provider` you set. The `bedrock` preset records provider `bedrock`, which has no seeded
 rows, so with `pricing.strict` on every Bedrock call throws until you add a price. A Converse response carries no model id:
 pass `baseModel` in the context (the record's model is then that `baseModel`), or `{ model, ...response }`;
 with neither, the record's model is `''` (with `strict: false` it is stored at cost 0 and marked
