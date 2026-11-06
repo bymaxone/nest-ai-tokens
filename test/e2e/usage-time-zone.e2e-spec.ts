@@ -146,9 +146,9 @@ describe('usage record timestamps on a database whose session zone has daylight 
 })
 
 /**
- * The query shipped for operators to find records written by an earlier version on a database whose zone is not UTC.
- * It is read from the file the release notes carry, and run in both directions: east of UTC (createdAt ahead) and west
- * (createdAt behind). A record the fixed store wrote is never listed, whatever the zone.
+ * The query shipped for operators to find records whose timestamps the database stamped in a session zone that is not
+ * UTC. It is read from the file the release notes carry, and run in both directions: east of UTC (createdAt ahead) and
+ * west (createdAt behind). A record stamped on the UTC clock is never listed, whatever the zone.
  */
 describe.each(['America/Sao_Paulo', 'Asia/Tokyo', 'UTC'] as const)('the query that finds shifted usage records on a database whose zone is %s', (zone) => {
   const QUERY = readFileSync(join(__dirname, 'sql/detect-shifted-usage-timestamps.sql'), 'utf8')
@@ -156,8 +156,8 @@ describe.each(['America/Sao_Paulo', 'Asia/Tokyo', 'UTC'] as const)('the query th
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')
 
-  /** Stamped by the database's own default in the session zone, as an earlier version did. */
-  async function insertAsEarlierVersion(client: PrismaClient, key: string): Promise<void> {
+  /** A record whose timestamps come from the column default, which uses the session zone. */
+  async function insertWithSessionZoneDefaults(client: PrismaClient, key: string): Promise<void> {
     await client.$executeRawUnsafe(`
       INSERT INTO "ai_usage_records" ("id", "tenantId", "scopeType", "scopeId", "provider", "model", "operation", "serviceTier", "feature", "tags",
         "inputTokens", "outputTokens", "totalTokens", "rawCostNanoUsd", "surchargeNanoUsd", "billedCostNanoUsd", "markupMultiplier", "currency",
@@ -165,9 +165,9 @@ describe.each(['America/Sao_Paulo', 'Asia/Tokyo', 'UTC'] as const)('the query th
       VALUES ('${key}', 't1', 'user', 'u1', 'openai', 'gpt-5', 'chat', 'standard', 'f', '{}', 1, 1, 2, 1, 0, 1, 1, 'USD', false, 'posted', '${key}', 'h', false, false, now() AT TIME ZONE 'UTC')`)
   }
 
-  it('lists a record an earlier version stamped in the session zone, and not one the fixed store wrote', async () => {
+  it('lists a record stamped by the session-zone default, and not one stamped on the UTC clock', async () => {
     const { store, client } = await storeInZone(zone)
-    await insertAsEarlierVersion(client, 'earlier')
+    await insertWithSessionZoneDefaults(client, 'default-stamped')
     await store.append(makeRecord({ idempotencyKey: 'fixed', occurredAt: new Date() }), 'hash-fixed')
 
     const rows = await client.$queryRawUnsafe<{ id: string; sessionZone: string; hoursApart: string }[]>(QUERY)
@@ -176,18 +176,18 @@ describe.each(['America/Sao_Paulo', 'Asia/Tokyo', 'UTC'] as const)('the query th
       expect(rows).toEqual([])
       return
     }
-    expect(rows.map((row) => row.id)).toEqual(['earlier'])
+    expect(rows.map((row) => row.id)).toEqual(['default-stamped'])
     expect(rows[0]?.sessionZone).toBe(zone)
     expect(Number(rows[0]?.hoursApart)).toBe(zone === 'Asia/Tokyo' ? 9 : -3)
   })
 })
 
 /**
- * The chain tail comes from the chain's own links, not from creation times. A database east of UTC that stamped rows
- * in its session zone holds older rows whose `createdAt` is hours in the future of newer rows stamped in UTC; ordering
- * by `createdAt` would pick the older row as the tail again and again and fork the chain.
+ * The chain tail comes from the chain's own links, not from creation times. Rows stamped in the session zone of a
+ * database east of UTC carry a `createdAt` hours in the future of rows stamped in UTC; ordering by `createdAt` would pick
+ * the first kind as the tail again and again and fork the chain.
  */
-describe('the hash chain on a database whose rows were stamped in a zone east of UTC before the clock changed', () => {
+describe('the hash chain on a database east of UTC holding rows stamped in its session zone', () => {
   const FORK_QUERY = readFileSync(join(__dirname, 'sql/detect-forked-usage-chain.sql'), 'utf8')
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
