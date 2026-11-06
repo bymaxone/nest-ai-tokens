@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-11-06
+
 **Apply:** every timestamp column the store writes (`createdAt` and `updatedAt` of budgets and wallets, `updatedAt` of
 budget windows) is now stamped on the UTC clock; before, a budget and a wallet took the database session zone from the
 column default, in a `TIMESTAMP` column without a zone. A `'total'` budget, and a custom-window budget with no
@@ -37,6 +39,10 @@ FROM "ai_budgets" b
 WHERE b."anchorAt" IS NULL AND (b."window" = 'total' OR b."window" LIKE 'custom:%')
 ORDER BY b."createdAt";
 ```
+
+### Fixed
+
+- **A `'total'` budget, and a custom-window budget with no `anchorAt`, could lose its spend on a recompute east of UTC, so a tenant at its limit was allowed past it.** See the note above.
 
 ## [1.1.8] - 2026-11-06
 
@@ -724,7 +730,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.6]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.5...v1.1.6
 [1.1.7]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.6...v1.1.7
 [1.1.8]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...v1.1.8
+[1.1.9]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...v1.1.9
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...HEAD
