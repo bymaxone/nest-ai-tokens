@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Fixed
 
-- The message of the refusal for a reserved wallet key held by another entry names the ledger instead of the configuration.
+- The message of the refusal for a reserved wallet key held by another entry names the wallet data instead of the configuration.
 
 ## [1.1.7] - 2026-11-01
 
