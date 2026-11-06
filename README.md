@@ -389,7 +389,7 @@ price for `together`. The `vercelAiSdk` preset records no provider, because the
 AI SDK does not say which vendor served the call and pricing it from one vendor's rows would be
 wrong for the others: such a record throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and
 is stored at cost 0 and marked `priceMissing` with it off. A hold is different: a hold sized with a `{ tokens }` or `{ amountNanoUsd }` estimate takes the
-preset's provider, so a `vercelAiSdk` hold is priced and stored as `openai`, and the `capture()`
+preset's provider, so a `vercelAiSdk` hold is stored as `openai`, and the `capture()`
 that settles it keeps that provider. The call is then billed from the OpenAI rows whichever vendor
 the AI SDK called. A hold sized with a full estimate (`provider`, `model`, `inputTokens`,
 `maxOutputTokens`) takes the provider that estimate names. For a vendor with other prices, size the
