@@ -244,20 +244,14 @@ describe('README behaviours around record(), holds and prices', () => {
   })
 
   /** README Providers Matrix: record() with vercelAiSdk has no provider, a hold sized with it is `openai`. */
-  it('prices a vercelAiSdk hold and its capture as openai, and refuses a vercelAiSdk record', async () => {
+  it('prices a vercelAiSdk token-sized hold and its capture as openai, and refuses a vercelAiSdk record', async () => {
     const { metering, wallets } = await bootRegistered()
     await wallets.grant(
       { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'user-1' },
       { amountNanoUsd: 50_000_000n, idempotencyKey: 'grant-1', reason: 'seed', effectiveAt: new Date(0) },
     )
 
-    const hold = await metering.hold(requestContext({ idempotencyKey: 'hold-1', preset: providerPresets.vercelAiSdk }), {
-      provider: 'openai',
-      model: 'gpt-5-mini',
-      operation: 'chat',
-      inputTokens: 1000,
-      maxOutputTokens: 500,
-    })
+    const hold = await metering.hold(requestContext({ idempotencyKey: 'hold-1', preset: providerPresets.vercelAiSdk, baseModel: 'gpt-5-mini' }), { tokens: 1500 })
     const captured = await metering.capture(hold, VERCEL_RESULT, providerPresets.vercelAiSdk)
     const recorded = await metering
       .record({ usage: VERCEL_RESULT, preset: providerPresets.vercelAiSdk, context: requestContext({ idempotencyKey: 'record-1' }) })
