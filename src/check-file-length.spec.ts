@@ -66,7 +66,7 @@ afterAll(() => {
 
 describe('check-file-length', () => {
   it('passes when every source file is within the limit, 800 lines included', () => {
-    // 800 is allowed; the limit is exclusive of the line it names.
+    // The limit itself is allowed; only a longer file fails.
     const result = run(repo({ 'src/a.ts': lines(800), 'src/b.ts': lines(3) }))
 
     expect(result.status).toBe(0)
@@ -96,7 +96,7 @@ describe('check-file-length', () => {
   )
 
   it.each(['README.md', 'pnpm-lock.yaml', 'package.json', 'data.txt'])('ignores %s', (path) => {
-    // Markdown, lockfiles and data have no layers to split.
+    // Only source extensions are measured.
     expect(run(repo({ [path]: lines(2000) })).status).toBe(0)
   })
 
