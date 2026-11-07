@@ -54,7 +54,8 @@ remove it with `removeBudget` and define it again.
 ### Documentation
 
 - The README says that the store does not load `@prisma/client`, which members of the client it uses, and that the
-  date-time columns must stay `timestamp` without a zone. Its size table shows the current `./prisma` size.
+  date-time columns must stay `timestamp` without a zone. Its subpath table names your Prisma client, not
+  `@prisma/client`, as what `./prisma` depends on, and its size table shows the current `./prisma` size.
 
 ### Internal
 
