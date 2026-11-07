@@ -600,8 +600,28 @@ export const ACTIVATED_SQL = sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHE
 /** Whether the grant aliased `g` is part of the materialized balance: due at append, or activated since. */
 export const CREDITED_SQL = sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`
 
-/** The unspent remainder of the grant aliased `g`. */
+/** The unspent remainder of the grant aliased `g`, computed per grant. Used where only a few grants are asked about. */
 export const GRANT_REMAINING_SQL = sql`(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))`
+
+/**
+ * What every grant of one wallet has spent, in a single pass over that wallet's allocations: one row per grant
+ * that has any. Joined as `s` on `s."grantEntryId" = g."id"`, it replaces a correlated sum per grant, whose cost
+ * grew with the grants times their allocations on every debit. Scoped to the wallet so another wallet's
+ * allocations are never read.
+ *
+ * @param walletId The wallet's id as a statement: a bound parameter, or the outer alias `w."id"`.
+ */
+export function spentByGrantSql(walletId: Sql): Sql {
+  return sql`(
+    SELECT a."grantEntryId", SUM(a."amountNanoUsd") AS "spent"
+    FROM "ai_wallet_debit_allocations" a JOIN "ai_wallet_entries" e ON e."id" = a."grantEntryId"
+    WHERE e."walletId" = ${walletId}
+    GROUP BY a."grantEntryId"
+  )`
+}
+
+/** The unspent remainder of the grant aliased `g`, from the {@link spentByGrantSql} rows joined as `s`. */
+export const GRANT_REMAINING_JOINED_SQL = sql`(g."amountNanoUsd" - COALESCE(s."spent", 0))`
 
 /**
  * The signed sum of a wallet's entries (over the outer `w` alias): every entry counts in full except a
@@ -620,8 +640,8 @@ export const SIGNED_BALANCE_SQL = sql`(
  */
 export function spendableBalanceSql(): Sql {
   return sql`${SIGNED_BALANCE_SQL} - (
-    SELECT COALESCE(SUM(${GRANT_REMAINING_SQL}), 0)
-    FROM "ai_wallet_entries" g
+    SELECT COALESCE(SUM(${GRANT_REMAINING_JOINED_SQL}), 0)
+    FROM "ai_wallet_entries" g LEFT JOIN ${spentByGrantSql(sql`w."id"`)} s ON s."grantEntryId" = g."id"
     WHERE g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL}
       AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${DB_NOW_SQL}
   )`

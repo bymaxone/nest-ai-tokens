@@ -486,6 +486,26 @@ did not write already holds one of those keys for a grant, the debit or `reconci
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
 > when you need the figure that includes every due grant.
 
+#### What a debit costs as a wallet grows
+
+A debit reads the wallet's grants and what each has spent, so its cost grows with the number of grants the wallet
+holds and the allocations they carry, spent grants included, because a grant stays in the table after it is used
+up. Measured on PostgreSQL 16 in a local container, with 33 allocations per grant and other wallets present
+(median of repeated runs, within about ±40% between runs; your hardware will differ):
+
+| Grants in the wallet | Allocations | Reading the open grants | Whole debit |
+| -------------------- | ----------- | ----------------------- | ----------- |
+| 1,000 (90% spent)    | 33 thousand | 13 ms                   | 17 ms       |
+| 3,001 (90% spent)    | 99 thousand | 24 ms                   | 28 ms       |
+| 3,001 (all open)     | 99 thousand | 49 ms                   | 93 ms       |
+| 10,000 (90% spent)   | 330 thousand | 42 ms                  | 47 ms       |
+
+Up to 1.1.12 the open grants were read with a sum per grant, which took 1.3 to 1.7 times as long at one to three
+thousand grants and about 5 times as long at ten thousand. The cost still grows with the wallet, so a wallet that
+accumulates tens of thousands of grants deserves attention: grant fewer, larger credits (one per billing cycle
+rather than one per event), and watch the debit latency of your busiest wallets. The wallet row is locked for the
+duration of a debit, so a slower debit also lengthens the queue of debits behind it on the same wallet.
+
 ### Multi-Dimension Budgets
 
 ```typescript

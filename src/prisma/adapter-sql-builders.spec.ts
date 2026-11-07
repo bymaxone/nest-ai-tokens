@@ -7,10 +7,11 @@
  * builders produce and the order of the bound values, neither of which needs a database.
  */
 
+import { sql as sqlTag } from './sql'
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, DUE_AT_APPEND_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, spentByGrantSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
 import { T0, T1, newRecord, rendered } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
@@ -302,6 +303,21 @@ describe('balance SQL', () => {
     )
   })
 
+  /** The joined remainder is the amount less what the grouped allocations say was spent. */
+  it('computes the joined remainder from the grouped spend', () => {
+    expect(GRANT_REMAINING_JOINED_SQL.text).toBe('(g."amountNanoUsd" - COALESCE(s."spent", 0))')
+  })
+
+  /** The grouped spend reads the allocations of one wallet's grants only, once, grouped by grant. */
+  it('groups the spend of one wallet by grant', () => {
+    const statement = spentByGrantSql(sqlTag`${'w1'}`)
+    expect(statement.text).toContain('SUM(a."amountNanoUsd") AS "spent"')
+    expect(statement.text).toContain('JOIN "ai_wallet_entries" e ON e."id" = a."grantEntryId"')
+    expect(statement.text).toContain('WHERE e."walletId" = $1')
+    expect(statement.text).toContain('GROUP BY a."grantEntryId"')
+    expect(statement.values).toEqual(['w1'])
+  })
+
   /** The signed balance counts every entry but a grant that was not due as appended. */
   it('sums the entries except a grant that was not due as appended', () => {
     expect(SIGNED_BALANCE_SQL.text).toContain(`g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL.text})`)
@@ -311,7 +327,8 @@ describe('balance SQL', () => {
   it('subtracts the remainder of credited, expired grants', () => {
     const sql = spendableBalanceSql().text
     expect(sql).toContain(SIGNED_BALANCE_SQL.text)
-    expect(sql).toContain(`SELECT COALESCE(SUM(${GRANT_REMAINING_SQL.text}), 0)`)
+    expect(sql).toContain(`SELECT COALESCE(SUM(${GRANT_REMAINING_JOINED_SQL.text}), 0)`)
+    expect(sql).toContain(`LEFT JOIN ${spentByGrantSql(sqlTag`w."id"`).text} s ON s."grantEntryId" = g."id"`)
     expect(sql).toContain(`g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL.text}`)
     expect(sql).toContain(`AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${DB_NOW_SQL.text}`)
   })

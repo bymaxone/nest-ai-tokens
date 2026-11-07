@@ -33,6 +33,7 @@ const SPECS = [
   'wallet-time-zone',
   'budget-time-zone',
   'record-replay',
+  'wallet-remainder-equivalence',
 ]
 
 /** The combinations, with exact versions so a run means the same thing each time. */
