@@ -118,7 +118,7 @@ export function verifyChainRecords(records: UsageRecord[], structural: boolean):
 }
 
 /** The groups of two or more hashed records that share a predecessor, in order of first appearance. */
-function forksOf(hashed: UsageRecord[]): ChainFork[] {
+export function forksOf(hashed: UsageRecord[]): ChainFork[] {
   const byParent = new Map<string | null, UsageRecord[]>()
   for (const record of hashed) {
     const parent = record.prevHash ?? null

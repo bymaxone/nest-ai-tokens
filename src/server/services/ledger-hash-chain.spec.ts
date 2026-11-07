@@ -1,6 +1,6 @@
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import type { UsageRecord } from '../../shared'
-import { chainHash, verifyChainRecords, type ChainFork } from '../utils/hash-chain'
+import { chainHash, forksOf as groupForks, verifyChainRecords, type ChainFork } from '../utils/hash-chain'
 import { LedgerService, type LedgerAppendInput, type LedgerAuditHook } from './ledger.service'
 
 /** Build a `LedgerAppendInput`; `over` replaces any field under test. */
@@ -318,16 +318,21 @@ describe('verifyChainRecords structure', () => {
     ])
   })
 
-  /** Grouping the siblings of one parent stays linear: a tenant with many records on one predecessor must not stall the event loop. */
+  /**
+   * Grouping the siblings of one parent is linear in the records: a tenant with many records on one
+   * predecessor must not stall the event loop. The grouping is timed on its own, without the hash
+   * recomputation of the rest of the verification, at a size where a copy of the group per record
+   * takes many times the bound.
+   */
   it('groups a large fork in linear time', async () => {
-    const count = 60_000
+    const count = 150_000
     const [a, first] = await chained()
     const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
-    const siblings = Array.from({ length: count }, (_, i) => childOf(a, b, `sibling-${String(i).padStart(6, '0')}`, new Date(Date.UTC(2026, 5, 2) + i)))
+    const siblings = Array.from({ length: count }, (_, i) => ({ ...b, id: `sibling-${String(i).padStart(6, '0')}`, prevHash: a.hash ?? '' }))
     const started = Date.now()
-    const forks = forksOf([a, b, ...siblings], true)
+    const forks = groupForks([a, b, ...siblings])
     const elapsed = Date.now() - started
-    expect(forks?.[0]?.records).toHaveLength(count + 1)
+    expect(forks[0]?.records).toHaveLength(count + 1)
     expect(elapsed).toBeLessThan(2_000)
   })
 
