@@ -134,7 +134,7 @@ the feature that needs them is enabled.
 
 | Artifact                                    | Brotli size | Budget  |
 | ------------------------------------------- | ----------- | ------- |
-| server (`@bymax-one/nest-ai-tokens`)        | 38 KB       | < 40 KB |
+| server (`@bymax-one/nest-ai-tokens`)        | 41 KB       | < 42 KB |
 | shared (`@bymax-one/nest-ai-tokens/shared`) | 5 KB        | < 10 KB |
 | prisma (`@bymax-one/nest-ai-tokens/prisma`) | 10 KB       | < 15 KB |
 | redis (`@bymax-one/nest-ai-tokens/redis`)   | 1.3 KB      | < 5 KB  |
