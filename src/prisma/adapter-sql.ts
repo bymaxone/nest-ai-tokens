@@ -605,9 +605,9 @@ export const GRANT_REMAINING_SQL = sql`(g."amountNanoUsd" - COALESCE((SELECT SUM
 
 /**
  * What every grant of one wallet has spent, in a single pass over that wallet's allocations: one row per grant
- * that has any. Joined as `s` on `s."grantEntryId" = g."id"`, it replaces a correlated sum per grant, whose cost
- * grew with the grants times their allocations on every debit. Scoped to the wallet so another wallet's
- * allocations are never read.
+ * that has any. Joined as `s` on `s."grantEntryId" = g."id"`, it costs one pass over the wallet's allocations,
+ * where a correlated sum per grant costs the grants times their allocations. Scoped to the wallet so another
+ * wallet's allocations are never read.
  *
  * @param walletId The wallet's id as a statement: a bound parameter, or the outer alias `w."id"`.
  */

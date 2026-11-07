@@ -1,10 +1,9 @@
 /**
- * @fileoverview E2E: the set-based grant remainder returns exactly what the per-grant sum it replaced returned.
- * A wallet holding every kind of grant (open, partly spent, spent, expired with a remainder, due later and
- * activated since, not yet due) is read through the store's open-grants query and its reconcile, and the
- * result is compared with the same questions asked in the older, per-grant form; a debit that spans several
- * grants must leave the allocation trail the older query would have produced. A second wallet with its own
- * allocations proves the rewrite reads only the wallet it is asked about.
+ * @fileoverview E2E: the grouped grant spend gives the same answers as a sum taken per grant. A wallet holding every
+ * kind of grant (open, partly spent, spent, expired with a remainder, due later and activated since, not yet due)
+ * is read through the store's open-grants query and its reconcile, and each result must equal the same question asked
+ * with a correlated per-grant sum; a debit that spans several grants must leave the allocation trail that sum implies.
+ * A second wallet with allocations of its own must not change the first wallet's results.
  * @layer test
  */
 
@@ -32,7 +31,7 @@ async function rows<T>(statement: Sql): Promise<T[]> {
   return pg.prisma.$queryRawUnsafe<T[]>(statement.text, ...statement.parameters)
 }
 
-/** The open grants the way the store asked before the rewrite: a sum per grant, in a correlated subquery. */
+/** The open grants, with each grant's remainder taken by a correlated sum over its own allocations. */
 async function referenceOpenGrants(walletId: string, order: 'expiry' | 'priority' | 'fifo'): Promise<{ id: string; remaining: bigint }[]> {
   const orderBy =
     order === 'priority' ? sql`g."priority" ASC, g."createdAt" ASC` : order === 'fifo' ? sql`g."createdAt" ASC` : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
@@ -43,7 +42,7 @@ async function referenceOpenGrants(walletId: string, order: 'expiry' | 'priority
     ORDER BY ${orderBy}`)
 }
 
-/** The spendable balance the way reconcile computed it before the rewrite. */
+/** The spendable balance, with the expired remainder taken by a correlated sum per grant. */
 async function referenceBalance(walletId: string): Promise<bigint> {
   const result = await rows<{ balance: bigint }>(sql`
     SELECT ${SIGNED_BALANCE_SQL} - (
@@ -84,7 +83,7 @@ async function seed(ref: WalletRef, tag: string): Promise<string> {
 }
 
 describe('set-based grant remainder', () => {
-  /** The open grants, in each burn order, are the same rows with the same remainders as the older query returned. */
+  /** The open grants, in each burn order, are the same rows with the same remainders as the per-grant sum gives. */
   it('returns the same open grants and remainders as the per-grant sum, in every burn order', async () => {
     await pg.prisma.$executeRawUnsafe('TRUNCATE TABLE "ai_wallet_debit_allocations", "ai_wallet_entries", "ai_wallets" CASCADE')
     const walletId = await seed(A, 'a')
@@ -111,7 +110,7 @@ describe('set-based grant remainder', () => {
     expect(other.balanceNanoUsd).toBe(await referenceBalance((await pg.store.getWallet(B))!.id))
   })
 
-  /** A debit across three grants writes the trail the older query's rows would have produced. */
+  /** A debit across three grants writes the trail the per-grant sum's rows imply. */
   it('leaves the allocation trail the per-grant query would have produced', async () => {
     const wallet = (await pg.store.getWallet(A))!
     const expected = await referenceOpenGrants(wallet.id, 'expiry')
