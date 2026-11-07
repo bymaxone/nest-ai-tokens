@@ -10,7 +10,7 @@
 import type { WalletRef } from '@bymax-one/nest-ai-tokens/shared'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { GRANT_REMAINING_SQL, CREDITED_SQL, DB_NOW_SQL } from '../../src/prisma/adapter-sql'
-import { sql } from '../../src/prisma/sql'
+import { sql, type Sql } from '../../src/prisma/sql'
 import { grantEntry } from '../contracts/wallet-store.contract'
 import { startPostgres, type PostgresFixture } from './harness'
 
@@ -72,42 +72,56 @@ async function explain(text: string, values: unknown[]): Promise<Explained> {
   return best!
 }
 
+/** Small wallets analysed, then one wallet grown past the last ANALYZE; returns the grown wallet's id. */
+async function seedStaleStatistics(): Promise<string> {
+  await pg.prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "ai_wallet_debit_allocations", "ai_wallet_entries", "ai_wallets" CASCADE',
+  )
+  await pg.prisma.$executeRawUnsafe(
+    'ALTER TABLE "ai_wallet_entries" SET (autovacuum_enabled = false)',
+  )
+  await pg.prisma.$executeRawUnsafe(
+    'ALTER TABLE "ai_wallet_debit_allocations" SET (autovacuum_enabled = false)',
+  )
+  for (let i = 0; i < 30; i++) {
+    await pg.store.appendEntry(
+      { tenantId: 'plan', ownerType: 'user', ownerId: `small-${i}` },
+      grantEntry({ idempotencyKey: `s-${i}`, amountNanoUsd: 100n }),
+    )
+  }
+  await pg.store.appendEntry(BIG, grantEntry({ idempotencyKey: 'seed', amountNanoUsd: 100n }))
+  await pg.prisma.$executeRawUnsafe('ANALYZE "ai_wallet_entries"')
+  await pg.prisma.$executeRawUnsafe('ANALYZE "ai_wallet_debit_allocations"')
+
+  const walletId = (await pg.store.getWallet(BIG))!.id
+  await pg.prisma.$executeRawUnsafe(
+    `INSERT INTO "ai_wallet_entries" ("id","walletId","type","amountNanoUsd","priority","effectiveAt","expiresAt","idempotencyKey","reason","createdAt")
+       SELECT 'g-' || n, '${walletId}', 'grant', 100, 0, TIMESTAMP '2020-01-01', TIMESTAMP '2040-01-01' + n * interval '1 second', 'g-' || n, 'seed', (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 day'
+       FROM generate_series(1, ${GRANTS}) AS n`,
+  )
+  await pg.prisma.$executeRawUnsafe(
+    `INSERT INTO "ai_wallet_entries" ("id","walletId","type","amountNanoUsd","priority","effectiveAt","idempotencyKey","reason","createdAt")
+       VALUES ('dx','${walletId}','debit',-1,0,TIMESTAMP '2020-01-01','dx','seed',(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 day')`,
+  )
+  await pg.prisma.$executeRawUnsafe(
+    `INSERT INTO "ai_wallet_debit_allocations" ("id","debitEntryId","grantEntryId","amountNanoUsd")
+       SELECT 'a-' || n, 'dx', 'g-' || n, 100 FROM generate_series(${OPEN + 1}, ${GRANTS}) AS n`,
+  )
+  return walletId
+}
+
+/** The 1.1.12 shape of the read: a correlated sum per grant. */
+function perGrantReference(walletId: string): Sql {
+  return sql`SELECT g.*, ${GRANT_REMAINING_SQL}::bigint AS "remaining" FROM "ai_wallet_entries" g
+       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
+         AND g."effectiveAt" <= ${DB_NOW_SQL} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${DB_NOW_SQL}) AND ${GRANT_REMAINING_SQL} > 0
+       ORDER BY g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
+}
+
 describe('open-grants plan under stale statistics', () => {
   /** Reproduces a large shared table: small wallets analysed, then one wallet grown without a fresh ANALYZE. */
   it('keeps a per-grant lookup when one wallet grows after the last ANALYZE', async () => {
-    await pg.prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ai_wallet_debit_allocations", "ai_wallet_entries", "ai_wallets" CASCADE',
-    )
-    await pg.prisma.$executeRawUnsafe(
-      'ALTER TABLE "ai_wallet_entries" SET (autovacuum_enabled = false)',
-    )
-    await pg.prisma.$executeRawUnsafe(
-      'ALTER TABLE "ai_wallet_debit_allocations" SET (autovacuum_enabled = false)',
-    )
-    for (let i = 0; i < 30; i++) {
-      await pg.store.appendEntry(
-        { tenantId: 'plan', ownerType: 'user', ownerId: `small-${i}` },
-        grantEntry({ idempotencyKey: `s-${i}`, amountNanoUsd: 100n }),
-      )
-    }
-    await pg.store.appendEntry(BIG, grantEntry({ idempotencyKey: 'seed', amountNanoUsd: 100n }))
-    await pg.prisma.$executeRawUnsafe('ANALYZE "ai_wallet_entries"')
-    await pg.prisma.$executeRawUnsafe('ANALYZE "ai_wallet_debit_allocations"')
-
-    const walletId = (await pg.store.getWallet(BIG))!.id
-    await pg.prisma.$executeRawUnsafe(
-      `INSERT INTO "ai_wallet_entries" ("id","walletId","type","amountNanoUsd","priority","effectiveAt","expiresAt","idempotencyKey","reason","createdAt")
-       SELECT 'g-' || n, '${walletId}', 'grant', 100, 0, TIMESTAMP '2020-01-01', TIMESTAMP '2040-01-01' + n * interval '1 second', 'g-' || n, 'seed', (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 day'
-       FROM generate_series(1, ${GRANTS}) AS n`,
-    )
-    await pg.prisma.$executeRawUnsafe(
-      `INSERT INTO "ai_wallet_entries" ("id","walletId","type","amountNanoUsd","priority","effectiveAt","idempotencyKey","reason","createdAt")
-       VALUES ('dx','${walletId}','debit',-1,0,TIMESTAMP '2020-01-01','dx','seed',(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 day')`,
-    )
-    await pg.prisma.$executeRawUnsafe(
-      `INSERT INTO "ai_wallet_debit_allocations" ("id","debitEntryId","grantEntryId","amountNanoUsd")
-       SELECT 'a-' || n, 'dx', 'g-' || n, 100 FROM generate_series(${OPEN + 1}, ${GRANTS}) AS n`,
-    )
+    const walletId = await seedStaleStatistics()
 
     const { text, values } = await openGrantsStatement(BIG)
     const plan = await explain(text, values)
@@ -119,10 +133,7 @@ describe('open-grants plan under stale statistics', () => {
     expect(grouped).toEqual([])
 
     // And no slower than a small multiple of the same read with a correlated sum per grant.
-    const reference = sql`SELECT g.*, ${GRANT_REMAINING_SQL}::bigint AS "remaining" FROM "ai_wallet_entries" g
-       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
-         AND g."effectiveAt" <= ${DB_NOW_SQL} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${DB_NOW_SQL}) AND ${GRANT_REMAINING_SQL} > 0
-       ORDER BY g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
+    const reference = perGrantReference(walletId)
     const baseline = await explain(reference.text, reference.parameters)
     expect(plan['Execution Time']).toBeLessThan(baseline['Execution Time'] * 3 + 15)
 
