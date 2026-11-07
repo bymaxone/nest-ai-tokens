@@ -2,13 +2,14 @@
  * @fileoverview Unit tests for the raw-SQL error classification.
  * @layer prisma
  *
- * The rest of this directory is exercised by the end-to-end suite against a real
- * PostgreSQL, which is why `src/prisma/**` is excluded from unit coverage: SQL
- * correctness is only meaningful against a database.
+ * `adapter-sql.ts` is pure: it is in the unit coverage gate, and `adapter-sql-builders.spec.ts`
+ * covers its mappers and builders. The store in `index.ts` runs the statements against a real
+ * PostgreSQL and is owned by the end-to-end suite, since SQL correctness is only meaningful
+ * against a database.
  *
- * `isUniqueViolation` is the exception. It is pure logic over an error object,
- * and it has to hold for *both* Prisma majors the peer range admits — while the
- * end-to-end suite can only ever exercise the one that happens to be installed.
+ * `isUniqueViolation` is pure logic over an error object, and it has to hold for *both* Prisma
+ * majors the peer range admits — while the end-to-end suite can only ever exercise the one that
+ * happens to be installed.
  * A missed violation is silent: the exactly-once replay-or-conflict path (§15.2)
  * degrades a 409 conflict into a generic store error, which is precisely the
  * regression that appeared when the driver adapter moved the SQLSTATE.
