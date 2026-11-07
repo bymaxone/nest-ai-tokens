@@ -1,6 +1,6 @@
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import type { UsageRecord } from '../../shared'
-import { chainHash, verifyChainRecords } from '../utils/hash-chain'
+import { chainHash, forksOf as groupForks, verifyChainRecords, type ChainFork } from '../utils/hash-chain'
 import { LedgerService, type LedgerAppendInput, type LedgerAuditHook } from './ledger.service'
 
 /** Build a `LedgerAppendInput`; `over` replaces any field under test. */
@@ -251,11 +251,122 @@ describe('verifyChainRecords structure', () => {
     expect(verifyChainRecords([quick, next], true)).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: quick.id })
   })
 
-  /** A hold that settles after a later record links to the same predecessor as the next record; that is normal, not a fork. */
-  it('accepts two records that share a predecessor', async () => {
+  /**
+   * Two records that share a predecessor keep the chain valid and are reported as a fork: a fork alone
+   * is not proof of tampering, so the library reports it and leaves the judgement to the operator.
+   */
+  it('accepts two records that share a predecessor and reports them as a fork', async () => {
+    const [a, first] = await chained()
+    const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const sibling = { ...b, id: 'sibling', createdAt: new Date('2026-06-02T00:00:00.000Z'), hash: chainHash(a.hash ?? null, { ...b, id: 'sibling' }) }
+    expect(verifyChainRecords([a, b, sibling], true)).toEqual({
+      valid: true,
+      unchainedCount: 0,
+      chainStartsAtRecordId: a.id,
+      forks: [{ parentHash: a.hash, records: [{ id: b.id, createdAt: b.createdAt }, { id: 'sibling', createdAt: sibling.createdAt }] }],
+    })
+  })
+
+  /** A chain without a shared predecessor carries no `forks` key at all, so existing equality checks keep holding. */
+  it('omits forks when no two records share a predecessor', async () => {
+    const [a, b, c] = await chained()
+    expect('forks' in verifyChainRecords([a, b, c], true)).toBe(false)
+  })
+
+  /** A record whose predecessor is `parent`, with a chosen id and creation time, hashed correctly. */
+  function childOf(parent: UsageRecord, template: UsageRecord, id: string, createdAt: Date): UsageRecord {
+    return { ...template, id, createdAt, prevHash: parent.hash ?? '', hash: chainHash(parent.hash ?? null, { ...template, id }) }
+  }
+
+  /** The forks of a verified chain; fails the test when the chain is not valid. */
+  function forksOf(records: UsageRecord[], structural: boolean): ChainFork[] | undefined {
+    const result = verifyChainRecords(records, structural)
+    if (!result.valid || 'status' in result) throw new Error('expected a valid chain')
+    return result.forks
+  }
+
+  /** Siblings are listed oldest first, ties broken by id, whatever the listing order was. */
+  it('orders the siblings of a fork by createdAt then id', async () => {
+    const [a, b] = await chained()
+    const t = (day: number): Date => new Date(Date.UTC(2026, 4, day))
+    const late = childOf(a, b, 'late', t(9))
+    const tieB = childOf(a, b, 'tie-b', t(5))
+    const tieA = childOf(a, b, 'tie-a', t(5))
+    const early = childOf(a, b, 'zz-early', t(1))
+    expect(forksOf([a, late, tieB, early, tieA], true)).toEqual([
+      {
+        parentHash: a.hash,
+        records: [
+          { id: 'zz-early', createdAt: t(1) },
+          { id: 'tie-a', createdAt: t(5) },
+          { id: 'tie-b', createdAt: t(5) },
+          { id: 'late', createdAt: t(9) },
+        ],
+      },
+    ])
+  })
+
+  /** Each shared predecessor is its own fork. */
+  it('reports each shared predecessor as its own fork', async () => {
+    const [a, first] = await chained()
+    const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const at = new Date('2026-06-03T00:00:00.000Z')
+    const forks = forksOf([a, b, childOf(a, b, 'x1', at), childOf(b, b, 'y1', at), childOf(b, b, 'y2', at)], true)
+    expect(forks?.map((fork) => [fork.parentHash, fork.records.map((record) => record.id)])).toEqual([
+      [a.hash, [b.id, 'x1']],
+      [b.hash, ['y1', 'y2']],
+    ])
+  })
+
+  /**
+   * Grouping the siblings of one parent is linear in the records: a tenant with many records on one
+   * predecessor must not stall the event loop. The grouping is timed on its own, without the hash
+   * recomputation of the rest of the verification, at a size where a copy of the group per record
+   * takes many times the bound.
+   */
+  it('groups a large fork in linear time', async () => {
+    const count = 150_000
+    const [a, first] = await chained()
+    const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const siblings = Array.from({ length: count }, (_, i) => ({ ...b, id: `sibling-${String(i).padStart(6, '0')}`, prevHash: a.hash ?? '' }))
+    const started = Date.now()
+    const forks = groupForks([a, b, ...siblings])
+    const elapsed = Date.now() - started
+    expect(forks[0]?.records).toHaveLength(count + 1)
+    expect(elapsed).toBeLessThan(2_000)
+  })
+
+  /** A bounded call reports the siblings inside its window, and a parent outside the window is still named. */
+  it('reports a fork on a bounded call from the siblings in the window', async () => {
+    const [a, first] = await chained()
+    const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const sibling = childOf(a, b, 'sibling', new Date('2026-06-03T00:00:00.000Z'))
+    expect(forksOf([b, sibling], false)).toEqual([
+      { parentHash: a.hash, records: [{ id: b.id, createdAt: b.createdAt }, { id: 'sibling', createdAt: sibling.createdAt }] },
+    ])
+  })
+
+  /** Two records at the genesis position share the null predecessor: a bounded call reports them, an unbounded one flags the second start. */
+  it('reports siblings at the genesis position on a bounded call', async () => {
+    const [genesis] = await chained()
+    const a = { ...genesis, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const other = { ...a, id: 'other-genesis', createdAt: new Date('2026-06-03T00:00:00.000Z'), hash: chainHash(null, { ...a, id: 'other-genesis' }) }
+    expect(forksOf([a, other], false)?.map((fork) => [fork.parentHash, fork.records.map((record) => record.id)])).toEqual([[null, [a.id, 'other-genesis']]])
+    expect(verifyChainRecords([a, other], true)).toEqual({ valid: false, brokenAtRecordId: 'other-genesis', unchainedCount: 0 })
+  })
+
+  /** The audit hook carries the number of forks, and only when there is one, so existing payloads are unchanged. */
+  it('audits the fork count when the chain forks', async () => {
     const [a, b] = await chained()
     const sibling = { ...b, id: 'sibling', hash: chainHash(a.hash ?? null, { ...b, id: 'sibling' }) }
-    expect(verifyChainRecords([a, b, sibling], true)).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: a.id })
+    const audit = jest.fn()
+    const store = new InMemoryLedgerStore()
+    jest.spyOn(store, 'query').mockResolvedValue([a, b, sibling])
+
+    const result = await makeService(store, true, audit).verifyChain('tenant-1')
+
+    expect(result.valid && result.forks?.length).toBe(1)
+    expect(audit).toHaveBeenCalledWith('ai_tokens.chain.verified', { tenantId: 'tenant-1', valid: true, unchainedCount: 0, forkCount: 1 })
   })
 
   /** Without its first rows the earliest hashed row has no genesis: its predecessor is missing. */

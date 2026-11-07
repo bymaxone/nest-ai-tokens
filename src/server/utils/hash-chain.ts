@@ -24,14 +24,28 @@ import { deriveIdempotencyKey } from '../../shared'
 import { computePayloadHash } from './payload-hash'
 
 /**
+ * Records that share one predecessor. `parentHash` is the shared `prevHash`, `null` for records that
+ * share the genesis position; `records` lists the siblings oldest first by `createdAt`, ties broken by id.
+ */
+export interface ChainFork {
+  parentHash: string | null
+  records: { id: string; createdAt: Date }[]
+}
+
+/**
  * The outcome of {@link LedgerService.verifyChain}. `unchainedCount` is the number of settled
  * records that carry no chain hash (written before the chain was enabled): they are counted, not
  * verified, and the chain does not protect them. `chainStartsAtRecordId` is the genesis record when
- * the verified records include it. The third variant means settled records exist and none carries a hash or a `prevHash`,
+ * the verified records include it. `forks` is present only when two or more verified records name the
+ * same predecessor; the chain stays valid, because a fork alone is not proof of tampering. The official
+ * adapter links each record to the single tail under a per-tenant lock, so a fork among the records it
+ * wrote is unexpected: investigate it. A store that chose another predecessor can fork legitimately, and
+ * the library cannot tell the two apart; the siblings' `createdAt` against the date you began using the
+ * single-tail adapter does. The third variant means settled records exist and none carries a hash or a `prevHash`,
  * i.e. the chain was never enabled for this tenant, which is not evidence of tampering.
  */
 export type ChainVerification =
-  | { valid: true; unchainedCount: number; chainStartsAtRecordId?: string }
+  | { valid: true; unchainedCount: number; chainStartsAtRecordId?: string; forks?: ChainFork[] }
   | { valid: false; brokenAtRecordId: string; unchainedCount: number }
   | { valid: false; status: 'never-enabled'; unchainedCount: number }
 
@@ -64,8 +78,8 @@ export function chainHash(prevHash: string | null, record: NewUsageRecord & { id
  * Every hashed record must recompute from its own `prevHash`. With `structural` set (an unbounded
  * call), the hashed records must also form one chain: exactly one head, the record whose
  * `prevHash` is not another record's hash, and that head must be the genesis (no `prevHash`).
- * Two records may share a predecessor: the official adapter links each new record to the hashed
- * record created last, so a hold that settles after a later record leaves two children of one parent.
+ * Two records may share a predecessor. The chain stays valid and the shared predecessors are returned
+ * as `forks`, because a fork alone does not prove tampering.
  * Records without a hash are counted as unchained; one that still carries a `prevHash` is a chained
  * record whose hash was removed and is reported as broken. A `from`/`to` window can cut the chain
  * anywhere, so a bounded call checks each record's own hash and skips the structural rules.
@@ -94,7 +108,38 @@ export function verifyChainRecords(records: UsageRecord[], structural: boolean):
     const offending = heads.find((record) => record !== genesis)
     if (offending !== undefined) return { valid: false, brokenAtRecordId: offending.id, unchainedCount }
   }
-  return genesis === undefined
-    ? { valid: true, unchainedCount }
-    : { valid: true, unchainedCount, chainStartsAtRecordId: genesis.id }
+  const forks = forksOf(hashed)
+  return {
+    valid: true,
+    unchainedCount,
+    ...(genesis === undefined ? {} : { chainStartsAtRecordId: genesis.id }),
+    ...(forks.length === 0 ? {} : { forks }),
+  }
+}
+
+/** The groups of two or more hashed records that share a predecessor, in order of first appearance. */
+export function forksOf(hashed: UsageRecord[]): ChainFork[] {
+  const byParent = new Map<string | null, UsageRecord[]>()
+  for (const record of hashed) {
+    const parent = record.prevHash ?? null
+    const siblings = byParent.get(parent)
+    if (siblings === undefined) byParent.set(parent, [record])
+    else siblings.push(record)
+  }
+  return [...byParent]
+    .filter(([, siblings]) => siblings.length > 1)
+    .map(([parentHash, siblings]) => ({
+      parentHash,
+      records: siblings
+        .map(({ id, createdAt }) => ({ id, createdAt }))
+        .sort(byCreatedAtThenId),
+    }))
+}
+
+/** Orders siblings oldest first, ties broken by id. */
+function byCreatedAtThenId(a: ChainFork['records'][number], b: ChainFork['records'][number]): number {
+  const byTime = a.createdAt.getTime() - b.createdAt.getTime()
+  if (byTime !== 0) return byTime
+  // Stryker disable next-line EqualityOperator: record ids are unique, so the comparator never sees two equal ids and < and <= order identically
+  return a.id < b.id ? -1 : 1
 }
