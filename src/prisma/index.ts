@@ -80,7 +80,7 @@ import {
   priceLockKey,
   priceValues,
   spendableBalanceSql,
-  spentByGrantSql,
+  GRANT_REMAINING_JOIN_SQL,
   ACTIVATED_SQL,
   CREDITED_SQL,
   DB_NOW_SQL,
@@ -728,7 +728,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
           : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
     return sql`
       SELECT g.*, ${GRANT_REMAINING_JOINED_SQL}::bigint AS "remaining"
-      FROM "ai_wallet_entries" g LEFT JOIN ${spentByGrantSql(sql`${walletId}`)} s ON s."grantEntryId" = g."id"
+      FROM "ai_wallet_entries" g ${GRANT_REMAINING_JOIN_SQL}
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
         AND g."effectiveAt" <= ${DB_NOW_SQL} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${DB_NOW_SQL})
         AND ${GRANT_REMAINING_JOINED_SQL} > 0
