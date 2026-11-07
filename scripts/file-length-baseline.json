@@ -1,0 +1,6 @@
+{
+  "files": {
+    "scripts/check-published-surface.mjs": 816,
+    "src/server/services/metering.service.spec.ts": 1687
+  }
+}

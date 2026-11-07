@@ -46,7 +46,21 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The length check compares a pull request's baseline with its base branch's.
+          fetch-depth: 0
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
+      - name: Source files stay within the length limit
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # A pull request is also checked against the baseline on its base branch, so the
+          # baseline it carries cannot admit the offender it adds.
+          if [ -n "$BASE_REF" ]; then
+            pnpm check:file-length --base "origin/$BASE_REF"
+          else
+            pnpm check:file-length
+          fi
       - name: JSDoc coverage + docs fixture type-check
         run: pnpm docs:check
       - name: Reject provider SDK imports (normalizer-first)
