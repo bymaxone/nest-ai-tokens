@@ -122,7 +122,9 @@ function forksOf(hashed: UsageRecord[]): ChainFork[] {
   const byParent = new Map<string | null, UsageRecord[]>()
   for (const record of hashed) {
     const parent = record.prevHash ?? null
-    byParent.set(parent, [...(byParent.get(parent) ?? []), record])
+    const siblings = byParent.get(parent)
+    if (siblings === undefined) byParent.set(parent, [record])
+    else siblings.push(record)
   }
   return [...byParent]
     .filter(([, siblings]) => siblings.length > 1)

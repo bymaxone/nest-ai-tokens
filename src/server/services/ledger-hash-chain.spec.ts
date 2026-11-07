@@ -318,6 +318,19 @@ describe('verifyChainRecords structure', () => {
     ])
   })
 
+  /** Grouping the siblings of one parent stays linear: a tenant with many records on one predecessor must not stall the event loop. */
+  it('groups a large fork in linear time', async () => {
+    const count = 60_000
+    const [a, first] = await chained()
+    const b = { ...first, createdAt: new Date('2026-06-01T00:00:00.000Z') }
+    const siblings = Array.from({ length: count }, (_, i) => childOf(a, b, `sibling-${String(i).padStart(6, '0')}`, new Date(Date.UTC(2026, 5, 2) + i)))
+    const started = Date.now()
+    const forks = forksOf([a, b, ...siblings], true)
+    const elapsed = Date.now() - started
+    expect(forks?.[0]?.records).toHaveLength(count + 1)
+    expect(elapsed).toBeLessThan(2_000)
+  })
+
   /** A bounded call reports the siblings inside its window, and a parent outside the window is still named. */
   it('reports a fork on a bounded call from the siblings in the window', async () => {
     const [a, first] = await chained()
