@@ -33,7 +33,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Documentation
 
-- `docs/reparo_occurred_at_design.md` (in Portuguese): the design of a repair for shifted `occurredAt` values that
+- `docs/occurred_at_repair_design.md`: the design of a repair for shifted `occurredAt` values that
   proves each correction against the stored hash. It is a design; nothing is implemented. The README links to it.
 - README, Wallets & Budgets: what a debit costs as a wallet grows, with the measured figures.
 - README, Verifying the hash chain: what a host sees from records written by 1.1.11 or earlier on Prisma 6 under a
