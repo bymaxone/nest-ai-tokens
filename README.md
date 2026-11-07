@@ -683,14 +683,19 @@ The sections above document each of these with a runnable example. This is the i
 
 `LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
 
-- `{ valid: true, unchainedCount, chainStartsAtRecordId? }` — every hashed record recomputes and, on a call
+- `{ valid: true, unchainedCount, chainStartsAtRecordId?, forks? }` — every hashed record recomputes and, on a call
   without `from`/`to`, the hashed records form one chain. `chainStartsAtRecordId` is the genesis record
-  when the verified records include it.
+  when the verified records include it. `forks` is present only when two or more records name the same
+  predecessor: a list of `{ parentHash, records: [{ id, createdAt }] }`, siblings oldest first. A fork does not
+  make the chain invalid. A fork among records written after you upgraded to 1.1.8 or later with the official
+  adapter is unexpected, since the adapter links each record to the single tail under a per-tenant lock:
+  investigate it. Older forks (a hold that settled after a later record) are benign. The library cannot tell
+  them apart; compare the siblings' `createdAt` with the date of your upgrade.
 - `{ valid: false, brokenAtRecordId, unchainedCount }` — the record that fails: a record whose hash was
   removed while its link stayed, a changed record, or, without `from`/`to`, a gap (a second chain start)
   or a chain that does not start at a genesis record (its first head). Those checks run in that order,
-  and within each the earliest record in listing order is reported. Two records may share a predecessor:
-  a hold that settles after a later record links to the record created last, as the next record does.
+  and within each the earliest record in listing order is reported. Two records may share a predecessor;
+  that is reported as a fork on a valid result, not as a break.
 - `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none carries a hash or a link. This
   is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
 

@@ -235,6 +235,12 @@ export class LedgerService {
    * one genesis (no `prevHash`) and no gap. If settled records exist and none carries a hash or a `prevHash`
    * the result is `{ valid: false, status: 'never-enabled' }`, which is not evidence of tampering.
    *
+   * Records that share one predecessor stay valid and come back as `forks`, each sibling with its
+   * `createdAt`. A fork among records written after you upgraded to 1.1.8 or later with the official
+   * adapter is unexpected, because the adapter links each record to the single tail under a per-tenant
+   * lock: investigate it. Forks among older records come from the earlier tail choice and are benign.
+   * The library cannot tell the two apart; the siblings' `createdAt` against your upgrade date does.
+   *
    * Limits: a record that no other record names as its predecessor (the newest one, and a hold that
    * settled while a later-created record was already hashed) can be deleted without detection;
    * the chain is unkeyed, so someone with write access who recomputes the whole tail is not
@@ -260,7 +266,7 @@ export class LedgerService {
     if (!result.valid) {
       if ('status' in result) details.status = result.status
       else details.brokenAtRecordId = result.brokenAtRecordId
-    }
+    } else if (result.forks !== undefined) details.forkCount = result.forks.length
     this.audit('ai_tokens.chain.verified', details)
     return result
   }
