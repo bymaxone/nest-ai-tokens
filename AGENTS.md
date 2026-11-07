@@ -357,7 +357,7 @@ repository's own source and test directories. A test-suite grouping construct (`
 with a header stating its purpose and its layer, and every exported symbol a change introduces
 carries a doc comment.
 
-**The 800-line file limit applies to what a change introduces, not to what it inherits.** A
+**The 800-line file limit applies to what a change introduces, not to what it inherits.** `pnpm check:file-length` enforces it: a tracked source file over 800 lines fails unless it is frozen on `scripts/file-length-baseline.json`, where an entry can only shrink or go. A
 repository that already carries a file past the line — a generator, a long end-to-end suite — would
 otherwise produce a finding on every pull request touching three lines of it, which the author
 cannot act on and did not cause. Raise it for a **new** file over the limit, or when a change pushes

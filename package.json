@@ -76,6 +76,7 @@
   "scripts": {
     "build": "pnpm clean && tsup",
     "check:exports": "attw --pack . --profile strict",
+    "check:file-length": "node scripts/check-file-length.mjs",
     "check:mutants": "node scripts/check-mutation-directives.mjs",
     "check:published": "node scripts/check-published-surface.mjs",
     "check:runtime": "node scripts/check-bundle-classes.mjs && node scripts/check-consumer-runtime.mjs",
