@@ -16,8 +16,8 @@ describe('BudgetService — CRUD (§10.5)', () => {
   })
 
   /**
-   * A window kind the window math cannot read is refused when the budget is written. Stored, it made every later
-   * record for the scope throw after the record was posted, because the window start came out as an invalid date.
+   * A window kind the window math cannot read is refused before the budget is stored: the window start of a
+   * record is computed from the kind, so only a supported kind with a valid length can be kept.
    */
   it('rejects a window kind the window math cannot read', async () => {
     const { service } = makeService()

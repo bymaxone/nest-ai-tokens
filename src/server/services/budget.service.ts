@@ -40,6 +40,7 @@ import type {
 import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
+import { assertWindowKind } from '../utils/window-kind'
 
 /** The resolved budget settings the service consumes (the enabled half of the union). */
 export type BudgetServiceOptions = Extract<ResolvedBudgetsOptions, { enabled: true }>
@@ -663,22 +664,6 @@ export class BudgetService {
       throw invalid('a budget must define at least one limit dimension')
     }
   }
-}
-
-/** The longest custom window, in seconds: 100 years, far inside the range of a date. */
-const MAX_CUSTOM_SECONDS = 3_153_600_000
-
-/**
- * Refuse a window kind the window math cannot read. A kind outside the union, or a custom length that is not a
- * positive whole number of seconds within range, yields an invalid window start for every later record of the scope.
- */
-function assertWindowKind(window: unknown): void {
-  if (window === 'day' || window === 'week' || window === 'month' || window === 'total') return
-  const seconds = typeof window === 'object' && window !== null ? (window as { customSeconds?: unknown }).customSeconds : undefined
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-  if (typeof seconds === 'number' && Number.isInteger(seconds) && seconds > 0 && seconds <= MAX_CUSTOM_SECONDS) return
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-  throw invalid("window must be 'day', 'week', 'month', 'total' or { customSeconds } with a positive whole number of seconds up to 3153600000 (100 years)")
 }
 
 /** Build the invalid-config exception with an actionable reason. */
