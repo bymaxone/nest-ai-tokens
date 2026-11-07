@@ -21,7 +21,7 @@ describe('BudgetService — CRUD (§10.5)', () => {
    */
   it('rejects a window kind the window math cannot read', async () => {
     const { service } = makeService()
-    const bad: unknown[] = ['hour', 'DAY', '', null, 7, {}, { customSeconds: 0 }, { customSeconds: -60 }, { customSeconds: 1.5 }, { customSeconds: Number.NaN }, { customSeconds: Number.POSITIVE_INFINITY }, { customSeconds: '3600' }, { customSeconds: 3_153_600_001 }]
+    const bad: unknown[] = ['hour', 'DAY', '', null, undefined, 7, {}, { customSeconds: 0 }, { customSeconds: -60 }, { customSeconds: 1.5 }, { customSeconds: Number.NaN }, { customSeconds: Number.POSITIVE_INFINITY }, { customSeconds: '3600' }, { customSeconds: 3_153_600_001 }]
     for (const window of bad) {
       await expectRejectCode(service.upsertBudget(budgetInput({ window: window as never })), 'AI_TOKENS_INVALID_CONFIG')
     }
