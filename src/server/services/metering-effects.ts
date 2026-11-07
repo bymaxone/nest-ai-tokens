@@ -197,14 +197,14 @@ export class MeteringEffects {
   async enforceRecord(record: UsageRecord): Promise<void> {
     if (record.isSystemCost) return
     const delta = budgetDelta({ billedNanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
-    if (this.budgets !== undefined) await this.budgets.consume(contextOf(record), delta)
+    if (this.budgets !== undefined) await this.budgets.consume(contextOf(record), delta, record.occurredAt)
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg === null) return
     try {
       await leg.wallets.debit(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `record:${record.id}`, reason: 'post-hoc enforcement' })
     } catch (error) {
-      if (this.budgets !== undefined) await this.budgets.release(contextOf(record), delta)
+      if (this.budgets !== undefined) await this.budgets.release(contextOf(record), delta, record.occurredAt)
       throw error
     }
   }

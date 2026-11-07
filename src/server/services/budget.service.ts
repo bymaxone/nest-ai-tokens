@@ -229,10 +229,12 @@ export class BudgetService {
    *
    * @param context The metering context (payer scope, feature — trusted input).
    * @param delta The spend to consume across the three dimensions.
+   * @param at The instant that locates the windows to charge; defaults to now. A back-dated record is
+   *   charged to its own window, so its rollback and reversal release the window it consumed.
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` (402, cost) or `AI_TOKENS_QUOTA_EXCEEDED` (429, tokens/count) when a `'block'` budget is exhausted.
    */
-  async consume(context: MeteringContext, delta: BudgetDelta): Promise<void> {
-    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature)
+  async consume(context: MeteringContext, delta: BudgetDelta, at?: Date): Promise<void> {
+    const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature, at)
     const consumed: Consumed[] = []
     for (const located of windows) {
       const before = (await this.store.getWindow(located.budget.id, located.windowStart)) ?? ZERO_SPEND

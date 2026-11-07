@@ -734,6 +734,26 @@ describe('MeteringEffects.enforceRecord', () => {
   })
 
   /**
+   * The consumption and its rollback both locate the windows from the record's own instant, so a
+   * back-dated record is charged to, and rolled back from, the same window.
+   */
+  it('consumes and rolls back the budget at the record instant', async () => {
+    const { service: budgets } = buildBudgetService()
+    await budgets.upsertBudget({
+      tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, window: 'month', limitNanoUsd: 100_000_000_000n,
+    })
+    const { service: wallets } = buildWalletService()
+    const consume = jest.spyOn(budgets, 'consume')
+    const release = jest.spyOn(budgets, 'release')
+    const back = record({ occurredAt: new Date('2026-06-10T23:59:00.000Z') })
+
+    await expect(new MeteringEffects(wallets, budgets).enforceRecord(back)).rejects.toThrow()
+
+    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
+  })
+
+  /**
    * isSystemCost records skip ALL effects in enforceRecord — the system-cost payer
    * scope's costs are not charged to a budget or wallet.
    */
