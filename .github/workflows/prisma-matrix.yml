@@ -40,13 +40,18 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
+          run=false
           if [ "$EVENT" = "workflow_dispatch" ] || [[ "$HEAD_REF" == chore/release-* ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/$BASE_REF...HEAD" | grep -qE '^(src/prisma/|test/e2e/|scripts/prisma-matrix\.mjs$|\.github/workflows/prisma-matrix\.yml$)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            run=true
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"
+            # The diff is captured first, not piped: a failing git must fail this step, and under pipefail a
+            # grep that stops at its first match would make a long list read as no match.
+            changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            if grep -qE '^(src/prisma/|test/e2e/|scripts/prisma-matrix\.mjs$|\.github/workflows/prisma-matrix\.yml$)' <<< "$changed"; then
+              run=true
+            fi
           fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
   matrix:
     name: Prisma ${{ matrix.cell }}
@@ -65,7 +70,7 @@ jobs:
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Build
         run: pnpm build
-      - name: Pre-pull the pinned image (cache for Testcontainers)
-        run: docker pull postgres:16-alpine
+      - name: Pre-pull the image the specs start (cache for Testcontainers)
+        run: docker pull postgres:16
       - name: Run the cell
         run: node scripts/prisma-matrix.mjs ${{ matrix.cell }}
