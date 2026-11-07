@@ -19,7 +19,7 @@
  * entry the base did not have, or one above the base's length, fails. A base revision without a
  * baseline file imposes nothing, which is the change that introduces it.
  *
- * Plain Node with no dependencies: copy this file and `file-length-baseline.json` as they are.
+ * Plain Node with no dependencies.
  *
  * Usage: node scripts/check-file-length.mjs [--root <dir>] [--baseline <file>] [--base <ref>]
  *   --root      repository root (default: the current directory)
