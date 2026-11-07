@@ -12,7 +12,7 @@ Status: **apenas design. Nada está implementado.** Base: as medições do TASK-
 
 **Planejador puro, sem caminho de escrita na biblioteca.** Adicionar `planOccurredAtRepair(records, { zones })` em `./shared` (zero dependências; `Intl.DateTimeFormat` para a aritmética de zona). Entrada: os registros encadeados de um tenant, como lidos do store, e uma lista de zonas candidatas. Saída, por registro: `ok` (o hash já confere), `repairable` (zona, ramo, `occurredAt` corrigido; o hash recalculado é igual ao gravado) ou `unproven` (nenhum candidato confere, ou o registro não tem hash). Não altera nada.
 
-**Aplicar é ato do operador, com um papel privilegiado.** A regra crítica 2 (nenhum UPDATE de registro lançado) e o conselho do README (revogar `UPDATE` do papel da aplicação) proíbem um caminho de escrita na biblioteca. A saída do planejador vira uma lista revisável de `UPDATE ... SET "occurredAt" = <hora de parede UTC corrigida> WHERE id = ... AND "hash" = <hash gravado>` que um DBA executa numa única transação. A guarda `AND "hash"` torna o comando um no-op numa linha que mudou depois do planejamento.
+**Aplicar é ato do operador, com um papel privilegiado.** A regra crítica 2 (nenhum UPDATE de registro lançado) e o conselho do README (revogar `UPDATE` do papel da aplicação) proíbem um caminho de escrita na biblioteca. A saída do planejador vira uma lista revisável de `UPDATE ... SET "occurredAt" = <hora de parede UTC corrigida> WHERE id = ... AND "hash" = <hash gravado>` que um DBA executa numa única transação. A guarda `AND "hash"` torna o comando um no-op numa linha cujo hash gravado não é o planejado.
 
 **Dry run é o padrão e o único modo que a biblioteca tem.** Por tenant (a cadeia é por tenant). O operador informa a lista de zonas: as zonas de sessão que suas conexões usaram na 1.1.11 ou antes; mais de uma é permitida (um host que mudou de região), e cada linha prova a sua própria zona.
 
@@ -32,10 +32,10 @@ Portanto, as janelas erradas dos relatórios ficam corrigidas apenas para linhas
 
 ## Riscos
 
-- A aritmética de zona é toda a dificuldade (hora repetida do horário de verão, mudanças históricas de regra, como o antigo horário de verão de São Paulo). A prova mitiga: um bug do planejador só pode produzir linhas `unproven`, nunca uma escrita errada, desde que a guarda compare o hash recalculado inteiro.
+- A aritmética de zona é toda a dificuldade (hora repetida do horário de verão, mudanças históricas de regra, como o antigo horário de verão de São Paulo). A prova mitiga: um bug do planejador só pode produzir linhas `unproven`, nunca uma escrita errada, desde que o planejador compare o hash recalculado inteiro.
 - A cadeia não tem chave: quem tem acesso de escrita já consegue recalcular uma cadeia (README, limite 2). O reparo só aceita um valor que reproduz o hash já gravado, então não concede nada que um atacante não tenha.
 - Ordem de aplicação: o UPDATE muda `occurredAt` sob um hash que já confere com o novo valor, então executá-lo duas vezes é um no-op; executá-lo num tenant em escrita é seguro, porque as linhas novas (1.1.12) já verificam e saem como `ok`.
 
 ## Custo e recomendação
 
-Um PR: o planejador (cerca de 150 linhas com a aritmética de zona, estimativa), testes com linhas reais da 1.1.11 (uma fixture gravada pelo build v1.1.11, como na medição do TASK-229) em Tóquio, São Paulo e um caso de hora repetida, e um procedimento no README; o bundle `shared` tem folga (5148 de 10000 B). O alcance é estreito (Prisma 6 sob zona de sessão diferente de UTC, na 1.1.11 ou antes, com a hash chain ligada). Recomendação: não construir de forma especulativa. Construir quando um host real pedir, porque então ele também fornece a lista de zonas e a fixture.
+Um PR: o planejador (cerca de 150 linhas com a aritmética de zona, estimativa), testes com linhas reais da 1.1.11 (uma fixture gravada pelo build v1.1.11, como na medição do TASK-229) em Tóquio, São Paulo e um caso de hora repetida, e um procedimento no README; o bundle `shared` tem folga no orçamento de tamanho. O alcance é estreito (Prisma 6 sob zona de sessão diferente de UTC, na 1.1.11 ou antes, com a hash chain ligada). Recomendação: não construir de forma especulativa. Construir quando um host real pedir, porque então ele também fornece a lista de zonas e a fixture.
