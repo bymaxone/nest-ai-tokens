@@ -13,6 +13,9 @@ import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
 import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, DUE_AT_APPEND_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
 import { T0, T1, newRecord, rendered } from '../../test/fakes/prisma-rows'
 
+/** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
+const UTC_PARAMETER = (number: number): string => `($${number.toString()}::timestamptz AT TIME ZONE 'UTC')`
+
 describe('column lists', () => {
   /** The identifier list quotes every column, in order, separated by a comma and a space. */
   it('quotes each column in order', () => {
@@ -238,8 +241,8 @@ describe('buildWhere', () => {
         '"systemCostCategory" = $14',
         '"status" = ANY($15::text[])',
         '"enforced" = true',
-        '"occurredAt" >= $16',
-        '"occurredAt" <= $17',
+        `"occurredAt" >= ${UTC_PARAMETER(16)}`,
+        `"occurredAt" <= ${UTC_PARAMETER(17)}`,
       ].join(' AND '),
       values: ['t1', 'user', 'u1', 'team', 'team-1', 'chat.reply', ['a', 'b'], 'openai', 'gpt-5', 'chat', 'batch', ['x'], false, 'embedding', ['posted'], T0, T1],
     })
@@ -261,11 +264,11 @@ describe('walletEntryWhere', () => {
   it('filters by wallet, type and the creation window', () => {
     expect(rendered(walletEntryWhere('w1', {}))).toEqual({ text: '"walletId" = $1', values: ['w1'] })
     expect(rendered(walletEntryWhere('w1', { type: 'grant', from: T0, to: T1 }))).toEqual({
-      text: '"walletId" = $1 AND "type" = $2 AND "createdAt" >= $3 AND "createdAt" <= $4',
+      text: `"walletId" = $1 AND "type" = $2 AND "createdAt" >= ${UTC_PARAMETER(3)} AND "createdAt" <= ${UTC_PARAMETER(4)}`,
       values: ['w1', 'grant', T0, T1],
     })
-    expect(walletEntryWhere('w1', { from: T0 }).text).toBe('"walletId" = $1 AND "createdAt" >= $2')
-    expect(walletEntryWhere('w1', { to: T1 }).text).toBe('"walletId" = $1 AND "createdAt" <= $2')
+    expect(walletEntryWhere('w1', { from: T0 }).text).toBe(`"walletId" = $1 AND "createdAt" >= ${UTC_PARAMETER(2)}`)
+    expect(walletEntryWhere('w1', { to: T1 }).text).toBe(`"walletId" = $1 AND "createdAt" <= ${UTC_PARAMETER(2)}`)
   })
 })
 
@@ -364,8 +367,8 @@ describe('budget values', () => {
         '"limitTokens" = $5',
         '"limitCount" = $6',
         '"window" = $7',
-        '"anchorAt" = $8',
-        '"expiresAt" = $9',
+        `"anchorAt" = ${UTC_PARAMETER(8)}`,
+        `"expiresAt" = ${UTC_PARAMETER(9)}`,
         '"softThresholds" = $10::jsonb',
         '"policy" = $11',
         `"updatedAt" = ${DB_NOW_SQL.text}`,
