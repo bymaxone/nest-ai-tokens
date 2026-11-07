@@ -116,6 +116,7 @@ describe('error recognition without Prisma\'s classes', () => {
     ['another name with the same code', { name: 'DriverError', code: 'P2002' }],
     ['no name', { code: 'P2002' }],
     ['a numeric code', { name: 'PrismaClientKnownRequestError', code: 2002 }],
+    ['a numeric code with a unique-violation meta', { name: 'PrismaClientKnownRequestError', code: 2010, meta: { code: PG_UNIQUE_VIOLATION } }],
     ['no code', { name: 'PrismaClientKnownRequestError' }],
     ['a native driver error', Object.assign(new Error('duplicate'), { code: PG_UNIQUE_VIOLATION })],
   ])('does not recognise %s', (_label, error) => {
@@ -127,6 +128,7 @@ describe('error recognition without Prisma\'s classes', () => {
     const body = (error: unknown): { error: { details: Record<string, unknown> } } => storeError(error).getResponse() as { error: { details: Record<string, unknown> } }
     expect(body({ name: 'PrismaClientKnownRequestError', code: 'P2010' }).error.details).toEqual({ code: 'P2010' })
     expect(body({ name: 'Other', code: 'P2010' }).error.details).toEqual({})
+    expect(body({ name: 'PrismaClientKnownRequestError', code: 2010 }).error.details).toEqual({})
   })
 })
 
