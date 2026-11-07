@@ -15,6 +15,26 @@ describe('BudgetService — CRUD (§10.5)', () => {
     expect(audits).toContain('ai_tokens.budget.upserted')
   })
 
+  /**
+   * A window kind the window math cannot read is refused before the budget is stored: the window start of a
+   * record is computed from the kind, so only a supported kind with a valid length can be kept.
+   */
+  it('rejects a window kind the window math cannot read', async () => {
+    const { service } = makeService()
+    const bad: unknown[] = ['hour', 'DAY', '', null, undefined, 7, {}, { customSeconds: 0 }, { customSeconds: -60 }, { customSeconds: 1.5 }, { customSeconds: Number.NaN }, { customSeconds: Number.POSITIVE_INFINITY }, { customSeconds: '3600' }, { customSeconds: 3_153_600_001 }]
+    for (const window of bad) {
+      await expectRejectCode(service.upsertBudget(budgetInput({ window: window as never })), 'AI_TOKENS_INVALID_CONFIG')
+    }
+  })
+
+  /** Every documented kind, and the bounds of a custom window, are accepted. */
+  it('accepts each documented window kind', async () => {
+    const { service } = makeService()
+    for (const window of ['day', 'week', 'month', 'total', { customSeconds: 1 }, { customSeconds: 3_153_600_000 }] as const) {
+      await expect(service.upsertBudget(budgetInput({ window }))).resolves.toBeDefined()
+    }
+  })
+
   /** A present limit of 0 is a valid hard block (§10.2). */
   it('accepts a zero limit as a hard block', async () => {
     const { service } = makeService()

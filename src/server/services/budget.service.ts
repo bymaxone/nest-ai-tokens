@@ -40,6 +40,7 @@ import type {
 import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
+import { assertWindowKind } from '../utils/window-kind'
 
 /** The resolved budget settings the service consumes (the enabled half of the union). */
 export type BudgetServiceOptions = Extract<ResolvedBudgetsOptions, { enabled: true }>
@@ -152,10 +153,11 @@ export class BudgetService {
    *
    * @param input The budget definition (`softThresholds`/`policy` default from options).
    * @returns The stored budget.
-   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, or a threshold outside `(0, 1]`.
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
   async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
     this.assertLimits(input)
+    assertWindowKind(input.window)
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
     for (const threshold of softThresholds) {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics; tests check error code only
