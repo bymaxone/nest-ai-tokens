@@ -8,6 +8,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-11-07
+
+**Apply:** a budget charge, its rollback and its reversal now locate the same window, the one that holds the record's
+`occurredAt`. Before, `reverse()` released the budget from the window of the current time, so a reversal after a window
+boundary took the amount off the new window (clamped at zero) and left the window that had been charged still charged:
+a tenant could then spend up to about twice a `'block'` limit in the new window. 1.1.10 fixed this for holds and left
+reversals out. `BudgetService.consume` now accepts an optional third argument, the instant that locates the windows, as
+`release` and `adjust` do; existing callers are unaffected. A record written with `enforce: true` and a back-dated
+`occurredAt` was charged to the window of the current time and is now charged to, and checked against the limit of, the
+window of its `occurredAt`; the rollback after a failed wallet debit uses the same window. Charges that an earlier
+version left in a window stay there, and a reversal of a record written before this version releases the window of its
+`occurredAt` even where the charge had landed in another.
+
+**Apply:** `LedgerService.verifyChain` now reports forks. When two or more verified records name the same predecessor, the
+`valid: true` result carries `forks`, a list of `{ parentHash, records: [{ id, createdAt }] }` with the siblings oldest
+first; the key is absent when there is no fork, and the chain stays valid, because a fork alone is not proof of
+tampering. Before, such a chain verified with nothing said. A fork among records written after you upgraded to 1.1.8 or
+later with the official adapter is unexpected: investigate it. The adapter links each record to the single tail under a
+per-tenant lock, so it does not create one; an older fork can be benign. The library cannot tell the two apart, so
+compare the siblings' `createdAt` with the date you upgraded. The `ai_tokens.chain.verified` audit event gains
+`forkCount` when there is a fork. `ChainFork` is exported as a type; callers that ignore the new field are unaffected.
+
+### Changed
+
+- The server bundle budget in `pnpm size` moves from 41000 to 42000 bytes brotli. The bundle grew from 40970 to 41408
+  bytes with the two changes above; the budget now leaves about 600 bytes of headroom instead of 30.
+
+### Fixed
+
+- **A reversal after a budget window boundary credited the wrong window.** See the first note above.
+- **A back-dated `enforce: true` record was charged to the window of the current time.** See the first note above.
+- **`verifyChain` accepted a forked chain without reporting it.** See the second note above.
+
+### Documentation
+
+- The README describes the `forks` field of `verifyChain` and the reading an operator should give it, and its artifact
+  size table shows the current server size and budget.
+
 ## [1.1.10] - 2026-11-06
 
 **Apply:** a hold now settles against the budget window it consumed. Before, `capture()`, `release()` and the hold
@@ -774,7 +812,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.8]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.7...v1.1.8
 [1.1.9]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...v1.1.9
 [1.1.10]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...v1.1.10
+[1.1.11]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.10...v1.1.11
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.10...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.11...HEAD
