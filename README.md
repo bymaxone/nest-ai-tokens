@@ -763,7 +763,7 @@ To verify the records written after the upgrade, call `verifyChain(tenantId, fro
 excludes the shifted records only when the session zone is west of UTC, where they are stored earlier than they
 happened; east of UTC they are stored later, and a `from` after the upgrade can still include them.
 
-A repair that proves each correction against the stored hash, so no record changes unless the chain confirms it, does not exist yet. If you need it, open an issue and say which zones your connections used.
+A repair that proves each correction against the stored hash, so no record changes unless the chain confirms it, does not exist yet. Its design is in [`docs/reparo_occurred_at_design.md`](docs/reparo_occurred_at_design.md) (in Portuguese). If you need it, open an issue and say which zones your connections used.
 
 ### Decorators, helpers and catalogs
 

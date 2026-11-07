@@ -126,8 +126,8 @@ jobs:
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Pre-pull pinned images (cache for Testcontainers)
         run: |
-          docker pull postgres:16-alpine
-          docker pull redis:7-alpine
+          docker pull postgres:16
+          docker pull redis:7
       - name: E2E tests
         run: pnpm test:e2e
 

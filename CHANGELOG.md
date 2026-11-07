@@ -25,8 +25,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   (`P2010`) in the body and the driver error as `cause`, as the store's writes already did. A call with numeric bounds
   is unchanged.
 
+### Internal
+
+- The end-to-end CI job pre-pulled `postgres:16-alpine` and `redis:7-alpine` while the fixtures start `postgres:16` and
+  `redis:7`, so the warm-up cached images the run never used. It now pulls the tags the fixtures start, and a unit
+  spec compares the pre-pulls of `ci.yml` and `prisma-matrix.yml` with the images the end-to-end suites start.
+
 ### Documentation
 
+- `docs/reparo_occurred_at_design.md` (in Portuguese): the design of a repair for shifted `occurredAt` values that
+  proves each correction against the stored hash. It is a design; nothing is implemented. The README links to it.
 - README, Wallets & Budgets: what a debit costs as a wallet grows, with the measured figures.
 - README, Verifying the hash chain: what a host sees from records written by 1.1.11 or earlier on Prisma 6 under a
   non-UTC session zone (`verifyChain` reporting `valid: false` from the earliest such record, date ranges that miss
