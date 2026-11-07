@@ -16,13 +16,13 @@
  * `p6-custom`, `p7-js` or `p7-custom`. Needs network (npm) and Docker.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const WORK = join(process.env.RUNNER_TEMP ?? tmpdir(), 'prisma-matrix')
+const BASE = process.env.RUNNER_TEMP ?? tmpdir()
 
 /** The specs a cell runs: the store against a real database, including the zone-sensitive ones. */
 const SPECS = [
@@ -123,9 +123,10 @@ if (cell === undefined) fail(`unknown cell "${String(name)}"; expected one of ${
 if (!existsSync(join(ROOT, 'dist/prisma/index.cjs'))) fail('dist/ is missing — run `pnpm build` first')
 for (const spec of SPECS) if (!existsSync(join(ROOT, `test/e2e/${spec}.e2e-spec.ts`))) fail(`test/e2e/${spec}.e2e-spec.ts is missing`)
 
-const dir = join(WORK, name)
-rmSync(dir, { recursive: true, force: true })
-mkdirSync(join(dir, 'prisma'), { recursive: true })
+// A private directory with an unpredictable name, created by the operating system with owner-only access: a fixed
+// path in a shared temporary directory could be pre-created by another user, or be a link to somewhere else.
+const dir = mkdtempSync(join(BASE, `prisma-matrix-${name}-`))
+mkdirSync(join(dir, 'prisma'))
 const started = Date.now()
 console.log(`Prisma matrix: ${name} (Prisma ${cell.version}, generator ${cell.generator}${cell.custom ? ' with a custom output' : ''})`)
 
@@ -158,3 +159,4 @@ for (const line of failed.slice(0, 20)) console.error(`  ✗ ${line}`)
 for (const line of broken.slice(0, 3)) console.error(`  ✗ suite did not run: ${line}`)
 if (result.status !== 0 || failed.length > 0 || broken.length > 0) fail(`${name} failed`)
 console.log(`✓ ${name} passes`)
+rmSync(dir, { recursive: true, force: true })
