@@ -8,6 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- The `./prisma` store reads what each grant of a wallet has spent in one grouped pass over that wallet's allocations,
+  where it summed them once per grant. It affects the open-grants read that every debit makes and the balance that
+  `reconcile()` computes. The rows, their order and the allocation trail are the same as before (a test compares them
+  against the earlier query on a wallet holding every kind of grant), and nothing is migrated. Measured on PostgreSQL 16
+  with other wallets present, reading the open grants took 1.3 times as long before at 1,000 grants, 1.4 times at 3,001
+  with most spent, 1.7 times at 3,001 all open, and 5 times at 10,000. The cost still grows with the wallet's grants and
+  allocations; it is not constant.
+
+### Documentation
+
+- README, Wallets & Budgets: what a debit costs as a wallet grows, with the measured figures.
+
 ## [1.1.12] - 2026-11-07
 
 **Apply:** importing `@bymax-one/nest-ai-tokens/prisma` no longer loads `@prisma/client`. Before, the subpath imported it
