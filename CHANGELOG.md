@@ -8,8 +8,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-11-07
+
+**Apply:** the usage `query` and the wallet-entry `listEntries` of the `./prisma` store now reject with
+`AI_TOKENS_STORE_ERROR` when the database fails them, for example on a `limit` or `offset` that is not a number. The
+Prisma error rides on the exception as `cause`, and its code is in the body, as for the usage append and the wallet-entry writes. Before, the
+raw Prisma error propagated. If your code catches `PrismaClientKnownRequestError` around these two calls, read it from
+the exception's `cause` instead. A call that succeeds is unchanged.
+
 ### Changed
 
+- The `./prisma` bundle grows from 12263 to 12421 bytes brotli, with the grouped read and the error handling below; the
+  server bundle is unchanged at 41597. Both are within their budgets (15000 and 42000).
 - The `./prisma` store reads what each grant of a wallet has spent in one grouped pass over that wallet's allocations,
   where it summed them once per grant. It affects the open-grants read that every debit makes and the balance that
   `reconcile()` computes. The rows, their order and the allocation trail are the same as before (a test compares them
@@ -22,7 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 - **A `limit` or `offset` the database cannot read as a number leaked a raw Prisma error.** The usage `query` and the
   wallet-entry `listEntries` of the `./prisma` store now reject with `AI_TOKENS_STORE_ERROR`, carrying the Prisma code
-  (`P2010`) in the body and the driver error as `cause`, as the store's writes already did. A call with numeric bounds
+  (`P2010`) in the body and the driver error as `cause`, as the usage append and the wallet-entry writes already did. A call with numeric bounds
   is unchanged.
 
 ### Internal
@@ -906,4 +916,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...HEAD
+[1.1.13]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...v1.1.13
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...HEAD
