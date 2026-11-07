@@ -8,11 +8,11 @@ import { Prisma } from '@prisma/client'
 import { mapUsageRow, type BudgetRow, type PriceRow, type UsageRow, type WalletEntryRow } from '../../src/prisma/adapter-sql'
 import type { NewUsageRecord } from '../../src/shared'
 
-/** The first of three fixed instants, one day apart: the occurrence time of the fixture rows. */
+/** The first of three fixed instants, a day apart, that the fixtures spread over their date fields so that a swapped field shows. */
 export const T0 = new Date('2026-06-01T00:00:00.000Z')
-/** The second instant, a day after {@link T0}: the creation time of the fixture rows. */
+/** The second fixed instant, a day after {@link T0}. */
 export const T1 = new Date('2026-06-02T00:00:00.000Z')
-/** The third instant, a day after {@link T1}: the update time of the fixture rows. */
+/** The third fixed instant, a day after {@link T1}. */
 export const T2 = new Date('2026-06-03T00:00:00.000Z')
 
 /** The identity, scope and model columns of a fully populated usage row. */
