@@ -102,10 +102,10 @@ describe('join', () => {
 
   /** The separator is part of the text, so only the constants the adapter uses are accepted. */
   it('refuses a separator that is not one of the constants', () => {
-    // @ts-expect-error a runtime string is not a separator
-    expect(() => join(['a', 'b'], '; DROP TABLE x; --')).toThrow('join() separator')
-    // @ts-expect-error nor is a different constant
-    expect(() => join(['a', 'b'], ' OR ')).toThrow('join() separator')
+    // The type already refuses these; Reflect.apply passes them as a caller outside the type system could.
+    const callJoin = (separator: string): unknown => Reflect.apply(join, undefined, [['a', 'b'], separator])
+    expect(() => callJoin('; DROP TABLE x; --')).toThrow('join() separator')
+    expect(() => callJoin(' OR ')).toThrow('join() separator')
   })
 })
 
