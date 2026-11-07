@@ -29,9 +29,7 @@ stored in, one of them. Measured: the hold reaper's cutoff and the detection of 
 path. Prisma 7's adapter sends a zoneless UTC string and was not affected. The store now sends each `Date` as an ISO
 string and reads it as `($n::timestamptz AT TIME ZONE 'UTC')`, which gives the same value on both majors in every
 session zone. If your database session zone is UTC, nothing changed for you. Rows that an earlier version wrote on
-Prisma 6 under another zone keep their shifted instants (a usage record's `occurredAt`, a price's `effectiveFrom` and
-`effectiveTo`, a budget's `anchorAt` and `expiresAt`, a window's `windowStart`): nothing marks them, so this release
-cannot repair them. The date-time columns must stay `timestamp` without a zone.
+Prisma 6 under another zone keep their shifted instants: nothing marks them, so this release cannot repair them. The date-time columns must stay `timestamp` without a zone.
 
 **Apply:** `BudgetService.upsertBudget` now validates the window kind and throws `AI_TOKENS_INVALID_CONFIG` for anything
 but `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to
@@ -61,8 +59,7 @@ remove it with `removeBudget` and define it again.
 ### Internal
 
 - `pnpm check:file-length` fails a tracked source file over 800 lines unless it is frozen on
-  `scripts/file-length-baseline.json`, where an entry can only shrink or go; two files were over the limit and are
-  frozen. The Prisma SQL builders, the statement type and the executors are in the unit coverage gate and in the
+  `scripts/file-length-baseline.json`, where an entry can only shrink or go. The Prisma SQL builders, the statement type and the executors are in the unit coverage gate and in the
   mutation scope; only the store, `src/prisma/index.ts`, stays with the end-to-end suite. A CI job runs the store
   against Prisma 6.19.3 and 7.10.1, each with `prisma-client-js` and with `prisma-client` and a custom output.
 
