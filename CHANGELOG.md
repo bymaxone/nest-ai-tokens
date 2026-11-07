@@ -12,7 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 **Apply:** the usage `query` and the wallet-entry `listEntries` of the `./prisma` store now reject with
 `AI_TOKENS_STORE_ERROR` when the database fails them, for example on a `limit` or `offset` that is not a number. The
-Prisma error rides on the exception as `cause`, and its code is in the body, as for the store's writes. Before, the
+Prisma error rides on the exception as `cause`, and its code is in the body, as for the usage append and the wallet-entry writes. Before, the
 raw Prisma error propagated. If your code catches `PrismaClientKnownRequestError` around these two calls, read it from
 the exception's `cause` instead. A call that succeeds is unchanged.
 
@@ -32,7 +32,7 @@ the exception's `cause` instead. A call that succeeds is unchanged.
 
 - **A `limit` or `offset` the database cannot read as a number leaked a raw Prisma error.** The usage `query` and the
   wallet-entry `listEntries` of the `./prisma` store now reject with `AI_TOKENS_STORE_ERROR`, carrying the Prisma code
-  (`P2010`) in the body and the driver error as `cause`, as the store's writes already did. A call with numeric bounds
+  (`P2010`) in the body and the driver error as `cause`, as the usage append and the wallet-entry writes already did. A call with numeric bounds
   is unchanged.
 
 ### Internal
