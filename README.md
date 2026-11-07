@@ -124,7 +124,7 @@ the feature that needs them is enabled.
 | `@bymax-one/nest-ai-tokens`        | Dynamic module, services, guard, interceptor, decorators, collector, ports, errors | NestJS (peer)           |
 | `@bymax-one/nest-ai-tokens/shared` | Normalizers, pure cost math, types, catalogs, error codes                          | Zero                    |
 | `@bymax-one/nest-ai-tokens/prices` | `MODEL_PRICES_SEED` — pinned price snapshot (data-only, large; imported lazily)    | Zero                    |
-| `@bymax-one/nest-ai-tokens/prisma` | `PrismaAiTokensStore` — the official PostgreSQL adapter                            | `@prisma/client` (peer) |
+| `@bymax-one/nest-ai-tokens/prisma` | `PrismaAiTokensStore` — the official PostgreSQL adapter                            | Your Prisma client      |
 | `@bymax-one/nest-ai-tokens/redis`  | `RedisBudgetCounterStore` — optional fast budget counter                           | `ioredis` (peer)        |
 
 > The `./shared` subpath is framework-free and edge-safe — use it in frontends, workers, and edge functions that must not pull NestJS.
@@ -136,7 +136,7 @@ the feature that needs them is enabled.
 | ------------------------------------------- | ----------- | ------- |
 | server (`@bymax-one/nest-ai-tokens`)        | 41 KB       | < 42 KB |
 | shared (`@bymax-one/nest-ai-tokens/shared`) | 5 KB        | < 10 KB |
-| prisma (`@bymax-one/nest-ai-tokens/prisma`) | 10 KB       | < 15 KB |
+| prisma (`@bymax-one/nest-ai-tokens/prisma`) | 12 KB       | < 15 KB |
 | redis (`@bymax-one/nest-ai-tokens/redis`)   | 1.3 KB      | < 5 KB  |
 | prices (data-only, exempt from budget)      | 1.3 KB      | exempt  |
 

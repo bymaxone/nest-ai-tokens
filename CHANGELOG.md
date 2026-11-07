@@ -8,6 +8,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-11-07
+
+**Apply:** importing `@bymax-one/nest-ai-tokens/prisma` no longer loads `@prisma/client`. Before, the subpath imported it
+at load, which throws `Cannot find module '.prisma/client/default'` on a Prisma 7 host that uses the `prisma-client`
+generator (it requires a custom `output` and leaves nothing for `@prisma/client` to load), so the store could not be
+constructed there. The store now composes its SQL itself and runs it through the three members of the client you pass
+it, `$queryRawUnsafe`, `$executeRawUnsafe` and `$transaction`. Every value is a bound parameter and the text is built
+only from constants and checked column names, so nothing a caller passes can become SQL text. The constructor takes the
+structural type `PrismaRawClient` (exported, with `RawExecutor`) in place of `PrismaClient`. A client from either major
+and either generator satisfies it, and a call that passes a `PrismaClient` compiles as before (checked against Prisma
+7.10.1); a wrapper that offers only the tagged `$queryRaw` and `$executeRaw` does not. The unique-violation check
+recognises Prisma's error by its name and code, not by its class.
+
+**Apply:** on Prisma 6, a `Date` is now read as a UTC timestamp whatever the zone of the database session. Prisma 6's
+engine sends a `Date` as an instant, and the store's date-time columns are `TIMESTAMP(3)` without a zone, so on a
+database whose session zone is not UTC the database converted it with that zone whenever it was compared with, or
+stored in, one of them. Measured: the hold reaper's cutoff and the detection of shifted usage records were wrong under
+`Asia/Tokyo` and `America/Sao_Paulo` sessions, and every other statement that binds a `Date` goes through the same
+path. Prisma 7's adapter sends a zoneless UTC string and was not affected. The store now sends each `Date` as an ISO
+string and reads it as `($n::timestamptz AT TIME ZONE 'UTC')`, which gives the same value on both majors in every
+session zone. If your database session zone is UTC, nothing changed for you. Rows that an earlier version wrote on
+Prisma 6 under another zone keep their shifted instants: nothing marks them, so this release cannot repair them. The date-time columns must stay `timestamp` without a zone.
+
+**Apply:** `BudgetService.upsertBudget` now validates the window kind and throws `AI_TOKENS_INVALID_CONFIG` for anything
+but `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to
+3153600000 (100 years). Before, any value was stored, and a kind outside the union (for example `'hour'`) or a bad
+custom length made the window start an invalid date, so every later record for that scope threw a `RangeError` after the
+record was posted. A budget that an earlier version stored with such a value stays in the table and keeps failing:
+remove it with `removeBudget` and define it again.
+
+### Changed
+
+- The `./prisma` bundle grows from 11253 to 12263 bytes brotli, because it carries its own SQL composition, and the
+  server bundle from 41408 to 41597 bytes, with the window validation. Both are within their budgets (15000 and 42000).
+
+### Fixed
+
+- **Importing the `./prisma` subpath failed on a Prisma 7 host with the `prisma-client` generator.** See the first note
+  above.
+- **On Prisma 6, a `Date` was read in the session's zone on a database whose zone is not UTC.** See the second note
+  above.
+- **`upsertBudget` stored a window kind that made every later record for the scope throw.** See the third note above.
+
+### Documentation
+
+- The README says that the store does not load `@prisma/client`, which members of the client it uses, and that the
+  date-time columns must stay `timestamp` without a zone. Its subpath table names your Prisma client, not
+  `@prisma/client`, as what `./prisma` depends on.
+
+### Internal
+
+- `pnpm check:file-length` fails a tracked source file over 800 lines unless it is frozen on
+  `scripts/file-length-baseline.json`, where an entry can only shrink or go. The Prisma SQL builders, the statement type and the executors are in the unit coverage gate and in the
+  mutation scope; only the store, `src/prisma/index.ts`, stays with the end-to-end suite. A CI job runs the store
+  against Prisma 6.19.3 and 7.10.1, each with `prisma-client-js` and with `prisma-client` and a custom output.
+
 ## [1.1.11] - 2026-11-07
 
 **Apply:** a budget charge, its rollback and its reversal now locate the same window, the one that holds the record's
@@ -813,7 +869,8 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.9]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.8...v1.1.9
 [1.1.10]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.9...v1.1.10
 [1.1.11]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.10...v1.1.11
+[1.1.12]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.11...v1.1.12
 [1.1.1]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.0...v1.1.1
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.11...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...HEAD
