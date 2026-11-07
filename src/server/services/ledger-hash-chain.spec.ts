@@ -252,8 +252,8 @@ describe('verifyChainRecords structure', () => {
   })
 
   /**
-   * Two records that share a predecessor keep the chain valid and are reported as a fork: a hold that
-   * settled after a later record did so before 1.1.8, so the library cannot call it tampering.
+   * Two records that share a predecessor keep the chain valid and are reported as a fork: a fork alone
+   * is not proof of tampering, so the library reports it and leaves the judgement to the operator.
    */
   it('accepts two records that share a predecessor and reports them as a fork', async () => {
     const [a, first] = await chained()

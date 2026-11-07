@@ -37,11 +37,11 @@ export interface ChainFork {
  * records that carry no chain hash (written before the chain was enabled): they are counted, not
  * verified, and the chain does not protect them. `chainStartsAtRecordId` is the genesis record when
  * the verified records include it. `forks` is present only when two or more verified records name the
- * same predecessor; the chain stays valid, because a fork is not proof of tampering. A fork among records
- * written after the upgrade to 1.1.8 or later with the official adapter is unexpected, since the adapter
- * links each record to the single tail under a per-tenant lock: compare the siblings' `createdAt` with the
- * date of your upgrade, and investigate a fork written after it. Older forks come from the earlier tail
- * choice by creation time and are benign. The third variant means settled records exist and none carries a hash or a `prevHash`,
+ * same predecessor; the chain stays valid, because a fork alone is not proof of tampering. The official
+ * adapter links each record to the single tail under a per-tenant lock, so a fork among the records it
+ * wrote is unexpected: investigate it. A store that chose another predecessor can fork legitimately, and
+ * the library cannot tell the two apart; the siblings' `createdAt` against the date you began using the
+ * single-tail adapter does. The third variant means settled records exist and none carries a hash or a `prevHash`,
  * i.e. the chain was never enabled for this tenant, which is not evidence of tampering.
  */
 export type ChainVerification =
@@ -78,9 +78,8 @@ export function chainHash(prevHash: string | null, record: NewUsageRecord & { id
  * Every hashed record must recompute from its own `prevHash`. With `structural` set (an unbounded
  * call), the hashed records must also form one chain: exactly one head, the record whose
  * `prevHash` is not another record's hash, and that head must be the genesis (no `prevHash`).
- * Two records may share a predecessor: before 1.1.8 the adapter linked each new record to the hashed
- * record created last, so a hold that settled after a later record left two children of one parent. The
- * chain stays valid and the shared predecessors are returned as `forks`.
+ * Two records may share a predecessor. The chain stays valid and the shared predecessors are returned
+ * as `forks`, because a fork alone does not prove tampering.
  * Records without a hash are counted as unchained; one that still carries a `prevHash` is a chained
  * record whose hash was removed and is reported as broken. A `from`/`to` window can cut the chain
  * anywhere, so a bounded call checks each record's own hash and skips the structural rules.

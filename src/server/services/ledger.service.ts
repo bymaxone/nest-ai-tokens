@@ -236,10 +236,10 @@ export class LedgerService {
    * the result is `{ valid: false, status: 'never-enabled' }`, which is not evidence of tampering.
    *
    * Records that share one predecessor stay valid and come back as `forks`, each sibling with its
-   * `createdAt`. A fork among records written after you upgraded to 1.1.8 or later with the official
-   * adapter is unexpected, because the adapter links each record to the single tail under a per-tenant
-   * lock: investigate it. Forks among older records come from the earlier tail choice and are benign.
-   * The library cannot tell the two apart; the siblings' `createdAt` against your upgrade date does.
+   * `createdAt`. The official adapter links each record to the single tail under a per-tenant lock, so a
+   * fork among the records it wrote is unexpected: investigate it. A store that chose another predecessor
+   * can fork legitimately. The library cannot tell the two apart; the siblings' `createdAt` against the
+   * date you began using the single-tail adapter does.
    *
    * Limits: a record that no other record names as its predecessor (the newest one, and a hold that
    * settled while a later-created record was already hashed) can be deleted without detection;
