@@ -119,13 +119,13 @@ the feature that needs them is enabled.
 
 ## 📦 Subpath Exports
 
-| Subpath                            | What it contains                                                                   | Runtime deps            |
-| ---------------------------------- | ---------------------------------------------------------------------------------- | ----------------------- |
-| `@bymax-one/nest-ai-tokens`        | Dynamic module, services, guard, interceptor, decorators, collector, ports, errors | NestJS (peer)           |
-| `@bymax-one/nest-ai-tokens/shared` | Normalizers, pure cost math, types, catalogs, error codes                          | Zero                    |
-| `@bymax-one/nest-ai-tokens/prices` | `MODEL_PRICES_SEED` — pinned price snapshot (data-only, large; imported lazily)    | Zero                    |
-| `@bymax-one/nest-ai-tokens/prisma` | `PrismaAiTokensStore` — the official PostgreSQL adapter                            | Your Prisma client      |
-| `@bymax-one/nest-ai-tokens/redis`  | `RedisBudgetCounterStore` — optional fast budget counter                           | `ioredis` (peer)        |
+| Subpath                            | What it contains                                                                   | Runtime deps       |
+| ---------------------------------- | ---------------------------------------------------------------------------------- | ------------------ |
+| `@bymax-one/nest-ai-tokens`        | Dynamic module, services, guard, interceptor, decorators, collector, ports, errors | NestJS (peer)      |
+| `@bymax-one/nest-ai-tokens/shared` | Normalizers, pure cost math, types, catalogs, error codes                          | Zero               |
+| `@bymax-one/nest-ai-tokens/prices` | `MODEL_PRICES_SEED` — pinned price snapshot (data-only, large; imported lazily)    | Zero               |
+| `@bymax-one/nest-ai-tokens/prisma` | `PrismaAiTokensStore` — the official PostgreSQL adapter                            | Your Prisma client |
+| `@bymax-one/nest-ai-tokens/redis`  | `RedisBudgetCounterStore` — optional fast budget counter                           | `ioredis` (peer)   |
 
 > The `./shared` subpath is framework-free and edge-safe — use it in frontends, workers, and edge functions that must not pull NestJS.
 > The `./prices` subpath exists so `./shared` stays within the family's tiny-bundle budget.
@@ -493,14 +493,14 @@ holds and the allocations they carry, spent grants included, because a grant sta
 up. Measured on PostgreSQL 16 in a local container, with 33 allocations per grant and other wallets present
 (median of repeated runs, within about ±40% between runs; your hardware will differ):
 
-| Grants in the wallet | Allocations | Reading the open grants | Whole debit |
-| -------------------- | ----------- | ----------------------- | ----------- |
-| 1,000 (90% spent)    | 33 thousand | 13 ms                   | 17 ms       |
-| 3,001 (90% spent)    | 99 thousand | 24 ms                   | 28 ms       |
-| 3,001 (all open)     | 99 thousand | 49 ms                   | 93 ms       |
-| 10,000 (90% spent)   | 330 thousand | 42 ms                  | 47 ms       |
+| Grants in the wallet | Allocations  | Reading the open grants | Whole debit |
+| -------------------- | ------------ | ----------------------- | ----------- |
+| 1,000 (90% spent)    | 33 thousand  | 13 ms                   | 17 ms       |
+| 3,001 (90% spent)    | 99 thousand  | 24 ms                   | 28 ms       |
+| 3,001 (all open)     | 99 thousand  | 49 ms                   | 93 ms       |
+| 10,000 (90% spent)   | 330 thousand | 42 ms                   | 47 ms       |
 
-Up to 1.1.12 the open grants were read with a sum per grant, which took 1.3 to 1.7 times as long at one to three
+Up to and including 1.1.12 the open grants were read with a sum per grant, which took 1.3 to 1.7 times as long at one to three
 thousand grants and about 5 times as long at ten thousand. The cost still grows with the wallet, so a wallet that
 accumulates tens of thousands of grants deserves attention: grant fewer, larger credits (one per billing cycle
 rather than one per event), and watch the debit latency of your busiest wallets. The wallet row is locked for the
@@ -653,7 +653,8 @@ export class LogCauseFilter implements ExceptionFilter {
   private readonly logger = new Logger('AiTokens')
 
   catch(exception: HttpException, host: ArgumentsHost): void {
-    if (exception.getStatus() >= 500 && exception.cause !== undefined) this.logger.error(exception.message, exception.cause)
+    if (exception.getStatus() >= 500 && exception.cause !== undefined)
+      this.logger.error(exception.message, exception.cause)
     const response = host.switchToHttp().getResponse()
     response.status(exception.getStatus()).json(exception.getResponse())
   }
