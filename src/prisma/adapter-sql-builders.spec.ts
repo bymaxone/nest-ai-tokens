@@ -674,6 +674,9 @@ describe('walletBalanceDelta', () => {
   /** Every entry but a grant contributes its signed amount. */
   it('returns the signed amount of an entry that is not a grant', () => {
     expect(walletBalanceDelta(entry({ type: 'debit', amountNanoUsd: -5n }))).toBe(-5n)
+    // The grant rule does not apply to it: a debit judged as a grant would not be due yet, nor would an expired one.
+    expect(walletBalanceDelta(entry({ type: 'debit', amountNanoUsd: -5n, effectiveAt: T2 }))).toBe(-5n)
+    expect(walletBalanceDelta(entry({ type: 'refund', amountNanoUsd: 7n, expiresAt: T0 }))).toBe(7n)
   })
 
   /** A grant counts when it was due as it was appended and had not expired. */

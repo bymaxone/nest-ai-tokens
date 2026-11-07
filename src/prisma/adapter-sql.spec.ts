@@ -60,6 +60,17 @@ describe('isUniqueViolation', () => {
     expect(isUniqueViolation(knownError('P2010', meta))).toBe(true)
   })
 
+  // The SQLSTATE is a fixed code, not whatever the constant happens to hold.
+  it('names the unique-violation SQLSTATE', () => {
+    expect(PG_UNIQUE_VIOLATION).toBe('23505')
+  })
+
+  // A driver adapter that reports only the native code, with no kind, is a violation too.
+  it('recognises the driver adapter original code without a kind', () => {
+    const meta = { driverAdapterError: { cause: { originalCode: '23505' } } }
+    expect(isUniqueViolation(knownError('P2010', meta))).toBe(true)
+  })
+
   // The adapter names the violation even where a driver reports no SQLSTATE.
   it('recognises the driver adapter kind without an original code', () => {
     const meta = { driverAdapterError: { cause: { kind: 'UniqueConstraintViolation' } } }
@@ -113,6 +124,12 @@ describe('storeError', () => {
     const error = storeError(driver)
     expect(error.cause).toBe(driver)
     expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR', details: { code: 'P2010' } } })
+  })
+
+  /** An error that carries no Prisma code leaves the code out of the body, rather than setting it to undefined. */
+  it('leaves the code out of the body when the error has none', () => {
+    const body = storeError(new Error('boom')).getResponse() as { error: { details: Record<string, unknown> } }
+    expect('code' in body.error.details).toBe(false)
   })
 
   /** An error that is already typed passes through, so a specific refusal is not flattened into a store error. */
