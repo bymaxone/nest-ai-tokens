@@ -130,7 +130,14 @@ function forksOf(hashed: UsageRecord[]): ChainFork[] {
       parentHash,
       records: siblings
         .map(({ id, createdAt }) => ({ id, createdAt }))
-        // Stryker disable next-line EqualityOperator: record ids are unique, so the comparator never sees two equal ids and < and <= order identically
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1)),
+        .sort(byCreatedAtThenId),
     }))
+}
+
+/** Orders siblings oldest first, ties broken by id. */
+function byCreatedAtThenId(a: ChainFork['records'][number], b: ChainFork['records'][number]): number {
+  const byTime = a.createdAt.getTime() - b.createdAt.getTime()
+  if (byTime !== 0) return byTime
+  // Stryker disable next-line EqualityOperator: record ids are unique, so the comparator never sees two equal ids and < and <= order identically
+  return a.id < b.id ? -1 : 1
 }
