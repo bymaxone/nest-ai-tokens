@@ -28,7 +28,9 @@ const distDir = process.argv[2] ?? join(rootDir, 'dist')
  * The root bundle is not listed: it defines the classes the others must not copy.
  */
 const OWNED = {
-  prisma: ['LedgerIdempotencyConflict', 'PrismaAiTokensStore', 'WalletMissingError'],
+  // `Sql`, `SqlClient` and `SqlExecutor` are the adapter's own statement type and executors: nothing outside
+  // this bundle receives one, so nothing checks `instanceof` against it, and the bundle must carry them.
+  prisma: ['LedgerIdempotencyConflict', 'PrismaAiTokensStore', 'Sql', 'SqlClient', 'SqlExecutor', 'WalletMissingError'],
   redis: ['CounterValueOutOfRangeError', 'RedisBudgetCounterStore'],
   shared: [],
   prices: [],

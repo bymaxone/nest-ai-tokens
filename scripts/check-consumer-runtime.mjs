@@ -66,8 +66,9 @@ if (prisma.PrismaAiTokensStore === undefined) failures.push('./prisma does not e
 
 const main = async () => {
   // A Prisma client that always reports "no such wallet", which is the documented
-  // path to AI_TOKENS_INSUFFICIENT_CREDITS and the cheapest reachable throw site.
-  const fakePrisma = { $queryRaw: async () => [], $transaction: async (fn) => fn(fakePrisma) }
+  // path to AI_TOKENS_INSUFFICIENT_CREDITS and the cheapest reachable throw site. It has only
+  // the three members the store is typed to need.
+  const fakePrisma = { $queryRawUnsafe: async () => [], $executeRawUnsafe: async () => 0, $transaction: async (fn) => fn(fakePrisma) }
   const store = new prisma.PrismaAiTokensStore(fakePrisma)
 
   let thrown
@@ -185,6 +186,13 @@ try {
     join(consumerDir, 'package.json'),
     `${JSON.stringify({ name: 'consumer-runtime-check', private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
   )
+  // A host on Prisma 7's `prisma-client` generator has no `.prisma/client`, so loading `@prisma/client`
+  // fails. The stub below fails the same way, and shadows the repository's own copy for the consumer:
+  // the entry points have to work without ever loading it.
+  const stubDir = join(consumerDir, 'node_modules', '@prisma', 'client')
+  mkdirSync(stubDir, { recursive: true })
+  writeFileSync(join(stubDir, 'package.json'), `${JSON.stringify({ name: '@prisma/client', version: '7.0.0', main: 'index.js' })}\n`)
+  writeFileSync(join(stubDir, 'index.js'), "throw new Error(\"Cannot find module '.prisma/client/default'\")\n")
   writeFileSync(join(consumerDir, 'probe.mjs'), esmProbe)
   writeFileSync(join(consumerDir, 'probe.cjs'), cjsProbe)
 

@@ -89,8 +89,8 @@ describe('timestamp writes', () => {
       }
     }
     expect(checked).toBeGreaterThanOrEqual(7)
-    expect(adapterText).toContain('Prisma.sql`"policy" = ${input.policy}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`')
-    expect(adapterText).toContain('Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`')
+    expect(adapterText).toContain('sql`"policy" = ${input.policy}`, sql`"updatedAt" = ${DB_NOW_SQL}`')
+    expect(adapterText).toContain('sql`"status" = ${to}`, sql`"updatedAt" = ${DB_NOW_SQL}`')
   })
 
   it('writes createdAt and updatedAt of a budget, and never rewrites createdAt on conflict', () => {

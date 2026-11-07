@@ -4,7 +4,7 @@
  * @layer test
  */
 
-import { Prisma } from '@prisma/client'
+import type { Sql } from '../../src/prisma/sql'
 import { mapUsageRow, type BudgetRow, type PriceRow, type UsageRow, type WalletEntryRow } from '../../src/prisma/adapter-sql'
 import type { NewUsageRecord } from '../../src/shared'
 
@@ -60,7 +60,7 @@ function usageLedger(): Omit<UsageRow, keyof ReturnType<typeof usageIdentity> | 
     rawCostNanoUsd: 11n,
     surchargeNanoUsd: 12n,
     billedCostNanoUsd: 13n,
-    markupMultiplier: new Prisma.Decimal('1.5'),
+    markupMultiplier: { toNumber: () => 1.5 },
     currency: 'USD',
     priceMissing: false,
     status: 'posted',
@@ -112,7 +112,7 @@ export function newRecord(over: Partial<NewUsageRecord> = {}): NewUsageRecord {
 }
 
 /** The text of a fragment with its bound values, for exact assertions. */
-export function rendered(sql: Prisma.Sql): { text: string; values: unknown[] } {
+export function rendered(sql: Sql): { text: string; values: readonly unknown[] } {
   return { text: sql.text, values: sql.values }
 }
 

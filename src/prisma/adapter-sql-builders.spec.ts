@@ -7,7 +7,7 @@
  * builders produce and the order of the bound values, neither of which needs a database.
  */
 
-import type { Prisma } from '@prisma/client'
+import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
 import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, DUE_AT_APPEND_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
@@ -77,7 +77,7 @@ const EXPECTED_USAGE_VALUES: Partial<Record<(typeof USAGE_COLUMNS)[number], unkn
 
 describe('usageValues', () => {
   /** The fragment bound to a named column. */
-  const at = (fragments: Prisma.Sql[], column: (typeof USAGE_COLUMNS)[number]): Prisma.Sql => fragments[USAGE_COLUMNS.indexOf(column)]!
+  const at = (fragments: Sql[], column: (typeof USAGE_COLUMNS)[number]): Sql => fragments[USAGE_COLUMNS.indexOf(column)]!
 
   /** One fragment per column: the bound values follow the column order and the two timestamps use the database clock. */
   it('aligns the values with the columns and stamps both timestamps on the UTC clock', () => {

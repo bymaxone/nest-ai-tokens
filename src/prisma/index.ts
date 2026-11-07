@@ -1,11 +1,12 @@
 /**
  * @fileoverview `PrismaAiTokensStore` — the official PostgreSQL adapter (spec
  * §15.1–15.3). It implements the ledger + pricing halves of `IAiTokensStore`
- * against any `@prisma/client` instance, talking to PostgreSQL EXCLUSIVELY through
- * PARAMETERIZED raw SQL (`$queryRaw`/`$executeRaw`/`$transaction`) so it never
- * depends on generated model delegates and stays valid against the host's schema.
- * Column identifiers are hardcoded constants (never interpolated from input) and
- * every value is a bound parameter, so the raw SQL is injection-safe. Money is
+ * against any Prisma client with the raw-query members of `PrismaRawClient`, talking to
+ * PostgreSQL EXCLUSIVELY through PARAMETERIZED raw SQL (`$queryRawUnsafe`/
+ * `$executeRawUnsafe`/`$transaction`) so it never depends on generated model delegates
+ * or on Prisma's runtime, and stays valid against the host's schema and generator.
+ * Column identifiers are checked constants (never interpolated from input) and
+ * every value is a bound parameter, so the raw SQL is injection-safe (see `./sql`). Money is
  * `BIGINT` nano-USD; `unitRates` round-trip as JSON of decimal strings; the
  * `markupMultiplier` `Decimal(10,4)` maps to a `number` at the boundary (exact by
  * the 4-dp rule, §7.2). Store errors map to the domain catalog (§15.2); a payload
@@ -18,8 +19,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '@prisma/client'
-import type { PrismaClient } from '@prisma/client'
 import type {
   AiOperation,
   Budget,
@@ -53,6 +52,8 @@ import type {
 // server's four `instanceof AiTokensException` guards would stop matching
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
+import { empty, join, sql, type Sql } from './sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
@@ -94,9 +95,6 @@ import {
 } from './adapter-sql'
 import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, WalletEntryRow, WalletRow } from './adapter-sql'
 
-/** A SQL executor — either the client or an interactive-transaction client. */
-type SqlExecutor = Prisma.TransactionClient
-
 /**
  * Refuse a caller's entry whose key is in the namespace the store writes for itself. The error is built
  * here, from the class this entry point takes from the package root.
@@ -124,23 +122,22 @@ function reservedKeyHeld(walletId: string, key: string, grantId: string): AiToke
  * (the host's schema must include the shipped models, §15.3).
  */
 export class PrismaAiTokensStore implements IAiTokensStore {
+  private readonly prisma: SqlClient
   private readonly burnOrder: 'expiry' | 'priority' | 'fifo'
 
   /**
-   * @param prisma The host's Prisma client (talks to PostgreSQL).
+   * @param client The host's Prisma client (talks to PostgreSQL); any client with the raw-query members of {@link PrismaRawClient}.
    * @param options Optional wallet grant burn order (must match the module's `wallets.burnOrder`; default `'expiry'`).
    */
-  constructor(
-    private readonly prisma: PrismaClient,
-    options: { burnOrder?: 'expiry' | 'priority' | 'fifo' } = {},
-  ) {
+  constructor(client: PrismaRawClient, options: { burnOrder?: 'expiry' | 'priority' | 'fifo' } = {}) {
+    this.prisma = new SqlClient(client)
     this.burnOrder = options.burnOrder ?? 'expiry'
   }
 
   async append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord> {
     try {
       if (hashChain === true && record.status === 'posted') {
-        return await this.prisma.$transaction((tx) => this.insertChained(tx, record, payloadHash))
+        return await this.prisma.transaction((tx) => this.insertChained(tx, record, payloadHash))
       }
       return await this.insert(this.prisma, randomUUID(), record, payloadHash, null, null)
     } catch (error) {
@@ -161,21 +158,21 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null> {
-    const rows = await this.prisma.$queryRaw<UsageRow[]>(
-      Prisma.sql`SELECT * FROM "ai_usage_records" WHERE "tenantId" = ${tenantId} AND "idempotencyKey" = ${key} LIMIT 1`,
+    const rows = await this.prisma.query<UsageRow[]>(
+      sql`SELECT * FROM "ai_usage_records" WHERE "tenantId" = ${tenantId} AND "idempotencyKey" = ${key} LIMIT 1`,
     )
     return rows[0] === undefined ? null : mapUsageRow(rows[0])
   }
 
   async findById(id: string): Promise<UsageRecord | null> {
-    const rows = await this.prisma.$queryRaw<UsageRow[]>(
-      Prisma.sql`SELECT * FROM "ai_usage_records" WHERE "id" = ${id} LIMIT 1`,
+    const rows = await this.prisma.query<UsageRow[]>(
+      sql`SELECT * FROM "ai_usage_records" WHERE "id" = ${id} LIMIT 1`,
     )
     return rows[0] === undefined ? null : mapUsageRow(rows[0])
   }
 
   async findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]> {
-    const rows = await this.prisma.$queryRaw<UsageRow[]>(Prisma.sql`
+    const rows = await this.prisma.query<UsageRow[]>(sql`
       SELECT * FROM "ai_usage_records"
       WHERE "status" = 'pending' AND "createdAt" < ${olderThan}
       ORDER BY "createdAt" ASC LIMIT ${limit}
@@ -184,9 +181,9 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async query(filter: LedgerFilter): Promise<UsageRecord[]> {
-    const limit = filter.limit === undefined ? Prisma.empty : Prisma.sql`LIMIT ${filter.limit}`
-    const offset = filter.offset === undefined ? Prisma.empty : Prisma.sql`OFFSET ${filter.offset}`
-    const rows = await this.prisma.$queryRaw<UsageRow[]>(Prisma.sql`
+    const limit = filter.limit === undefined ? empty : sql`LIMIT ${filter.limit}`
+    const offset = filter.offset === undefined ? empty : sql`OFFSET ${filter.offset}`
+    const rows = await this.prisma.query<UsageRow[]>(sql`
       SELECT * FROM "ai_usage_records" WHERE ${buildWhere(filter)}
       ORDER BY "createdAt" ASC ${limit} ${offset}
     `)
@@ -194,7 +191,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async sumCost(filter: LedgerFilter): Promise<LedgerCostSummary> {
-    const rows = await this.prisma.$queryRaw<{ raw: bigint; billed: bigint; surcharge: bigint; tokens: bigint; records: number }[]>(Prisma.sql`
+    const rows = await this.prisma.query<{ raw: bigint; billed: bigint; surcharge: bigint; tokens: bigint; records: number }[]>(sql`
       SELECT
         COALESCE(SUM("rawCostNanoUsd"), 0)::bigint AS "raw",
         COALESCE(SUM("billedCostNanoUsd"), 0)::bigint AS "billed",
@@ -224,7 +221,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     serviceTier: ServiceTier,
     at: Date,
   ): Promise<PriceVersion | null> {
-    const rows = await this.prisma.$queryRaw<PriceRow[]>(Prisma.sql`
+    const rows = await this.prisma.query<PriceRow[]>(sql`
       SELECT * FROM "ai_model_prices"
       WHERE "provider" = ${provider} AND "model" = ${model} AND "operation" = ${operation}
         AND "serviceTier" = ${serviceTier} AND "effectiveFrom" <= ${at}
@@ -238,15 +235,15 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
     const effectiveFrom = input.effectiveFrom ?? new Date()
     const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
-      await tx.$executeRaw(Prisma.sql`
+    return this.prisma.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`)
+      await tx.execute(sql`
         UPDATE "ai_model_prices" SET "effectiveTo" = ${effectiveFrom}
         WHERE "provider" = ${input.provider} AND "model" = ${input.model} AND "operation" = ${input.operation}
           AND "serviceTier" = ${serviceTier} AND "effectiveTo" IS NULL
       `)
-      const rows = await tx.$queryRaw<PriceRow[]>(Prisma.sql`
-        INSERT INTO "ai_model_prices" (${PRICE_COLUMNS_SQL}) VALUES (${Prisma.join(priceValues(input, serviceTier, effectiveFrom))})
+      const rows = await tx.query<PriceRow[]>(sql`
+        INSERT INTO "ai_model_prices" (${PRICE_COLUMNS_SQL}) VALUES (${join(priceValues(input, serviceTier, effectiveFrom))})
         RETURNING *
       `)
       return mapPriceRow(firstOrThrow(rows))
@@ -264,17 +261,17 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const serviceTier: ServiceTier = input.serviceTier ?? 'standard'
     const effectiveFrom = input.effectiveFrom ?? new Date()
     const key = priceLockKey(input.provider, input.model, input.operation, serviceTier)
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
-      const existing = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    return this.prisma.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`)
+      const existing = await tx.query<{ id: string }[]>(sql`
         SELECT "id" FROM "ai_model_prices"
         WHERE "provider" = ${input.provider} AND "model" = ${input.model} AND "operation" = ${input.operation}
           AND "serviceTier" = ${serviceTier}
         LIMIT 1
       `)
       if (existing.length > 0) return false
-      await tx.$queryRaw(Prisma.sql`
-        INSERT INTO "ai_model_prices" (${PRICE_COLUMNS_SQL}) VALUES (${Prisma.join(priceValues(input, serviceTier, effectiveFrom))})
+      await tx.query(sql`
+        INSERT INTO "ai_model_prices" (${PRICE_COLUMNS_SQL}) VALUES (${join(priceValues(input, serviceTier, effectiveFrom))})
         RETURNING *
       `)
       return true
@@ -287,8 +284,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     operation: AiOperation,
     serviceTier?: ServiceTier,
   ): Promise<PriceVersion[]> {
-    const tier = serviceTier === undefined ? Prisma.empty : Prisma.sql`AND "serviceTier" = ${serviceTier}`
-    const rows = await this.prisma.$queryRaw<PriceRow[]>(Prisma.sql`
+    const tier = serviceTier === undefined ? empty : sql`AND "serviceTier" = ${serviceTier}`
+    const rows = await this.prisma.query<PriceRow[]>(sql`
       SELECT * FROM "ai_model_prices"
       WHERE "provider" = ${provider} AND "model" = ${model} AND "operation" = ${operation} ${tier}
       ORDER BY "effectiveFrom" DESC
@@ -297,7 +294,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async listModels(provider: ProviderId): Promise<PricedModel[]> {
-    const rows = await this.prisma.$queryRaw<{ model: string; operation: string; serviceTier: string }[]>(Prisma.sql`
+    const rows = await this.prisma.query<{ model: string; operation: string; serviceTier: string }[]>(sql`
       SELECT DISTINCT "model", "operation", "serviceTier" FROM "ai_model_prices" WHERE "provider" = ${provider}
     `)
     return rows.map((row) => ({ model: row.model, operation: row.operation as AiOperation, serviceTier: row.serviceTier as ServiceTier }))
@@ -310,8 +307,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    * @deprecated Use {@link seedPrice}, which seeds atomically under a transaction-scoped lock.
    */
   async acquireSeedLock(key: string): Promise<boolean> {
-    const rows = await this.prisma.$queryRaw<{ acquired: boolean }[]>(
-      Prisma.sql`SELECT pg_try_advisory_lock(hashtext(${key})::bigint) AS "acquired"`,
+    const rows = await this.prisma.query<{ acquired: boolean }[]>(
+      sql`SELECT pg_try_advisory_lock(hashtext(${key})::bigint) AS "acquired"`,
     )
     return rows[0]?.acquired ?? false
   }
@@ -325,16 +322,16 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     prevHash: string | null,
     hash: string | null,
   ): Promise<UsageRecord> {
-    const values = Prisma.join(usageValues(id, record, payloadHash, prevHash, hash))
-    const rows = await executor.$queryRaw<UsageRow[]>(
-      Prisma.sql`INSERT INTO "ai_usage_records" (${USAGE_COLUMNS_SQL}) VALUES (${values}) RETURNING *`,
+    const values = join(usageValues(id, record, payloadHash, prevHash, hash))
+    const rows = await executor.query<UsageRow[]>(
+      sql`INSERT INTO "ai_usage_records" (${USAGE_COLUMNS_SQL}) VALUES (${values}) RETURNING *`,
     )
     return mapUsageRow(firstOrThrow(rows))
   }
 
   /** Insert a `posted` row under the per-tenant chain lock (§8.6). */
   private async insertChained(tx: SqlExecutor, record: NewUsageRecord, payloadHash: string): Promise<UsageRecord> {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${record.tenantId})::bigint)`
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${record.tenantId})::bigint)`)
     const prevHash = await this.lastHashWithin(tx, record.tenantId)
     const id = randomUUID()
     const hash = chainHash(prevHash, { ...record, id })
@@ -343,12 +340,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Settle a hold `pending → posted`, computing its chain hash under the lock (§8.6). */
   private settleChained(id: string, from: UsageStatus, patch?: Partial<UsageRecord>): Promise<UsageRecord | null> {
-    return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<UsageRow[]>(
-        Prisma.sql`SELECT * FROM "ai_usage_records" WHERE "id" = ${id} AND "status" = ${from} FOR UPDATE`,
+    return this.prisma.transaction(async (tx) => {
+      const rows = await tx.query<UsageRow[]>(
+        sql`SELECT * FROM "ai_usage_records" WHERE "id" = ${id} AND "status" = ${from} FOR UPDATE`,
       )
       if (rows[0] === undefined) return null
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rows[0].tenantId})::bigint)`
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${rows[0].tenantId})::bigint)`)
       const prevHash = await this.lastHashWithin(tx, rows[0].tenantId)
       const settled = { ...mapUsageRow(rows[0]), ...patch, status: 'posted' as const }
       return this.updateStatus(tx, id, from, 'posted', patch, prevHash, chainHash(prevHash, settled))
@@ -366,8 +363,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     hash: string | null,
   ): Promise<UsageRecord | null> {
     const assignments = statusAssignments(from, to, patch, prevHash, hash)
-    const rows = await executor.$queryRaw<UsageRow[]>(
-      Prisma.sql`UPDATE "ai_usage_records" SET ${assignments} WHERE "id" = ${id} AND "status" = ${from} RETURNING *`,
+    const rows = await executor.query<UsageRow[]>(
+      sql`UPDATE "ai_usage_records" SET ${assignments} WHERE "id" = ${id} AND "status" = ${from} RETURNING *`,
     )
     return rows[0] === undefined ? null : mapUsageRow(rows[0])
   }
@@ -379,7 +376,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    * forked, the newest of the tails is taken, ties broken by id.
    */
   private async lastHashWithin(executor: SqlExecutor, tenantId: string): Promise<string | null> {
-    const rows = await executor.$queryRaw<{ hash: string }[]>(Prisma.sql`
+    const rows = await executor.query<{ hash: string }[]>(sql`
       SELECT r."hash" FROM "ai_usage_records" r
       WHERE r."tenantId" = ${tenantId} AND r."hash" IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM "ai_usage_records" n WHERE n."tenantId" = ${tenantId} AND n."prevHash" = r."hash")
@@ -389,7 +386,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async getWallet(ref: WalletRef): Promise<Wallet | null> {
-    const rows = await this.prisma.$queryRaw<WalletRow[]>(Prisma.sql`
+    const rows = await this.prisma.query<WalletRow[]>(sql`
       SELECT * FROM "ai_wallets"
       WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId} LIMIT 1
     `)
@@ -403,7 +400,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   ): Promise<WalletEntry> {
     assertCallerKey(entry.idempotencyKey)
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.transaction(async (tx) => {
         const wallet = await this.ensureWallet(tx, ref, walletAutoCreatable(entry))
         if (wallet === null) throw new WalletMissingError()
         const stored = await this.insertWalletEntry(tx, wallet.id, entry)
@@ -421,7 +418,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null> {
     assertCallerKey(entry.idempotencyKey)
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.transaction(async (tx) => {
         const wallet = (await this.getWalletWithin(tx, ref)) ?? null
         if (wallet === null) return null
         await this.lockWallet(tx, wallet.id)
@@ -430,7 +427,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         await this.activateDueGrants(tx, wallet.id)
         await this.sweepExpiredGrants(tx, wallet.id)
         const cost = -entry.amountNanoUsd
-        const reserved = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+        const reserved = await tx.query<WalletRow[]>(sql`
           UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" - ${cost}, "updatedAt" = ${DB_NOW_SQL}
           WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${cost} >= ${-overdraftNanoUsd} RETURNING *
         `)
@@ -449,7 +446,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo'): Promise<OpenGrant[]> {
     const wallet = await this.getWallet(ref)
     if (wallet === null) return []
-    const rows = await this.prisma.$queryRaw<OpenGrantRow[]>(this.openGrantsSql(wallet.id, order))
+    const rows = await this.prisma.query<OpenGrantRow[]>(this.openGrantsSql(wallet.id, order))
     return rows.map(mapOpenGrantRow)
   }
 
@@ -457,13 +454,13 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const wallet = await this.getWallet(ref)
     if (wallet === null) return { entries: [], total: 0 }
     const where = walletEntryWhere(wallet.id, filter)
-    const limit = filter.limit === undefined ? Prisma.empty : Prisma.sql`LIMIT ${filter.limit}`
-    const offset = filter.offset === undefined ? Prisma.empty : Prisma.sql`OFFSET ${filter.offset}`
+    const limit = filter.limit === undefined ? empty : sql`LIMIT ${filter.limit}`
+    const offset = filter.offset === undefined ? empty : sql`OFFSET ${filter.offset}`
     const [entries, counts] = await Promise.all([
-      this.prisma.$queryRaw<WalletEntryRow[]>(
-        Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC ${limit} ${offset}`,
+      this.prisma.query<WalletEntryRow[]>(
+        sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC ${limit} ${offset}`,
       ),
-      this.prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
+      this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
     ])
     return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
   }
@@ -471,10 +468,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async reconcile(ref: WalletRef): Promise<Wallet> {
     const wallet = await this.getWallet(ref)
     if (wallet === null) throw new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, { reason: 'wallet does not exist' })
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.transaction(async (tx) => {
       await this.lockWallet(tx, wallet.id)
       await this.activateDueGrants(tx, wallet.id)
-      const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+      const rows = await tx.query<WalletRow[]>(sql`
         UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${spendableBalanceSql()}, "updatedAt" = ${DB_NOW_SQL}
         WHERE w."id" = ${wallet.id} RETURNING *
       `)
@@ -484,28 +481,28 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   async upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
     const id = input.id ?? randomUUID()
-    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`
-      INSERT INTO "ai_budgets" (${BUDGET_COLUMNS_SQL}) VALUES (${Prisma.join(budgetValues(id, input))})
+    const rows = await this.prisma.query<BudgetRow[]>(sql`
+      INSERT INTO "ai_budgets" (${BUDGET_COLUMNS_SQL}) VALUES (${join(budgetValues(id, input))})
       ON CONFLICT ("id") DO UPDATE SET ${budgetUpdateAssignments(input)} RETURNING *
     `)
     return mapBudgetRow(firstOrThrow(rows))
   }
 
   async remove(budgetId: string): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.$executeRaw`DELETE FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId}`,
-      this.prisma.$executeRaw`DELETE FROM "ai_budgets" WHERE "id" = ${budgetId}`,
-    ])
+    await this.prisma.transaction(async (tx) => {
+      await tx.execute(sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId}`)
+      await tx.execute(sql`DELETE FROM "ai_budgets" WHERE "id" = ${budgetId}`)
+    })
   }
 
   async findBudgetById(budgetId: string): Promise<Budget | null> {
-    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`SELECT * FROM "ai_budgets" WHERE "id" = ${budgetId} LIMIT 1`)
+    const rows = await this.prisma.query<BudgetRow[]>(sql`SELECT * FROM "ai_budgets" WHERE "id" = ${budgetId} LIMIT 1`)
     return rows[0] === undefined ? null : mapBudgetRow(rows[0])
   }
 
   async findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
     const now = new Date()
-    const rows = await this.prisma.$queryRaw<BudgetRow[]>(Prisma.sql`
+    const rows = await this.prisma.query<BudgetRow[]>(sql`
       SELECT * FROM "ai_budgets"
       WHERE "tenantId" = ${tenantId}
         AND ("scopeType" = 'tenant' OR ("scopeType" = ${scope.type} AND "scopeId" = ${scope.id}))
@@ -515,9 +512,9 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async conditionalConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<boolean> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.transaction(async (tx) => {
       await this.ensureWindow(tx, budgetId, windowStart)
-      const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+      const rows = await tx.query<{ id: string }[]>(sql`
         UPDATE "ai_budget_windows"
         SET "spentNanoUsd" = "spentNanoUsd" + ${delta.nanoUsd},
             "spentTokens" = "spentTokens" + ${BigInt(delta.tokens)},
@@ -534,9 +531,9 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.transaction(async (tx) => {
       await this.ensureWindow(tx, budgetId, windowStart)
-      await tx.$executeRaw(Prisma.sql`
+      await tx.execute(sql`
         UPDATE "ai_budget_windows"
         SET "spentNanoUsd" = GREATEST(0, "spentNanoUsd" + ${delta.nanoUsd}),
             "spentTokens" = GREATEST(0, "spentTokens" + ${BigInt(delta.tokens)}),
@@ -548,14 +545,14 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
-    const rows = await this.prisma.$queryRaw<BudgetWindowRow[]>(
-      Prisma.sql`SELECT * FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart} LIMIT 1`,
+    const rows = await this.prisma.query<BudgetWindowRow[]>(
+      sql`SELECT * FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart} LIMIT 1`,
     )
     return rows[0] === undefined ? null : mapBudgetWindowRow(rows[0])
   }
 
   async setWindowStart(budgetId: string, windowStart: Date): Promise<void> {
-    await this.prisma.$executeRaw(Prisma.sql`
+    await this.prisma.execute(sql`
       INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
       VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
       ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = ${DB_NOW_SQL}
@@ -564,7 +561,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Load the wallet within a transaction (existence + id for the conditional debit). */
   private async getWalletWithin(tx: SqlExecutor, ref: WalletRef): Promise<WalletRow | undefined> {
-    const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+    const rows = await tx.query<WalletRow[]>(sql`
       SELECT * FROM "ai_wallets"
       WHERE "tenantId" = ${ref.tenantId} AND "ownerType" = ${ref.ownerType} AND "ownerId" = ${ref.ownerId} LIMIT 1
     `)
@@ -576,7 +573,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const existing = await this.getWalletWithin(tx, ref)
     if (existing !== undefined) return existing
     if (!autoCreate) return null
-    const rows = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+    const rows = await tx.query<WalletRow[]>(sql`
       INSERT INTO "ai_wallets" ("id", "tenantId", "ownerType", "ownerId", "balanceNanoUsd", "createdAt", "updatedAt")
       VALUES (${randomUUID()}, ${ref.tenantId}, ${ref.ownerType}, ${ref.ownerId}, 0, ${DB_NOW_SQL}, ${DB_NOW_SQL})
       ON CONFLICT ("tenantId", "ownerType", "ownerId") DO UPDATE SET "updatedAt" = "ai_wallets"."updatedAt" RETURNING *
@@ -586,7 +583,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Insert a wallet entry, returning the stored row. */
   private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry): Promise<WalletEntry> {
-    const rows = await tx.$queryRaw<WalletEntryRow[]>(Prisma.sql`
+    const rows = await tx.query<WalletEntryRow[]>(sql`
       INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
       VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL})
       RETURNING *
@@ -601,7 +598,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[],
   ): Promise<void> {
     for (const allocation of allocations) {
-      await tx.$executeRaw(Prisma.sql`
+      await tx.execute(sql`
         INSERT INTO "ai_wallet_debit_allocations" ("id", "debitEntryId", "grantEntryId", "amountNanoUsd")
         VALUES (${randomUUID()}, ${debitEntryId}, ${allocation.grantEntryId}, ${allocation.amountNanoUsd})
       `)
@@ -611,7 +608,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   /** Apply a signed delta to the materialized balance. */
   private async applyBalanceDelta(tx: SqlExecutor, walletId: string, delta: bigint): Promise<void> {
     if (delta === 0n) return
-    await tx.$executeRaw(Prisma.sql`
+    await tx.execute(sql`
       UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" + ${delta}, "updatedAt" = ${DB_NOW_SQL} WHERE "id" = ${walletId}
     `)
   }
@@ -621,7 +618,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    * @internal
    */
   private async lockWallet(tx: SqlExecutor, walletId: string): Promise<void> {
-    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ai_wallets" WHERE "id" = ${walletId} FOR UPDATE`)
+    await tx.query(sql`SELECT "id" FROM "ai_wallets" WHERE "id" = ${walletId} FOR UPDATE`)
   }
 
   /**
@@ -634,7 +631,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     walletId: string,
     entry: { type: 'adjustment' | 'expiry'; amountNanoUsd: bigint; priority: number; idempotencyKey: string; reason: string },
   ): Promise<WalletEntry | undefined> {
-    const rows = await tx.$queryRaw<WalletEntryRow[]>(Prisma.sql`
+    const rows = await tx.query<WalletEntryRow[]>(sql`
       INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
       VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${DB_NOW_SQL}, NULL, NULL, ${entry.idempotencyKey}, ${entry.reason}, ${DB_NOW_SQL})
       ON CONFLICT ("walletId", "idempotencyKey") DO NOTHING
@@ -652,7 +649,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    * @internal
    */
   private async activateDueGrants(tx: SqlExecutor, walletId: string): Promise<void> {
-    const due = await tx.$queryRaw<{ id: string; priority: number; amountNanoUsd: bigint }[]>(Prisma.sql`
+    const due = await tx.query<{ id: string; priority: number; amountNanoUsd: bigint }[]>(sql`
       SELECT g."id", g."priority", g."amountNanoUsd"
       FROM "ai_wallet_entries" g
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant'
@@ -673,14 +670,14 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       if (activation === undefined) throw reservedKeyHeld(walletId, activationKey(grant.id), grant.id)
     }
     if (due.length === 0) return
-    await tx.$executeRaw(Prisma.sql`
+    await tx.execute(sql`
       UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${SIGNED_BALANCE_SQL}, "updatedAt" = ${DB_NOW_SQL} WHERE w."id" = ${walletId}
     `)
   }
 
   /** Write an `expiry` entry (with its allocation) for each credited, expired grant with a remainder. */
   private async sweepExpiredGrants(tx: SqlExecutor, walletId: string): Promise<void> {
-    const grants = await tx.$queryRaw<{ id: string; priority: number; remaining: bigint }[]>(Prisma.sql`
+    const grants = await tx.query<{ id: string; priority: number; remaining: bigint }[]>(sql`
       SELECT g."id", g."priority", ${GRANT_REMAINING_SQL}::bigint AS "remaining"
       FROM "ai_wallet_entries" g
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
@@ -706,7 +703,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Greedily allocate a debit of `cost` across the open grants in burn order. */
   private async burnDown(tx: SqlExecutor, walletId: string, cost: bigint): Promise<{ grantEntryId: string; amountNanoUsd: bigint }[]> {
-    const grants = await tx.$queryRaw<OpenGrantRow[]>(this.openGrantsSql(walletId, this.burnOrder))
+    const grants = await tx.query<OpenGrantRow[]>(this.openGrantsSql(walletId, this.burnOrder))
     const trail: { grantEntryId: string; amountNanoUsd: bigint }[] = []
     let remaining = cost
     for (const grant of grants) {
@@ -719,14 +716,14 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   /** The open-grants query (credited, remaining > 0, effective, not expired on the database clock) ordered per burn order. */
-  private openGrantsSql(walletId: string, order: 'expiry' | 'priority' | 'fifo'): Prisma.Sql {
+  private openGrantsSql(walletId: string, order: 'expiry' | 'priority' | 'fifo'): Sql {
     const orderBy =
       order === 'priority'
-        ? Prisma.sql`g."priority" ASC, g."createdAt" ASC`
+        ? sql`g."priority" ASC, g."createdAt" ASC`
         : order === 'fifo'
-          ? Prisma.sql`g."createdAt" ASC`
-          : Prisma.sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
-    return Prisma.sql`
+          ? sql`g."createdAt" ASC`
+          : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
+    return sql`
       SELECT g.*, ${GRANT_REMAINING_SQL}::bigint AS "remaining"
       FROM "ai_wallet_entries" g
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
@@ -738,8 +735,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Return the existing entry on a matching replay, throw the conflict, or `undefined` when new. */
   private async walletReplay(tx: SqlExecutor, walletId: string, ref: WalletRef, entry: NewWalletEntry): Promise<WalletEntry | undefined> {
-    const rows = await tx.$queryRaw<WalletEntryRow[]>(
-      Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
+    const rows = await tx.query<WalletEntryRow[]>(
+      sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
     )
     if (rows[0] === undefined) return undefined
     if (walletEntryMatches(rows[0], entry)) return mapWalletEntryRow(rows[0])
@@ -748,7 +745,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Ensure a (zeroed) window row exists for first-touch consumption. */
   private async ensureWindow(tx: SqlExecutor, budgetId: string, windowStart: Date): Promise<void> {
-    await tx.$executeRaw(Prisma.sql`
+    await tx.execute(sql`
       INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
       VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
       ON CONFLICT ("budgetId", "windowStart") DO NOTHING
@@ -759,8 +756,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   private async replayOrConflictWallet(ref: WalletRef, entry: NewWalletEntry): Promise<WalletEntry> {
     const wallet = await this.getWallet(ref)
     if (wallet !== null) {
-      const rows = await this.prisma.$queryRaw<WalletEntryRow[]>(
-        Prisma.sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
+      const rows = await this.prisma.query<WalletEntryRow[]>(
+        sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`,
       )
       if (rows[0] !== undefined && walletEntryMatches(rows[0], entry)) return mapWalletEntryRow(rows[0])
     }
@@ -769,10 +766,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Return the existing record on a matching payload replay, else raise the conflict (§15.2). */
   private async replayOrConflict(record: NewUsageRecord, payloadHash: string): Promise<UsageRecord> {
-    const rows = await this.prisma.$queryRaw<UsageRow[]>(
-      Prisma.sql`SELECT * FROM "ai_usage_records" WHERE "tenantId" = ${record.tenantId} AND "idempotencyKey" = ${record.idempotencyKey} LIMIT 1`,
+    const rows = await this.prisma.query<UsageRow[]>(
+      sql`SELECT * FROM "ai_usage_records" WHERE "tenantId" = ${record.tenantId} AND "idempotencyKey" = ${record.idempotencyKey} LIMIT 1`,
     )
     if (rows[0]?.payloadHash === payloadHash) return mapUsageRow(rows[0])
     throw new LedgerIdempotencyConflict(record.tenantId, record.idempotencyKey)
   }
 }
+
+export type { PrismaRawClient, RawExecutor } from './raw-client'

@@ -26,6 +26,8 @@
     "src/server/**/*.ts",
     "src/shared/**/*.ts",
     "src/prisma/adapter-sql.ts",
+    "src/prisma/sql.ts",
+    "src/prisma/raw-client.ts",
     "!src/**/*.spec.ts",
     "!src/**/index.ts",
     "!src/prisma/index.ts",
