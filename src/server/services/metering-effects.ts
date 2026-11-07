@@ -179,7 +179,7 @@ export class MeteringEffects {
     }
     if (this.budgets === undefined) return
     try {
-      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 })
+      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt)
     } catch {
       // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget consumption during reversal')
