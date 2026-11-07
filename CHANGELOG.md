@@ -24,7 +24,7 @@ the exception's `cause` instead. A call that succeeds is unchanged.
   (`LEFT JOIN LATERAL`), where it summed them twice per grant, once to filter and once to select. It affects the
   open-grants read that every debit makes and the balance that `reconcile()` computes. The rows, their order and the
   allocation trail are the same as before (a test compares them against the earlier query on a wallet holding every
-  kind of grant), and nothing is migrated. The plan is a lookup per grant whatever the table statistics say: a test
+  kind of grant), and nothing is migrated. The plan stays a lookup per grant when the statistics are stale: a test
   grows one wallet after the last `ANALYZE` and asserts the statement still has no grouped aggregate and stays within
   a small multiple of the per-grant read. Measured on PostgreSQL 16 with other wallets present, in both a freshly
   analysed table and one grown since its last `ANALYZE`: a wallet of 3,001 grants all open reads its open grants in

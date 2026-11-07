@@ -615,7 +615,7 @@ export const GRANT_REMAINING_SQL = sql`(g."amountNanoUsd" - COALESCE((SELECT SUM
 /**
  * Joins, for the grant aliased `g`, its unspent remainder as `r."remaining"`: the grant's amount less the sum of
  * its own allocations, computed once per grant by an index lookup on `allocations(grantEntryId)`. Because it is a
- * lateral aggregate keyed by the grant, its plan does not depend on table statistics: a grouped subquery joined on
+ * lateral aggregate keyed by the grant, it never groups the allocations: a grouped subquery joined on
  * the grant lets the planner choose a join order from a row estimate that goes stale as a wallet grows.
  */
 export const GRANT_REMAINING_JOIN_SQL = sql`LEFT JOIN LATERAL (
