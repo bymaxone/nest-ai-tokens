@@ -35,6 +35,7 @@ const SPECS = [
   'record-replay',
   'wallet-remainder-equivalence',
   'typed-read-errors',
+  'wallet-plan-stability',
 ]
 
 /** The combinations, with exact versions so a run means the same thing each time. */

@@ -18,15 +18,19 @@ the exception's `cause` instead. A call that succeeds is unchanged.
 
 ### Changed
 
-- The `./prisma` bundle grows from 12263 to 12421 bytes brotli, with the grouped read and the error handling below; the
+- The `./prisma` bundle grows from 12263 to 12391 bytes brotli, with the grant-remainder read and the error handling below; the
   server bundle is unchanged at 41597. Both are within their budgets (15000 and 42000).
-- The `./prisma` store reads what each grant of a wallet has spent in one grouped pass over that wallet's allocations,
-  where it summed them once per grant. It affects the open-grants read that every debit makes and the balance that
-  `reconcile()` computes. The rows, their order and the allocation trail are the same as before (a test compares them
-  against the earlier query on a wallet holding every kind of grant), and nothing is migrated. Measured on PostgreSQL 16
-  with other wallets present, reading the open grants took 1.3 times as long before at 1,000 grants, 1.4 times at 3,001
-  with most spent, 1.7 times at 3,001 all open, and 5 times at 10,000. The cost still grows with the wallet's grants and
-  allocations; it is not constant.
+- The `./prisma` store computes each grant's unspent remainder once per grant, by an index lookup on its allocations
+  (`LEFT JOIN LATERAL`), where it summed them twice per grant, once to filter and once to select. It affects the
+  open-grants read that every debit makes and the balance that `reconcile()` computes. The rows, their order and the
+  allocation trail are the same as before (a test compares them against the earlier query on a wallet holding every
+  kind of grant), and nothing is migrated. The plan stays a lookup per grant when the statistics are stale: a test
+  grows one wallet after the last `ANALYZE` and asserts the statement still has no grouped aggregate and stays within
+  a small multiple of the per-grant read. Measured on PostgreSQL 16 with other wallets present, in both a freshly
+  analysed table and one grown since its last `ANALYZE`: a wallet of 3,001 grants all open reads its open grants in
+  about 35 to 40 ms against 65 to 70 ms before, and its debit takes 36 to 44 ms against 62 to 72 ms. With most grants
+  spent (1,000, 3,001 and 10,000 grants) the read and the debit are unchanged within run-to-run noise. The cost still
+  grows with the wallet's grants and allocations; it is not constant.
 
 ### Fixed
 
