@@ -308,9 +308,8 @@ export function storeError(error: unknown): AiTokensException {
 }
 
 /**
- * A `catch` handler that rethrows a driver error as the domain store error, for a read whose bounds (`limit`,
- * `offset`) come from the caller: a value the database cannot read as a number then surfaces as
- * `AI_TOKENS_STORE_ERROR` with the Prisma code in the body and the driver error as `cause`, not as a raw
+ * A `catch` handler that rethrows a driver error as the domain store error ({@link storeError}), so a read that
+ * fails on caller input, such as a `limit` or `offset` the database cannot read as a number, does not leak a raw
  * Prisma error.
  */
 export function rethrowAsStoreError(error: unknown): never {
