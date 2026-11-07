@@ -131,6 +131,7 @@ function forksOf(hashed: UsageRecord[]): ChainFork[] {
       parentHash,
       records: siblings
         .map(({ id, createdAt }) => ({ id, createdAt }))
+        // Stryker disable next-line EqualityOperator: record ids are unique, so the comparator never sees two equal ids and < and <= order identically
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1)),
     }))
 }
