@@ -33,12 +33,37 @@ describe('sql', () => {
     expect(query.values).toEqual([hostile])
   })
 
-  /** Dates, booleans and arrays are single parameters, not expanded. */
-  it('binds a date, a boolean and an array as one parameter each', () => {
+  /** Booleans and arrays are single parameters, not expanded. */
+  it('binds a boolean and an array as one parameter each', () => {
+    const query = sql`${true} ${['a', 'b']}::text[]`
+    expect(query.text).toBe('$1 $2::text[]')
+    expect(query.values).toEqual([true, ['a', 'b']])
+  })
+
+  /**
+   * A date is read as a UTC wall-clock timestamp, whatever the client types the parameter as. The timestamp columns
+   * hold no zone; a client that types a date `timestamptz` would otherwise have the database convert it with the
+   * session's zone when it is compared with, or stored in, one of them.
+   */
+  it('reads a date parameter as a UTC wall-clock timestamp', () => {
     const at = new Date('2026-06-01T00:00:00.000Z')
-    const query = sql`${at} ${true} ${['a', 'b']}::text[]`
-    expect(query.text).toBe('$1 $2 $3::text[]')
-    expect(query.values).toEqual([at, true, ['a', 'b']])
+    const query = sql`WHERE "createdAt" < ${at} AND "tenantId" = ${'t'}`
+    expect(query.text).toBe(`WHERE "createdAt" < ($1::timestamptz AT TIME ZONE 'UTC') AND "tenantId" = $2`)
+    expect(query.values).toEqual([at, 't'])
+  })
+
+  /** The cast follows the number of the parameter through nesting, and only dates get it. */
+  it('numbers a date parameter inside a nested fragment', () => {
+    const at = new Date('2026-06-01T00:00:00.000Z')
+    const inner = sql`b < ${at}`
+    const query = sql`a = ${1} AND ${inner} AND c = ${2}`
+    expect(query.text).toBe(`a = $1 AND b < ($2::timestamptz AT TIME ZONE 'UTC') AND c = $3`)
+    expect(query.values).toEqual([1, at, 2])
+  })
+
+  /** Something that is not a date but is shaped like one is bound as it is. */
+  it('does not cast a string that looks like a date', () => {
+    expect(sql`${'2026-06-01T00:00:00.000Z'}`.text).toBe('$1')
   })
 
   /** A fragment embedded in another is spliced in, and the numbering continues across it. */

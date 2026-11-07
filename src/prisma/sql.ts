@@ -7,7 +7,8 @@
  * Why the unsafe-named methods are safe here: every value reaches the database as a bound parameter and never as
  * text, and the text is made only of the template's constant parts, of names that `identifier` has checked to be
  * letters and digits, and of the separators `join` accepts. There is no function that takes a string and puts it
- * into the text. The statement's shape therefore cannot depend on data. Nothing here loads Prisma, so the adapter
+ * into the text. The statement's shape therefore cannot depend on data: the one thing besides those constants that
+ * shapes the text is whether a value is a `Date`, which is read as a UTC timestamp (see `Sql.text`). Nothing here loads Prisma, so the adapter
  * works with any major version and any generator, including a custom output.
  */
 
@@ -31,10 +32,20 @@ export class Sql {
     this.values = values
   }
 
-  /** The text with a numbered parameter, `$1`, `$2`, …, where each value goes. */
+  /**
+   * The text with a numbered parameter, `$1`, `$2`, …, where each value goes. A `Date` goes as
+   * `($n::timestamptz AT TIME ZONE 'UTC')`: the timestamp columns hold no zone, and a client that types a date
+   * `timestamptz` (Prisma 6's engine does) would have the database convert it with the session's zone when it is
+   * compared with, or stored in, one of them. The cast makes it the same UTC wall-clock value on every client.
+   */
   get text(): string {
-    return this.strings.reduce((text, part, index) => `${text}$${index.toString()}${part}`)
+    return this.strings.reduce((text, part, index) => `${text}${placeholder(index, this.values[index - 1])}${part}`)
   }
+}
+
+/** The placeholder for the `number`-th parameter: a date is read as a UTC timestamp, anything else is bound as it is. */
+function placeholder(number: number, value: unknown): string {
+  return value instanceof Date ? `($${number.toString()}::timestamptz AT TIME ZONE 'UTC')` : `$${number.toString()}`
 }
 
 /** Builds a statement from constant parts and values, splicing every value that is itself a statement. */
