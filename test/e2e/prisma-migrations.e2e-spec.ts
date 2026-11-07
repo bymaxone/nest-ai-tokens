@@ -248,8 +248,8 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     expect(await service.verifyChain('order-t')).toEqual({ valid: true, unchainedCount: 0, chainStartsAtRecordId: quick.id })
   })
 
-  /** The adapter links every new record to the hashed row created last, so a hold that settles late shares a parent with the next record. */
-  it('verifies a chain where a late-settling hold and the next record share a predecessor', async () => {
+  /** The hold links to the record that settled before it and the next record links to the hold: a linear chain, so no fork is reported. */
+  it('verifies a chain where the next record links to a late-settling hold', async () => {
     const service = new LedgerService(store, { ledger: { hashChain: true } })
     const hold = await service.append(makeRecord({ tenantId: 'share-t', status: 'pending' }), 's1')
     const quick = await service.append(makeRecord({ tenantId: 'share-t', inputTokens: 7 }), 's2')
