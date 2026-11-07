@@ -152,7 +152,7 @@ export class BudgetService {
    *
    * @param input The budget definition (`softThresholds`/`policy` default from options).
    * @returns The stored budget.
-   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, or a threshold outside `(0, 1]`.
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
   async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
     this.assertLimits(input)
@@ -678,7 +678,7 @@ function assertWindowKind(window: unknown): void {
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   if (typeof seconds === 'number' && Number.isInteger(seconds) && seconds > 0 && seconds <= MAX_CUSTOM_SECONDS) return
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-  throw invalid("window must be 'day', 'week', 'month', 'total' or { customSeconds } with a positive whole number of seconds up to 100 years")
+  throw invalid("window must be 'day', 'week', 'month', 'total' or { customSeconds } with a positive whole number of seconds up to 3153600000 (100 years)")
 }
 
 /** Build the invalid-config exception with an actionable reason. */

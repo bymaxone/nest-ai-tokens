@@ -6,7 +6,10 @@
 
 import type { MeteringScope } from './catalogs'
 
-/** How a budget's window repeats. `{ customSeconds }` is a fixed-length rolling window. */
+/**
+ * How a budget's window repeats. `{ customSeconds }` is a fixed-length rolling window: a positive whole number of
+ * seconds, at most 3153600000 (100 years); `upsertBudget` refuses any other value.
+ */
 export type BudgetWindowKind = 'day' | 'week' | 'month' | 'total' | { customSeconds: number }
 
 /** What happens when a budget is exceeded. */
