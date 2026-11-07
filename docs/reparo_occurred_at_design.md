@@ -12,7 +12,7 @@ Status: **apenas design. Nada está implementado.** Base: as medições do TASK-
 
 **Planejador puro, sem caminho de escrita na biblioteca.** Adicionar `planOccurredAtRepair(records, { zones })` em `./shared` (zero dependências; `Intl.DateTimeFormat` para a aritmética de zona). Entrada: os registros encadeados de um tenant, como lidos do store, e uma lista de zonas candidatas. Saída, por registro: `ok` (o hash já confere), `repairable` (zona, ramo, `occurredAt` corrigido; o hash recalculado é igual ao gravado) ou `unproven` (nenhum candidato confere, ou o registro não tem hash). Não altera nada.
 
-**Aplicar é ato do operador, com um papel privilegiado.** A regra crítica 2 (nenhum UPDATE de registro lançado) e o conselho do README (revogar `UPDATE` do papel da aplicação) proíbem um caminho de escrita na biblioteca. A saída do planejador vira uma lista revisável de `UPDATE ... SET "occurredAt" = <hora de parede UTC corrigida> WHERE id = ... AND "hash" = <hash gravado>` que um DBA executa numa única transação. A guarda `AND "hash"` torna o comando um no-op numa linha cujo hash gravado não é o planejado.
+**Aplicar é ato do operador, com um papel privilegiado.** A regra crítica 2 (nenhum UPDATE de registro lançado) e o conselho do README (revogar `UPDATE` do papel da aplicação) proíbem um caminho de escrita na biblioteca. A saída do planejador vira uma lista revisável de `UPDATE ... SET "occurredAt" = <hora de parede UTC corrigida> WHERE id = ... AND "hash" = <hash gravado> AND "occurredAt" = <valor deslocado que o planejador leu>` que um DBA executa numa única transação. Cada guarda cobre uma coisa: `AND "hash"` impede o comando de agir numa linha cujo hash gravado não é o planejado, e `AND "occurredAt"` o torna um no-op numa linha cujo `occurredAt` mudou depois do planejamento (o hash gravado não muda quando só o `occurredAt` é editado, então a guarda de hash sozinha não vê essa edição).
 
 **Dry run é o padrão e o único modo que a biblioteca tem.** Por tenant (a cadeia é por tenant). O operador informa a lista de zonas: as zonas de sessão que suas conexões usaram na 1.1.11 ou antes; mais de uma é permitida (um host que mudou de região), e cada linha prova a sua própria zona.
 
@@ -34,7 +34,7 @@ Portanto, as janelas erradas dos relatórios ficam corrigidas apenas para linhas
 
 - A aritmética de zona é toda a dificuldade (hora repetida do horário de verão, mudanças históricas de regra, como o antigo horário de verão de São Paulo). A prova mitiga: um bug do planejador só pode produzir linhas `unproven`, nunca uma escrita errada, desde que o planejador compare o hash recalculado inteiro.
 - A cadeia não tem chave: quem tem acesso de escrita já consegue recalcular uma cadeia (README, limite 2). O reparo só aceita um valor que reproduz o hash já gravado, então não concede nada que um atacante não tenha.
-- Ordem de aplicação: o UPDATE muda `occurredAt` sob um hash que já confere com o novo valor, então executá-lo duas vezes é um no-op; executá-lo num tenant em escrita é seguro, porque as linhas novas (1.1.12) já verificam e saem como `ok`.
+- Ordem de aplicação: o UPDATE grava um `occurredAt` com o qual o hash gravado já confere, e executá-lo duas vezes é um no-op, porque a guarda de `occurredAt` não confere mais depois da primeira execução; executá-lo num tenant em escrita é seguro, porque as linhas novas (1.1.12) já verificam e saem como `ok`.
 
 ## Custo e recomendação
 
