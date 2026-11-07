@@ -9,6 +9,7 @@
 
 import type { WalletRef } from '@bymax-one/nest-ai-tokens/shared'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
+import type { PrismaRawClient } from '../../src/prisma/raw-client'
 import { GRANT_REMAINING_SQL, CREDITED_SQL, DB_NOW_SQL } from '../../src/prisma/adapter-sql'
 import { sql, type Sql } from '../../src/prisma/sql'
 import { grantEntry } from '../contracts/wallet-store.contract'
@@ -44,15 +45,15 @@ function nodes(node: PlanNode): PlanNode[] {
 /** The statement the store runs for the open grants of `ref`, captured from its raw client. */
 async function openGrantsStatement(ref: WalletRef): Promise<{ text: string; values: unknown[] }> {
   let captured: { text: string; values: unknown[] } | undefined
-  const spy = {
-    $queryRawUnsafe: async (text: string, ...values: unknown[]): Promise<unknown> => {
+  const spy: PrismaRawClient = {
+    $queryRawUnsafe: <T = unknown>(text: string, ...values: unknown[]): PromiseLike<T> => {
       if (text.includes('"remaining"')) captured = { text, values }
-      return pg.prisma.$queryRawUnsafe(text, ...values)
+      return pg.prisma.$queryRawUnsafe<T>(text, ...values)
     },
     $executeRawUnsafe: (text: string, ...values: unknown[]) =>
       pg.prisma.$executeRawUnsafe(text, ...values),
-    $transaction: pg.prisma.$transaction.bind(pg.prisma),
-  } as unknown as ConstructorParameters<typeof PrismaAiTokensStore>[0]
+    $transaction: (fn) => pg.prisma.$transaction(fn),
+  }
   await new PrismaAiTokensStore(spy).openGrants(ref, 'expiry')
   if (captured === undefined) throw new Error('the open-grants statement was not captured')
   return captured
@@ -110,7 +111,7 @@ async function seedStaleStatistics(): Promise<string> {
   return walletId
 }
 
-/** The 1.1.12 shape of the read: a correlated sum per grant. */
+/** The open-grants read with a correlated sum per grant: the reference the plan's latency is compared with. */
 function perGrantReference(walletId: string): Sql {
   return sql`SELECT g.*, ${GRANT_REMAINING_SQL}::bigint AS "remaining" FROM "ai_wallet_entries" g
        WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
