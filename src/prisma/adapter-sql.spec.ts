@@ -2,13 +2,14 @@
  * @fileoverview Unit tests for the raw-SQL error classification.
  * @layer prisma
  *
- * The rest of this directory is exercised by the end-to-end suite against a real
- * PostgreSQL, which is why `src/prisma/**` is excluded from unit coverage: SQL
- * correctness is only meaningful against a database.
+ * `adapter-sql.ts` is pure: it is in the unit coverage gate, and `adapter-sql-builders.spec.ts`
+ * covers its mappers and builders. The store in `index.ts` runs the statements against a real
+ * PostgreSQL and is owned by the end-to-end suite, since SQL correctness is only meaningful
+ * against a database.
  *
- * `isUniqueViolation` is the exception. It is pure logic over an error object,
- * and it has to hold for *both* Prisma majors the peer range admits — while the
- * end-to-end suite can only ever exercise the one that happens to be installed.
+ * `isUniqueViolation` is pure logic over an error object, and it has to hold for *both* Prisma
+ * majors the peer range admits — while the end-to-end suite can only ever exercise the one that
+ * happens to be installed.
  * A missed violation is silent: the exactly-once replay-or-conflict path (§15.2)
  * degrades a 409 conflict into a generic store error, which is precisely the
  * regression that appeared when the driver adapter moved the SQLSTATE.
@@ -57,6 +58,17 @@ describe('isUniqueViolation', () => {
         },
       },
     }
+    expect(isUniqueViolation(knownError('P2010', meta))).toBe(true)
+  })
+
+  // The SQLSTATE is a fixed code, not whatever the constant happens to hold.
+  it('names the unique-violation SQLSTATE', () => {
+    expect(PG_UNIQUE_VIOLATION).toBe('23505')
+  })
+
+  // A driver adapter that reports only the native code, with no kind, is a violation too.
+  it('recognises the driver adapter original code without a kind', () => {
+    const meta = { driverAdapterError: { cause: { originalCode: '23505' } } }
     expect(isUniqueViolation(knownError('P2010', meta))).toBe(true)
   })
 
@@ -113,6 +125,12 @@ describe('storeError', () => {
     const error = storeError(driver)
     expect(error.cause).toBe(driver)
     expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR', details: { code: 'P2010' } } })
+  })
+
+  /** An error that carries no Prisma code leaves the code out of the body, rather than setting it to undefined. */
+  it('leaves the code out of the body when the error has none', () => {
+    const body = storeError(new Error('boom')).getResponse() as { error: { details: Record<string, unknown> } }
+    expect('code' in body.error.details).toBe(false)
   })
 
   /** An error that is already typed passes through, so a specific refusal is not flattened into a store error. */
