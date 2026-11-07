@@ -44,8 +44,9 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ] || [[ "$HEAD_REF" == chore/release-* ]]; then
             run=true
           else
-            # The diff is captured first, not piped: a failing git must fail this step, and under pipefail a
-            # grep that stops at its first match would make a long list read as no match.
+            # The diff is captured first, not piped: a failing git (an unresolved base ref) must fail this step.
+            # Piped into grep, the step's shell would see only grep's status, an empty input would read as no
+            # match, and the cells would be skipped on a green check.
             changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
             if grep -qE '^(src/prisma/|test/e2e/|scripts/prisma-matrix\.mjs$|\.github/workflows/prisma-matrix\.yml$)' <<< "$changed"; then
               run=true
