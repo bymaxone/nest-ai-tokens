@@ -39,7 +39,7 @@ export class SqlExecutor {
    * @returns The rows.
    */
   async query<T = unknown>(statement: Sql): Promise<T> {
-    return await this.raw.$queryRawUnsafe<T>(statement.text, ...statement.values)
+    return await this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters)
   }
 
   /**
@@ -49,7 +49,7 @@ export class SqlExecutor {
    * @returns The number of rows it affected.
    */
   async execute(statement: Sql): Promise<number> {
-    return await this.raw.$executeRawUnsafe(statement.text, ...statement.values)
+    return await this.raw.$executeRawUnsafe(statement.text, ...statement.parameters)
   }
 }
 

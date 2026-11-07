@@ -32,6 +32,16 @@ describe('SqlExecutor', () => {
     expect(calls).toEqual([{ kind: 'query', text: 'SELECT id FROM t WHERE a = $1 AND b = $2', values: ['x', 2n], inTransaction: false }])
   })
 
+  /** A date goes to the client as its ISO string, in a query and in a statement, so that the cast in the text can read it. */
+  it('sends a date as its ISO string', async () => {
+    const { client, calls } = fakeClient()
+    const at = new Date('2026-06-01T12:00:00.000Z')
+    const executor = new SqlExecutor(client)
+    await executor.query(sql`SELECT 1 WHERE a < ${at}`)
+    await executor.execute(sql`UPDATE t SET a = ${at}`)
+    expect(calls.map((c) => c.values)).toEqual([['2026-06-01T12:00:00.000Z'], ['2026-06-01T12:00:00.000Z']])
+  })
+
   /** A statement resolves to the number of rows it affected. */
   it('runs a statement and resolves to the affected count', async () => {
     const { client, calls } = fakeClient()

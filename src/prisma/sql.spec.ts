@@ -61,6 +61,14 @@ describe('sql', () => {
     expect(query.values).toEqual([1, at, 2])
   })
 
+  /** A date is sent as its ISO string, which carries the zone the cast reads it in; everything else is sent as it is. */
+  it('sends a date as its ISO string and every other value unchanged', () => {
+    const at = new Date('2026-06-01T12:00:00.000Z')
+    const query = sql`${at} ${5n} ${'x'} ${null} ${['a']}`
+    expect(query.parameters).toEqual(['2026-06-01T12:00:00.000Z', 5n, 'x', null, ['a']])
+    expect(query.values[0]).toBe(at)
+  })
+
   /** Something that is not a date but is shaped like one is bound as it is. */
   it('does not cast a string that looks like a date', () => {
     expect(sql`${'2026-06-01T00:00:00.000Z'}`.text).toBe('$1')

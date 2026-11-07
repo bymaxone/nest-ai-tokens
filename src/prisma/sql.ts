@@ -34,12 +34,18 @@ export class Sql {
 
   /**
    * The text with a numbered parameter, `$1`, `$2`, …, where each value goes. A `Date` goes as
-   * `($n::timestamptz AT TIME ZONE 'UTC')`: the timestamp columns hold no zone, and a client that types a date
-   * `timestamptz` (Prisma 6's engine does) would have the database convert it with the session's zone when it is
-   * compared with, or stored in, one of them. The cast makes it the same UTC wall-clock value on every client.
+   * `($n::timestamptz AT TIME ZONE 'UTC')`, read together with {@link Sql.parameters}: the timestamp columns hold no
+   * zone, and the clients send a date differently (Prisma 6's engine as an instant, Prisma 7's adapter as a zoneless
+   * string), so the database would read it in the session's zone. Sent as an ISO string that carries its zone and
+   * cast here, it is the same UTC wall-clock value on every client and in every session zone.
    */
   get text(): string {
     return this.strings.reduce((text, part, index) => `${text}${placeholder(index, this.values[index - 1])}${part}`)
+  }
+
+  /** The values as they are sent: a `Date` as its ISO string, which carries the zone that {@link Sql.text} casts from. */
+  get parameters(): unknown[] {
+    return this.values.map((value) => (value instanceof Date ? value.toISOString() : value))
   }
 }
 
