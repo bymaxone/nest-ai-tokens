@@ -1660,6 +1660,20 @@ describe('MeteringService hold settlement across a budget window boundary (§10.
     expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(RESERVED)
   })
 
+  /** A back-dated enforced record is charged to its own window, and its reversal gives that same window back. */
+  it('charges a back-dated enforced record to its window and nets it to zero on reversal', async () => {
+    const { built, clock, budgetId } = await boundaryFixture()
+    clock.at = DAY_TWO
+
+    const recorded = await built.service.record({ usage: normalized(), context: context({ enforce: true }), occurredAt: DAY_ONE })
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(RESERVED)
+    expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(0n)
+
+    await built.service.reverse(recorded.id, 'back-dated reversal')
+    expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
+    expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(0n)
+  })
+
   /** Control: the same flow inside one window releases that window. */
   it('releases the current window when no boundary was crossed', async () => {
     const { built, clock, budgetId } = await boundaryFixture()

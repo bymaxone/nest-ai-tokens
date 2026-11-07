@@ -644,6 +644,21 @@ describe('MeteringEffects.reverseEffects', () => {
   })
 
   /**
+   * A reversal gives the budget back in the window the record consumed, not in the window of the
+   * moment the reversal runs: across a boundary, locating by now() would credit the new window and
+   * leave the old one charged, so the new window could carry twice the limit.
+   */
+  it('releases the budget in the window of the reversed record', async () => {
+    const { service: budgets } = buildBudgetService()
+    const release = jest.spyOn(budgets, 'release')
+    const reversed = record({ billedCostNanoUsd: 10_000_000n, occurredAt: new Date('2026-06-10T23:59:00.000Z') })
+
+    await new MeteringEffects(undefined, budgets).reverseEffects(reversed, 'reason')
+
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), reversed.occurredAt)
+  })
+
+  /**
    * A budget release failure during reverseEffects is swallowed (best-effort). Asserting
    * the `logger.warn` fires kills the catch-body BlockStatement mutant (emptying
    * `catch { this.logger.warn(...) }` — a silent swallow the resolve assertion cannot see).
@@ -716,6 +731,26 @@ describe('MeteringEffects.enforceRecord', () => {
     const effects = new MeteringEffects(wallets, budgets)
     await expect(effects.enforceRecord(record())).rejects.toThrow()
     expect(release).toHaveBeenCalled()
+  })
+
+  /**
+   * The consumption and its rollback both locate the windows from the record's own instant, so a
+   * back-dated record is charged to, and rolled back from, the same window.
+   */
+  it('consumes and rolls back the budget at the record instant', async () => {
+    const { service: budgets } = buildBudgetService()
+    await budgets.upsertBudget({
+      tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, window: 'month', limitNanoUsd: 100_000_000_000n,
+    })
+    const { service: wallets } = buildWalletService()
+    const consume = jest.spyOn(budgets, 'consume')
+    const release = jest.spyOn(budgets, 'release')
+    const back = record({ occurredAt: new Date('2026-06-10T23:59:00.000Z') })
+
+    await expect(new MeteringEffects(wallets, budgets).enforceRecord(back)).rejects.toThrow()
+
+    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
   })
 
   /**
