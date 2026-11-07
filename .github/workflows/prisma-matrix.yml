@@ -1,0 +1,77 @@
+# Prisma matrix — the ./prisma store against each Prisma major and generator.
+#
+# `./prisma` works with the client the host passes it, so what a host sees depends on the major (6 or 7) and the
+# generator (`prisma-client-js`, or `prisma-client` with a custom output, which Prisma 7 requires). The e2e job in
+# ci.yml runs one combination. This workflow runs the four, each with its own pinned install, against a
+# Testcontainers PostgreSQL, using the built `dist/`. See scripts/prisma-matrix.mjs.
+#
+# It costs about 75 s per cell plus the setup, so it runs on a pull request only when the pull request can change
+# the result: it touches the store, its migration or models, the specs the matrix runs, the script or this file,
+# or it is a release pull request. It also runs on demand.
+name: Prisma matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: prisma-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: Does this change need the matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          run=false
+          if [ "$EVENT" = "workflow_dispatch" ] || [[ "$HEAD_REF" == chore/release-* ]]; then
+            run=true
+          else
+            # The diff is captured first, not piped: a failing git (an unresolved base ref) must fail this step.
+            # Piped into grep, the step's shell would see only grep's status, an empty input would read as no
+            # match, and the cells would be skipped on a green check.
+            changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            if grep -qE '^(src/prisma/|test/e2e/|scripts/prisma-matrix\.mjs$|\.github/workflows/prisma-matrix\.yml$)' <<< "$changed"; then
+              run=true
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  matrix:
+    name: Prisma ${{ matrix.cell }}
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: [p6-js, p6-custom, p7-js, p7-custom]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
+      - name: Build
+        run: pnpm build
+      - name: Pre-pull the image the specs start (cache for Testcontainers)
+        run: docker pull postgres:16
+      - name: Run the cell
+        run: node scripts/prisma-matrix.mjs ${{ matrix.cell }}
