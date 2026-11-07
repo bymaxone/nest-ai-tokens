@@ -103,6 +103,33 @@ describe('isUniqueViolation', () => {
   })
 })
 
+describe('error recognition without Prisma\'s classes', () => {
+  /** An error object from another copy of Prisma, or built by hand, is recognised by its name and code, not by its class. */
+  it('recognises a known-request error that is not an instance of the class', () => {
+    expect(isUniqueViolation({ name: 'PrismaClientKnownRequestError', code: 'P2002' })).toBe(true)
+    expect(isUniqueViolation({ name: 'PrismaClientKnownRequestError', code: 'P2010', meta: { code: PG_UNIQUE_VIOLATION } })).toBe(true)
+    expect(isUniqueViolation({ name: 'PrismaClientKnownRequestError', code: 'P2010', meta: { driverAdapterError: { cause: { kind: 'UniqueConstraintViolation' } } } })).toBe(true)
+  })
+
+  /** A different name, or a code that is not a string, is not Prisma's error, whatever else it carries. */
+  it.each([
+    ['another name with the same code', { name: 'DriverError', code: 'P2002' }],
+    ['no name', { code: 'P2002' }],
+    ['a numeric code', { name: 'PrismaClientKnownRequestError', code: 2002 }],
+    ['no code', { name: 'PrismaClientKnownRequestError' }],
+    ['a native driver error', Object.assign(new Error('duplicate'), { code: PG_UNIQUE_VIOLATION })],
+  ])('does not recognise %s', (_label, error) => {
+    expect(isUniqueViolation(error)).toBe(false)
+  })
+
+  /** The store error carries the code of an object recognised that way, and none for another. */
+  it('puts the code of a recognised error in the body and leaves out any other', () => {
+    const body = (error: unknown): { error: { details: Record<string, unknown> } } => storeError(error).getResponse() as { error: { details: Record<string, unknown> } }
+    expect(body({ name: 'PrismaClientKnownRequestError', code: 'P2010' }).error.details).toEqual({ code: 'P2010' })
+    expect(body({ name: 'Other', code: 'P2010' }).error.details).toEqual({})
+  })
+})
+
 describe('priceLockKey', () => {
   /** Two tuples whose joined text is equal must still lock separately. */
   it('keeps provider and model apart when one contains the delimiter', () => {

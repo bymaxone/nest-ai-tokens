@@ -9,7 +9,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '@prisma/client'
 import { isLegalTransitionPatchKey } from '../shared'
 import type {
   AiOperation,
@@ -34,9 +33,15 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { attachCause } from '../server/errors/attach-cause'
+import { identifier, identifiers, join, sql, type Sql } from './sql'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
-/** Raw column shape returned by the parameterized `$queryRaw` usage-record queries. */
+/** A decimal as the database driver returns it: all the adapter needs of it is its value as a number. */
+export interface DecimalLike {
+  toNumber(): number
+}
+
+/** Raw column shape returned by the parameterized usage-record queries. */
 export interface UsageRow {
   id: string
   tenantId: string
@@ -68,7 +73,7 @@ export interface UsageRow {
   rawCostNanoUsd: bigint
   surchargeNanoUsd: bigint
   billedCostNanoUsd: bigint
-  markupMultiplier: Prisma.Decimal
+  markupMultiplier: DecimalLike
   currency: string
   priceMissing: boolean
   status: string
@@ -258,6 +263,23 @@ interface RawQueryErrorMeta {
   }
 }
 
+/** The members of Prisma's known-request error that the adapter reads. */
+interface KnownRequestErrorLike {
+  readonly code: string
+  readonly meta?: unknown
+}
+
+/**
+ * Whether a thrown value is Prisma's known-request error. It is recognised by its name and its string code, not by
+ * `instanceof`: the class lives in Prisma's runtime, which this package does not load, and a host with two copies
+ * of Prisma would not match a class from either.
+ */
+function isKnownRequestError(error: unknown): error is KnownRequestErrorLike {
+  if (typeof error !== 'object' || error === null) return false
+  const candidate = error as { name?: unknown; code?: unknown }
+  return candidate.name === 'PrismaClientKnownRequestError' && typeof candidate.code === 'string'
+}
+
 /**
  * Whether an error is a unique-constraint violation, which is the exactly-once
  * replay-or-conflict path (§15.2).
@@ -270,7 +292,7 @@ interface RawQueryErrorMeta {
  * violation is silent, downgrading a 409 conflict into a generic store error.
  */
 export function isUniqueViolation(error: unknown): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
+  if (!isKnownRequestError(error)) return false
   if (error.code === 'P2002') return true
   const meta = error.meta as RawQueryErrorMeta | undefined
   if (meta?.code === PG_UNIQUE_VIOLATION) return true
@@ -281,36 +303,36 @@ export function isUniqueViolation(error: unknown): boolean {
 /** Map an unknown driver error to a domain store error: the body keeps the code, the original error rides as `cause`. */
 export function storeError(error: unknown): AiTokensException {
   if (error instanceof AiTokensException) return error
-  const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined
+  const code = isKnownRequestError(error) ? error.code : undefined
   return attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code }), error)
 }
 
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
-export function usageValues(id: string, record: NewUsageRecord, payloadHash: string, prevHash: string | null, hash: string | null): Prisma.Sql[] {
+export function usageValues(id: string, record: NewUsageRecord, payloadHash: string, prevHash: string | null, hash: string | null): Sql[] {
   const extraUnits =
-    record.extraUnits === undefined ? Prisma.sql`NULL` : Prisma.sql`${JSON.stringify(record.extraUnits)}::jsonb`
+    record.extraUnits === undefined ? sql`NULL` : sql`${JSON.stringify(record.extraUnits)}::jsonb`
   return [
-    Prisma.sql`${id}`, Prisma.sql`${record.tenantId}`, Prisma.sql`${record.scope.type}`, Prisma.sql`${record.scope.id}`,
-    Prisma.sql`${record.beneficiary?.type ?? null}`, Prisma.sql`${record.beneficiary?.id ?? null}`,
-    Prisma.sql`${record.requestedBy ?? null}`, Prisma.sql`${record.provider}`, Prisma.sql`${record.model}`,
-    Prisma.sql`${record.requestedModel ?? null}`, Prisma.sql`${record.operation}`, Prisma.sql`${record.serviceTier}`,
-    Prisma.sql`${record.feature}`, Prisma.sql`${record.tags}::text[]`, Prisma.sql`${record.inputTokens}`,
-    Prisma.sql`${record.outputTokens}`, Prisma.sql`${record.cacheReadTokens}`, Prisma.sql`${record.cacheWrite5mTokens}`,
-    Prisma.sql`${record.cacheWrite1hTokens}`, Prisma.sql`${record.reasoningTokens}`, Prisma.sql`${record.audioInTokens}`,
-    Prisma.sql`${record.audioOutTokens}`, Prisma.sql`${record.imageInTokens}`, Prisma.sql`${record.imageOutTokens}`,
-    Prisma.sql`${record.totalTokens}`, extraUnits, Prisma.sql`${record.priceVersionId}`,
-    Prisma.sql`${record.rawCostNanoUsd}`, Prisma.sql`${record.surchargeNanoUsd}`, Prisma.sql`${record.billedCostNanoUsd}`,
-    Prisma.sql`${record.markupMultiplier}`, Prisma.sql`${record.currency}`, Prisma.sql`${record.priceMissing}`,
-    Prisma.sql`${record.status}`, Prisma.sql`${record.reversedByRecordId ?? null}`, Prisma.sql`${record.reversesRecordId ?? null}`,
-    Prisma.sql`${record.idempotencyKey}`, Prisma.sql`${payloadHash}`, Prisma.sql`${record.correlationId ?? null}`,
-    Prisma.sql`${record.requestId ?? null}`, Prisma.sql`${record.isSystemCost}`, Prisma.sql`${record.systemCostCategory ?? null}`,
-    Prisma.sql`${record.enforced}`, Prisma.sql`${prevHash}`, Prisma.sql`${hash}`, Prisma.sql`${record.occurredAt}`,
+    sql`${id}`, sql`${record.tenantId}`, sql`${record.scope.type}`, sql`${record.scope.id}`,
+    sql`${record.beneficiary?.type ?? null}`, sql`${record.beneficiary?.id ?? null}`,
+    sql`${record.requestedBy ?? null}`, sql`${record.provider}`, sql`${record.model}`,
+    sql`${record.requestedModel ?? null}`, sql`${record.operation}`, sql`${record.serviceTier}`,
+    sql`${record.feature}`, sql`${record.tags}::text[]`, sql`${record.inputTokens}`,
+    sql`${record.outputTokens}`, sql`${record.cacheReadTokens}`, sql`${record.cacheWrite5mTokens}`,
+    sql`${record.cacheWrite1hTokens}`, sql`${record.reasoningTokens}`, sql`${record.audioInTokens}`,
+    sql`${record.audioOutTokens}`, sql`${record.imageInTokens}`, sql`${record.imageOutTokens}`,
+    sql`${record.totalTokens}`, extraUnits, sql`${record.priceVersionId}`,
+    sql`${record.rawCostNanoUsd}`, sql`${record.surchargeNanoUsd}`, sql`${record.billedCostNanoUsd}`,
+    sql`${record.markupMultiplier}`, sql`${record.currency}`, sql`${record.priceMissing}`,
+    sql`${record.status}`, sql`${record.reversedByRecordId ?? null}`, sql`${record.reversesRecordId ?? null}`,
+    sql`${record.idempotencyKey}`, sql`${payloadHash}`, sql`${record.correlationId ?? null}`,
+    sql`${record.requestId ?? null}`, sql`${record.isSystemCost}`, sql`${record.systemCostCategory ?? null}`,
+    sql`${record.enforced}`, sql`${prevHash}`, sql`${hash}`, sql`${record.occurredAt}`,
     DB_NOW_SQL, DB_NOW_SQL,
   ]
 }
 
 /** The identifier list `("id", "tenantId", …)` for a usage insert (trusted constants). */
-export const USAGE_COLUMNS_SQL = Prisma.raw(USAGE_COLUMNS.map((column) => `"${column}"`).join(', '))
+export const USAGE_COLUMNS_SQL = identifiers(USAGE_COLUMNS)
 /** The ordered column list for a price insert. */
 export const PRICE_COLUMNS = [
   'id', 'provider', 'model', 'operation', 'serviceTier', 'inputNanoUsdPerMillion', 'outputNanoUsdPerMillion',
@@ -321,22 +343,22 @@ export const PRICE_COLUMNS = [
 ] as const
 
 /** The identifier list for a price insert (trusted constants). */
-export const PRICE_COLUMNS_SQL = Prisma.raw(PRICE_COLUMNS.map((column) => `"${column}"`).join(', '))
+export const PRICE_COLUMNS_SQL = identifiers(PRICE_COLUMNS)
 
 /** Build the ordered value fragments for a price insert (aligned with {@link PRICE_COLUMNS}). */
-export function priceValues(input: NewPriceVersion, serviceTier: ServiceTier, effectiveFrom: Date): Prisma.Sql[] {
+export function priceValues(input: NewPriceVersion, serviceTier: ServiceTier, effectiveFrom: Date): Sql[] {
   const unitRates =
-    input.unitRates === undefined ? Prisma.sql`NULL` : Prisma.sql`${serializeUnitRates(input.unitRates)}::jsonb`
+    input.unitRates === undefined ? sql`NULL` : sql`${serializeUnitRates(input.unitRates)}::jsonb`
   return [
-    Prisma.sql`${randomUUID()}`, Prisma.sql`${input.provider}`, Prisma.sql`${input.model}`, Prisma.sql`${input.operation}`,
-    Prisma.sql`${serviceTier}`, Prisma.sql`${input.inputNanoUsdPerMillion ?? 0n}`, Prisma.sql`${input.outputNanoUsdPerMillion ?? 0n}`,
-    Prisma.sql`${input.cacheReadNanoUsdPerMillion ?? 0n}`, Prisma.sql`${input.cacheWrite5mNanoUsdPerMillion ?? 0n}`,
-    Prisma.sql`${input.cacheWrite1hNanoUsdPerMillion ?? 0n}`, Prisma.sql`${input.reasoningNanoUsdPerMillion ?? 0n}`,
-    Prisma.sql`${input.audioInNanoUsdPerMillion ?? 0n}`, Prisma.sql`${input.audioOutNanoUsdPerMillion ?? 0n}`,
-    Prisma.sql`${input.imageInNanoUsdPerMillion ?? 0n}`, Prisma.sql`${input.imageOutNanoUsdPerMillion ?? 0n}`,
-    Prisma.sql`${input.tierThresholdTokens ?? null}`, Prisma.sql`${input.tierInputNanoUsdPerMillion ?? null}`,
-    Prisma.sql`${input.tierOutputNanoUsdPerMillion ?? null}`, unitRates, Prisma.sql`${'USD'}`,
-    Prisma.sql`${effectiveFrom}`, Prisma.sql`${null}`, Prisma.sql`${input.source ?? 'snapshot'}`,
+    sql`${randomUUID()}`, sql`${input.provider}`, sql`${input.model}`, sql`${input.operation}`,
+    sql`${serviceTier}`, sql`${input.inputNanoUsdPerMillion ?? 0n}`, sql`${input.outputNanoUsdPerMillion ?? 0n}`,
+    sql`${input.cacheReadNanoUsdPerMillion ?? 0n}`, sql`${input.cacheWrite5mNanoUsdPerMillion ?? 0n}`,
+    sql`${input.cacheWrite1hNanoUsdPerMillion ?? 0n}`, sql`${input.reasoningNanoUsdPerMillion ?? 0n}`,
+    sql`${input.audioInNanoUsdPerMillion ?? 0n}`, sql`${input.audioOutNanoUsdPerMillion ?? 0n}`,
+    sql`${input.imageInNanoUsdPerMillion ?? 0n}`, sql`${input.imageOutNanoUsdPerMillion ?? 0n}`,
+    sql`${input.tierThresholdTokens ?? null}`, sql`${input.tierInputNanoUsdPerMillion ?? null}`,
+    sql`${input.tierOutputNanoUsdPerMillion ?? null}`, unitRates, sql`${'USD'}`,
+    sql`${effectiveFrom}`, sql`${null}`, sql`${input.source ?? 'snapshot'}`,
   ]
 }
 
@@ -357,8 +379,8 @@ export function statusAssignments(
   patch: Partial<UsageRecord> | undefined,
   prevHash: string | null,
   hash: string | null,
-): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`"status" = ${to}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`]
+): Sql {
+  const parts: Sql[] = [sql`"status" = ${to}`, sql`"updatedAt" = ${DB_NOW_SQL}`]
   if (patch !== undefined) {
     for (const [key, value] of Object.entries(patch)) {
       if (!isLegalTransitionPatchKey(from, to, key)) {
@@ -366,36 +388,36 @@ export function statusAssignments(
           reason: `${from} → ${to} may not patch "${key}"`,
         })
       }
-      parts.push(Prisma.sql`${Prisma.raw(`"${key}"`)} = ${value}`)
+      parts.push(sql`${identifier(key)} = ${value}`)
     }
   }
   if (hash !== null) {
-    parts.push(Prisma.sql`"prevHash" = ${prevHash}`, Prisma.sql`"hash" = ${hash}`)
+    parts.push(sql`"prevHash" = ${prevHash}`, sql`"hash" = ${hash}`)
   }
-  return Prisma.join(parts, ', ')
+  return join(parts, ', ')
 }
 
 /** Build the parameterized `WHERE` clause for a ledger filter (identifiers are constants). */
-export function buildWhere(filter: LedgerFilter): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`"tenantId" = ${filter.tenantId}`]
-  if (filter.scope !== undefined) parts.push(Prisma.sql`"scopeType" = ${filter.scope.type} AND "scopeId" = ${filter.scope.id}`)
+export function buildWhere(filter: LedgerFilter): Sql {
+  const parts: Sql[] = [sql`"tenantId" = ${filter.tenantId}`]
+  if (filter.scope !== undefined) parts.push(sql`"scopeType" = ${filter.scope.type} AND "scopeId" = ${filter.scope.id}`)
   if (filter.beneficiary !== undefined) {
-    parts.push(Prisma.sql`"beneficiaryType" = ${filter.beneficiary.type} AND "beneficiaryId" = ${filter.beneficiary.id}`)
+    parts.push(sql`"beneficiaryType" = ${filter.beneficiary.type} AND "beneficiaryId" = ${filter.beneficiary.id}`)
   }
-  if (filter.feature !== undefined) parts.push(Prisma.sql`"feature" = ${filter.feature}`)
-  if (filter.features !== undefined) parts.push(Prisma.sql`"feature" = ANY(${filter.features}::text[])`)
-  if (filter.provider !== undefined) parts.push(Prisma.sql`"provider" = ${filter.provider}`)
-  if (filter.model !== undefined) parts.push(Prisma.sql`"model" = ${filter.model}`)
-  if (filter.operation !== undefined) parts.push(Prisma.sql`"operation" = ${filter.operation}`)
-  if (filter.serviceTier !== undefined) parts.push(Prisma.sql`"serviceTier" = ${filter.serviceTier}`)
-  if (filter.tags !== undefined) parts.push(Prisma.sql`"tags" @> ${filter.tags}::text[]`)
-  if (filter.isSystemCost !== undefined) parts.push(Prisma.sql`"isSystemCost" = ${filter.isSystemCost}`)
-  if (filter.systemCostCategory !== undefined) parts.push(Prisma.sql`"systemCostCategory" = ${filter.systemCostCategory}`)
-  if (filter.status !== undefined) parts.push(Prisma.sql`"status" = ANY(${filter.status}::text[])`)
-  if (filter.enforcedOnly === true) parts.push(Prisma.sql`"enforced" = true`)
-  if (filter.from !== undefined) parts.push(Prisma.sql`"occurredAt" >= ${filter.from}`)
-  if (filter.to !== undefined) parts.push(Prisma.sql`"occurredAt" <= ${filter.to}`)
-  return Prisma.join(parts, ' AND ')
+  if (filter.feature !== undefined) parts.push(sql`"feature" = ${filter.feature}`)
+  if (filter.features !== undefined) parts.push(sql`"feature" = ANY(${filter.features}::text[])`)
+  if (filter.provider !== undefined) parts.push(sql`"provider" = ${filter.provider}`)
+  if (filter.model !== undefined) parts.push(sql`"model" = ${filter.model}`)
+  if (filter.operation !== undefined) parts.push(sql`"operation" = ${filter.operation}`)
+  if (filter.serviceTier !== undefined) parts.push(sql`"serviceTier" = ${filter.serviceTier}`)
+  if (filter.tags !== undefined) parts.push(sql`"tags" @> ${filter.tags}::text[]`)
+  if (filter.isSystemCost !== undefined) parts.push(sql`"isSystemCost" = ${filter.isSystemCost}`)
+  if (filter.systemCostCategory !== undefined) parts.push(sql`"systemCostCategory" = ${filter.systemCostCategory}`)
+  if (filter.status !== undefined) parts.push(sql`"status" = ANY(${filter.status}::text[])`)
+  if (filter.enforcedOnly === true) parts.push(sql`"enforced" = true`)
+  if (filter.from !== undefined) parts.push(sql`"occurredAt" >= ${filter.from}`)
+  if (filter.to !== undefined) parts.push(sql`"occurredAt" <= ${filter.to}`)
+  return join(parts, ' AND ')
 }
 
 // ---------------------------------------------------------------------------
@@ -551,12 +573,12 @@ export function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry): 
 }
 
 /** Build the parameterized `WHERE` clause for a wallet-entry filter. */
-export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`"walletId" = ${walletId}`]
-  if (filter.type !== undefined) parts.push(Prisma.sql`"type" = ${filter.type}`)
-  if (filter.from !== undefined) parts.push(Prisma.sql`"createdAt" >= ${filter.from}`)
-  if (filter.to !== undefined) parts.push(Prisma.sql`"createdAt" <= ${filter.to}`)
-  return Prisma.join(parts, ' AND ')
+export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): Sql {
+  const parts: Sql[] = [sql`"walletId" = ${walletId}`]
+  if (filter.type !== undefined) parts.push(sql`"type" = ${filter.type}`)
+  if (filter.from !== undefined) parts.push(sql`"createdAt" >= ${filter.from}`)
+  if (filter.to !== undefined) parts.push(sql`"createdAt" <= ${filter.to}`)
+  return join(parts, ' AND ')
 }
 
 /**
@@ -567,26 +589,26 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): P
  * records' `createdAt` and `updatedAt` are written with it as well: the hold reaper compares `createdAt`
  * with an application instant.
  */
-export const DB_NOW_SQL = Prisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
+export const DB_NOW_SQL = sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
 
 /** Whether the grant aliased `g` was due as it was appended (judged on its stored `createdAt`). */
-export const DUE_AT_APPEND_SQL = Prisma.sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
+export const DUE_AT_APPEND_SQL = sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
 
 /** Whether an `activate:<grantId>` entry has credited the grant aliased `g`. */
-export const ACTIVATED_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id" AND m."type" = 'adjustment' AND m."reason" = ${ACTIVATION_REASON} AND m."amountNanoUsd" = g."amountNanoUsd")`
+export const ACTIVATED_SQL = sql`EXISTS (SELECT 1 FROM "ai_wallet_entries" m WHERE m."walletId" = g."walletId" AND m."idempotencyKey" = ${ACTIVATION_KEY_PREFIX} || g."id" AND m."type" = 'adjustment' AND m."reason" = ${ACTIVATION_REASON} AND m."amountNanoUsd" = g."amountNanoUsd")`
 
 /** Whether the grant aliased `g` is part of the materialized balance: due at append, or activated since. */
-export const CREDITED_SQL = Prisma.sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`
+export const CREDITED_SQL = sql`(${DUE_AT_APPEND_SQL} OR ${ACTIVATED_SQL})`
 
 /** The unspent remainder of the grant aliased `g`. */
-export const GRANT_REMAINING_SQL = Prisma.sql`(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))`
+export const GRANT_REMAINING_SQL = sql`(g."amountNanoUsd" - COALESCE((SELECT SUM(a."amountNanoUsd") FROM "ai_wallet_debit_allocations" a WHERE a."grantEntryId" = g."id"), 0))`
 
 /**
  * The signed sum of a wallet's entries (over the outer `w` alias): every entry counts in full except a
  * grant, which counts only if it was due as it was appended; a grant credited later is counted by its
  * activation entry. This is what the materialized balance equals before any grant has expired.
  */
-export const SIGNED_BALANCE_SQL = Prisma.sql`(
+export const SIGNED_BALANCE_SQL = sql`(
   SELECT COALESCE(SUM(g."amountNanoUsd"), 0)
   FROM "ai_wallet_entries" g WHERE g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL})
 )`
@@ -596,8 +618,8 @@ export const SIGNED_BALANCE_SQL = Prisma.sql`(
  * entries minus the unspent remainder of any credited grant that has expired. Judged on the database
  * clock, like the debit path.
  */
-export function spendableBalanceSql(): Prisma.Sql {
-  return Prisma.sql`${SIGNED_BALANCE_SQL} - (
+export function spendableBalanceSql(): Sql {
+  return sql`${SIGNED_BALANCE_SQL} - (
     SELECT COALESCE(SUM(${GRANT_REMAINING_SQL}), 0)
     FROM "ai_wallet_entries" g
     WHERE g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL}
@@ -647,7 +669,7 @@ export const BUDGET_COLUMNS = [
 ] as const
 
 /** The identifier list for a budget insert. */
-export const BUDGET_COLUMNS_SQL = Prisma.raw(BUDGET_COLUMNS.map((column) => `"${column}"`).join(', '))
+export const BUDGET_COLUMNS_SQL = identifiers(BUDGET_COLUMNS)
 
 /** The nullable BigInt for a token limit (a `number` at the boundary). */
 export function tokenLimitSql(limit: number | undefined): bigint | null {
@@ -655,27 +677,27 @@ export function tokenLimitSql(limit: number | undefined): bigint | null {
 }
 
 /** Build the ordered value fragments for a budget insert (aligned with {@link BUDGET_COLUMNS}). */
-export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>): Prisma.Sql[] {
+export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>): Sql[] {
   return [
-    Prisma.sql`${id}`, Prisma.sql`${input.tenantId}`, Prisma.sql`${input.scope.type}`, Prisma.sql`${input.scope.id}`,
-    Prisma.sql`${input.features ?? []}::text[]`, Prisma.sql`${input.limitNanoUsd ?? null}`,
-    Prisma.sql`${tokenLimitSql(input.limitTokens)}`, Prisma.sql`${input.limitCount ?? null}`,
-    Prisma.sql`${serializeWindow(input.window)}`, Prisma.sql`${input.anchorAt ?? null}`, Prisma.sql`${input.expiresAt ?? null}`,
-    Prisma.sql`${JSON.stringify(input.softThresholds)}::jsonb`, Prisma.sql`${input.policy}`,
+    sql`${id}`, sql`${input.tenantId}`, sql`${input.scope.type}`, sql`${input.scope.id}`,
+    sql`${input.features ?? []}::text[]`, sql`${input.limitNanoUsd ?? null}`,
+    sql`${tokenLimitSql(input.limitTokens)}`, sql`${input.limitCount ?? null}`,
+    sql`${serializeWindow(input.window)}`, sql`${input.anchorAt ?? null}`, sql`${input.expiresAt ?? null}`,
+    sql`${JSON.stringify(input.softThresholds)}::jsonb`, sql`${input.policy}`,
     DB_NOW_SQL, DB_NOW_SQL,
   ]
 }
 
 /** Build the `SET` clause for an upsert conflict (every mutable column + updatedAt). */
-export function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>): Prisma.Sql {
-  return Prisma.join(
+export function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>): Sql {
+  return join(
     [
-      Prisma.sql`"scopeType" = ${input.scope.type}`, Prisma.sql`"scopeId" = ${input.scope.id}`,
-      Prisma.sql`"features" = ${input.features ?? []}::text[]`, Prisma.sql`"limitNanoUsd" = ${input.limitNanoUsd ?? null}`,
-      Prisma.sql`"limitTokens" = ${tokenLimitSql(input.limitTokens)}`, Prisma.sql`"limitCount" = ${input.limitCount ?? null}`,
-      Prisma.sql`"window" = ${serializeWindow(input.window)}`, Prisma.sql`"anchorAt" = ${input.anchorAt ?? null}`,
-      Prisma.sql`"expiresAt" = ${input.expiresAt ?? null}`, Prisma.sql`"softThresholds" = ${JSON.stringify(input.softThresholds)}::jsonb`,
-      Prisma.sql`"policy" = ${input.policy}`, Prisma.sql`"updatedAt" = ${DB_NOW_SQL}`,
+      sql`"scopeType" = ${input.scope.type}`, sql`"scopeId" = ${input.scope.id}`,
+      sql`"features" = ${input.features ?? []}::text[]`, sql`"limitNanoUsd" = ${input.limitNanoUsd ?? null}`,
+      sql`"limitTokens" = ${tokenLimitSql(input.limitTokens)}`, sql`"limitCount" = ${input.limitCount ?? null}`,
+      sql`"window" = ${serializeWindow(input.window)}`, sql`"anchorAt" = ${input.anchorAt ?? null}`,
+      sql`"expiresAt" = ${input.expiresAt ?? null}`, sql`"softThresholds" = ${JSON.stringify(input.softThresholds)}::jsonb`,
+      sql`"policy" = ${input.policy}`, sql`"updatedAt" = ${DB_NOW_SQL}`,
     ],
     ', ',
   )

@@ -897,6 +897,8 @@ that reads a tenant id from request input lets a caller bill someone else.
 
 ---
 
+The store does not import `@prisma/client` at run time: it takes the client you pass it and uses only its `$queryRawUnsafe`, `$executeRawUnsafe` and `$transaction` members (the `PrismaRawClient` type). It therefore works with a client from either generator, including Prisma 7's `prisma-client` generator with a custom `output`, where `@prisma/client` itself has nothing generated.
+
 ## 🧱 Tech Stack
 
 - **Runtime:** Node.js 24+
