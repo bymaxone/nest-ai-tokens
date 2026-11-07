@@ -17,7 +17,8 @@
 
 import { Prisma } from '@prisma/client'
 
-import { PG_UNIQUE_VIOLATION, isUniqueViolation, priceLockKey, storeError } from './adapter-sql'
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { PG_UNIQUE_VIOLATION, isUniqueViolation, priceLockKey, rethrowAsStoreError, storeError } from './adapter-sql'
 
 /**
  * Build a known-request error with an arbitrary `meta`, as a driver would.
@@ -166,5 +167,16 @@ describe('storeError', () => {
   it('returns a typed error as it is', () => {
     const typed = storeError(new Error('x'))
     expect(storeError(typed)).toBe(typed)
+  })
+})
+
+describe('rethrowAsStoreError', () => {
+  /** A rejected read, passed through the handler, rejects with the typed store error and keeps the driver error as cause. */
+  it('turns a rejected promise into the typed store error with the driver error as cause', async () => {
+    const driver = knownError('P2010')
+    const outcome = await Promise.reject(driver).catch(rethrowAsStoreError).catch((error: unknown) => error)
+    expect(outcome).toBeInstanceOf(AiTokensException)
+    expect((outcome as AiTokensException).cause).toBe(driver)
+    expect((outcome as AiTokensException).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR', details: { code: 'P2010' } } })
   })
 })

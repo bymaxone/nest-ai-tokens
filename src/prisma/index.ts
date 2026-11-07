@@ -88,6 +88,7 @@ import {
   GRANT_REMAINING_SQL,
   SIGNED_BALANCE_SQL,
   statusAssignments,
+  rethrowAsStoreError,
   storeError,
   usageValues,
   walletAutoCreatable,
@@ -188,7 +189,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const rows = await this.prisma.query<UsageRow[]>(sql`
       SELECT * FROM "ai_usage_records" WHERE ${buildWhere(filter)}
       ORDER BY "createdAt" ASC ${limit} ${offset}
-    `)
+    `).catch(rethrowAsStoreError)
     return rows.map(mapUsageRow)
   }
 
@@ -463,7 +464,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC ${limit} ${offset}`,
       ),
       this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
-    ])
+    ]).catch(rethrowAsStoreError)
     return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
   }
 

@@ -735,6 +735,31 @@ What it does not catch, plainly:
    with mixed `hashChain` settings can also cause it.
 4. A call with `from` or `to` checks each record's own hash only, not the links between records.
 
+#### Records written before 1.1.12 on Prisma 6 under a non-UTC session zone
+
+This concerns a host that used Prisma 6, with a database session zone other than UTC, on version 1.1.11 or earlier.
+On Prisma 7, or with a UTC session zone, nothing below applies. Those versions wrote each record's `occurredAt`
+into a `timestamp` column without a zone, and the database converted the instant with the session's zone, so the
+stored `occurredAt` is off by the zone's offset (measured: a record that occurred at 12:00 UTC read back as 21:00
+under `Asia/Tokyo` and as 09:00 under `America/Sao_Paulo`). Its `createdAt` was written on the database clock in UTC
+and is correct. 1.1.12 writes and reads every date in UTC, so records it writes are right, but it does not repair
+the records written before it. What you will see:
+
+- **`verifyChain` reports `valid: false`** at the earliest such record, because the hash was computed from the true
+  `occurredAt` and the stored value no longer matches it. This is not tampering. For a record recorded as it
+  happened, `occurredAt` and `createdAt` differ by the zone's offset instead of by milliseconds, which tells these
+  records apart from an edited one. A chain with only records from 1.1.12 or later verifies as `valid: true` in the
+  same zones.
+- **Date ranges miss the old records.** A `from`/`to` filter on `occurredAt`, which the usage report and the cost
+  summary use, compares in UTC now, so a record stored shifted falls outside its true window, or inside another one,
+  by the offset.
+- **The hold reaper is correct for them.** A pending hold's `createdAt` was already right, so a live hold written by
+  1.1.11 is no longer swept as expired (it was under an east-of-UTC zone, measured on `Asia/Tokyo`).
+
+To verify the records written after the upgrade, call `verifyChain(tenantId, from)` with `from` set after it. That
+excludes the shifted records only when the session zone is west of UTC, where they are stored earlier than they
+happened; east of UTC they are stored later, and a `from` after the upgrade can still include them.
+
 ### Decorators, helpers and catalogs
 
 | Export                                                                                         | Role                                                                                                                       |

@@ -34,6 +34,7 @@ const SPECS = [
   'budget-time-zone',
   'record-replay',
   'wallet-remainder-equivalence',
+  'typed-read-errors',
 ]
 
 /** The combinations, with exact versions so a run means the same thing each time. */

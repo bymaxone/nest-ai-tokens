@@ -307,6 +307,16 @@ export function storeError(error: unknown): AiTokensException {
   return attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code }), error)
 }
 
+/**
+ * A `catch` handler that rethrows a driver error as the domain store error, for a read whose bounds (`limit`,
+ * `offset`) come from the caller: a value the database cannot read as a number then surfaces as
+ * `AI_TOKENS_STORE_ERROR` with the Prisma code in the body and the driver error as `cause`, not as a raw
+ * Prisma error.
+ */
+export function rethrowAsStoreError(error: unknown): never {
+  throw storeError(error)
+}
+
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
 export function usageValues(id: string, record: NewUsageRecord, payloadHash: string, prevHash: string | null, hash: string | null): Sql[] {
   const extraUnits =

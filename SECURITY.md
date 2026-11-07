@@ -58,7 +58,7 @@ Idempotency keys are scoped per tenant. A replay attempt within a different tena
 
 ### Hash-chain integrity
 
-When `pricing.hashChain` is enabled, every posted record carries a SHA-256 chain over previous records in the same tenant. `LedgerService.verifyChain()` detects post-hoc modification or deletion. This is the SOC 2 audit trail mechanism (spec §14.5).
+When `pricing.hashChain` is enabled, every posted record carries a SHA-256 chain over previous records in the same tenant. `LedgerService.verifyChain()` detects post-hoc modification or deletion. This is the SOC 2 audit trail mechanism (spec §14.5). On Prisma 6 under a non-UTC session zone, records written by 1.1.11 or earlier hold a shifted `occurredAt` and make `verifyChain` report `valid: false` from the earliest such record; this is not tampering, and the README explains how to tell the two apart.
 
 ### PII discipline
 
