@@ -136,7 +136,7 @@ the feature that needs them is enabled.
 | ------------------------------------------- | ----------- | ------- |
 | server (`@bymax-one/nest-ai-tokens`)        | 41 KB       | < 42 KB |
 | shared (`@bymax-one/nest-ai-tokens/shared`) | 5 KB        | < 10 KB |
-| prisma (`@bymax-one/nest-ai-tokens/prisma`) | 10 KB       | < 15 KB |
+| prisma (`@bymax-one/nest-ai-tokens/prisma`) | 12 KB       | < 15 KB |
 | redis (`@bymax-one/nest-ai-tokens/redis`)   | 1.3 KB      | < 5 KB  |
 | prices (data-only, exempt from budget)      | 1.3 KB      | exempt  |
 
