@@ -18,9 +18,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
   with most spent, 1.7 times at 3,001 all open, and 5 times at 10,000. The cost still grows with the wallet's grants and
   allocations; it is not constant.
 
+### Fixed
+
+- **A `limit` or `offset` the database cannot read as a number leaked a raw Prisma error.** The usage `query` and the
+  wallet-entry `listEntries` of the `./prisma` store now reject with `AI_TOKENS_STORE_ERROR`, carrying the Prisma code
+  (`P2010`) in the body and the driver error as `cause`, as the store's writes already did. A call with numeric bounds
+  is unchanged.
+
 ### Documentation
 
 - README, Wallets & Budgets: what a debit costs as a wallet grows, with the measured figures.
+- README, Verifying the hash chain: what a host sees from records written by 1.1.11 or earlier on Prisma 6 under a
+  non-UTC session zone (`verifyChain` reporting `valid: false` from the earliest such record, date ranges that miss
+  them, a hold reaper that is correct for them), why it is not tampering, how to tell them apart, and the one case in
+  which a bounded `verifyChain` verifies the records written after the upgrade. SECURITY.md points to it.
 
 ## [1.1.12] - 2026-11-07
 
