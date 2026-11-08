@@ -16,6 +16,11 @@ describe('ledger-field whitelists', () => {
     expect(SETTLEMENT_PATCH_KEYS.size).toBe(SETTLEMENT_FIELDS.length + 1)
   })
 
+  /** A void may annotate exactly the correlation and request linkage, no other column. */
+  it('lets a release annotate exactly the correlation and request linkage', () => {
+    expect([...RELEASE_FIELDS]).toEqual(['correlationId', 'requestId'])
+  })
+
   /** Release annotations never overlap the append-only amounts. */
   it('keeps the release annotations disjoint from the append-only amounts', () => {
     for (const field of RELEASE_FIELDS) expect(AMOUNT_FIELDS).not.toContain(field)

@@ -13,6 +13,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - The images the end-to-end suites start are pinned by digest in one file, `.github/ci-images/Dockerfile`. The
   Testcontainers fixtures read it, the CI and Prisma-matrix pre-pulls read it, and Dependabot's docker ecosystem
   bumps the tag and the digest there together. A unit spec fails if a fixture or a workflow names another image.
+- `scripts/mutate-const-tables.mjs` (a development check, not shipped) removes each entry of every `as const` table
+  and bumps each plain integer in it, one mutant at a time, and reports the mutants a test command does not kill; it
+  fills the gap Stryker leaves, since Stryker does not remove a table entry. Its first run found 40 of 280 mutants
+  alive, the entries of the store-port method lists, the default report statuses, the provider and operation
+  catalogs and the release annotation fields; whole-table tests now pin all of them.
 
 ## [1.1.13] - 2026-11-07
 

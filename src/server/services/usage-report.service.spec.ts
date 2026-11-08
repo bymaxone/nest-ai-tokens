@@ -106,6 +106,16 @@ describe('UsageReportService.summarize', () => {
     expect(summary?.tokens.input).toBe(2000)
   })
 
+  /** Without a status filter a report counts settled records, posted and reversed, and nothing still open or voided. */
+  it('sums posted and reversed records by default and no other status', async () => {
+    const built = build()
+    for (const [index, status] of (['posted', 'reversed', 'pending', 'released'] as const).entries()) {
+      await built.ledger.append(appendInput({ status }), `status-${String(index)}`)
+    }
+    const [summary] = await built.service.summarize({ ...FILTER, groupBy: [] })
+    expect(summary?.records).toBe(2)
+  })
+
   /** groupBy day buckets records by their UTC calendar day. */
   it('groups by UTC day', async () => {
     const built = build()

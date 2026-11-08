@@ -103,6 +103,20 @@ describe('validateOptions', () => {
     expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 
+  /** Every method of every port table is required: a store missing exactly one of them is rejected. */
+  it.each([
+    ['ledger', {}, ['append', 'transition', 'findByIdempotencyKey', 'findById', 'findExpiredHolds', 'query', 'sumCost', 'lastHash']],
+    ['pricing', {}, ['resolveRate', 'upsertPrice', 'getPriceHistory', 'listModels']],
+    ['wallet', { wallets: {} }, ['getWallet', 'appendEntry', 'conditionalDebit', 'openGrants', 'listEntries', 'reconcile']],
+    ['budget', { budgets: {} }, ['upsert', 'remove', 'findBudgetById', 'findMatching', 'conditionalConsume', 'adjustWindow', 'getWindow', 'setWindowStart']],
+  ] as const)('requires every %s port method', (_port, feature, methods) => {
+    for (const method of methods) {
+      const { [method as keyof IAiTokensStore]: _removed, ...store } = makeStore()
+      const exception = caught(() => validateOptions({ store: store as IAiTokensStore, ...feature }))
+      expect({ method, code: codeOf(exception) }).toEqual({ method, code: 'AI_TOKENS_INVALID_CONFIG' })
+    }
+  })
+
   /** Enabling wallets without wallet store methods is rejected (feature-port validation). */
   it('rejects wallets enabled with a store missing conditionalDebit', () => {
     const exception = caught(() => validateOptions({ store: ledgerPricingStore(), wallets: {} }))
