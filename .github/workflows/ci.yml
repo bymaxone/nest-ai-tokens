@@ -125,9 +125,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Pre-pull pinned images (cache for Testcontainers)
-        run: |
-          docker pull postgres:16
-          docker pull redis:7
+        run: awk '$1 == "FROM" { print $2 }' .github/ci-images/Dockerfile | xargs -n1 docker pull
       - name: E2E tests
         run: pnpm test:e2e
 

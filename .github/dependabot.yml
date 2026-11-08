@@ -69,6 +69,20 @@ updates:
       - dependency-name: '@types/node'
         update-types: [version-update:semver-major]
 
+  # The images the end-to-end suites start, pinned by digest in one file. Dependabot moves the tag and the
+  # digest together; the unit spec src/ci-images.spec.ts fails if a fixture or a workflow names another image.
+  - package-ecosystem: docker
+    directory: /.github/ci-images
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: ci
+      include: scope
+
   # The workflow actions themselves (checkout, setup-node, pnpm, etc.).
   - package-ecosystem: github-actions
     directory: /

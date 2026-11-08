@@ -15,6 +15,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import type { NewUsageRecord } from '@bymax-one/nest-ai-tokens/shared'
 import { AiTokensException, LedgerService } from '@bymax-one/nest-ai-tokens'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
+import { POSTGRES_IMAGE } from './images'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
@@ -88,7 +89,7 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
   let storeB: PrismaAiTokensStore
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:16').start()
+    container = await new PostgreSqlContainer(POSTGRES_IMAGE).start()
     const url = container.getConnectionUri()
     prisma = clientFor(url)
     prismaB = clientFor(url)

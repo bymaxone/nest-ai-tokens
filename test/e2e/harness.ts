@@ -31,6 +31,7 @@ import {
 import type { IAiTokensStore, IBudgetCounterStore, MeteringContext, UpsertBudgetInput } from '@bymax-one/nest-ai-tokens'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { RedisBudgetCounterStore } from '@bymax-one/nest-ai-tokens/redis'
+import { POSTGRES_IMAGE, REDIS_IMAGE } from './images'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
@@ -71,7 +72,7 @@ export interface PostgresFixture {
 
 /** Start PostgreSQL, apply the migration, and open two client connections. */
 export async function startPostgres(): Promise<PostgresFixture> {
-  const container = await new PostgreSqlContainer(process.env['AI_TOKENS_E2E_PG_IMAGE'] ?? 'postgres:16').start()
+  const container = await new PostgreSqlContainer(process.env['AI_TOKENS_E2E_PG_IMAGE'] ?? POSTGRES_IMAGE).start()
   const url = container.getConnectionUri()
   const prisma = clientFor(url)
   const prismaB = clientFor(url)
@@ -94,7 +95,7 @@ export interface RedisFixture {
 
 /** Start Redis and open a counter store. */
 export async function startRedis(): Promise<RedisFixture> {
-  const container = await new GenericContainer('redis:7').withExposedPorts(6379).start()
+  const container = await new GenericContainer(REDIS_IMAGE).withExposedPorts(6379).start()
   const client = new Redis({ host: container.getHost(), port: container.getMappedPort(6379), maxRetriesPerRequest: null })
   const counter = new RedisBudgetCounterStore(client)
   const stop = async (): Promise<void> => {

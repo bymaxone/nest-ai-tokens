@@ -19,6 +19,7 @@ import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { grantEntry, debitEntry, runWalletStoreContract } from '../contracts/wallet-store.contract'
 import { delta, runBudgetStoreContract } from '../contracts/budget-store.contract'
+import { POSTGRES_IMAGE } from './images'
 
 const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
@@ -63,7 +64,7 @@ async function truncateBudgets(): Promise<void> {
 }
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer('postgres:16').start()
+  container = await new PostgreSqlContainer(POSTGRES_IMAGE).start()
   const url = container.getConnectionUri()
   prisma = clientFor(url)
   prismaB = clientFor(url)
