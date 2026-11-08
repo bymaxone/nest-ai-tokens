@@ -13,11 +13,23 @@ describe('shared catalogs', () => {
     expect(new Set(PROVIDER_IDS).size).toBe(PROVIDER_IDS.length)
   })
 
+  /** The provider catalog is exactly this list: an id dropped from it breaks every preset that names it. */
+  it('lists exactly the shipped providers', () => {
+    expect(PROVIDER_IDS).toEqual([
+      'openai', 'azure-openai', 'anthropic', 'gemini', 'vertex', 'mistral', 'bedrock', 'openrouter', 'deepseek', 'xai', 'groq',
+    ])
+  })
+
   /** Operations include the chat/responses pair that shares price rows. */
   it('lists the operation kinds', () => {
     expect(AI_OPERATIONS).toEqual(
       expect.arrayContaining(['chat', 'responses', 'embeddings']),
     )
+  })
+
+  /** The operation catalog is exactly this list: each kind is part of the price-resolution key. */
+  it('lists exactly the operation kinds', () => {
+    expect(AI_OPERATIONS).toEqual(['chat', 'responses', 'embeddings', 'image', 'video', 'audio', 'rerank', 'moderation'])
   })
 
   /** Service tiers cover the standard plus discounted/premium tiers. */
