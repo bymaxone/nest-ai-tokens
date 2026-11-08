@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Internal
+
+- The images the end-to-end suites start are pinned by digest in one file, `.github/ci-images/Dockerfile`. The
+  Testcontainers fixtures read it, the CI and Prisma-matrix pre-pulls read it, and Dependabot's docker ecosystem
+  bumps the tag and the digest there together. A unit spec fails if a fixture or a workflow names another image.
+
 ## [1.1.13] - 2026-11-07
 
 **Apply:** the usage `query` and the wallet-entry `listEntries` of the `./prisma` store now reject with

@@ -72,6 +72,6 @@ jobs:
       - name: Build
         run: pnpm build
       - name: Pre-pull the image the specs start (cache for Testcontainers)
-        run: docker pull postgres:16
+        run: awk '$1 == "FROM" && $4 == "postgres" { print $2 }' .github/ci-images/Dockerfile | xargs docker pull
       - name: Run the cell
         run: node scripts/prisma-matrix.mjs ${{ matrix.cell }}
