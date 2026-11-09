@@ -13,6 +13,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - The images the end-to-end suites start are pinned by digest in one file, `.github/ci-images/Dockerfile`. The
   Testcontainers fixtures read it, the CI and Prisma-matrix pre-pulls read it, and Dependabot's docker ecosystem
   bumps the tag and the digest there together. A unit spec fails if a fixture or a workflow names another image.
+- The mutation-testing scope now covers every shipped runtime file. `stryker.config.json` excluded `src/**/index.ts` by
+  glob, which also excluded `src/redis/index.ts` (the Redis counter and its Lua scripts, which is not a barrel), and it
+  excluded `src/shared/constants/**`, which holds the ledger transition predicates, and left `src/prices` out. The
+  widened scope found 33 surviving mutants: the safe-integer bound and the decrement script in the Lua text, the error
+  name and message, four branches of the transition predicates, and 25 in the price snapshot and its row builder. They
+  are pinned by tests that assert the scripts and the error verbatim, a truth table over every status pair and patch
+  key, and a golden fixture of the snapshot (`src/prices/model-prices.seed.golden.json`), so a price change shows as a
+  diff to review. `src/stryker-scope.spec.ts` keeps it so: every file reachable from the package entries must be
+  mutated or listed with a reason, and a listed barrel, types-only file or end-to-end-owned file must still be one. Only
+  `src/prisma/index.ts` stays out, because its statements need a database per mutant and the four-cell Prisma matrix pins
+  its behaviour.
 - `scripts/mutate-const-tables.mjs` (a development check, not shipped) removes each entry of every `as const` table
   and bumps each plain integer in it, one mutant at a time, and reports the mutants a test command does not kill; it
   fills the gap Stryker leaves, since Stryker does not remove a table entry. Its first run found 40 of 280 mutants

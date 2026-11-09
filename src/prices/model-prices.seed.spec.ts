@@ -3,6 +3,8 @@ import { AI_OPERATIONS } from '../shared/constants/operations.constants'
 import { computeCostNanoUsd } from '../shared/pricing/compute-cost'
 import type { NormalizedUsage } from '../shared/types/normalized-usage'
 import type { PriceVersion } from '../shared/types/price-version'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { SeedPriceRow } from './model-prices.seed'
 import { MODEL_PRICES_SEED } from './model-prices.seed'
 
@@ -19,7 +21,41 @@ const RATE_FIELDS = [
   'imageOutNanoUsdPerMillion',
 ] as const
 
+/** The golden fixture of the pinned snapshot: one serialized row per line, regenerated deliberately. */
+const GOLDEN_PATH = join(__dirname, 'model-prices.seed.golden.json')
+
+/** A row as plain data with its keys in order, bigint rates as `<n>n` and an undefined-valued key kept as `<undefined>`. */
+function serializeRow(row: SeedPriceRow): Record<string, unknown> {
+  return serializeValue(row) as Record<string, unknown>
+}
+
+/** One value of a row, keeping bigint and undefined distinguishable from numbers and absence. */
+function serializeValue(value: unknown): unknown {
+  if (typeof value === 'bigint') return `${value.toString()}n`
+  if (value === undefined) return '<undefined>'
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, inner]) => [key, serializeValue(inner)]),
+    )
+  }
+  return value
+}
+
 describe('MODEL_PRICES_SEED', () => {
+  /**
+   * Every row of the snapshot, field by field, equals the committed fixture, so a price, a tier or a unit rate cannot
+   * change without a visible diff to the fixture. Regenerate it on purpose with `UPDATE_PRICES_GOLDEN=1`.
+   */
+  it('matches the committed golden fixture row for row', () => {
+    const actual = MODEL_PRICES_SEED.map(serializeRow)
+    if (process.env.UPDATE_PRICES_GOLDEN === '1') {
+      writeFileSync(GOLDEN_PATH, `[\n${actual.map((row) => `  ${JSON.stringify(row)}`).join(',\n')}\n]\n`)
+    }
+    expect(actual).toEqual(JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as Record<string, unknown>[])
+  })
+
   /** Every row conforms to the PriceVersion row shape with integer (bigint) rates. */
   it('validates every row against the PriceVersion shape', () => {
     for (const row of MODEL_PRICES_SEED) {
