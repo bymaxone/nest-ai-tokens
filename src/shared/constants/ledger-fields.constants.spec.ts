@@ -102,3 +102,37 @@ describe('isLegalTransitionPatchKey', () => {
     expect(isLegalTransitionPatchKey('pending', 'reversed', 'correlationId')).toBe(false)
   })
 })
+
+const STATUSES = ['pending', 'posted', 'released', 'reversed'] as const
+
+describe('ledger transition tables', () => {
+  /** Exactly three of the sixteen status pairs are legal transitions: settle, void and annotate-as-reversed. */
+  it('permits exactly settle, void and reverse over every status pair', () => {
+    const legal = STATUSES.flatMap((from) => STATUSES.map((to) => [from, to] as const)).filter(([from, to]) =>
+      isLegalLedgerTransition(from, to),
+    )
+    expect(legal).toEqual([
+      ['pending', 'posted'],
+      ['pending', 'released'],
+      ['posted', 'reversed'],
+    ])
+  })
+
+  /** Each legal transition patches exactly its own whitelist and no other pair patches anything. */
+  it('allows each patch key only on the transition whose whitelist holds it', () => {
+    const keys = [...SETTLEMENT_PATCH_KEYS, ...RELEASE_FIELDS, REVERSAL_LINKAGE_FIELD, 'id', 'tenantId', 'idempotencyKey', 'bogus']
+    const allowed = (from: string, to: string, key: string): boolean => {
+      if (from === 'pending' && to === 'posted') return key === REVERSAL_LINKAGE_FIELD || (SETTLEMENT_FIELDS as readonly string[]).includes(key)
+      if (from === 'pending' && to === 'released') return (RELEASE_FIELDS as readonly string[]).includes(key)
+      if (from === 'posted' && to === 'reversed') return key === 'reversedByRecordId'
+      return false
+    }
+    for (const from of STATUSES) {
+      for (const to of STATUSES) {
+        for (const key of new Set(keys)) {
+          expect({ from, to, key, ok: isLegalTransitionPatchKey(from, to, key) }).toEqual({ from, to, key, ok: allowed(from, to, key) })
+        }
+      }
+    }
+  })
+})

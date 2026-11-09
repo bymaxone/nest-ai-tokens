@@ -10,8 +10,10 @@ class FakeRedis {
   readonly values = new Map<string, bigint>()
   readonly ttls = new Map<string, number>()
   readonly deleted: string[] = []
+  readonly scripts: string[] = []
 
   eval(script: string, _numKeys: number, key: string, ...args: string[]): Promise<number> {
+    this.scripts.push(script)
     if (script.includes('PEXPIRE')) {
       const [amount, limit, ttl] = args as [string, string, string]
       const amt = BigInt(amount)
@@ -154,5 +156,52 @@ describe('RedisBudgetCounterStore serialization', () => {
     // properties, and this repository forbids spreading a class instance.
     expect(JSON.stringify(Object.assign({}, store))).not.toContain(password)
     expect(inspect(store, { depth: null, showHidden: true })).not.toContain(password)
+  })
+})
+
+describe('RedisBudgetCounterStore scripts and errors', () => {
+  /** The increment script is sent verbatim: every comparison names the safe-integer bound, and the TTL is set last. */
+  it('sends the increment script with the safe-integer bound in every comparison', async () => {
+    const redis = new FakeRedis()
+    await new RedisBudgetCounterStore(asRedis(redis)).incrIfBelow('k', 1n, 10n, 60)
+    expect(redis.scripts).toEqual([
+      [
+        '',
+        'local amount = tonumber(ARGV[1])',
+        'local limit = tonumber(ARGV[2])',
+        'if amount > 9007199254740991 or amount < -9007199254740991 or limit > 9007199254740991 or limit < -9007199254740991 then',
+        '  return -1',
+        'end',
+        "local newValue = redis.call('INCRBY', KEYS[1], ARGV[1])",
+        'if newValue > 9007199254740991 or newValue < -9007199254740991 then',
+        "  redis.call('DECRBY', KEYS[1], ARGV[1])",
+        '  return -1',
+        'end',
+        'if newValue > limit then',
+        "  redis.call('DECRBY', KEYS[1], ARGV[1])",
+        '  return 0',
+        'end',
+        "redis.call('PEXPIRE', KEYS[1], ARGV[3])",
+        'return 1',
+        '',
+      ].join('\n'),
+    ])
+  })
+
+  /** The decrement script is sent verbatim: it decrements, then clamps a negative result to zero. */
+  it('sends the decrement script that floors the counter at zero', async () => {
+    const redis = new FakeRedis()
+    await new RedisBudgetCounterStore(asRedis(redis)).decr('k', 1n)
+    expect(redis.scripts).toEqual([
+      ['', "local newValue = redis.call('DECRBY', KEYS[1], ARGV[1])", 'if newValue < 0 then', "  redis.call('SET', KEYS[1], '0')", 'end', 'return 1', ''].join('\n'),
+    ])
+  })
+
+  /** The out-of-range signal names itself and says why, so a log line identifies it. */
+  it('names the out-of-range signal and its cause', () => {
+    const error = new CounterValueOutOfRangeError()
+    expect(error.name).toBe('CounterValueOutOfRangeError')
+    expect(error.message).toBe('counter operand or result exceeds the safe-integer range')
+    expect(error).toBeInstanceOf(Error)
   })
 })
