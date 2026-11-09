@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Internal
 
+- Development dependencies no longer resolve a `minimatch` in the range the advisory covers (quadratic work while
+  expanding globstars, fixed in 11.0.1). The 10.x line is overridden to the patched 11; the 9.x copy came from glob 10,
+  which minimatch 11 breaks without an error, so glob 10 is moved to 13 and `test-exclude` (Jest coverage) to its
+  release on glob 13.
 - The images the end-to-end suites start are pinned by digest in one file, `.github/ci-images/Dockerfile`. The
   Testcontainers fixtures read it, the CI and Prisma-matrix pre-pulls read it, and Dependabot's docker ecosystem
   bumps the tag and the digest there together. A unit spec fails if a fixture or a workflow names another image.

@@ -32,6 +32,15 @@ overrides:
   # GHSA-2883-xcg3-v3hh (CVSS 7.5) — fixed in 3.15.2 and 4.3.2.
   'js-yaml@3': '^3.15.2'
   'js-yaml@4': '^4.3.2'
+  # GHSA-g3hv-75wg-m249 (medium) — minimatch >= 7.0.0, < 11.0.1: quadratic amplification while
+  # expanding globstars. Build-time and test-time only. The 10.x line is moved to the
+  # patched 11. The 9.x copy belongs to glob 10, which minimatch 11 breaks silently
+  # (matches drop to zero), so glob 10 itself moves to 13 rather than minimatch being
+  # forced under it. archiver 8 is ESM-only and Jest's CommonJS runtime cannot load it,
+  # so testcontainers keeps archiver 7 and only its glob moves.
+  'minimatch@>=10.0.0 <11.0.1': '>=11.0.1'
+  'test-exclude@7': '^8.0.0'
+  'glob@10': '^13.0.6'
   # GHSA-6j4f-fj2g-mc7p and GHSA-qhr7-859c-m2p7 (CVSS 7.5 each), GHSA-q2hr-2g5m-vwhr
   # (CVSS 5.3). The floors are the release that fixes all three on each major line.
   'brace-expansion@1': '^1.1.21'
