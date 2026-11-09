@@ -9,6 +9,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, posix, resolve } from 'node:path'
+import * as ts from 'typescript'
 
 const ROOT = resolve(__dirname, '..')
 
@@ -140,6 +141,28 @@ function excluded(shipped: readonly string[]): Map<string, Exclusion> {
   return found
 }
 
+/** The statements the compiler emits for the source, without the module boilerplate every file gets. */
+function emittedStatements(text: string): string[] {
+  const { outputText } = ts.transpileModule(text, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      isolatedModules: true,
+      removeComments: true,
+    },
+  })
+  return outputText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line !== '' &&
+        line !== '"use strict";' &&
+        line !== 'Object.defineProperty(exports, "__esModule", { value: true });' &&
+        !line.startsWith('//'),
+    )
+}
+
 /** The source with comments removed. */
 function withoutComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
@@ -199,17 +222,25 @@ describe('mutation scope', () => {
     }
   })
 
-  /** A types-only file declares nothing at run time. */
-  it('keeps every listed types file free of runtime declarations', () => {
-    const runtime =
-      /^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:const|let|var|function|async\s+function|class|enum)\b/m
+  /** A types-only file compiles to nothing: the compiler, not a list of keywords, decides what is runtime. */
+  it('keeps every listed types file free of runtime output', () => {
     for (const [path, exclusion] of listed) {
       if (exclusion.kind !== 'types') continue
-      expect({ path, runtime: runtime.test(withoutComments(read(path))) }).toEqual({
-        path,
-        runtime: false,
-      })
+      expect({ path, emitted: emittedStatements(read(path)) }).toEqual({ path, emitted: [] })
     }
+  })
+
+  /** The check sees what a keyword scan cannot: re-exports, default exports, namespaces and bare calls. */
+  it('detects runtime output in a types file that a keyword scan misses', () => {
+    expect(
+      emittedStatements(
+        "export type A = { a: 1 }\nexport interface B { b: A }\nimport type { C } from './c'",
+      ),
+    ).toEqual([])
+    expect(emittedStatements("export { value } from './runtime'")).not.toEqual([])
+    expect(emittedStatements('export default { a: 1 }')).not.toEqual([])
+    expect(emittedStatements('export namespace N { export const x = 1 }')).not.toEqual([])
+    expect(emittedStatements('Object.freeze({})')).not.toEqual([])
   })
 
   /** An end-to-end-owned file is only excused while an end-to-end suite exercises its subpath. */
