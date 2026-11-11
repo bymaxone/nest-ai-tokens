@@ -1,0 +1,6 @@
+[
+  {
+    "file": "src/prisma/timestamp-writes.spec.ts",
+    "reason": "A text scan: it reads adapter-sql.ts and index.ts from disk and compares their SQL text with literals, so it executes no mutated source. Stryker instruments those files before the tests run, so the comparison cannot hold there; jest.stryker.config.ts ignores the spec for that reason. The SQL text itself is asserted by the builders spec, which the mutation run does execute."
+  }
+]
