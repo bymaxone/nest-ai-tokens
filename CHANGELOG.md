@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Internal
 
+- The weekly full mutation run may take 150 minutes instead of 90. With the widened mutation scope a cold run needs
+  about 97 minutes, which the old ceiling cut off.
 - The weekly full mutation run now fails when a unit spec was not run by it (`inventory: enforce`). A spec that reads source
   text from disk instead of executing it cannot run under mutation, so it is listed with its reason in
   `scripts/mutation-inventory.exempt.json`.

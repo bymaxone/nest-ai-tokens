@@ -33,10 +33,13 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # Measured cold: 58 min (2026-11-09, run 42608659442). Generous on purpose — nothing blocks on this job, so an
-      # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the
-      # whole run and leaves the week without a measured baseline.
-      timeout-minutes: 90
+      # Measured cold: 58 min before the scope covered every shipped runtime file (run 42608659442),
+      # and about 97 min after it (run 43085223216 was cut off at 92% by the previous 90 min ceiling,
+      # with 0 survivors among the 4057 mutants tested). Hosted runner speed has varied about 1.5x on the
+      # same work across the fleet, so the ceiling leaves room above the measured figure. Nothing blocks on this job, so an over-wide ceiling
+      # costs only the minutes it uses, while an under-tight one costs the whole run and leaves the
+      # week without a measured baseline.
+      timeout-minutes: 150
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
