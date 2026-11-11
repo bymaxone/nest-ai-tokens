@@ -10,6 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ### Internal
 
+- The weekly full mutation run now fails when a unit spec was not run by it (`inventory: enforce`). A spec that reads source
+  text from disk instead of executing it cannot run under mutation, so it is listed with its reason in
+  `scripts/mutation-inventory.exempt.json`.
 - Development dependencies no longer resolve a `minimatch` in the range the advisory covers (quadratic work while
   expanding globstars, fixed in 11.0.1). The 10.x line is overridden to the patched 11; the 9.x copy came from glob 10,
   which minimatch 11 breaks without an error, so glob 10 is moved to 13 and `test-exclude` (Jest coverage) to its

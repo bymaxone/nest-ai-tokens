@@ -33,7 +33,10 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # Measured cold: 28 min. Generous on purpose — nothing blocks on this job, so an
+      # Measured cold: 58 min (2026-11-09, run 42608659442). Generous on purpose — nothing blocks on this job, so an
       # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the
       # whole run and leaves the week without a measured baseline.
       timeout-minutes: 90
+      # A unit spec the mutation run did not run fails the job; the one spec that reads source text
+      # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
+      inventory: enforce
