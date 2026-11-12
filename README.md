@@ -67,8 +67,8 @@ needs them is enabled. OpenTelemetry is not a dependency at all: you hand the li
 
 - ✅ **Hold → capture lifecycle** — the guard holds spend before the handler runs when an estimate is
   declared; the interceptor settles it to actuals afterwards
-- ✅ **Multi-dimension budgets** — spend, tokens and operation count per scope per window (daily /
-  weekly / monthly), hard or soft; the optional `RedisBudgetCounterStore` checks and increments in one
+- ✅ **Multi-dimension budgets** — spend, tokens and operation count per scope per window, hard or
+  soft; the optional `RedisBudgetCounterStore` checks and increments in one
   Lua script
 - ✅ **Prepaid wallets** — grant / debit / refund / adjust entries with a configurable burn order
   (expiry, priority, FIFO)
@@ -220,7 +220,7 @@ export class WorkoutAiService {
 
 A retry with the same `idempotencyKey` and request returns the stored record and repeats nothing:
 no second event, metric, budget or wallet movement. The price, the markup and a defaulted
-`occurredAt` are not compared, so a retry after a price change returns the original cost. A different
+`occurredAt` are not compared (a provider-reported cost is), so a retry after a price change returns the original cost. A different
 request, or a key held by a hold not yet captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`;
 `enforce` is part of the request, so set it in your own code, never from a caller-controlled field.
 Calls with one key are serialized within an instance only, and a replay does not complete effects the
@@ -276,28 +276,28 @@ export class AiController {
 
 `BymaxAiTokensModule.forRoot(options)` / `.forRootAsync({ useFactory })` accept `BymaxAiTokensModuleOptions`:
 
-| Option                      | Type                                  | Default          | Purpose                                                                         |
-| --------------------------- | ------------------------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `store`                     | `IAiTokensStore`                      | — (required)     | Persistence adapter (use `PrismaAiTokensStore`)                                 |
-| `scopeResolver`             | `(ctx) => MeteringContext`            | —                | Resolves the caller's scope from the request (required for guard/interceptor)   |
-| `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'`   | Default cost rating mode                                                        |
-| `markup`                    | `number \| IMarkupPolicy`             | `1.0`            | The resale multiplier (e.g. `4.0` = 4× provider cost)                           |
-| `currency`                  | `string`                              | `'USD'`          | Presentation currency for reports; persisted money is always nano-USD           |
-| `fx`                        | `(date, currency) => bigint`          | —                | USD → `currency` rate; required when `currency` is not `'USD'`                  |
-| `tokenizer`                 | `ITokenizer`                          | —                | Counts tokens when `hold()` is sized from text instead of counts                |
-| `pricing.strict`            | `boolean`                             | `true`           | Throw `AI_TOKENS_PRICE_NOT_FOUND` when no rate matches; off stores cost 0       |
-| `ledger.hashChain`          | `boolean`                             | `false`          | Per-tenant hash chain over posted records, checked by `verifyChain`             |
-| `wallets.overdraftNanoUsd`  | `bigint`                              | `0n`             | Negative balance a wallet may reach before a debit fails                        |
-| `budgets.failClosed`        | `boolean`                             | `true`           | Keep enforcing the hard ceiling when the counter store is unavailable           |
-| `content.store`             | `IContentStore`                       | — (off)          | Opt-in sidecar for masked prompt/response text; the ledger never stores text    |
-| `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Add seed rows only for combinations with no price row; never changes a price    |
-| `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                    |
-| `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                              |
-| `budgets.defaultPolicy`     | `'block' \| 'throttle' \| 'allow'`    | `'block'`        | Default enforcement when a budget is exhausted                                  |
-| `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                        |
-| `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                  |
-| `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it |
-| `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                    |
+| Option                      | Type                                  | Default          | Purpose                                                                          |
+| --------------------------- | ------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `store`                     | `IAiTokensStore`                      | — (required)     | Persistence adapter (use `PrismaAiTokensStore`)                                  |
+| `scopeResolver`             | `(ctx) => MeteringContext`            | —                | Resolves the caller's scope from the request (required for guard/interceptor)    |
+| `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'`   | Default cost rating mode                                                         |
+| `markup`                    | `number \| IMarkupPolicy`             | `1.0`            | The resale multiplier (e.g. `4.0` = 4× provider cost)                            |
+| `currency`                  | `string`                              | `'USD'`          | Presentation currency for reports; persisted money is always nano-USD            |
+| `fx`                        | `(date, currency) => bigint`          | —                | USD → `currency` rate; required when `currency` is not `'USD'`                   |
+| `tokenizer`                 | `ITokenizer`                          | —                | Token counter exposed on `BYMAX_AI_TOKENS_TOKENIZER`; `hold()` does not call it  |
+| `pricing.strict`            | `boolean`                             | `true`           | Throw `AI_TOKENS_PRICE_NOT_FOUND` when no rate matches; off stores cost 0        |
+| `ledger.hashChain`          | `boolean`                             | `false`          | Per-tenant hash chain over posted records, checked by `verifyChain`              |
+| `wallets.overdraftNanoUsd`  | `bigint`                              | `0n`             | Negative balance a wallet may reach before a debit fails                         |
+| `budgets.failClosed`        | `boolean`                             | `true`           | Keep enforcing the hard ceiling when the counter store is unavailable            |
+| `content.store`             | `IContentStore`                       | — (off)          | Opt-in sidecar for prompt/response text, via `content.mask`; never in the ledger |
+| `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Add seed rows only for combinations with no price row; never changes a price     |
+| `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                     |
+| `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                               |
+| `budgets.defaultPolicy`     | `'block' \| 'throttle' \| 'allow'`    | `'block'`        | Default enforcement when a budget is exhausted                                   |
+| `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                         |
+| `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                   |
+| `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it  |
+| `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                     |
 
 With `forRootAsync`, the options arrive after the providers are declared, so `WalletService`,
 `BudgetService` and `BudgetGuard` are always registered. When the options leave `wallets` or
@@ -670,11 +670,11 @@ specific to security is below.
 
 - **The hash chain is tamper-_evident_, not tamper-_proof_.** It makes an edited row detectable by
   anyone who verifies it; it does not stop someone with write access from rewriting the chain
-  wholesale. Pair it with database permissions that forbid `UPDATE` on the ledger table.
+  wholesale. Pair it with database permissions that limit who can write the ledger table.
 - **Prompt and completion text never reach the ledger, the events or the telemetry.** The stream
   collector holds response text only to count it, and the telemetry carries model, operation,
   provider and service tier. The one opt-in exception is `IContentStore`, a sidecar that stores
-  **masked** text under a short TTL, apart from the ledger, with a `purge()` by tenant, record or
+  text, passed through your `content.mask` (identity by default), under a TTL, apart from the ledger, with a `purge()` by tenant, record or
   subject. It is off unless you provide a store, and you bring its schema and retention job: the
   library ships no implementation.
 - **Budget checks are atomic.** The Redis counter runs check-and-increment as one Lua script, so two
@@ -683,7 +683,7 @@ specific to security is below.
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.
 - **Supply chain.** `dependencies` is `{}`, third-party Actions are pinned by commit SHA (org-internal
-  reusables by tag), and CodeQL, TruffleHog and OpenSSF Scorecard run in CI.
+  reusables by tag).
 
 ---
 
@@ -752,7 +752,7 @@ The sections above document each of these with a runnable example. This is the i
   predecessor; a fork does not invalidate the chain, but one among records the official adapter wrote
   since 1.1.8 is unexpected (it links each record to the single tail under a per-tenant lock), so
   investigate it. Older forks, such as a hold that settled after a later record, are benign.
-- `{ valid: false, brokenAtRecordId, unchainedCount }` — the first record that fails: a removed hash, a
+- `{ valid: false, brokenAtRecordId, unchainedCount }` — a record that fails: a removed hash, a
   changed record or, without `from`/`to`, a gap or a chain that does not start at a genesis record.
 - `{ valid: false, status: 'never-enabled', unchainedCount }` — no settled record carries a hash; the
   chain was never on for this tenant, which is not evidence of tampering.
