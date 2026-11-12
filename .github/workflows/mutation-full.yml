@@ -41,3 +41,8 @@ jobs:
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
+      # Two shards split the mutants, so each job carries about half the wall time. The static mutants
+      # (about 6% of the mutants, about 71% of the test time) each re-run the whole suite, and 69% of that
+      # static cost sits in three places: the seed table (100 mutants), prisma/sql.ts (50) and the error
+      # messages (16).
+      shards: 2
