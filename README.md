@@ -38,24 +38,9 @@ proxy for enforcement, a ledger for accounting, a price table for rating and a w
 prepaid credit — four systems that must agree on what a call cost — you install one library
 and get all of it behind a NestJS guard and interceptor.
 
-The library has **zero direct dependencies**. NestJS, Prisma, `ioredis`, the event emitter and
-OpenTelemetry all arrive as peer dependencies, and the optional ones are never imported unless
-the feature that needs them is enabled.
-
-### Why nest-ai-tokens?
-
-- **Enforcement happens in the request.** A guard refuses the call before the handler runs
-  and an interceptor settles the actual usage after it — no proxy to deploy, no sidecar to
-  keep alive, no external hop that can fail open.
-- **Money is exact by construction.** Every persisted amount is `bigint` nano-USD. There is no
-  float arithmetic on a money path, because a rounding difference there is a number a customer
-  is charged.
-- **The ledger is evidence, not state.** Entries are appended and corrections are compensating
-  records; with the optional hash chain on, a row edited in the database stops matching the
-  chain that follows it.
-- **Charging twice is prevented by the database.** The idempotency key carries a unique
-  constraint, and the replay path is that violation being recognized as a conflict — not
-  application care that someone can forget.
+The library has **zero direct dependencies**. NestJS, Prisma, `ioredis` and the event emitter
+arrive as peer dependencies, and the optional ones are never imported unless the feature that
+needs them is enabled. OpenTelemetry is not a dependency at all: you hand the library a sink.
 
 ---
 
@@ -63,57 +48,39 @@ the feature that needs them is enabled.
 
 ### 📊 Metering
 
-- ✅ **Nine provider normalizers** — OpenAI Chat, OpenAI Responses, OpenAI-compatible
-  (DeepSeek / xAI / Groq / Azure), Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter
-  and the Vercel AI SDK, all folded into one usage shape
-- ✅ **Provider-agnostic by construction** — normalizers consume plain objects, so no provider
-  SDK is a dependency and this library never makes the model call itself
-- ✅ **Every billing dimension** — cached tokens, reasoning tokens, audio and image units, and
-  the write/read split providers report separately
-- ✅ **Streaming capture** — `StreamUsageCollector` accumulates chunks and prefers the
-  provider's final usage, falling back to its own count when a stream is cut short
+- ✅ **Nine provider normalizers** — OpenAI Chat, OpenAI Responses, OpenAI-compatible (DeepSeek / xAI /
+  Groq / Azure), Anthropic, Gemini, Bedrock Converse, Mistral, OpenRouter and the Vercel AI SDK, folded
+  into one usage shape; they read plain objects, so no provider SDK is a dependency
+- ✅ **Every billing dimension** — cached, reasoning, audio and image units, and the write/read split
+- ✅ **Streaming capture** — `StreamUsageCollector` prefers the provider's final usage and can count the
+  output itself when a stream is cut short
 
 ### 💰 Money & Ledger
 
-- ✅ **Exact `bigint` nano-USD** — on every persisted amount; no float arithmetic on a money
-  path
-- ✅ **Point-in-time rating** — an entry is priced at the rate in effect at the call
-  timestamp, and never re-rated by a later price change
-- ✅ **Append-only ledger** — corrections are compensating records that point at what they
-  reverse; nothing is updated in place
-- ✅ **Hash-chain integrity** — optional per-entry chain over the previous posted entry, so a
-  row edited directly in the database is detectable
-- ✅ **Exactly-once accounting** — a unique constraint on the idempotency key; the violation
-  is what the replay path recognizes as a conflict
-- ✅ **Markup as configuration** — a fixed multiplier or a per-call `IMarkupPolicy`, applied
-  in both rating modes, so the resale spread is not application code
+- ✅ **Exact `bigint` nano-USD** on every persisted amount; no float arithmetic on a money path
+- ✅ **Point-in-time rating** — priced at the rate in effect at the call timestamp, never re-rated
+- ✅ **Append-only ledger** — corrections are compensating records; nothing is updated in place
+- ✅ **Hash-chain integrity** — optional per-entry chain, so a row edited in the database is detectable
+- ✅ **Markup as configuration** — a fixed multiplier or a per-call `IMarkupPolicy`
 
 ### 🛡️ Enforcement
 
-- ✅ **Hold → capture lifecycle** — the guard places a spend hold before the handler runs when
-  an estimate is declared; the interceptor settles it to actuals afterwards
-- ✅ **Multi-dimension budgets** — cap spend, token count and operation count per scope per
-  window (daily / weekly / monthly), hard or soft
-- ✅ **Atomic budget counter** — the optional `RedisBudgetCounterStore` runs check and
-  increment as one Lua script, so two concurrent requests cannot both fit under a cap that
-  holds one
-- ✅ **Prepaid wallets** — append-only grant / debit / refund / adjust entries, with a
-  configurable burn order (expiry, priority, FIFO)
+- ✅ **Hold → capture lifecycle** — the guard holds spend before the handler runs when an estimate is
+  declared; the interceptor settles it to actuals afterwards
+- ✅ **Multi-dimension budgets** — spend, tokens and operation count per scope per window (daily /
+  weekly / monthly), hard or soft; the optional `RedisBudgetCounterStore` checks and increments in one
+  Lua script
+- ✅ **Prepaid wallets** — grant / debit / refund / adjust entries with a configurable burn order
+  (expiry, priority, FIFO)
 
 ### 🧩 Developer Experience
 
-- ✅ **Zero runtime dependencies** — Prisma, `ioredis`, the event emitter and OpenTelemetry
-  all arrive as peers, and the optional ones are imported only when enabled
-- ✅ **Five subpaths** — `.` server · `./shared` zero-dependency contracts · `./prices` seed
-  data · `./prisma` the PostgreSQL store · `./redis` the budget counter
-- ✅ **Usage reports** — summarize by scope, feature, model or date, with currency conversion
-  and CSV or JSON export
+- ✅ **Five subpaths** — see [Subpath Exports](#-subpath-exports)
+- ✅ **Usage reports** — by scope, feature, model or date, with currency conversion and CSV or JSON export
 - ✅ **Typed events** — ten emitted event types over `@nestjs/event-emitter`, optional
-  (`wallet.low_balance` is declared in the catalog and reserved; nothing emits it yet)
-- ✅ **OpenTelemetry** — an optional sink that traces every metering call, carrying model and
-  operation and never prompt or completion text
-- ✅ **Typed end to end** — TypeScript `strict` with `exactOptionalPropertyTypes` and
-  `noUncheckedIndexedAccess`; zero `any`
+- ✅ **OpenTelemetry** — an optional `ITelemetrySink` port for `gen_ai.*` signals, never carrying prompt
+  or completion text; the library imports no OpenTelemetry package
+- ✅ **Typed end to end** — TypeScript `strict`, zero `any`
 
 ---
 
@@ -128,7 +95,6 @@ the feature that needs them is enabled.
 | `@bymax-one/nest-ai-tokens/redis`  | `RedisBudgetCounterStore` — optional fast budget counter                           | `ioredis` (peer)   |
 
 > The `./shared` subpath is framework-free and edge-safe — use it in frontends, workers, and edge functions that must not pull NestJS.
-> The `./prices` subpath exists so `./shared` stays within the family's tiny-bundle budget.
 
 ### Artifact sizes (brotli)
 
@@ -160,25 +126,12 @@ npm i @prisma/client
 npm i @prisma/adapter-pg
 ```
 
-> **Prisma 6 and 7 are both supported.** The adapter talks to PostgreSQL through
-> parameterized raw SQL and never touches a generated model delegate, so the same
-> code runs on either. What differs is how _your application_ builds the client it
-> hands over:
->
-> ```typescript
-> // Prisma 6
-> const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
->
-> // Prisma 7 — `datasourceUrl` was removed; open through a driver adapter
-> import { PrismaPg } from '@prisma/adapter-pg'
-> const prisma = new PrismaClient({
->   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-> })
-> ```
->
-> Prisma 7 also removed `url` from `datasource` blocks in `schema.prisma`; it
-> moves to a `prisma.config.ts` at your project root. Neither change reaches this
-> library's API — `PrismaAiTokensStore` receives whatever client you built.
+> **Prisma 6 and 7 are both supported.** The adapter uses parameterized raw SQL and never a model
+> delegate, so only how _you_ build the client differs: Prisma 6 takes
+> `new PrismaClient({ datasourceUrl })`; Prisma 7 removed `datasourceUrl` and opens through a driver
+> adapter, `new PrismaClient({ adapter: new PrismaPg({ connectionString }) })`, with the schema's
+> datasource `url` moved to `prisma.config.ts`. `PrismaAiTokensStore` receives whatever client you
+> built, and imports nothing from `@prisma/client` itself.
 
 #### Create the tables
 
@@ -192,7 +145,9 @@ installed package:
 
 The SQL also creates two partial indexes (exactly one open price row per model, and a fast scan
 of pending holds) that a Prisma schema cannot express. If you migrate from the fragment, add them
-yourself.
+yourself. Every date-time column is `TIMESTAMP(3)` without a time zone and the store reads and
+writes it as UTC; keep it that way, since a column changed to `timestamptz` is read in the session's
+zone.
 
 ### 2 — Register the module
 
@@ -263,25 +218,13 @@ export class WorkoutAiService {
 }
 ```
 
-A retry with the same `idempotencyKey` and the same request returns the stored record and does
-nothing else: no second event, metric, content capture or budget and wallet movement. The request
-is what the caller supplied and the provider reported: scope, tags, feature, models, token counts,
-and `occurredAt` when the retry passes one. The price, the markup and a defaulted `occurredAt` are
-computed while the call is served and are not compared, so a retry after a price change returns the
-original record at its original cost. A retry whose request differs, or whose key belongs to a hold
-that has not been captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
-
-`enforce` is part of the request. The record stores it as `enforced`, and a retry has to send the
-same value: a key first used with `enforce: true` and retried without it (or the other way round,
-where an omitted `enforce` counts as `false`) fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT` instead of
-replaying. Set it in your own code, not from a request field the caller controls: a caller who can
-send `enforce: false` turns the budget and wallet checks off for that call.
-
-Calls with one key run one at a time within one service instance. A replay does not repeat the
-effects of the first call, so if the first call stopped after writing the record and before its
-budget or wallet movement, a retry returns that record without making the movement. Two
-simultaneous calls with one key on different instances, in this process or another, can still both
-run their effects.
+A retry with the same `idempotencyKey` and request returns the stored record and repeats nothing:
+no second event, metric, budget or wallet movement. The price, the markup and a defaulted
+`occurredAt` are not compared, so a retry after a price change returns the original cost. A different
+request, or a key held by a hold not yet captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`;
+`enforce` is part of the request, so set it in your own code, never from a caller-controlled field.
+Calls with one key are serialized within an instance only, and a replay does not complete effects the
+first call never reached.
 
 ### 4 — Enforced metering via guard + interceptor
 
@@ -339,6 +282,14 @@ export class AiController {
 | `scopeResolver`             | `(ctx) => MeteringContext`            | —                | Resolves the caller's scope from the request (required for guard/interceptor)   |
 | `ratingMode`                | `'rate-table' \| 'provider-reported'` | `'rate-table'`   | Default cost rating mode                                                        |
 | `markup`                    | `number \| IMarkupPolicy`             | `1.0`            | The resale multiplier (e.g. `4.0` = 4× provider cost)                           |
+| `currency`                  | `string`                              | `'USD'`          | Presentation currency for reports; persisted money is always nano-USD           |
+| `fx`                        | `(date, currency) => bigint`          | —                | USD → `currency` rate; required when `currency` is not `'USD'`                  |
+| `tokenizer`                 | `ITokenizer`                          | —                | Counts tokens when `hold()` is sized from text instead of counts                |
+| `pricing.strict`            | `boolean`                             | `true`           | Throw `AI_TOKENS_PRICE_NOT_FOUND` when no rate matches; off stores cost 0       |
+| `ledger.hashChain`          | `boolean`                             | `false`          | Per-tenant hash chain over posted records, checked by `verifyChain`             |
+| `wallets.overdraftNanoUsd`  | `bigint`                              | `0n`             | Negative balance a wallet may reach before a debit fails                        |
+| `budgets.failClosed`        | `boolean`                             | `true`           | Keep enforcing the hard ceiling when the counter store is unavailable           |
+| `content.store`             | `IContentStore`                       | — (off)          | Opt-in sidecar for masked prompt/response text; the ledger never stores text    |
 | `pricing.seedFromSnapshot`  | `boolean`                             | `true`           | Add seed rows only for combinations with no price row; never changes a price    |
 | `wallets.creditRateNanoUsd` | `bigint`                              | `1_000_000_000n` | Exchange rate: 1 credit = this many nano-USD                                    |
 | `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                              |
@@ -373,33 +324,23 @@ when the application boots.
 All normalizers are pure functions over plain objects — no provider SDK peer dependency. Pass the raw response object and get back a `NormalizedUsage`.
 
 `MODEL_PRICES_SEED` covers `openai`, `anthropic`, `gemini`, `mistral`, `deepseek`, `xai` and `groq`.
-A preset's `provider` is the id its normalizer stamps, so a record and a hold sized from the same
-preset are priced from the same rows. The `azureOpenai` preset records provider `openai` and the
-`vertex` preset records `gemini`, so a call is priced from those seeded rows when its model id
-matches one (for example `gpt-5-mini` or `gemini-2.5-flash`). A name that matches nothing, such as
-an Azure deployment name, throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on (the
-default); give the context a `baseModel` or add a price with `upsertPrice`. A price row you add for
-Azure or Vertex belongs under `openai` or `gemini`, not under `azure-openai` or `vertex`.
-`providerPresets.openaiCompatible(id)` records the `id` you chose, so `openaiCompatible('deepseek')`
-is priced from the seeded `deepseek` rows. A price row belongs to one provider id, one model id,
-one operation and one service tier, so the same model id under another provider id is a different
-row: `openaiCompatible('together')` with the model `gpt-5-mini` is not priced from the `openai` row
-of that model and throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on, until you add a
-price for `together`. The `vercelAiSdk` preset records no provider, because the
-AI SDK does not say which vendor served the call and pricing it from one vendor's rows would be
-wrong for the others: such a record throws `AI_TOKENS_PRICE_NOT_FOUND` with `pricing.strict` on and
-is stored at cost 0 and marked `priceMissing` with it off. A hold is different: a hold sized with a `{ tokens }` or `{ amountNanoUsd }` estimate takes the
-preset's provider, so a `vercelAiSdk` hold is stored as `openai`, and the `capture()`
-that settles it keeps that provider. The call is then billed from the OpenAI rows whichever vendor
-the AI SDK called. A hold sized with a full estimate (`provider`, `model`, `inputTokens`,
-`maxOutputTokens`) takes the provider that estimate names. For a vendor with other prices, size the
-hold with that provider named, or use that vendor's preset or `openaiCompatible(id)`. To price an AI SDK call with `record()`, pass a normalized usage whose
-`provider` you set. The `bedrock` preset records provider `bedrock`, which has no seeded
-rows, so with `pricing.strict` on every Bedrock call throws until you add a price. A Converse response carries no model id:
-pass `baseModel` in the context (the record's model is then that `baseModel`), or `{ model, ...response }`;
-with neither, the record's model is `''` (with `strict: false` it is stored at cost 0 and marked
-`priceMissing`). The `openrouter` preset rates from the cost the provider reports, so it needs no
-price unless a call sets `ratingMode: 'rate-table'`. See [Pricing & Markup](#-pricing--markup).
+A price row belongs to one provider id, model id, operation and service tier, and a preset prices from
+the provider id its normalizer stamps: `azureOpenai` records `openai` and `vertex` records `gemini`, so
+those calls use the seeded rows when the model id matches (`gpt-5-mini`, `gemini-2.5-flash`).
+`openaiCompatible(id)` records the `id` you pass, so `'deepseek'` is priced from the seeded rows and
+`'together'` needs prices of its own. A model that matches nothing, such as an Azure deployment name,
+throws `AI_TOKENS_PRICE_NOT_FOUND` while `pricing.strict` is on (the default): give the context a
+`baseModel` or add a price with `upsertPrice`. With `strict` off the record is stored at cost 0 and
+marked `priceMissing`.
+
+`bedrock` records provider `bedrock` and `vercelAiSdk` records none (the AI SDK does not say which
+vendor served the call), so neither has seeded rows: add a price, and for the AI SDK pass a normalized
+usage whose `provider` you set. A hold sized with `{ tokens }` or `{ amountNanoUsd }` takes the
+preset's provider, so a `vercelAiSdk` hold is stored as `openai` and billed from the OpenAI rows; name
+the provider in a full estimate to avoid that. A Converse response carries no model id: pass
+`baseModel` in the context, or `{ model, ...response }`. The `openrouter` preset rates from the cost the
+provider reports and needs no price unless a call sets `ratingMode: 'rate-table'`. See
+[Pricing & Markup](#-pricing--markup).
 
 ---
 
@@ -473,14 +414,11 @@ const balance = await wallets.getBalance({ tenantId, ownerType: 'user', ownerId:
 console.log(balance.nanoUsd) // current balance
 ```
 
-A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`. A grant that is
-due as it is appended counts at once. One that is not yet due is credited when it falls due, at the next
-debit or `reconcile()`: the store writes an `adjustment` entry keyed `activate:<grantId>` with the reason
-`grant activated`, which carries the grant's amount into the balance. That entry is bookkeeping, not an
-operator adjustment, so a report that lists adjustments should skip it. Idempotency keys that start with
-`activate:` or `expiry:` belong to the store, and a wallet entry that uses one is refused. If an entry the store
-did not write already holds one of those keys for a grant, the debit or `reconcile()` that needs it is refused with
-`AI_TOKENS_INVALID_CONFIG`, and the wallet, the key and the grant are on the error's `cause`.
+A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`. One that is not
+yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
+entry keyed `activate:<grantId>` (reason `grant activated`); that entry is bookkeeping, so a report of
+operator adjustments should skip it. Keys starting `activate:` or `expiry:` are reserved for the store,
+and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
 
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
@@ -488,24 +426,10 @@ did not write already holds one of those keys for a grant, the debit or `reconci
 
 #### What a debit costs as a wallet grows
 
-A debit reads the wallet's grants and what each has spent, so its cost grows with the number of grants the wallet
-holds and the allocations they carry, spent grants included, because a grant stays in the table after it is used
-up. Measured on PostgreSQL 16 in a local container, with 33 allocations per grant and other wallets present
-(median of repeated runs, within about ±40% between runs; your hardware will differ; the figures are the range over a
-freshly analysed table and one grown since its last `ANALYZE`):
-
-| Grants in the wallet | Allocations  | Reading the open grants | Whole debit |
-| -------------------- | ------------ | ----------------------- | ----------- |
-| 1,000 (90% spent)    | 33 thousand  | 9 ms                    | 10 to 11 ms |
-| 3,001 (90% spent)    | 99 thousand  | 28 to 34 ms             | 29 to 38 ms |
-| 3,001 (all open)     | 99 thousand  | 34 to 39 ms             | 36 to 44 ms |
-| 10,000 (90% spent)   | 330 thousand | 103 to 163 ms           | 97 to 195 ms |
-
-Up to and including 1.1.12 the remainder of each grant was summed twice per grant, which took about twice as long for a
-wallet of 3,001 grants all open and the same time when most grants were spent. The cost still grows with the wallet, so a wallet that
-accumulates tens of thousands of grants deserves attention: grant fewer, larger credits (one per billing cycle
-rather than one per event), and watch the debit latency of your busiest wallets. The wallet row is locked for the
-duration of a debit, so a slower debit also lengthens the queue of debits behind it on the same wallet.
+A debit reads the wallet's grants and what each has spent, spent grants included, so its cost grows
+with the number of grants and their allocations, and the wallet row stays locked while it runs. Grant
+fewer, larger credits (one per billing cycle rather than one per event) and watch the debit latency of
+your busiest wallets.
 
 ### Multi-Dimension Budgets
 
@@ -568,7 +492,7 @@ try {
 await metering.capture(hold, collector) // settle with provider-final actuals
 ```
 
-On abort, the collector falls back to a tokenizer estimate of the output tokens so the aborted call is still billed for what it produced.
+A stream cut short has no provider-final usage. When the collector is built with a `tokenizer`, it falls back to a count of the output text; without one, settling it throws `AI_TOKENS_STREAM_USAGE_MISSING`.
 
 ---
 
@@ -641,28 +565,11 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 
 ### Logging the cause of a store error
 
-An `AiTokensException` body is what a client receives, so it holds the code, a fixed message and, for some codes, a
-few safe details. The error that actually failed (a driver error, a refused connection) is the exception's standard
-`cause`, which is never part of the body. Nest's default exception filter does not log an `HttpException`, so it prints
-nothing of it. Log it yourself:
-
-```typescript
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common'
-
-@Catch(HttpException)
-export class LogCauseFilter implements ExceptionFilter {
-  private readonly logger = new Logger('AiTokens')
-
-  catch(exception: HttpException, host: ArgumentsHost): void {
-    if (exception.getStatus() >= 500 && exception.cause !== undefined)
-      this.logger.error(exception.message, exception.cause)
-    const response = host.switchToHttp().getResponse()
-    response.status(exception.getStatus()).json(exception.getResponse())
-  }
-}
-```
-
-The cause of a database failure can name the host, a statement or a row; keep it in the server log and out of the response.
+An `AiTokensException` body is what a client receives: the code, a fixed message and a few safe
+details. The error that actually failed (a driver error, a refused connection) is the exception's
+standard `cause`, never part of the body, and Nest's default exception filter does not log an
+`HttpException`. Log `exception.cause` yourself from an exception filter for statuses of 500 and above,
+and keep it out of the response: it can name the host, a statement or a row.
 
 ---
 
@@ -685,122 +592,15 @@ formatNanoUsd(5_000_000n, { currency: 'BRL', fxRateNano: 5_000_000_000n }) // '0
 
 ---
 
-## 📖 API Reference
+## 🚫 What This Library Does NOT Do
 
-The sections above document each of these with a runnable example. This is the index.
-
-### Services
-
-| Service                | Surface                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `MeteringService`      | `meter<T>` · `record` · `estimateCost` · `hold` · `capture` · `release` · `restoreReleasedHold` · `reverse` · `getStatus`            |
-| `LedgerService`        | `append` · `query` · `findById` · `findByIdempotencyKey` · `findExpiredHolds` · `sumCost` · `transition` · `reverse` · `verifyChain` |
-| `WalletService`        | `getBalance` · `grant` · `debit` · `refund` · `adjust` · `settleAdjustment` · `getEntries` · `reconcile`                             |
-| `BudgetService`        | `upsertBudget` · `removeBudget` · `list` · `status` · `consume` · `release` · `adjust` · `rotateWindow` · `reconcileWindow`          |
-| `PricingService`       | `resolveRate` · `upsertPrice` · `getPriceHistory` · `seedFromSnapshot`                                                               |
-| `UsageReportService`   | `summarize` · `export`                                                                                                               |
-| `StreamUsageCollector` | Accumulates streamed chunks; prefers the provider's final usage over its own count                                                   |
-
-#### Verifying the hash chain
-
-`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
-
-- `{ valid: true, unchainedCount, chainStartsAtRecordId?, forks? }` — every hashed record recomputes and, on a call
-  without `from`/`to`, the hashed records form one chain. `chainStartsAtRecordId` is the genesis record
-  when the verified records include it. `forks` is present only when two or more records name the same
-  predecessor: a list of `{ parentHash, records: [{ id, createdAt }] }`, siblings oldest first. A fork does not
-  make the chain invalid. A fork among records written after you upgraded to 1.1.8 or later with the official
-  adapter is unexpected, since the adapter links each record to the single tail under a per-tenant lock:
-  investigate it. Older forks (a hold that settled after a later record) are benign. The library cannot tell
-  them apart; compare the siblings' `createdAt` with the date of your upgrade.
-- `{ valid: false, brokenAtRecordId, unchainedCount }` — the record that fails: a record whose hash was
-  removed while its link stayed, a changed record, or, without `from`/`to`, a gap (a second chain start)
-  or a chain that does not start at a genesis record (its first head). Those checks run in that order,
-  and within each the earliest record in listing order is reported. Two records may share a predecessor;
-  that is reported as a fork on a valid result, not as a break.
-- `{ valid: false, status: 'never-enabled', unchainedCount }` — settled records exist and none carries a hash or a link. This
-  is not evidence of tampering; `ledger.hashChain` was simply never on for this tenant.
-
-Enable `ledger.hashChain` before the first write. Records written before it was enabled are **unchained**:
-they are counted in `unchainedCount`, not verified and not protected.
-
-What it does not catch, plainly:
-
-1. A record that no other record names as its predecessor can be deleted without detection. That is
-   the newest record, and a hold that settled while a later-created record was already hashed (a record
-   links to the hashed record created last, so that hold is never linked to). A hold that settles as
-   the newest-created record is linked by the next record and is not affected.
-2. The chain is unkeyed. Someone with write access who recomputes the whole tail is not detected, so
-   anchor the latest hash outside the database.
-3. An `unchainedCount` that rises after the chain was enabled is a signal to investigate. A rolling deploy
-   with mixed `hashChain` settings can also cause it.
-4. A call with `from` or `to` checks each record's own hash only, not the links between records.
-
-#### Records written before 1.1.12 on Prisma 6 under a non-UTC session zone
-
-This concerns a host that used Prisma 6, with a database session zone other than UTC, on version 1.1.11 or earlier.
-On Prisma 7, or with a UTC session zone, nothing below applies. Those versions wrote each record's `occurredAt`
-into a `timestamp` column without a zone, and the database converted the instant with the session's zone, so the
-stored `occurredAt` is off by the zone's offset (measured: a record that occurred at 12:00 UTC read back as 21:00
-under `Asia/Tokyo` and as 09:00 under `America/Sao_Paulo`). From 1.1.8 the record's `createdAt` was written on the
-database clock in UTC and is correct; before 1.1.8 it was shifted by the same offset (see the 1.1.8 entry of the
-changelog). 1.1.12 writes and reads every date in UTC, so records it writes are right, but it does not repair the
-records written before it. What you will see:
-
-- **`verifyChain` reports `valid: false`** at the earliest such record, because the hash was computed from the true
-  `occurredAt` and the stored value no longer matches it. This is not tampering. For a record written by 1.1.8 to
-  1.1.11 and recorded as it happened, `occurredAt` and `createdAt` differ by the zone's offset instead of by
-  milliseconds, which tells these records apart from an edited one; for an older record both are shifted alike, so
-  the difference does not show it. A chain with only records from 1.1.12 or later verifies as `valid: true` in the
-  same zones.
-- **Date ranges miss the old records.** A `from`/`to` filter on `occurredAt`, which the usage report and the cost
-  summary use, compares in UTC now, so a record stored shifted falls outside its true window, or inside another one,
-  by the offset.
-- **The hold reaper is correct for them.** A pending hold written by 1.1.8 to 1.1.11 had a correct `createdAt`, so a
-  live hold from those versions is no longer swept as expired (it was under an east-of-UTC zone, measured on
-  `Asia/Tokyo`).
-
-To verify the records written after the upgrade, call `verifyChain(tenantId, from)` with `from` set after it. That
-excludes the shifted records only when the session zone is west of UTC, where they are stored earlier than they
-happened; east of UTC they are stored later, and a `from` after the upgrade can still include them.
-
-A repair that proves each correction against the stored hash, so no record changes unless the chain confirms it, does not exist yet. Its design is in [`docs/occurred_at_repair_design.md`](docs/occurred_at_repair_design.md). If you need it, open an issue and say which zones your connections used.
-
-### Decorators, helpers and catalogs
-
-| Export                                                                                         | Role                                                                                                                       |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `@Meter` · `@RequireBudget` · `@AiFeature(name)`                                               | Handler metadata read by the interceptor and the guard; `@AiFeature` only tags the feature name                            |
-| `deriveIdempotencyKey` · `toJsonSafe` · `formatNanoUsd`                                        | Idempotency key from content, `bigint` to decimal strings for JSON, and display formatting                                 |
-| `floatUsdToNanoUsd` · `perMillion` · `computeCostNanoUsd`                                      | The money math: the only float-to-`bigint` entry, a cost at a nano-USD-per-million rate, and a usage priced against a rate |
-| `applyMarkup` · `resolveMultiplier4dp`                                                         | A markup applied in exact `bigint`, and a multiplier validated and rounded to 4 decimal places                             |
-| `isLegalLedgerTransition` · `isLegalTransitionPatchKey`                                        | The ledger lifecycle rules a custom store can reuse: which status changes and which columns each may touch                 |
-| `PROVIDER_IDS` · `SERVICE_TIERS` · `AI_OPERATIONS` · `TOKEN_CATEGORIES` · `WALLET_ENTRY_TYPES` | The catalogs the types are derived from                                                                                    |
-| `CounterValueOutOfRangeError` (`./redis`)                                                      | Thrown when a counter value leaves the safe-integer range; the budget service then falls back to the database consume      |
-
-### Injection tokens
-
-`BYMAX_AI_TOKENS_OPTIONS` (the resolved options) and the port tokens `BYMAX_AI_TOKENS_LEDGER_STORE`,
-`_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
-`_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. The wallet and budget tokens exist only when their
-options block is set (with `forRoot`; `forRootAsync` always exports them).
-
-### Request-scoped enforcement
-
-| Class                 | Role                                                                                                                                                                                                      |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BudgetGuard`         | Check-only gate: refuses the request before the handler runs when a hard budget is exhausted, and — when `@RequireBudget.estimate` is present — places the hold and attaches it to the request            |
-| `MeteringInterceptor` | The capture half: extracts usage from the handler's result, then settles the guard's hold or records post-hoc when there is none. On a handler error it releases the hold and rethrows the original error |
-
-### Subpaths
-
-| Subpath    | Exports                                                                                                                 |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `.`        | Everything above, the DI tokens, the option types and the error catalog                                                 |
-| `./shared` | The zero-dependency contract layer — types, `AI_TOKENS_ERROR_CODES`, event shapes; safe to import from a browser bundle |
-| `./prices` | `MODEL_PRICES_SEED` — a dated price snapshot to seed `PricingService` from                                              |
-| `./prisma` | `PrismaAiTokensStore` — the reference store over PostgreSQL                                                             |
-| `./redis`  | `RedisBudgetCounterStore` — the atomic budget counter                                                                   |
+- It never calls a model: normalizers read the plain object your provider SDK returned.
+- It stores no prompt or completion text; the only path is your own opt-in `IContentStore`.
+- It ships no OpenTelemetry sink, no `IContentStore` implementation and no migration runner: you apply
+  the SQL, and you bring the sink and the content store.
+- It is not tamper-proof: the hash chain detects an edited row, not a rewritten tail.
+- It does not read `0` or `null` as unlimited: no budget row is unlimited and `limit = 0` blocks every
+  call.
 
 ---
 
@@ -860,98 +660,32 @@ options block is set (with `forRoot`; `forRootAsync` always exports them).
 implementation over PostgreSQL and `./redis` accelerates budget counters; both are
 peers you already control. The library defines the contracts.
 
-### Design Principles
-
-| Principle                                      | Description                                                                                                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 💵 **Exact money, always**                     | Every persisted amount is `bigint` nano-USD. A float on a billing path is a rounding difference someone is charged for                            |
-| 📜 **Append, never update**                    | The ledger is evidence. A correction is a compensating record that points at what it reverses, so the history of a charge survives the correction |
-| 🔒 **The database prevents the double charge** | A unique constraint on the idempotency key, with the violation recognized as a conflict — not application discipline that can be forgotten        |
-| ⏱️ **Priced when it happened**                 | An entry is rated at the price in effect at the call timestamp and never re-rated, so a price change does not rewrite the past                    |
-| 🚪 **In-request enforcement**                  | Guard and interceptor, in-process: no proxy to deploy, no sidecar to keep alive, no external hop that can fail open                               |
-| 🧊 **Zero runtime dependencies**               | `dependencies` is `{}`, and an optional peer is imported only when the feature that needs it is enabled                                           |
-
 ---
 
 ## 🔐 Security Model
 
-This library decides what a customer is charged and holds the record that proves it. Its
-security contract is about arithmetic that cannot drift, a record that cannot be quietly
-rewritten, and text that does not travel.
+This library decides what a customer is charged and holds the record that proves it. Money,
+append-only corrections and the database-enforced idempotency key are described above; what is
+specific to security is below.
 
-### Money is `bigint` nano-USD everywhere it is persisted
-
-Not because floats are imprecise in the abstract, but because a rounding difference on a
-billing path is a number a customer is charged. There is no float arithmetic on a money
-path.
-
-### The ledger cannot be rewritten
-
-Entries are appended; a correction is a compensating record that points at what it
-reverses. With the optional hash chain on, each posted entry carries a hash over its
-predecessor, so a row edited directly in the database stops matching the chain that follows
-it. It is tamper-_evident_, not tamper-proof: pair it with database permissions that forbid
-`UPDATE` on the ledger table.
-
-### Charging twice is prevented by the database
-
-The idempotency key carries a unique constraint, and the replay path is that constraint
-violation being recognized as a conflict rather than surfacing as a store error. Application
-care is not what stands between a retry and a second charge.
-
-### Prompt and completion text never reach the ledger, the events or the telemetry
-
-The stream collector holds response text only to count it; the OpenTelemetry emitter carries
-model, operation, provider and service tier, and never content. The ledger stores no text at
-all.
-
-There is one place text can be persisted, and it is opt-in: `IContentStore`, the content
-sidecar. A host that enables it stores **masked** text under a short TTL, separate from the
-ledger, with a `purge()` that deletes by tenant, record or subject so an erasure request can
-be honoured without touching the accounting. It is off unless you provide a store — and if
-you do, text is being written, and where it is written is your implementation. The library ships
-no `IContentStore` implementation and creates no table for one: you bring the store, its schema
-and its retention job.
-
-### Budget checks are atomic
-
-The Redis counter runs check-and-increment as one Lua script, so two concurrent requests
-cannot both observe room under a cap that only fits one.
-
-### The scope resolver is trusted input
-
-`scopeResolver` decides whose budget and whose wallet a request draws on. It is documented
-as taking the host's **verified** auth context — never the client's body or query. A resolver
-that reads a tenant id from request input lets a caller bill someone else.
+- **The hash chain is tamper-_evident_, not tamper-_proof_.** It makes an edited row detectable by
+  anyone who verifies it; it does not stop someone with write access from rewriting the chain
+  wholesale. Pair it with database permissions that forbid `UPDATE` on the ledger table.
+- **Prompt and completion text never reach the ledger, the events or the telemetry.** The stream
+  collector holds response text only to count it, and the telemetry carries model, operation,
+  provider and service tier. The one opt-in exception is `IContentStore`, a sidecar that stores
+  **masked** text under a short TTL, apart from the ledger, with a `purge()` by tenant, record or
+  subject. It is off unless you provide a store, and you bring its schema and retention job: the
+  library ships no implementation.
+- **Budget checks are atomic.** The Redis counter runs check-and-increment as one Lua script, so two
+  concurrent requests cannot both fit under a cap that holds one.
+- **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
+  draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
+  that reads a tenant id from request input lets a caller bill someone else.
+- **Supply chain.** `dependencies` is `{}`, third-party Actions are pinned by commit SHA (org-internal
+  reusables by tag), and CodeQL, TruffleHog and OpenSSF Scorecard run in CI.
 
 ---
-
-## 🛡️ Security Table
-
-| Layer            | Implementation                                                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path                                                                               |
-| Ledger           | Append-only; corrections are compensating records, never updates                                                                                               |
-| Tamper evidence  | Optional per-entry hash chain over the previous posted entry                                                                                                   |
-| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal                                                                             |
-| Rating           | Point-in-time — an entry is priced at the call timestamp and never re-rated                                                                                    |
-| Telemetry        | Model, operation, provider, service tier; prompt and completion text never emitted                                                                             |
-| Content          | Never in the ledger, events or telemetry. The opt-in `IContentStore` sidecar stores masked text under a short TTL, with `purge()` by tenant, record or subject |
-| Budget races     | One atomic Lua `incrIfBelow` — the check and the increment cannot interleave                                                                                   |
-| Provider surface | Normalizers consume plain objects; no provider SDK dependency, no outbound call made here                                                                      |
-| Supply chain     | `dependencies: {}`; third-party Actions pinned by commit SHA (org-internal reusables by tag); CodeQL, TruffleHog and OpenSSF Scorecard                         |
-
-> [!IMPORTANT]
-> **The hash chain is tamper-_evident_, not tamper-_proof_.** It makes an edited row
-> detectable by anyone who verifies the chain; it does not stop someone with write
-> access from rewriting the chain wholesale. Pair it with database permissions that
-> forbid `UPDATE` on the ledger table.
-
----
-
-The store does not import `@prisma/client` at run time: it takes the client you pass it and uses only its `$queryRawUnsafe`, `$executeRawUnsafe` and `$transaction` members (the `PrismaRawClient` type). It therefore works with a client from either generator, including Prisma 7's `prisma-client` generator with a custom `output`, where `@prisma/client` itself has nothing generated.
-
-Every date-time column of the shipped tables is `TIMESTAMP(3)` without a time zone, and the store reads and writes them as UTC whatever the zone of the database session or the type your Prisma major gives a `Date` parameter. Keep them that way: a column you change to `timestamptz` is read in the session's zone, which is not what the store assumes.
 
 ## 🧱 Tech Stack
 
@@ -960,7 +694,7 @@ Every date-time column of the shipped tables is `TIMESTAMP(3)` without a time zo
 - **Persistence:** `@prisma/client ^6 || ^7` (peer) over PostgreSQL — both majors supported
 - **Budget acceleration:** `ioredis ^6` (peer), optional
 - **Events:** `@nestjs/event-emitter >=2` (peer), optional
-- **Telemetry:** `@opentelemetry/api ^1.9` (peer), optional
+- **Telemetry:** optional `ITelemetrySink` port; the library imports nothing from `@opentelemetry/api`
 - **Build:** tsup — ESM + CJS per subpath, with `.d.ts` _and_ `.d.cts` declarations
 - **Tests:** Jest + Testcontainers (PostgreSQL, end-to-end) + Stryker (mutation)
 - **TypeScript:** 5.x strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), zero `any`
@@ -972,24 +706,14 @@ Every date-time column of the shipped tables is `TIMESTAMP(3)` without a time zo
 This library decides what a customer is charged, so the suite is held to a bar beyond "the
 tests pass".
 
-- ✅ **100% line coverage** — statements, branches, functions and lines, enforced as a gate
-- ✅ **100% mutation score against a `break: 100` gate** — the gate is the floor a run must
-  clear; the score the suite actually reaches is 100%, verified with
-  [Stryker](https://stryker-mutator.io/) ([report](./docs/mutation_testing_results.md))
-- ✅ **Real PostgreSQL in e2e** — Testcontainers, so the unique constraint that prevents a
-  double charge is exercised against an actual database rather than a mock of one
-- ✅ **Both Prisma majors** — the raw-query violation path is unit-tested for the query engine
-  _and_ the driver adapter, because the peer range admits 6 and 7 and each reports the
-  SQLSTATE in a different place
-- ✅ **Published-artifact gates** — `check:exports` resolves the types the way each module
-  system does, `check:runtime` loads every subpath from the packed tarball in ESM and
-  CommonJS, and `check:published` compiles this README's snippets against `dist/`
-- ✅ **Every suppression carries its reason** — no coverage directives anywhere; each
-  `// Stryker disable` in the production source states, after the `:` Stryker reads it
-  from, why the mutant it silences is unobservable from a unit test (an internal error
-  context, a provider id reached only through integration). `check:mutants` proves the
-  reasons parse, so they reach the mutation report instead of being replaced by
-  Stryker's `Ignored using a comment` fallback
+- ✅ **100% coverage and a 100% mutation score** ([Stryker](https://stryker-mutator.io/), `break: 100`;
+  [report](./docs/mutation_testing_results.md)), both enforced as gates
+- ✅ **Real PostgreSQL in e2e** — Testcontainers, so the unique constraint that prevents a double charge
+  runs against an actual database
+- ✅ **Both Prisma majors** — the raw-query violation path is tested for the query engine and the driver
+  adapter, which report the SQLSTATE in different places
+- ✅ **Published-artifact gates** — `check:exports`, `check:runtime` (every subpath in ESM and CommonJS)
+  and `check:published`, which compiles this README's snippets against `dist/`
 
 ```bash
 pnpm test          # unit tests
@@ -1003,13 +727,77 @@ pnpm build && pnpm size   # bundle-size budgets
 
 ---
 
+## 📖 API Reference
+
+The sections above document each of these with a runnable example. This is the index.
+
+### Services
+
+| Service                | Surface                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `MeteringService`      | `meter<T>` · `record` · `estimateCost` · `hold` · `capture` · `release` · `restoreReleasedHold` · `reverse` · `getStatus`            |
+| `LedgerService`        | `append` · `query` · `findById` · `findByIdempotencyKey` · `findExpiredHolds` · `sumCost` · `transition` · `reverse` · `verifyChain` |
+| `WalletService`        | `getBalance` · `grant` · `debit` · `refund` · `adjust` · `settleAdjustment` · `getEntries` · `reconcile`                             |
+| `BudgetService`        | `upsertBudget` · `removeBudget` · `list` · `status` · `consume` · `release` · `adjust` · `rotateWindow` · `reconcileWindow`          |
+| `PricingService`       | `resolveRate` · `upsertPrice` · `getPriceHistory` · `seedFromSnapshot`                                                               |
+| `UsageReportService`   | `summarize` · `export`                                                                                                               |
+| `StreamUsageCollector` | Accumulates streamed chunks; prefers the provider's final usage over its own count                                                   |
+
+#### Verifying the hash chain
+
+`LedgerService.verifyChain(tenantId, from?, to?)` resolves to a `ChainVerification`:
+
+- `{ valid: true, unchainedCount, chainStartsAtRecordId?, forks? }` — every hashed record recomputes and,
+  without `from`/`to`, the hashed records form one chain. `forks` lists records that name the same
+  predecessor; a fork does not invalidate the chain, but one among records the official adapter wrote
+  since 1.1.8 is unexpected (it links each record to the single tail under a per-tenant lock), so
+  investigate it. Older forks, such as a hold that settled after a later record, are benign.
+- `{ valid: false, brokenAtRecordId, unchainedCount }` — the first record that fails: a removed hash, a
+  changed record or, without `from`/`to`, a gap or a chain that does not start at a genesis record.
+- `{ valid: false, status: 'never-enabled', unchainedCount }` — no settled record carries a hash; the
+  chain was never on for this tenant, which is not evidence of tampering.
+
+Enable `ledger.hashChain` before the first write: records written earlier are **unchained**, counted
+in `unchainedCount`, and neither verified nor protected. What it does not catch:
+
+1. A record no other record names as its predecessor can be deleted undetected: the newest record, and
+   a hold that settled while a later-created record was already hashed.
+2. The chain is unkeyed, so someone with write access who recomputes the whole tail is not detected;
+   anchor the latest hash outside the database.
+3. A rising `unchainedCount` after enabling is a signal to investigate; a rolling deploy with mixed
+   `hashChain` settings can also cause it.
+4. With `from` or `to`, only each record's own hash is checked, not the links between records.
+
+A `valid: false` on records written by 1.1.11 or earlier on Prisma 6 under a non-UTC session zone is a
+known date shift, not tampering; see the 1.1.12 entry of the [changelog](./CHANGELOG.md).
+
+### Decorators, helpers and catalogs
+
+| Export                                                                                         | Role                                                                                                                       |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@Meter` · `@RequireBudget` · `@AiFeature(name)`                                               | Handler metadata read by the interceptor and the guard; `@AiFeature` only tags the feature name                            |
+| `deriveIdempotencyKey` · `toJsonSafe` · `formatNanoUsd`                                        | Idempotency key from content, `bigint` to decimal strings for JSON, and display formatting                                 |
+| `floatUsdToNanoUsd` · `perMillion` · `computeCostNanoUsd`                                      | The money math: the only float-to-`bigint` entry, a cost at a nano-USD-per-million rate, and a usage priced against a rate |
+| `applyMarkup` · `resolveMultiplier4dp`                                                         | A markup applied in exact `bigint`, and a multiplier validated and rounded to 4 decimal places                             |
+| `isLegalLedgerTransition` · `isLegalTransitionPatchKey`                                        | The ledger lifecycle rules a custom store can reuse: which status changes and which columns each may touch                 |
+| `PROVIDER_IDS` · `SERVICE_TIERS` · `AI_OPERATIONS` · `TOKEN_CATEGORIES` · `WALLET_ENTRY_TYPES` | The catalogs the types are derived from                                                                                    |
+| `CounterValueOutOfRangeError` (`./redis`)                                                      | Thrown when a counter value leaves the safe-integer range; the budget service then falls back to the database consume      |
+
+### Injection tokens
+
+`BYMAX_AI_TOKENS_OPTIONS` (the resolved options) and the port tokens `BYMAX_AI_TOKENS_LEDGER_STORE`,
+`_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
+`_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. The wallet and budget tokens exist only when their
+options block is set (with `forRoot`; `forRootAsync` always exports them).
+
+---
+
 ## 🤝 Contributing
 
 Pull requests are welcome. Please open an issue first for significant changes.
 
-- Read [`docs/technical_specification.md`](./docs/technical_specification.md) for architecture decisions.
 - Run `pnpm test:cov` and `pnpm lint` before opening a PR.
-- Please use Conventional Commits for the message; nothing enforces it here, so it is a convention rather than a gate.
+- Use Conventional Commits for the message.
 
 ---
 

@@ -8,6 +8,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Documentation
+
+- README: OpenTelemetry is no longer listed as a peer dependency (the library imports nothing from it; you pass an
+  `ITelemetrySink`), and the stream collector's fallback is stated as applying only when it is given a `tokenizer`.
+  The configuration table now lists the options the README relies on (`pricing.strict`, `ledger.hashChain`, `fx`,
+  `currency`, `tokenizer`, `wallets.overdraftNanoUsd`, `budgets.failClosed`, `content.store`). The README is also
+  shorter: the local benchmark table, the pre-1.1.12 Prisma 6 section (the 1.1.12 entry below holds it) and
+  repeated passages are gone, and a "What This Library Does NOT Do" section was added.
+
 ### Internal
 
 - The weekly full mutation run may take 150 minutes instead of 90. With the widened mutation scope a cold run needs
