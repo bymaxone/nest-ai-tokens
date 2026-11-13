@@ -59,7 +59,7 @@ export type LedgerServiceOptions = Pick<ResolvedAiTokensOptions, 'ledger'>
 export type LedgerAuditHook = (action: string, details: Record<string, unknown>) => void
 
 /** Sum every token category into the record's `totalTokens` total. */
-function sumTokens(counts: TokenCounts): number {
+export function sumTokens(counts: TokenCounts): number {
   return (
     counts.inputTokens +
     counts.outputTokens +

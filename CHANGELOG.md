@@ -8,6 +8,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** `record({ enforce: true })` now charges the budget and the wallet before it writes the usage record. A call
+the budget or the wallet refuses leaves no record, where it used to leave a posted record that had charged nothing, and
+a retry of a refused call with the same idempotency key is decided afresh, where it used to return that record as if the
+call had been enforced. The ledger no longer holds a record of a refused call. The wallet debit of an enforced call is now
+keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and carries no `usageRecordId`.
+
+### Fixed
+
+- **A retry of a refused `record({ enforce: true })` call succeeded without charging anyone.** The record was written
+  first and enforced second, so a call refused for credits or budget had left a posted record that said it was
+  enforced; the same call retried with its key found that record and returned it, with no wallet debit and no budget
+  consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
+  enforced call now exists only when the call was enforced. When the ledger append of an enforced call does not
+  return a row, what is given back depends on what the ledger holds:
+  - a key conflict with the row of another attempt: the loser gives its budget consumption back, and keeps its wallet
+    debit only when the winning row is the same call shape, so that the debit under the key is the one both share: a
+    `record()` row (posted or reversed), enforced, not a system cost, of the same payer, which owns a wallet and owed an
+    amount. For any other row (a hold, which reserves its wallet under another key, another payer or scope, a row that
+    was not enforced, a system cost or one that cost nothing) the debit was the loser's own and is refunded, and the
+    call fails with the key conflict; the exception is a hold that was already captured, which cannot be told from a
+    record;
+  - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
+    stays, which a retry with that key replays, so the retry is charged once;
+  - another error and no row, without a key: both are given back;
+  - another error and a row that carries this attempt's instant (the append committed before the error reached the
+    caller): the charge stays, and a retry with the call's key replays the row; a call without a key is not replayed,
+    so its retry is a new call;
+  - another error and a row that does not carry this attempt's instant (another attempt wrote it): the rule of the key
+    conflict applies;
+  - the ledger cannot say whether the row exists: nothing is undone, so the charge stays, and the error is rethrown.
+
+  Two instances that race the same key with records that match can still consume the budget twice for the one record;
+  the wallet is debited once. A keyed call whose append failed keeps its wallet debit for the retry to replay, so if the
+  price or the markup changes before the retry, the retry's amount differs and it fails with the key conflict while the
+  debit stays without a record.
+
+### Changed
+
+- The `server` bundle grows from 41597 to 42589 bytes brotli, with the enforcement that now runs before the record is
+  written; its budget moves from 42000 to 42700.
+
 ## [1.1.14] - 2026-11-13
 
 **Apply:** nothing. No runtime file changed since 1.1.13: the built `dist/` of this release is byte-identical to the

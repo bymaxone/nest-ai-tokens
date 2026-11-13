@@ -223,8 +223,12 @@ no second event, metric, budget or wallet movement. The price, the markup and a 
 `occurredAt` are not compared (a provider-reported cost is), so a retry after a price change returns the original cost. A different
 request, or a key held by a hold not yet captured, fails with `AI_TOKENS_IDEMPOTENCY_CONFLICT`;
 `enforce` is part of the request, so set it in your own code, never from a caller-controlled field.
-Calls with one key are serialized within an instance only, and a replay does not complete effects the
-first call never reached.
+Calls with one key are serialized within an instance only. With `enforce: true` the budget and the
+wallet are charged before the record is written, so a call they refuse leaves no record and a retry of it is
+decided afresh; a record that exists was enforced, and its replay charges nothing more.
+An idempotency key identifies one call shape: reusing it across `hold()` and `record()`, or across payers or scopes,
+is refused with a conflict, and the attempt that loses refunds its own debit; the one exception is a hold that was
+already captured, which a `record()` with its key cannot tell from a record.
 
 ### 4 — Enforced metering via guard + interceptor
 

@@ -71,3 +71,11 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey })
 }
+
+/**
+ * The row the ledger holds for a key after an append failed: `null` when there is none, `undefined` when the lookup
+ * failed as well, so the caller does not guess.
+ */
+export function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
+  return find().catch((): undefined => undefined)
+}

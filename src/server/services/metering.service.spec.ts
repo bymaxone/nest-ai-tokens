@@ -372,14 +372,14 @@ describe('MeteringService.record', () => {
     expect(budget?.spent.nanoUsd).toBe(6_250_000n)
   })
 
-  /** Post-hoc enforcement can throw AFTER the ledger persisted the record (documented trade-off). */
-  it('persists the record then throws when post-hoc credit is insufficient', async () => {
+  /** A refused post-hoc enforcement leaves no row: the row of an enforced record exists only when the call was enforced. */
+  it('throws and keeps no record when post-hoc credit is insufficient', async () => {
     const built = build({ wallets: true })
     await seedGpt5(built.pricingStore)
     await grant(built, 1_000_000n)
     const error = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'ek' }) }).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_INSUFFICIENT_CREDITS')
-    expect(await built.ledgerStore.findByIdempotencyKey('tenant-1', 'ek')).not.toBeNull()
+    expect(await built.ledgerStore.findByIdempotencyKey('tenant-1', 'ek')).toBeNull()
   })
 
   /** isSystemCost enforce never touches the wallet or budget. */
