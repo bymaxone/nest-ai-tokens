@@ -322,20 +322,22 @@ export class MeteringService {
     const rating = await this.rate(usageForRating, serviceTier, occurredAt, mode, context.baseModel)
     const markup = await this.resolveMarkup(context, normalized, serviceTier)
     const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
+    const enforcement = enforcing ? this.effects.enforcementOf(appendInput, key ?? randomUUID()) : null
+    if (enforcement !== null) await this.effects.enforce(enforcement)
     let record: UsageRecord
     try {
       record = await this.ledger.append(withHashedModel(appendInput, parsed.model), key)
     } catch (error) {
-      if (key === undefined || !isIdempotencyConflict(error)) throw error
-      const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
-      if (stored === null) throw error
-      return { record: replayOf(stored, this.requestRecord(appendInput, key), basis), replayed: true }
+      const stored = key !== undefined && isIdempotencyConflict(error) ? { key, row: await this.ledger.findByIdempotencyKey(context.tenantId, key) } : null
+      // An attempt with the same key appended its row first; its wallet debit is the one this attempt's key replayed.
+      if (enforcement !== null) await this.effects.withdraw(enforcement, stored?.row == null)
+      if (stored?.row == null) throw error
+      return { record: replayOf(stored.row, this.requestRecord(appendInput, stored.key), basis), replayed: true }
     }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
     await this.captureContent(record.id, context.tenantId, input.content)
-    if (enforcing) await this.effects.enforceRecord(record)
     return { record, replayed: false }
   }
 

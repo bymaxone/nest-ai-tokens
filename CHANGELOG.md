@@ -8,6 +8,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** `record({ enforce: true })` now charges the budget and the wallet before it writes the usage record. A call
+the budget or the wallet refuses leaves no record, where it used to leave a posted record that had charged nothing, and
+a retry of a refused call with the same idempotency key is refused again, where it used to return that record as if the
+call had been enforced. If you read the usage record of a refused call, for example to see what an over-budget call cost
+you, read it from the error path instead: the ledger no longer holds it. The wallet debit of an enforced call is now
+keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and carries no `usageRecordId`.
+
+### Fixed
+
+- **A retry of a refused `record({ enforce: true })` call succeeded without charging anyone.** The record was written
+  first and enforced second, so a call refused for credits or budget had left a posted record that said it was
+  enforced; the same call retried with its key found that record and returned it, with no wallet debit and no budget
+  consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
+  enforced call now exists only when the call was enforced. A concurrent attempt with the same key that loses the
+  append gives its budget consumption back and leaves the wallet debit to the attempt that wrote the record, and an
+  append that fails after the call was charged is rolled back.
+
+### Changed
+
+- The `server` bundle grows from 41597 to 42127 bytes brotli, with the enforcement that now runs before the record is
+  written; its budget moves from 42000 to 42500.
+
 ## [1.1.14] - 2026-11-13
 
 **Apply:** nothing. No runtime file changed since 1.1.13: the built `dist/` of this release is byte-identical to the
