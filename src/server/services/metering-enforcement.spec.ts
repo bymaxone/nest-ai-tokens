@@ -270,6 +270,9 @@ describe('MeteringEffects.holdsWalletDebit', () => {
     { name: 'an enforced row of a payer that owns a wallet', over: { enforced: true }, expected: true },
     { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
     { name: 'a system cost', over: { enforced: true, isSystemCost: true }, expected: false },
+    { name: 'a pending hold, which reserved its wallet under another key', over: { enforced: true, status: 'pending' as const }, expected: false },
+    { name: 'a released hold', over: { enforced: true, status: 'released' as const }, expected: false },
+    { name: 'a reversed record, whose debit existed', over: { enforced: true, status: 'reversed' as const }, expected: true },
     { name: 'a row that cost nothing', over: { enforced: true, billedCostNanoUsd: 0n }, expected: false },
     { name: 'a row of a payer that owns no wallet', over: { enforced: true, scope: { type: 'key', id: 'k1' } as const }, expected: false },
   ])('is $expected for $name', async ({ over, expected }) => {

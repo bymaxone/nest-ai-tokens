@@ -10,7 +10,7 @@ import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-stor
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import type { ResolvedAiTokensOptions } from '../config'
-import type { IContentStore, ITelemetrySink, MeteringContext } from '../interfaces'
+import type { HoldEstimate, IContentStore, ITelemetrySink, MeteringContext } from '../interfaces'
 import { ContentCapture } from './content-capture'
 import { TelemetryEmitter } from '../telemetry/otel-emitter'
 import type { AiTokensException } from '../errors'
@@ -147,6 +147,9 @@ function upsertBudget(built: Built, over: Partial<Budget> = {}): Promise<Budget>
   })
 }
 
+
+/** The variant-A estimate for a 1000-in / 500-out gpt-5 chat call. */
+const ESTIMATE_A: HoldEstimate = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 }
 
 const WALLET = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
 
@@ -349,6 +352,23 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n - first.billedCostNanoUsd - second.billedCostNanoUsd)
     const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
     expect(status!.spent.nanoUsd).toBe(first.billedCostNanoUsd + second.billedCostNanoUsd)
+  })
+
+  it('refunds the record debit of a losing enforced call when the winning row is a pending hold', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    const hold = await built.service.hold(context({ idempotencyKey: 'k-15' }), ESTIMATE_A)
+    const afterHold = await balance(built)
+    expect(afterHold).toBeLessThan(10_000_000_000n)
+    // A record with the same key misses the pending hold at the replay lookup and loses the append.
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-15' }) })).rejects.toThrow()
+
+    expect(await balance(built)).toBe(afterHold)
+    await built.service.release(hold, 'test')
+    expect(await balance(built)).toBe(10_000_000_000n)
   })
 
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {

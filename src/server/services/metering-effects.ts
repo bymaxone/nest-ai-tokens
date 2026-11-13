@@ -224,7 +224,8 @@ export class MeteringEffects {
 
   /**
    * Whether the ledger row of an enforced call stands for a wallet debit under the key of its call: the row was
-   * enforced, is not a system cost, and its payer owns a wallet and owes an amount. It reads the same conditions
+   * enforced, is not a system cost, is not a hold (a pending or released row reserved its wallet under another key),
+   * and its payer owns a wallet and owes an amount. It reads the same conditions
    * {@link enforcementOf} and {@link enforce} apply, so what counts as a debit to share cannot drift from what is
    * debited.
    *
@@ -232,7 +233,7 @@ export class MeteringEffects {
    */
   holdsWalletDebit(row: UsageRecord): boolean {
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return row.enforced && !row.isSystemCost && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    return row.enforced && !row.isSystemCost && row.status !== 'pending' && row.status !== 'released' && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
   /**
@@ -275,14 +276,14 @@ export class MeteringEffects {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: enforcement.billedNanoUsd, idempotencyKey: `record-rollback:${enforcement.key}`, reason: 'enforcement rollback' })
       } catch {
-        this.logger.warn('failed to refund a wallet debit while withdrawing an enforcement')
+        this.logger.warn('failed to refund a wallet debit while withdrawing')
       }
     }
     if (this.budgets === undefined) return
     try {
       await this.budgets.release(enforcementContext(enforcement), enforcementDelta(enforcement), enforcement.occurredAt)
     } catch {
-      this.logger.warn('failed to release a budget consumption while withdrawing an enforcement')
+      this.logger.warn('failed to release a budget consumption while withdrawing')
     }
   }
 }

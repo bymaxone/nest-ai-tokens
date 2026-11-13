@@ -24,7 +24,8 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   return a row, what is given back depends on what the ledger holds:
   - a key conflict with the row of another attempt: the loser gives its budget consumption back; its wallet debit stays
     when the winning row holds a debit of the same payer's wallet to share (the wallet key is per wallet), and is
-    refunded when that row belongs to another payer, was not enforced, is a system cost or cost nothing;
+    refunded when that row belongs to another payer, was not enforced, is a system cost, cost nothing or is a hold
+    (a hold reserves its wallet under another key, so reusing a key across `hold()` and `record()` is not supported);
   - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
     stays, which a retry with that key replays, so the retry is charged once;
   - another error and no row, without a key: both are given back;
@@ -42,7 +43,7 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 42472 bytes brotli, with the enforcement that now runs before the record is
+- The `server` bundle grows from 41597 to 42498 bytes brotli, with the enforcement that now runs before the record is
   written; its budget moves from 42000 to 42500.
 
 ## [1.1.14] - 2026-11-13
