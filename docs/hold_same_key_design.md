@@ -48,10 +48,10 @@ What a caller sees, per outcome:
 
 ## What it does not fix
 
-- Two instances racing one key can still consume the budget twice for the one hold, because budget consumption has no per-call marker. That is the settlement design (a per-call budget marker keyed by the idempotency key), the next item.
+- Two instances racing one key can still consume the budget twice for the one hold, because budget consumption has no per-call marker. That is the settlement design (a per-call budget marker keyed by the idempotency key).
 - A price or markup change between a failed append and its retry changes the estimate, and the retry then fails with the key conflict while the kept debit stays without a row. Same limit as `record()`.
 - A hold that was already captured is posted and cannot be told from a record row by status.
 
 ## Cost
 
-About the size of the #193 recovery: one helper shared with `record()`, an extension of `sharesDebit`, and the serializer. The server bundle budget (42,700 B, measured 42,612 B) will need a small raise, which the PR states.
+About the size of the #193 recovery: one helper shared with `record()`, an extension of `sharesDebit`, and the serializer. The server bundle budget will need a small raise, which the PR states.
