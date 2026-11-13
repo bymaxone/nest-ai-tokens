@@ -44,6 +44,7 @@ What a caller sees, per outcome:
 - Unit, in-memory stores: a concurrent pair with one key on one instance returns one hold and reduces the wallet by one reservation; a later `capture()` and a reaper sweep never refund more than was debited.
 - Unit: the loser of a key conflict (the replay lookup missed) with the same call shape keeps the winner's debit and gives back only its budget; with another payer, a record row, or a system-cost row it refunds its own.
 - Unit: an append that commits then throws keeps the reservation and its retry replays the hold.
+- Unit and end to end: the winner releases its hold before the loser's recovery lookup; the wallet ends at its starting balance, not above it.
 - End to end, real PostgreSQL and two instances: the measured race above with the wallet balance, the pending row count and the budget window asserted after each run, N = 2 and 10.
 
 ## What it does not fix
