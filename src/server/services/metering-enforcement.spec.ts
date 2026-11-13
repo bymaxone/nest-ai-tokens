@@ -263,3 +263,24 @@ describe('MeteringEffects.withdraw', () => {
     warn.mockRestore()
   })
 })
+
+describe('MeteringEffects.holdsWalletDebit', () => {
+  /** A row stands for a wallet debit exactly when the enforcement that wrote it debits one. */
+  it.each([
+    { name: 'an enforced row of a payer that owns a wallet', over: { enforced: true }, expected: true },
+    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
+    { name: 'a system cost', over: { enforced: true, isSystemCost: true }, expected: false },
+    { name: 'a row that cost nothing', over: { enforced: true, billedCostNanoUsd: 0n }, expected: false },
+    { name: 'a row of a payer that owns no wallet', over: { enforced: true, scope: { type: 'key', id: 'k1' } as const }, expected: false },
+  ])('is $expected for $name', async ({ over, expected }) => {
+    const { service: wallets } = buildWalletService()
+    const effects = new MeteringEffects(wallets, undefined)
+
+    expect(effects.holdsWalletDebit(record(over))).toBe(expected)
+  })
+
+  /** Without the wallet feature no row stands for a wallet debit. */
+  it('is false when wallets are disabled', () => {
+    expect(new MeteringEffects(undefined, undefined).holdsWalletDebit(record({ enforced: true }))).toBe(false)
+  })
+})

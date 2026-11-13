@@ -223,6 +223,19 @@ export class MeteringEffects {
   }
 
   /**
+   * Whether the ledger row of an enforced call stands for a wallet debit under the key of its call: the row was
+   * enforced, is not a system cost, and its payer owns a wallet and owes an amount. It reads the same conditions
+   * {@link enforcementOf} and {@link enforce} apply, so what counts as a debit to share cannot drift from what is
+   * debited.
+   *
+   * @param row The record stored under the key.
+   */
+  holdsWalletDebit(row: UsageRecord): boolean {
+    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
+    return row.enforced && !row.isSystemCost && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+  }
+
+  /**
    * Post-hoc enforcement for `record({ enforce: true })`: consume the budget, then debit the wallet, BEFORE the
    * ledger row is appended, so the row of an enforced call exists only when both accepted it. A refused call
    * leaves no row and no effect, and a retry of it is decided afresh. A wallet shortfall rolls the budget

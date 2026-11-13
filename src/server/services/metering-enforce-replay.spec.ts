@@ -294,46 +294,25 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n - winner.billedCostNanoUsd)
   })
 
-  it('refunds the wallet debit of a losing attempt that debited another payer wallet under the same key', async () => {
+  /**
+   * The losing attempt of a same-key race keeps its wallet debit only when the winning row holds a debit of the same
+   * wallet to share. Each row is a winner that holds none, so the loser's debit was its own and must be refunded.
+   */
+  it.each<{ name: string; winner: Partial<MeteringContext>; usage: Partial<NormalizedUsage> }>([
+    { name: 'a winner that paid another payer', winner: { scope: { type: 'user', id: 'u2' } }, usage: {} },
+    { name: 'a winner that was not enforced', winner: { enforce: false }, usage: {} },
+    { name: 'a winner that is a system cost', winner: { isSystemCost: true }, usage: {} },
+    { name: 'a winner that cost nothing', winner: {}, usage: { inputTokens: 0, outputTokens: 0 } },
+  ])('refunds the debit of a losing enforced call against $name', async ({ winner, usage }) => {
     const built = build({ wallets: true })
     await seedGpt5(built.pricingStore)
     await grant(built, 10_000_000_000n, 'u1')
     await grant(built, 10_000_000_000n, 'u2')
-    const winner = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-12' }) })
-    // The loser pays from another wallet, misses the winner's row at the replay lookup and loses the append.
-    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
-    const loser = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-12', scope: { type: 'user', id: 'u2' } }) }
-
-    await expect(built.service.record(loser)).rejects.toThrow()
-
-    const u2 = await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u2' })
-    expect(u2.nanoUsd).toBe(10_000_000_000n)
-    expect(await balance(built)).toBe(10_000_000_000n - winner.billedCostNanoUsd)
-  })
-
-  it('refunds the debit of a losing enforced call when the winning row was not enforced', async () => {
-    const built = build({ wallets: true })
-    await seedGpt5(built.pricingStore)
-    await grant(built, 10_000_000_000n)
-    const winner = await built.service.record({ usage: normalized(), context: context({ idempotencyKey: 'k-13' }) })
-    expect(winner.enforced).toBe(false)
-    // An enforced call with the same key and payer misses that row at the replay lookup and loses the append.
+    await built.service.record({ usage: normalized(usage), context: context({ enforce: true, idempotencyKey: 'k-12', ...winner }) })
+    // The loser pays from the default wallet, misses the winner's row at the replay lookup and loses the append.
     jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
 
-    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-13' }) })).rejects.toThrow()
-
-    expect(await balance(built)).toBe(10_000_000_000n)
-  })
-
-  it('refunds the debit of a losing enforced call when the winning row is a system cost that moved no money', async () => {
-    const built = build({ wallets: true })
-    await seedGpt5(built.pricingStore)
-    await grant(built, 10_000_000_000n)
-    const winner = await built.service.record({ usage: normalized(), context: context({ enforce: true, isSystemCost: true, idempotencyKey: 'k-14' }) })
-    expect(winner.isSystemCost).toBe(true)
-    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
-
-    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-14' }) })).rejects.toThrow()
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-12' }) })).rejects.toThrow()
 
     expect(await balance(built)).toBe(10_000_000_000n)
   })
