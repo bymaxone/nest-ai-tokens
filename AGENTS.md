@@ -348,6 +348,8 @@ constraint it supports, however it was obtained. What ages is the part that cann
 what a previous version of this code did, a version number, a registry state, a review round, a
 failure that has since been fixed. Flag those; keep the measurement.
 
+A test's title states only what its assertions establish; a title that names a behaviour no assertion checks is a finding.
+
 ### Size and layering
 
 Functions over **50 lines** and nesting deeper than four levels are findings **for what a change
@@ -358,7 +360,7 @@ repository's own source and test directories. A test-suite grouping construct (`
 with a header stating its purpose and its layer, and every exported symbol a change introduces
 carries a doc comment.
 
-**The 800-line file limit applies to what a change introduces, not to what it inherits.** `pnpm check:file-length` enforces it: a tracked source file over 800 lines fails unless it is frozen on `scripts/file-length-baseline.json`, where an entry can only shrink or go. A
+**The 800-line file limit applies to what a change introduces, not to what it inherits.** A
 repository that already carries a file past the line — a generator, a long end-to-end suite — would
 otherwise produce a finding on every pull request touching three lines of it, which the author
 cannot act on and did not cause. Raise it for a **new** file over the limit, or when a change pushes
