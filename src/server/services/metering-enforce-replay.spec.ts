@@ -334,6 +334,23 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n - row!.billedCostNanoUsd)
   })
 
+  it('charges and records every call without a key, so the generated ledger key is never a replay key', async () => {
+    const built = build({ wallets: true, budgets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true }) }
+
+    const first = await built.service.record(input)
+    const second = await built.service.record(input)
+
+    expect(second.id).not.toBe(first.id)
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+    expect(await balance(built)).toBe(10_000_000_000n - first.billedCostNanoUsd - second.billedCostNanoUsd)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(first.billedCostNanoUsd + second.billedCostNanoUsd)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)
