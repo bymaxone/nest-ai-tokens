@@ -592,18 +592,6 @@ formatNanoUsd(5_000_000n, { currency: 'BRL', fxRateNano: 5_000_000_000n }) // '0
 
 ---
 
-## 🚫 What This Library Does NOT Do
-
-- It never calls a model: normalizers read the plain object your provider SDK returned.
-- It stores no prompt or completion text; the only path is your own opt-in `IContentStore`.
-- It ships no OpenTelemetry sink, no `IContentStore` implementation and no migration runner: you apply
-  the SQL, and you bring the sink and the content store.
-- It is not tamper-proof: the hash chain detects an edited row, not a rewritten tail.
-- It does not read `0` or `null` as unlimited: no budget row is unlimited and `limit = 0` blocks every
-  call.
-
----
-
 ## 🏗️ Architecture
 
 ```
@@ -684,6 +672,23 @@ specific to security is below.
   that reads a tenant id from request input lets a caller bill someone else.
 - **Supply chain.** `dependencies` is `{}`, third-party Actions are pinned by commit SHA (org-internal
   reusables by tag).
+
+---
+
+## 🛡️ Security Table
+
+| Control          | Implementation                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| Money            | `bigint` nano-USD on every persisted amount; no float arithmetic on a money path      |
+| Ledger           | Append-only; a correction is a compensating record                                    |
+| Tamper evidence  | Optional per-entry hash chain, checked by `verifyChain`; evident, not proof           |
+| Double charging  | Unique constraint on the idempotency key; the violation is the exactly-once signal    |
+| Rating           | Priced at the call timestamp and never re-rated                                       |
+| Content          | Never in the ledger, events or telemetry; opt-in `IContentStore` sidecar, your schema |
+| Budget races     | One atomic Lua check-and-increment in the Redis counter                               |
+| Caller identity  | `scopeResolver` reads the verified auth context, never the request body or query      |
+| Provider surface | Normalizers read plain objects; no provider SDK dependency, no outbound call          |
+| Supply chain     | `dependencies` is `{}`; third-party Actions pinned by commit SHA                      |
 
 ---
 
@@ -789,6 +794,18 @@ known date shift, not tampering; see the 1.1.12 entry of the [changelog](./CHANG
 `_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
 `_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. The wallet and budget tokens exist only when their
 options block is set (with `forRoot`; `forRootAsync` always exports them).
+
+---
+
+## 🚫 What This Library Does NOT Do
+
+- It never calls a model: normalizers read the plain object your provider SDK returned.
+- It stores no prompt or completion text; the only path is your own opt-in `IContentStore`.
+- It ships no OpenTelemetry sink, no `IContentStore` implementation and no migration runner: you apply
+  the SQL, and you bring the sink and the content store.
+- It is not tamper-proof: the hash chain detects an edited row, not a rewritten tail.
+- It does not read `0` or `null` as unlimited: no budget row is unlimited and `limit = 0` blocks every
+  call.
 
 ---
 

@@ -13,7 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - README: OpenTelemetry is no longer listed as a peer dependency (the library imports nothing from it; you pass an
   `ITelemetrySink`), and the stream collector's fallback is stated as applying only when it is given a `tokenizer`.
   The configuration table covers the options the README relies on, the README is shorter, and it gained a
-  "What This Library Does NOT Do" section.
+  "What This Library Does NOT Do" section, placed before Contributing, beside a compact Security Table.
 
 ### Internal
 
