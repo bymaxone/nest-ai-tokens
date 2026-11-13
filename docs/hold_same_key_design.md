@@ -28,6 +28,17 @@ The same shape cost `record({ enforce: true })` its retry in #193; the fix there
 
 Nothing is migrated and no public type changes.
 
+## The atomic primitive, and what each caller sees
+
+The database already provides the primitive: the unique index on `(tenantId, idempotencyKey)` of `ai_usage_records`. Exactly one concurrent insert of a key succeeds; every other gets a unique violation, which the store maps to the key conflict or, when the stored payload hash matches, to the stored row. A conditional insert (`INSERT ... ON CONFLICT DO NOTHING`) would add nothing, since the loser must still learn what the winner wrote, and a new lock would not cover two instances. The design therefore keeps the unique index as the only arbiter and makes the losing side undo exactly what it did, which is the whole defect.
+
+What a caller sees, per outcome:
+
+- The winner: its pending hold, with the wallet reduced once and the budget consumed once.
+- A caller that arrives after the winner's row exists: the same hold, replayed at the lookup (unchanged).
+- A caller that loses the append with a row of the same call shape: `AI_TOKENS_IDEMPOTENCY_CONFLICT` when its payload differs, or the winner's hold when the payloads match; in both cases its own budget consumption is given back and the winner's wallet reservation is left alone.
+- A caller that loses with a row of another shape (a record, another payer, a system cost): the conflict, with its own wallet debit and budget consumption given back.
+
 ## Red tests, in this order
 
 - Unit, in-memory stores: a concurrent pair with one key on one instance returns one hold and reduces the wallet by one reservation; a later `capture()` and a reaper sweep never refund more than was debited.
