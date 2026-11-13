@@ -35,7 +35,7 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 42487 bytes brotli, with the enforcement that now runs before the record is
+- The `server` bundle grows from 41597 to 42472 bytes brotli, with the enforcement that now runs before the record is
   written; its budget moves from 42000 to 42500.
 
 ## [1.1.14] - 2026-11-13

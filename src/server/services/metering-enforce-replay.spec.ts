@@ -317,6 +317,23 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n)
   })
 
+  it('keeps the charge of a call without a key whose ledger append committed before the error reached the caller', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('timed out after commit')
+
+    const [row] = await built.ledgerStore.query({ tenantId: 'tenant-1' })
+    expect(row).toBeDefined()
+    expect(await balance(built)).toBe(10_000_000_000n - row!.billedCostNanoUsd)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)

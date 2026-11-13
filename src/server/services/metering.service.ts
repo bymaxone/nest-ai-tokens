@@ -323,13 +323,14 @@ export class MeteringService {
     const rating = await this.rate(usageForRating, serviceTier, occurredAt, mode, context.baseModel)
     const markup = await this.resolveMarkup(context, normalized, serviceTier)
     const appendInput = buildAppendInput({ normalized, context, serviceTier, occurredAt, rating, markup, ratedUnits, enforced: enforcing })
-    const enforcement = enforcing ? this.effects.enforcementOf(appendInput, key ?? randomUUID()) : null
+    const callKey = key ?? randomUUID()
+    const enforcement = enforcing ? this.effects.enforcementOf(appendInput, callKey) : null
     if (enforcement !== null) await this.effects.enforce(enforcement)
     let record: UsageRecord
     try {
-      record = await this.ledger.append(withHashedModel(appendInput, parsed.model), key)
+      record = await this.ledger.append(withHashedModel(appendInput, parsed.model), callKey)
     } catch (error) {
-      return this.afterFailedAppend(error, { key, appendInput, enforcement, basis })
+      return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis })
     }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
@@ -345,15 +346,14 @@ export class MeteringService {
    */
   private async afterFailedAppend(
     error: unknown,
-    call: { key: string | undefined; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis },
+    call: { key: string | undefined; callKey: string; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis },
   ): Promise<RecordOutcome> {
-    const { key, appendInput, enforcement, basis } = call
+    const { key, callKey, appendInput, enforcement, basis } = call
     const conflict = isIdempotencyConflict(error)
-    const row = key === undefined ? null : await rowAfterFailure(() => this.ledger.findByIdempotencyKey(appendInput.tenantId, key))
-    // The ledger cannot say whether the row exists, so the charge stays where it is rather than be guessed at.
-    if (row === undefined) throw error
-    // A row after an error other than the key conflict is this attempt's own, written before the error reached it,
-    // when it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
+    const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(appendInput.tenantId, callKey))
+    if (row === undefined) throw error // the ledger cannot say whether the row exists: the charge stays, unguessed
+    // A row after an error other than the key conflict is this attempt's own, written before the error reached it, when
+    // it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
     const committed = row !== null && !conflict && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found holds a debit of the same
     // payer's wallet to share: wallet keys are per wallet, and a row that was not enforced, is a system cost or cost
