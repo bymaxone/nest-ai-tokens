@@ -20,14 +20,19 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   first and enforced second, so a call refused for credits or budget had left a posted record that said it was
   enforced; the same call retried with its key found that record and returned it, with no wallet debit and no budget
   consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
-  enforced call now exists only when the call was enforced. A concurrent attempt with the same key that loses the
-  append gives its budget consumption back and leaves the wallet debit to the attempt that wrote the record, unless that
-  attempt charged another payer's wallet or moved no money, in which case the loser refunds its own debit. When the
-  append itself fails, a call with an idempotency key gives its budget consumption back and keeps its wallet debit,
-  which the retry with that key replays, so the retry is charged once; a call without a key refunds both; when the
-  append committed before its error reached the caller (the row carries the call's instant), the charge stays, and a
-  retry with the call's key replays the row; and when the
-  ledger cannot say whether the row was written, nothing is moved and the error is rethrown.
+  enforced call now exists only when the call was enforced. When the ledger append of an enforced call does not
+  return a row, what is given back depends on what the ledger holds:
+  - a key conflict with the row of another attempt: the loser gives its budget consumption back; its wallet debit stays
+    when the winning row holds a debit of the same payer's wallet to share (the wallet key is per wallet), and is
+    refunded when that row belongs to another payer, was not enforced, is a system cost or cost nothing;
+  - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
+    stays, which a retry with that key replays, so the retry is charged once;
+  - another error and no row, without a key: both are given back;
+  - another error and a row that carries this attempt's instant (the append committed before the error reached the
+    caller): the charge stays, and a retry with the call's key replays the row; a call without a key is not replayed,
+    so its retry is a new call;
+  - the ledger cannot say whether the row exists: nothing is moved and the error is rethrown.
+
   Two instances that race the same key with records that match can still consume the budget twice for the one record;
   the wallet is debited once. A keyed call whose append failed keeps its wallet debit for the retry to replay, so if the
   price or the markup changes before the retry, the retry's amount differs and it fails with the key conflict while the
