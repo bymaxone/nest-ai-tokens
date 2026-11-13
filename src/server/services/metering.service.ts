@@ -332,9 +332,9 @@ export class MeteringService {
       const row = key === undefined ? null : await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, key))
       // The ledger cannot say whether the row exists, so the charge stays where it is rather than be guessed at.
       if (row === undefined) throw error
-      // A row after an error other than the key conflict is this attempt's own, written before the error reached it:
-      // its charge stays, and a retry with the key replays the row.
-      const committed = row !== null && !conflict
+      // A row after an error other than the key conflict is this attempt's own, written before the error reached it,
+      // when it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
+      const committed = row !== null && !conflict && row.occurredAt.getTime() === occurredAt.getTime()
       // A keyed call keeps its wallet debit, which a retry replays, so only a call without a key refunds it.
       if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, key === undefined)
       if (row === null || !conflict) throw error

@@ -274,6 +274,25 @@ describe('record({ enforce: true }) retries', () => {
     expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
   })
 
+  it('gives its budget consumption back when the row found after a generic append error belongs to another attempt', async () => {
+    const built = build({ wallets: true, budgets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-11' }) }
+    const winner = await built.service.record(input)
+    // The loser misses the winner's row at the replay lookup, then its own append fails for a reason that is not the key.
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(built.service.record(input)).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(await balance(built)).toBe(10_000_000_000n - winner.billedCostNanoUsd)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)
