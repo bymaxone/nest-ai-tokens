@@ -76,11 +76,6 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
  * The row the ledger holds for a key after an append failed: `null` when there is none, `undefined` when the lookup
  * failed as well, so the caller does not guess.
  */
-export async function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
-  try {
-    return await find()
-    // Stryker disable next-line BlockStatement: emptying the catch returns undefined too, which is the value it returns
-  } catch {
-    return undefined
-  }
+export function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
+  return find().catch((): undefined => undefined)
 }
