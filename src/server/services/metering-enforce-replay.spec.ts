@@ -325,6 +325,19 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n)
   })
 
+  it('refunds the debit of a losing enforced call when the winning row is a system cost that moved no money', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    const winner = await built.service.record({ usage: normalized(), context: context({ enforce: true, isSystemCost: true, idempotencyKey: 'k-14' }) })
+    expect(winner.isSystemCost).toBe(true)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-14' }) })).rejects.toThrow()
+
+    expect(await balance(built)).toBe(10_000_000_000n)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)

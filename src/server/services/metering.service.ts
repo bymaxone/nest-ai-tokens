@@ -356,9 +356,9 @@ export class MeteringService {
     // when it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
     const committed = row !== null && !conflict && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
     // A keyed call keeps its wallet debit, which a retry replays, unless the row found holds no debit of that payer to
-    // share (another payer's row, since wallet keys are per wallet, or a row that was never enforced): then it was
-    // this attempt's own.
-    const ownDebit = key === undefined || (row !== null && (!row.enforced || !sameScope(row.scope, appendInput.scope)))
+    // share (another payer's row, since wallet keys are per wallet, or a row that moved no money): then it was this
+    // attempt's own.
+    const ownDebit = key === undefined || (row !== null && (!row.enforced || row.isSystemCost || !sameScope(row.scope, appendInput.scope)))
     if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit)
     if (row === null || !conflict) throw error
     return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
