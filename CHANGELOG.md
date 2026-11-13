@@ -10,9 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 **Apply:** `record({ enforce: true })` now charges the budget and the wallet before it writes the usage record. A call
 the budget or the wallet refuses leaves no record, where it used to leave a posted record that had charged nothing, and
-a retry of a refused call with the same idempotency key is refused again, where it used to return that record as if the
-call had been enforced. If you read the usage record of a refused call, for example to see what an over-budget call cost
-you, read it from the error path instead: the ledger no longer holds it. The wallet debit of an enforced call is now
+a retry of a refused call with the same idempotency key is decided afresh, where it used to return that record as if the
+call had been enforced. The ledger no longer holds a record of a refused call. The wallet debit of an enforced call is now
 keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and carries no `usageRecordId`.
 
 ### Fixed
