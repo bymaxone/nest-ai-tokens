@@ -220,7 +220,7 @@ describe('record({ enforce: true }) retries', () => {
     expect(status!.spent.nanoUsd).toBe(first.billedCostNanoUsd)
   })
 
-  it('leaves the wallet and the budget unchanged when the ledger append fails after enforcement', async () => {
+  it('charges the wallet once when a keyed call whose ledger append failed is retried', async () => {
     const built = build({ wallets: true, budgets: true })
     await seedGpt5(built.pricingStore)
     await grant(built, 10_000_000_000n)
@@ -229,11 +229,62 @@ describe('record({ enforce: true }) retries', () => {
     const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-5' }) }
 
     await expect(built.service.record(input)).rejects.toThrow('connection reset')
+    const [released] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(released!.spent.nanoUsd).toBe(0n)
+
+    const retried = await built.service.record(input)
+
+    expect(await balance(built)).toBe(10_000_000_000n - retried.billedCostNanoUsd)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
+  })
+
+  it('refunds the wallet and releases the budget when a call without a key fails to append', async () => {
+    const built = build({ wallets: true, budgets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('connection reset')
 
     expect(await balance(built)).toBe(10_000_000_000n)
     const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
     expect(status!.spent.nanoUsd).toBe(0n)
-    expect(await built.ledgerStore.findByIdempotencyKey('tenant-1', 'k-5')).toBeNull()
+  })
+
+  it('keeps the charge of a call whose ledger append committed before the error reached the caller, and replays it on retry', async () => {
+    const built = build({ wallets: true, budgets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-9' }) }
+
+    await expect(built.service.record(input)).rejects.toThrow('timed out after commit')
+    const retried = await built.service.record(input)
+
+    expect(retried.enforced).toBe(true)
+    expect(await balance(built)).toBe(10_000_000_000n - retried.billedCostNanoUsd)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
+  })
+
+  it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('still down'))
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-10' }) })).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBeGreaterThan(0n)
   })
 
   it('rethrows a ledger failure of a call that was not enforced, and moves nothing', async () => {

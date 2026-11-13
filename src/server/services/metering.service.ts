@@ -40,7 +40,7 @@ import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import type { RatingResult, RecordOutcome } from './record-replay'
-import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, unratedFor } from './record-replay'
+import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
@@ -328,11 +328,17 @@ export class MeteringService {
     try {
       record = await this.ledger.append(withHashedModel(appendInput, parsed.model), key)
     } catch (error) {
-      const stored = key !== undefined && isIdempotencyConflict(error) ? { key, row: await this.ledger.findByIdempotencyKey(context.tenantId, key) } : null
-      // An attempt with the same key appended its row first; its wallet debit is the one this attempt's key replayed.
-      if (enforcement !== null) await this.effects.withdraw(enforcement, stored?.row == null)
-      if (stored?.row == null) throw error
-      return { record: replayOf(stored.row, this.requestRecord(appendInput, stored.key), basis), replayed: true }
+      const conflict = isIdempotencyConflict(error)
+      const row = key === undefined ? null : await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, key))
+      // The ledger cannot say whether the row exists, so the charge stays where it is rather than be guessed at.
+      if (row === undefined) throw error
+      // A row after an error other than the key conflict is this attempt's own, written before the error reached it:
+      // its charge stays, and a retry with the key replays the row.
+      const committed = row !== null && !conflict
+      // A keyed call keeps its wallet debit, which a retry replays, so only a call without a key refunds it.
+      if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, key === undefined)
+      if (row === null || !conflict) throw error
+      return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
     }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
