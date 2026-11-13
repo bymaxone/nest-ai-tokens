@@ -25,9 +25,9 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   append itself fails, a call with an idempotency key gives its budget consumption back and keeps its wallet debit,
   which the retry with that key replays, so the retry is charged once; a call without a key refunds both; when the
   append committed before its error reached the caller, the charge stays and the retry replays the row; and when the
-  ledger cannot say whether the row was written, nothing is moved and the error is rethrown. Two instances that race
-  the same key with the same `occurredAt` can still consume the budget twice for the one record, as before; the wallet
-  is debited once.
+  ledger cannot say whether the row was written, nothing is moved and the error is rethrown.
+  Two instances that race the same key with records that match can still consume the budget twice for the one record;
+  the wallet is debited once.
 
 ### Changed
 
