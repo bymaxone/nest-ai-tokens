@@ -264,26 +264,31 @@ describe('MeteringEffects.withdraw', () => {
   })
 })
 
-describe('MeteringEffects.holdsWalletDebit', () => {
-  /** A row stands for a wallet debit exactly when the enforcement that wrote it debits one. */
+describe('MeteringEffects.sharesDebit', () => {
+  const PAYER = { type: 'user', id: 'u1' } as const
+
+  /** A row shares the debit only when every field of the call shape matches; changing any one field refuses it. */
   it.each([
-    { name: 'an enforced row of a payer that owns a wallet', over: { enforced: true }, expected: true },
+    { name: 'the same call shape', over: {}, expected: true },
+    { name: 'a reversed record, whose debit existed', over: { status: 'reversed' as const }, expected: true },
+    { name: 'a pending hold, which reserved its wallet under another key', over: { status: 'pending' as const }, expected: false },
+    { name: 'a released hold', over: { status: 'released' as const }, expected: false },
     { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
-    { name: 'a system cost', over: { enforced: true, isSystemCost: true }, expected: false },
-    { name: 'a pending hold, which reserved its wallet under another key', over: { enforced: true, status: 'pending' as const }, expected: false },
-    { name: 'a released hold', over: { enforced: true, status: 'released' as const }, expected: false },
-    { name: 'a reversed record, whose debit existed', over: { enforced: true, status: 'reversed' as const }, expected: true },
-    { name: 'a row that cost nothing', over: { enforced: true, billedCostNanoUsd: 0n }, expected: false },
-    { name: 'a row of a payer that owns no wallet', over: { enforced: true, scope: { type: 'key', id: 'k1' } as const }, expected: false },
-  ])('is $expected for $name', async ({ over, expected }) => {
+    { name: 'a system cost', over: { isSystemCost: true }, expected: false },
+    { name: 'a row that cost nothing', over: { billedCostNanoUsd: 0n }, expected: false },
+    { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
+    { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
+    { name: 'a row of a payer that owns no wallet', over: { scope: { type: 'key', id: 'u1' } as const }, expected: false },
+  ])('is $expected for $name', ({ over, expected }) => {
     const { service: wallets } = buildWalletService()
     const effects = new MeteringEffects(wallets, undefined)
+    const asked = over.scope?.type === 'key' ? over.scope : PAYER
 
-    expect(effects.holdsWalletDebit(record(over))).toBe(expected)
+    expect(effects.sharesDebit(record({ enforced: true, status: 'posted', ...over }), asked)).toBe(expected)
   })
 
   /** Without the wallet feature no row stands for a wallet debit. */
   it('is false when wallets are disabled', () => {
-    expect(new MeteringEffects(undefined, undefined).holdsWalletDebit(record({ enforced: true }))).toBe(false)
+    expect(new MeteringEffects(undefined, undefined).sharesDebit(record({ enforced: true, status: 'posted' }), PAYER)).toBe(false)
   })
 })

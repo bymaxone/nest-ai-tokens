@@ -22,10 +22,13 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
   enforced call now exists only when the call was enforced. When the ledger append of an enforced call does not
   return a row, what is given back depends on what the ledger holds:
-  - a key conflict with the row of another attempt: the loser gives its budget consumption back; its wallet debit stays
-    when the winning row holds a debit of the same payer's wallet to share (the wallet key is per wallet), and is
-    refunded when that row belongs to another payer, was not enforced, is a system cost, cost nothing or is a hold
-    (a hold reserves its wallet under another key, so reusing a key across `hold()` and `record()` is not supported);
+  - a key conflict with the row of another attempt: the loser gives its budget consumption back, and keeps its wallet
+    debit only when the winning row is the same call shape, so that the debit under the key is the one both share: a
+    `record()` row (posted or reversed), enforced, not a system cost, of the same payer, which owns a wallet and owed an
+    amount. For any other row (a hold, which reserves its wallet under another key, another payer or scope, a row that
+    was not enforced, a system cost or one that cost nothing) the debit was the loser's own and is refunded, and the
+    call fails with the key conflict; the exception is a hold that was already captured, which cannot be told from a
+    record;
   - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
     stays, which a retry with that key replays, so the retry is charged once;
   - another error and no row, without a key: both are given back;
@@ -43,8 +46,8 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 42498 bytes brotli, with the enforcement that now runs before the record is
-  written; its budget moves from 42000 to 42500.
+- The `server` bundle grows from 41597 to 42589 bytes brotli, with the enforcement that now runs before the record is
+  written; its budget moves from 42000 to 42700.
 
 ## [1.1.14] - 2026-11-13
 

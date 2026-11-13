@@ -16,7 +16,7 @@ import type { MeteringScope, UsageRecord, WalletRef } from '../../shared'
 import type { LedgerAppendInput } from './ledger.service'
 import { sumTokens } from './ledger.service'
 import type { BudgetDelta, MeteringContext } from '../interfaces'
-import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
+import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { BudgetService } from './budget.service'
 import type { WalletService } from './wallet.service'
 
@@ -223,17 +223,19 @@ export class MeteringEffects {
   }
 
   /**
-   * Whether the ledger row of an enforced call stands for a wallet debit under the key of its call: the row was
-   * enforced, is not a system cost, is not a hold (a pending or released row reserved its wallet under another key),
-   * and its payer owns a wallet and owes an amount. It reads the same conditions
-   * {@link enforcementOf} and {@link enforce} apply, so what counts as a debit to share cannot drift from what is
-   * debited.
+   * Whether the ledger row found for a key is the same call shape as `enforcement`, so that the debit under that
+   * call's key is the one both attempts share: a `record()` row (posted or reversed, never a hold, whose wallet
+   * reservation is keyed differently), enforced, not a system cost, of the same payer, whose payer owns a wallet and
+   * owes an amount. It is an allowlist read from the conditions {@link enforcementOf} and {@link enforce} apply, so
+   * anything else (another path, payer or scope reusing the key) leaves the loser's debit its own to refund.
    *
    * @param row The record stored under the key.
+   * @param scope The payer of the attempt that is asking.
    */
-  holdsWalletDebit(row: UsageRecord): boolean {
+  sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
+    const record = row.status === 'posted' || row.status === 'reversed'
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return row.enforced && !row.isSystemCost && row.status !== 'pending' && row.status !== 'released' && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
   /**
