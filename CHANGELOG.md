@@ -8,6 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-11-13
+
+**Apply:** nothing. No runtime file changed since 1.1.13: the built `dist/` of this release is byte-identical to the
+published 1.1.13 (compared file by file), so no behaviour, API or bundle size moves.
+
+### Changed
+
+- A correction to the 1.1.13 read-cost figures for the `./prisma` open-grants read: on a wallet whose grants are all open,
+  the gain measured 1.1 to 1.7 times across environments, about 1.7 times in the 1.1.13 figures and 1.1 to 1.4 times
+  in an independent run on all-open wallets. With most grants spent it is unchanged within noise, as stated there.
+
 ### Documentation
 
 - README: OpenTelemetry is no longer listed as a peer dependency (the library imports nothing from it; you pass an
@@ -960,4 +971,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.4]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
 [1.1.13]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...v1.1.13
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...HEAD
+[1.1.14]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...v1.1.14
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...HEAD
