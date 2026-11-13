@@ -21,7 +21,8 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   enforced; the same call retried with its key found that record and returned it, with no wallet debit and no budget
   consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
   enforced call now exists only when the call was enforced. A concurrent attempt with the same key that loses the
-  append gives its budget consumption back and leaves the wallet debit to the attempt that wrote the record. When the
+  append gives its budget consumption back and leaves the wallet debit to the attempt that wrote the record, unless that
+  attempt charged another payer's wallet, in which case the loser refunds its own debit. When the
   append itself fails, a call with an idempotency key gives its budget consumption back and keeps its wallet debit,
   which the retry with that key replays, so the retry is charged once; a call without a key refunds both; when the
   append committed before its error reached the caller (the row carries the call's instant), the charge stays and the
@@ -32,7 +33,7 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 42127 bytes brotli, with the enforcement that now runs before the record is
+- The `server` bundle grows from 41597 to 42309 bytes brotli, with the enforcement that now runs before the record is
   written; its budget moves from 42000 to 42500.
 
 ## [1.1.14] - 2026-11-13

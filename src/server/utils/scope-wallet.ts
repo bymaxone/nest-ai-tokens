@@ -26,3 +26,8 @@ export function scopeOwnsWallet(scope: MeteringScope): boolean {
 export function scopeToWalletRef(tenantId: string, scope: MeteringScope): WalletRef {
   return { tenantId, ownerType: scope.type as WalletRef['ownerType'], ownerId: scope.id }
 }
+
+/** Structural equality of two metering scopes. */
+export function sameScope(a: MeteringScope, b: MeteringScope): boolean {
+  return a.type === b.type && a.id === b.id
+}

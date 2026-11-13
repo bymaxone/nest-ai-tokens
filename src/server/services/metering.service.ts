@@ -35,13 +35,14 @@ import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } f
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
 import type { ReplayBasis } from '../utils/replay-match'
-import { scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
+import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import type { RatingResult, RecordOutcome } from './record-replay'
 import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
+import type { Enforcement } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import type { TelemetryEmitter } from '../telemetry/otel-emitter'
@@ -328,23 +329,38 @@ export class MeteringService {
     try {
       record = await this.ledger.append(withHashedModel(appendInput, parsed.model), key)
     } catch (error) {
-      const conflict = isIdempotencyConflict(error)
-      const row = key === undefined ? null : await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, key))
-      // The ledger cannot say whether the row exists, so the charge stays where it is rather than be guessed at.
-      if (row === undefined) throw error
-      // A row after an error other than the key conflict is this attempt's own, written before the error reached it,
-      // when it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
-      const committed = row !== null && !conflict && row.occurredAt.getTime() === occurredAt.getTime()
-      // A keyed call keeps its wallet debit, which a retry replays, so only a call without a key refunds it.
-      if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, key === undefined)
-      if (row === null || !conflict) throw error
-      return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
+      return this.afterFailedAppend(error, { key, appendInput, enforcement, basis })
     }
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
     await this.captureContent(record.id, context.tenantId, input.content)
     return { record, replayed: false }
+  }
+
+  /**
+   * Settle an enforced call whose ledger append threw: replay the row of the attempt that won the key, or undo what
+   * this attempt charged, or leave the charge where it is when it cannot be told whether the row was written.
+   * @internal
+   */
+  private async afterFailedAppend(
+    error: unknown,
+    call: { key: string | undefined; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis },
+  ): Promise<RecordOutcome> {
+    const { key, appendInput, enforcement, basis } = call
+    const conflict = isIdempotencyConflict(error)
+    const row = key === undefined ? null : await rowAfterFailure(() => this.ledger.findByIdempotencyKey(appendInput.tenantId, key))
+    // The ledger cannot say whether the row exists, so the charge stays where it is rather than be guessed at.
+    if (row === undefined) throw error
+    // A row after an error other than the key conflict is this attempt's own, written before the error reached it,
+    // when it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
+    const committed = row !== null && !conflict && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
+    // A keyed call keeps its wallet debit, which a retry replays, unless the row belongs to another payer: wallet keys
+    // are per wallet, so that debit was this attempt's own.
+    const ownDebit = key === undefined || (row !== null && !sameScope(row.scope, appendInput.scope))
+    if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit)
+    if (row === null || !conflict) throw error
+    return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
   }
 
   /**
@@ -772,11 +788,6 @@ export class MeteringService {
     const breakdown = computeCostNanoUsd(usage, rate)
     return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: false }
   }
-}
-
-/** Structural equality of two metering scopes. */
-function sameScope(a: MeteringScope, b: MeteringScope): boolean {
-  return a.type === b.type && a.id === b.id
 }
 
 /** Whether a hard (`'block'`) budget has no headroom on a limited dimension. */
