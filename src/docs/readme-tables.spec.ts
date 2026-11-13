@@ -69,11 +69,16 @@ function valueAt(source: object, path: string): unknown {
 const DOCUMENTED_DEFAULTS = [
   'ratingMode',
   'markup',
+  'currency',
   'pricing.seedFromSnapshot',
+  'pricing.strict',
+  'ledger.hashChain',
   'wallets.creditRateNanoUsd',
+  'wallets.overdraftNanoUsd',
   'wallets.burnOrder',
   'budgets.defaultPolicy',
   'budgets.alertThresholds',
+  'budgets.failClosed',
   'holds.ttlSeconds',
   'telemetry.metrics',
 ]

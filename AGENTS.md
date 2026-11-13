@@ -433,6 +433,13 @@ record. A caller that adds a "have we captured this already?" check is not being
 duplicating a guarantee and creating a second source of truth. The shared block's rule against
 swallowing errors does not license the defensive check here.
 
+### The 800-line file limit is a gate here, so a reviewer does not re-derive it
+
+`pnpm check:file-length` enforces the limit: a tracked source file over 800 lines fails unless it is
+frozen on `scripts/file-length-baseline.json`, where an entry can only shrink or go. A file over the
+limit that is not on the baseline is therefore already a failing check, not a finding to raise by
+reading the diff.
+
 ## Session memory (Obsidian vault)
 
 Lessons from earlier sessions live outside the repository, in the owner's Obsidian vault at `~/Documents/MyApps/obsidian/Brain/`, when it is present on this machine. Before a task, find this repository's hub under `02 - Areas/`: the table in `02 - Areas/Bymax/Bymax.md` maps each Bymax repository to its folder; for any other repository, search `02 - Areas/` for the repository name. Read the hub with its `Learnings.md` and `Decisions.md`, and the relevant stack notes under `03 - Resources/`. When the vault and the code disagree, the code wins. Record each non-obvious gotcha, root cause or decision in the hub as the vault's `_meta/conventions.md` describes; a repository without a hub gets one from `_meta/templates/project-hub.md`.
