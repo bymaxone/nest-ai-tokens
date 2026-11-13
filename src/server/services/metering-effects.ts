@@ -224,10 +224,11 @@ export class MeteringEffects {
 
   /**
    * Whether the ledger row found for a key is the same call shape as `enforcement`, so that the debit under that
-   * call's key is the one both attempts share: a `record()` row (posted or reversed, never a hold, whose wallet
-   * reservation is keyed differently), enforced, not a system cost, of the same payer, whose payer owns a wallet and
-   * owes an amount. It is an allowlist read from the conditions {@link enforcementOf} and {@link enforce} apply, so
-   * anything else (another path, payer or scope reusing the key) leaves the loser's debit its own to refund.
+   * call's key is the one both attempts share: a posted or reversed row, enforced, not a system cost, of the same
+   * payer, whose payer owns a wallet and owes an amount. A pending or released row is a hold, whose wallet reservation
+   * is keyed differently. A hold that was already captured is posted and cannot be told from a `record()` row, so it
+   * passes. It is an allowlist read from the conditions {@link enforcementOf} and {@link enforce} apply, so any other
+   * row (another path, payer or scope reusing the key) leaves the loser's debit its own to refund.
    *
    * @param row The record stored under the key.
    * @param scope The payer of the attempt that is asking.
