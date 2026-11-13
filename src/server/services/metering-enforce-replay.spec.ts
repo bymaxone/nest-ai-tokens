@@ -311,6 +311,20 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n - winner.billedCostNanoUsd)
   })
 
+  it('refunds the debit of a losing enforced call when the winning row was not enforced', async () => {
+    const built = build({ wallets: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    const winner = await built.service.record({ usage: normalized(), context: context({ idempotencyKey: 'k-13' }) })
+    expect(winner.enforced).toBe(false)
+    // An enforced call with the same key and payer misses that row at the replay lookup and loses the append.
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-13' }) })).rejects.toThrow()
+
+    expect(await balance(built)).toBe(10_000_000_000n)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)

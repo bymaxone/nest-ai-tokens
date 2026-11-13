@@ -22,7 +22,7 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   consumption, and an interceptor-metered handler ran the provider call again for free each time. The record of an
   enforced call now exists only when the call was enforced. A concurrent attempt with the same key that loses the
   append gives its budget consumption back and leaves the wallet debit to the attempt that wrote the record, unless that
-  attempt charged another payer's wallet, in which case the loser refunds its own debit. When the
+  attempt charged another payer's wallet or did not enforce, in which case the loser refunds its own debit. When the
   append itself fails, a call with an idempotency key gives its budget consumption back and keeps its wallet debit,
   which the retry with that key replays, so the retry is charged once; a call without a key refunds both; when the
   append committed before its error reached the caller (the row carries the call's instant), the charge stays and the
