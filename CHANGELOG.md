@@ -31,7 +31,9 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   - another error and a row that carries this attempt's instant (the append committed before the error reached the
     caller): the charge stays, and a retry with the call's key replays the row; a call without a key is not replayed,
     so its retry is a new call;
-  - the ledger cannot say whether the row exists: nothing is moved and the error is rethrown.
+  - another error and a row that does not carry this attempt's instant (another attempt wrote it): the rule of the key
+    conflict applies;
+  - the ledger cannot say whether the row exists: nothing is undone, so the charge stays, and the error is rethrown.
 
   Two instances that race the same key with records that match can still consume the budget twice for the one record;
   the wallet is debited once. A keyed call whose append failed keeps its wallet debit for the retry to replay, so if the
