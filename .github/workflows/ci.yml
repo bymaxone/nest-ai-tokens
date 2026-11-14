@@ -124,6 +124,11 @@ jobs:
         run: pnpm check:runtime
       - name: Bundle size budget
         run: pnpm size
+      - name: Published surface
+        # The README snippets compile against the built `dist/`, so this runs after the build. It also
+        # reads the links a reader clicks, the CHANGELOG sections against the tags the checkout above
+        # fetched, and the declarations.
+        run: pnpm check:published
 
   e2e:
     name: E2E (Testcontainers + PostgreSQL + Redis)
