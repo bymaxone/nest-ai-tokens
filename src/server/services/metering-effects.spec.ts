@@ -623,12 +623,11 @@ describe('MeteringEffects.reverseEffects', () => {
   })
 
   /**
-   * A wallet refund failure during reverseEffects is swallowed (best-effort — spec
-   * §8.5 step 3). The budget release still runs. Asserting the `logger.warn` fires kills
-   * the catch-body BlockStatement mutant (emptying `catch { this.logger.warn(...) }`);
-   * here budgets.release is mocked to resolve, so the refund catch is the sole warn source.
+   * A wallet refund failure during reverseEffects no longer disappears: both legs run, the failure is logged, and the
+   * first one is rethrown at the end, so the caller can leave the effects-owed marker for the sweep. The budget release
+   * still runs, and `MeteringService.reverse` still resolves (metering-owed-effects.spec).
    */
-  it('does not throw when the wallet refund fails during reversal', async () => {
+  it('runs the budget leg and rethrows the wallet refund failure during reversal', async () => {
     const { service: wallets } = buildWalletService()
     jest.spyOn(wallets, 'refund').mockRejectedValueOnce(new Error('refund down'))
     const { service: budgets } = buildBudgetService()
@@ -636,7 +635,7 @@ describe('MeteringEffects.reverseEffects', () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(wallets, budgets)
-    await expect(effects.reverseEffects(record(), 'reason')).resolves.toBeUndefined()
+    await expect(effects.reverseEffects(record(), 'reason')).rejects.toThrow('refund down')
     // The budget release still runs despite the wallet failure
     expect(adjust).toHaveBeenCalled()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to refund a wallet debit during reversal'))
@@ -664,14 +663,28 @@ describe('MeteringEffects.reverseEffects', () => {
    * the `logger.warn` fires kills the catch-body BlockStatement mutant (emptying
    * `catch { this.logger.warn(...) }` — a silent swallow the resolve assertion cannot see).
    */
-  it('does not throw when the budget release fails during reversal', async () => {
+  it('rethrows the budget release failure during reversal', async () => {
     const { service: budgets } = buildBudgetService()
     jest.spyOn(budgets, 'adjust').mockRejectedValueOnce(new Error('release down'))
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(undefined, budgets)
-    await expect(effects.reverseEffects(record(), 'reason')).resolves.toBeUndefined()
+    await expect(effects.reverseEffects(record(), 'reason')).rejects.toThrow('release down')
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to release a budget consumption during reversal'))
     warn.mockRestore()
   })
+
+  /** A leg that fails with something that is not an Error is rethrown as one that carries it as its cause. */
+  it('wraps a failure that is not an Error, keeping it as the cause', async () => {
+    const { service: wallets } = buildWalletService()
+    jest.spyOn(wallets, 'refund').mockRejectedValueOnce('refund down')
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const effects = new MeteringEffects(wallets, undefined)
+    const error = await effects.reverseEffects(record(), 'reason').catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe('a leg of the reversal failed')
+    expect((error as Error).cause).toBe('refund down')
+    warn.mockRestore()
+  })
 })
+

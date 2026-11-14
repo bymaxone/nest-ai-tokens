@@ -232,4 +232,153 @@ describe('HoldReaper', () => {
     }
     expect(unhandled).not.toHaveBeenCalled()
   })
+
+  /**
+   * The settlement sweep rides on the same tick: a release whose wallet refund failed leaves the marker, and the sweep
+   * finishes it once the marker is older than the grace.
+   */
+  describe('the settlement sweep', () => {
+    /** A hold released by its caller whose refund failed, as the owed row the sweep finds. */
+    async function owedRelease(built: ReturnType<typeof build>, wallets: WalletService): Promise<void> {
+      await grant(wallets, 10_000_000_000n)
+      const hold = await built.service.hold(context(), ESTIMATE)
+      jest.spyOn(wallets, 'refund').mockRejectedValueOnce(new Error('wallet down'))
+      await expect(built.service.release(hold, { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } }, 'done')).rejects.toThrow('wallet down')
+    }
+
+    /** Rebuild the wallet service the stack uses, so a spy reaches the refund the service calls. */
+    function walletsOf(built: ReturnType<typeof build>): WalletService {
+      return (built.service as unknown as { wallets: WalletService }).wallets
+    }
+
+    /** A marker older than the grace is finished by the sweep, and one younger than the grace is left alone. */
+    it('settles an owed row older than the grace and leaves a younger one', async () => {
+      const built = build()
+      await owedRelease(built, walletsOf(built))
+      built.options.settlement = { enabled: true, graceSeconds: 7_200 }
+      await built.reaper().sweep()
+      expect(await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)).toHaveLength(1)
+      built.options.settlement = { enabled: true, graceSeconds: 300 }
+      await built.reaper().sweep()
+      expect(await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)).toHaveLength(0)
+      const wallet = await walletsOf(built).reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })
+      expect(wallet.nanoUsd).toBe(10_000_000_000n)
+    })
+
+    /** A disabled sweep never scans. */
+    it('does not scan when the sweep is disabled', async () => {
+      const built = build()
+      built.options.settlement = { enabled: false, graceSeconds: 300 }
+      const scan = jest.spyOn(built.ledger, 'findEffectsOwed')
+      await built.reaper().sweep()
+      expect(scan).not.toHaveBeenCalled()
+    })
+
+    /** Rows that fail on every tick produce one summary line per tick, with the count and never an amount. */
+    it('logs one summary per tick for rows that keep failing, not one line per row', async () => {
+      const built = build()
+      const wallets = walletsOf(built)
+      await owedRelease(built, wallets)
+      await owedRelease(built, wallets)
+      jest.spyOn(built.service, 'settleOwedEffects').mockRejectedValue(new Error('wallet down 1000000000'))
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      try {
+        await built.reaper().sweep()
+        await built.reaper().sweep()
+        const lines = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('settlement_sweep_failed'))
+        expect(lines).toHaveLength(2)
+        const [oldest] = await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)
+        expect(lines[0]).toBe(`ai_tokens.hold_reaper.settlement_sweep_failed count=2 first=${oldest?.record.id ?? ''}`)
+        expect(lines[0]).not.toContain('1000000000')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    /** A scan of the owed rows that fails is logged under the scan key and ends the tick without throwing. */
+    it('logs a failed scan of the owed rows and ends the tick', async () => {
+      const built = build()
+      jest.spyOn(built.ledger, 'findEffectsOwed').mockRejectedValue(new Error('database down'))
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      try {
+        await expect(built.reaper().sweep()).resolves.toBeUndefined()
+        expect(warn).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error message="database down"')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    /** A tick whose rows all settle logs nothing about the sweep. */
+    it('logs nothing when every owed row settles', async () => {
+      const built = build()
+      await owedRelease(built, walletsOf(built))
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      try {
+        await built.reaper().sweep()
+        expect(warn.mock.calls.filter(([line]) => String(line).includes('settlement_sweep_failed'))).toHaveLength(0)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    /** A store that keeps no marker leaves the sweep inactive, and the reaper says so once at boot. */
+    it('says once at boot that the sweep is inactive for a store without the marker', () => {
+      const built = build()
+      ;(built.ledgerStore as { findEffectsOwed?: unknown }).findEffectsOwed = undefined
+      const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      jest.useFakeTimers()
+      const reaper = built.reaper()
+      try {
+        reaper.onApplicationBootstrap()
+        jest.advanceTimersByTime(5_000)
+        expect(log.mock.calls.filter(([line]) => String(line).includes('settlement_sweep_inactive'))).toHaveLength(1)
+      } finally {
+        reaper.onApplicationShutdown()
+        jest.useRealTimers()
+        log.mockRestore()
+      }
+    })
+
+    /** Nothing is said at boot when the store keeps the marker, or when the sweep is switched off. */
+    it('says nothing at boot when the store keeps the marker or the sweep is disabled', () => {
+      const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      jest.useFakeTimers()
+      try {
+        const kept = build()
+        const keptReaper = kept.reaper()
+        keptReaper.onApplicationBootstrap()
+        keptReaper.onApplicationShutdown()
+        const off = build()
+        ;(off.ledgerStore as { findEffectsOwed?: unknown }).findEffectsOwed = undefined
+        off.options.settlement = { enabled: false, graceSeconds: 300 }
+        const offReaper = off.reaper()
+        offReaper.onApplicationBootstrap()
+        offReaper.onApplicationShutdown()
+        expect(log.mock.calls.filter(([line]) => String(line).includes('settlement_sweep_inactive'))).toHaveLength(0)
+      } finally {
+        jest.useRealTimers()
+        log.mockRestore()
+      }
+    })
+
+    /** The reaper's own release carries the marker too, so a refund that fails on an expired hold is finished by the next tick. */
+    it('finishes an expired hold whose refund failed', async () => {
+      const built = build(60)
+      const wallets = walletsOf(built)
+      await grant(wallets, 10_000_000_000n)
+      await built.service.hold(context(), ESTIMATE)
+      jest.spyOn(wallets, 'refund').mockRejectedValueOnce(new Error('wallet down'))
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      try {
+        built.options.settlement = { enabled: true, graceSeconds: 7_200 }
+        await built.reaper().sweep()
+        expect((await wallets.reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).not.toBe(10_000_000_000n)
+        built.options.settlement = { enabled: true, graceSeconds: 300 }
+        await built.reaper().sweep()
+        expect((await wallets.reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(10_000_000_000n)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
 })

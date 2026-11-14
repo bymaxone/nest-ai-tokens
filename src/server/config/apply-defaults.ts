@@ -16,6 +16,7 @@ import type {
   ResolvedContentOptions,
   ResolvedEventsOptions,
   ResolvedHoldsOptions,
+  ResolvedSettlementOptions,
   ResolvedLedgerOptions,
   ResolvedPricingOptions,
   ResolvedReportingOptions,
@@ -88,6 +89,14 @@ function resolveEvents(events: BymaxAiTokensModuleOptions['events']): ResolvedEv
   return { emitter: events?.emitter ?? D.events.emitter, sink: events?.sink }
 }
 
+/** Resolve the settlement sweep. */
+function resolveSettlement(settlement: BymaxAiTokensModuleOptions['settlement']): ResolvedSettlementOptions {
+  return {
+    enabled: settlement?.enabled ?? D.settlement.enabled,
+    graceSeconds: settlement?.graceSeconds ?? D.settlement.graceSeconds,
+  }
+}
+
 /** Resolve hold lifecycle. */
 function resolveHolds(holds: BymaxAiTokensModuleOptions['holds']): ResolvedHoldsOptions {
   return {
@@ -126,6 +135,7 @@ export function applyDefaults(options: BymaxAiTokensModuleOptions): ResolvedAiTo
     wallets: resolveWallets(options.wallets),
     budgets: resolveBudgets(options.budgets),
     holds: resolveHolds(options.holds),
+    settlement: resolveSettlement(options.settlement),
     ledger: resolveLedger(options.ledger),
     tokenizer: options.tokenizer,
     events: resolveEvents(options.events),

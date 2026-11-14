@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { BUDGET_COLUMNS, PRICE_COLUMNS, USAGE_COLUMNS } from './adapter-sql'
 
 const SRC = join(__dirname)
-const sources = ['index.ts', 'adapter-sql.ts', 'budget-statements.ts'].map((file) => ({
+const sources = ['index.ts', 'adapter-sql.ts', 'budget-statements.ts', 'effects-owed-sql.ts'].map((file) => ({
   file,
   text: readFileSync(join(SRC, file), 'utf8'),
 }))
@@ -38,9 +38,12 @@ function insertedColumns(list: string): string[] {
     BUDGET_COLUMNS_SQL: BUDGET_COLUMNS,
     PRICE_COLUMNS_SQL: PRICE_COLUMNS,
   }
-  const reference = /^\$\{(\w+)\}$/.exec(list.trim())?.[1]
-  if (reference !== undefined) return [...(constants[reference]!)]
-  return [...list.matchAll(/"(\w+)"/g)].map((m) => m[1]!)
+  // A list is a comma-separated mix of shared constants and quoted names, such as the usage columns and the marker's.
+  return list.split(',').flatMap((part) => {
+    const reference = /^\$\{(\w+)\}$/.exec(part.trim())?.[1]
+    if (reference !== undefined) return [...(constants[reference]!)]
+    return [...part.matchAll(/"(\w+)"/g)].map((m) => m[1]!)
+  })
 }
 
 describe('timestamp writes', () => {
@@ -68,7 +71,7 @@ describe('timestamp writes', () => {
     }
     // The pin must have looked at the tables that matter, not at nothing.
     expect(new Set(seen)).toEqual(
-      new Set(['ai_usage_records', 'ai_model_prices', 'ai_wallets', 'ai_wallet_entries', 'ai_wallet_debit_allocations', 'ai_budgets', 'ai_budget_windows', 'ai_budget_applications', 'ai_budget_references']),
+      new Set(['ai_usage_records', 'ai_model_prices', 'ai_wallets', 'ai_wallet_entries', 'ai_wallet_debit_allocations', 'ai_budgets', 'ai_budget_windows', 'ai_budget_applications', 'ai_budget_references', 'ai_usage_effects_owed']),
     )
   })
 

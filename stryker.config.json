@@ -30,6 +30,7 @@
     "src/prisma/adapter-sql.ts",
     "src/prisma/budget-applications.ts",
     "src/prisma/budget-statements.ts",
+    "src/prisma/effects-owed-sql.ts",
     "src/prisma/sql.ts",
     "src/prisma/raw-client.ts",
     "!src/**/*.spec.ts",

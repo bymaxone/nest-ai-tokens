@@ -48,6 +48,8 @@ import type {
   IAiTokensStore,
   LedgerCostSummary,
   OpenGrant,
+  OwedEffects,
+  OwedEffectsMarker,
   PricedModel,
   WalletEntryFilter,
   WalletEntryPage,
@@ -61,6 +63,7 @@ import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
 import { adjustWindowSql, consumeWindowSql, ensureWindowSql } from './budget-statements'
 import { empty, join, sql, type Sql } from './sql'
+import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
@@ -149,12 +152,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     this.burnOrder = options.burnOrder ?? 'expiry'
   }
 
-  async append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord> {
+  async append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     try {
       if (hashChain === true && record.status === 'posted') {
-        return await this.prisma.transaction((tx) => this.insertChained(tx, record, payloadHash))
+        return await this.prisma.transaction((tx) => this.insertChained(tx, record, payloadHash, owed))
       }
-      return await this.insert(this.prisma, randomUUID(), record, payloadHash, null, null)
+      return await this.insert(this.prisma, randomUUID(), record, payloadHash, null, null, owed)
     } catch (error) {
       if (isUniqueViolation(error)) return this.replayOrConflict(record, payloadHash)
       throw storeError(error)
@@ -167,9 +170,23 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     to: UsageStatus,
     patch?: Partial<UsageRecord>,
     hashChain?: boolean,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord | null> {
-    if (hashChain === true && to === 'posted') return this.settleChained(id, from, patch)
-    return this.updateStatus(this.prisma, id, from, to, patch, null, null)
+    if (hashChain === true && to === 'posted') return this.settleChained(id, from, patch, owed)
+    return this.updateStatus(this.prisma, id, from, to, patch, null, null, owed)
+  }
+
+  async findEffectsOwed(olderThan: Date, limit: number): Promise<OwedEffects[]> {
+    return (await this.prisma.query<UsageRow[]>(effectsOwedSql(olderThan, limit))).map(mapOwedRow)
+  }
+
+  async findEffectsOwedFor(id: string): Promise<OwedEffects | null> {
+    const [row] = await this.prisma.query<UsageRow[]>(effectsOwedForSql(id))
+    return row === undefined ? null : mapOwedRow(row)
+  }
+
+  async clearEffectsOwed(id: string): Promise<boolean> {
+    return (await this.prisma.query<unknown[]>(clearEffectsOwedSql(id))).length > 0
   }
 
   async findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null> {
@@ -336,25 +353,23 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     payloadHash: string,
     prevHash: string | null,
     hash: string | null,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord> {
-    const values = join(usageValues(id, record, payloadHash, prevHash, hash))
-    const rows = await executor.query<UsageRow[]>(
-      sql`INSERT INTO "ai_usage_records" (${USAGE_COLUMNS_SQL}) VALUES (${values}) RETURNING *`,
-    )
+    const rows = await executor.query<UsageRow[]>(withMarkerSql(sql`INSERT INTO "ai_usage_records" (${USAGE_COLUMNS_SQL}) VALUES (${join(usageValues(id, record, payloadHash, prevHash, hash))}) RETURNING *`, owed))
     return mapUsageRow(firstOrThrow(rows))
   }
 
   /** Insert a `posted` row under the per-tenant chain lock (§8.6). */
-  private async insertChained(tx: SqlExecutor, record: NewUsageRecord, payloadHash: string): Promise<UsageRecord> {
+  private async insertChained(tx: SqlExecutor, record: NewUsageRecord, payloadHash: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${record.tenantId})::bigint)`)
     const prevHash = await this.lastHashWithin(tx, record.tenantId)
     const id = randomUUID()
     const hash = chainHash(prevHash, { ...record, id })
-    return this.insert(tx, id, record, payloadHash, prevHash, hash)
+    return this.insert(tx, id, record, payloadHash, prevHash, hash, owed)
   }
 
   /** Settle a hold `pending → posted`, computing its chain hash under the lock (§8.6). */
-  private settleChained(id: string, from: UsageStatus, patch?: Partial<UsageRecord>): Promise<UsageRecord | null> {
+  private settleChained(id: string, from: UsageStatus, patch?: Partial<UsageRecord>, owed?: OwedEffectsMarker): Promise<UsageRecord | null> {
     return this.prisma.transaction(async (tx) => {
       const rows = await tx.query<UsageRow[]>(
         sql`SELECT * FROM "ai_usage_records" WHERE "id" = ${id} AND "status" = ${from} FOR UPDATE`,
@@ -363,7 +378,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${rows[0].tenantId})::bigint)`)
       const prevHash = await this.lastHashWithin(tx, rows[0].tenantId)
       const settled = { ...mapUsageRow(rows[0]), ...patch, status: 'posted' as const }
-      return this.updateStatus(tx, id, from, 'posted', patch, prevHash, chainHash(prevHash, settled))
+      return this.updateStatus(tx, id, from, 'posted', patch, prevHash, chainHash(prevHash, settled), owed)
     })
   }
 
@@ -376,10 +391,11 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     patch: Partial<UsageRecord> | undefined,
     prevHash: string | null,
     hash: string | null,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord | null> {
     const assignments = statusAssignments(from, to, patch, prevHash, hash)
     const rows = await executor.query<UsageRow[]>(
-      sql`UPDATE "ai_usage_records" SET ${assignments} WHERE "id" = ${id} AND "status" = ${from} RETURNING *`,
+      withMarkerSql(sql`UPDATE "ai_usage_records" SET ${assignments} WHERE "id" = ${id} AND "status" = ${from} RETURNING *`, owed),
     )
     return rows[0] === undefined ? null : mapUsageRow(rows[0])
   }

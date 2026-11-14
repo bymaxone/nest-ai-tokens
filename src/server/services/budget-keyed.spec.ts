@@ -215,6 +215,33 @@ describe('BudgetService.release and adjust under a key', () => {
     expect(await store.getWindow(budget.id, MONTH)).toEqual({ spentNanoUsd: 25n, spentTokens: 6, spentCount: 1 })
   })
 
+  /**
+   * Invariant: a release of a movement that predates keys subtracts once however many times it runs. The settlement sweep
+   * runs a release again when its wallet leg failed after the budget leg succeeded, and a second subtraction would erase
+   * spend that belongs to other calls, so the legacy subtraction is recorded under a key of its own.
+   */
+  it('subtracts a legacy release once when it runs again, with unrelated spend in the window', async () => {
+    const counter = new MapCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(100n, 10, 1), undefined, undefined)
+    await service.consume(context(), delta(50n, 5, 1), undefined, 'other-call')
+    await service.release(context(), delta(100n, 10, 1), undefined, 'reserve:older-hold', 'row')
+    await service.release(context(), delta(100n, 10, 1), undefined, 'reserve:older-hold', 'row')
+    expect(await store.getWindow(budget.id, MONTH)).toEqual({ spentNanoUsd: 50n, spentTokens: 5, spentCount: 1 })
+    expect(counter.values.get(costKey(budget.id))).toBe(50n)
+  })
+
+  /** Two legacy holds are released under keys of their own: the receipt of one never stands in for the other. */
+  it('subtracts the legacy release of each hold, whatever the other held', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(100n, 10, 2))
+    await service.release(context(), delta(30n, 3, 1), undefined, 'reserve:hold-a', 'row')
+    await service.release(context(), delta(30n, 3, 1), undefined, 'reserve:hold-b', 'row')
+    expect(await store.getWindow(budget.id, MONTH)).toEqual({ spentNanoUsd: 40n, spentTokens: 4, spentCount: 0 })
+  })
+
   /** The key can be consumed again after it was given back, which is what a retry after a withdrawn attempt needs. */
   it('lets the key be consumed again after it was given back', async () => {
     const { service, store } = makeService()

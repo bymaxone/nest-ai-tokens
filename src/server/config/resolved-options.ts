@@ -32,6 +32,12 @@ export interface ResolvedHoldsOptions {
   reaperIntervalSeconds: number
 }
 
+/** Resolved settlement sweep. */
+export interface ResolvedSettlementOptions {
+  enabled: boolean
+  graceSeconds: number
+}
+
 /** Resolved ledger extras. */
 export interface ResolvedLedgerOptions {
   hashChain: boolean
@@ -105,6 +111,7 @@ export interface ResolvedAiTokensOptions {
   wallets: ResolvedWalletsOptions
   budgets: ResolvedBudgetsOptions
   holds: ResolvedHoldsOptions
+  settlement: ResolvedSettlementOptions
   ledger: ResolvedLedgerOptions
   tokenizer?: ITokenizer | undefined
   events: ResolvedEventsOptions

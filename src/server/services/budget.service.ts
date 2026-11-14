@@ -254,7 +254,7 @@ export class BudgetService {
    *   `occurredAt`, so a settlement after a window boundary releases the window the hold consumed.
    * @param key The key {@link consume} recorded the movement under: each window drops the reference of `attempt`, and the
    *   movement goes back, from the window it moved, when that was its last reference. A window with no application at all
-   *   (one that predates keys) is released by `delta` as before, when `attempt` is the committed reference.
+   *   (one that predates keys) is released by `delta` once, under a key of its own, when `attempt` is the committed reference.
    * @param attempt The attempt whose reference is dropped; omitted, the committed reference of the ledger row.
    */
   async release(context: MeteringContext, delta: BudgetDelta, at?: Date, key?: string, attempt?: string): Promise<void> {
@@ -267,8 +267,7 @@ export class BudgetService {
         if (outcome === 'unapplied') await this.decrementCounters(counter, delta, located)
         if (outcome !== 'absent' || keyed.attempt !== COMMITTED_REFERENCE) continue
       }
-      await this.store.adjustWindow(located.budget.id, located.windowStart, negate(delta))
-      await this.decrementCounters(counter, delta, located)
+      await this.adjustWindowOf(located, negate(delta), keyed === undefined ? undefined : { key: `release:${keyed.key}`, attempt: COMMITTED_REFERENCE })
     }
   }
 

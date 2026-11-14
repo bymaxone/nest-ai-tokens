@@ -18,7 +18,7 @@ import { isLegalLedgerTransition, isLegalTransitionPatchKey } from '../../shared
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { ILedgerStore, LedgerCostSummary } from '../interfaces'
+import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
@@ -112,7 +112,7 @@ export class LedgerService {
    * @returns The stored record (new or the existing one on a matching replay).
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a payload mismatch.
    */
-  async append(input: LedgerAppendInput, ctxKey?: string): Promise<UsageRecord> {
+  async append(input: LedgerAppendInput, ctxKey?: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const record: NewUsageRecord = {
       ...input,
       idempotencyKey: ctxKey ?? randomUUID(),
@@ -121,7 +121,7 @@ export class LedgerService {
     const hashedModel = hashedModelOf(input)
     const payloadHash = computePayloadHash(hashedModel === undefined ? record : { ...record, model: hashedModel })
     try {
-      return await this.store.append(record, payloadHash, this.hashChainEnabled)
+      return await this.store.append(record, payloadHash, this.hashChainEnabled, owed)
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) {
         // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
@@ -212,6 +212,8 @@ export class LedgerService {
    * @param from The required current status.
    * @param to The target status.
    * @param patch The fields to set alongside the status flip.
+   * @param owed When given, the write also records that its effects are still owed, in the same statement, for the
+   *   owed-effects sweep; a store that does not support the marker ignores it.
    * @returns The updated record, or `null` on a from-state mismatch.
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` on an illegal transition/patch.
    */
@@ -220,9 +222,44 @@ export class LedgerService {
     from: UsageStatus,
     to: UsageStatus,
     patch?: Partial<UsageRecord>,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord | null> {
     this.assertLegalTransition(from, to, patch)
-    return this.store.transition(id, from, to, patch, this.hashChainEnabled)
+    return this.store.transition(id, from, to, patch, this.hashChainEnabled, owed)
+  }
+
+  /** Whether the store keeps the effects-owed marker, so the owed-effects sweep can run against it. */
+  supportsOwedEffects(): boolean {
+    return this.store.findEffectsOwed !== undefined && this.store.findEffectsOwedFor !== undefined && this.store.clearEffectsOwed !== undefined
+  }
+
+  /**
+   * Rows whose effects have been owed since before `olderThan`, oldest first; none when the store keeps no marker.
+   *
+   * @param olderThan Only rows whose marker is older than this are returned.
+   * @param limit The most rows to return.
+   */
+  async findEffectsOwed(olderThan: Date, limit: number): Promise<OwedEffects[]> {
+    return this.store.findEffectsOwed === undefined ? [] : this.store.findEffectsOwed(olderThan, limit)
+  }
+
+  /**
+   * The marker of one row, or `null` when it owes nothing or the store keeps no marker.
+   *
+   * @param id The row id.
+   */
+  async findEffectsOwedFor(id: string): Promise<OwedEffects | null> {
+    return this.store.findEffectsOwedFor === undefined ? null : this.store.findEffectsOwedFor(id)
+  }
+
+  /**
+   * Clear the marker of a row whose effects have run; a no-op when the store keeps no marker.
+   *
+   * @param id The row id.
+   * @returns Whether the row had a marker.
+   */
+  async clearEffectsOwed(id: string): Promise<boolean> {
+    return this.store.clearEffectsOwed === undefined ? false : this.store.clearEffectsOwed(id)
   }
 
   /**
@@ -287,10 +324,11 @@ export class LedgerService {
    *
    * @param recordId The id of the posted record to reverse.
    * @param reason The caller's stated reason (echoed in the conflict details when the record cannot be reversed).
+   * @param owed When given, the compensating record carries the effects-owed marker from its own insert.
    * @returns The compensating record.
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
-  async reverse(recordId: string, reason: string): Promise<UsageRecord> {
+  async reverse(recordId: string, reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const original = await this.store.findById(recordId)
     if (original?.status !== 'posted') {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
@@ -301,7 +339,7 @@ export class LedgerService {
         requestedReason: reason,
       })
     }
-    const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`)
+    const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`, owed)
     await this.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
     return compensating
   }

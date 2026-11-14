@@ -558,3 +558,70 @@ describe('LedgerService.reverse', () => {
     )
   })
 })
+
+describe('LedgerService effects-owed marker', () => {
+  /** The service over the in-memory store, which keeps the marker, and over a store that keeps none. */
+  function services(): { withMarker: LedgerService; without: LedgerService; store: InMemoryLedgerStore } {
+    const store = new InMemoryLedgerStore()
+    const bare = Object.assign(new InMemoryLedgerStore(), { findEffectsOwed: undefined, findEffectsOwedFor: undefined, clearEffectsOwed: undefined })
+    const options = { ledger: { hashChain: false } } as never
+    return { withMarker: new LedgerService(store, options), without: new LedgerService(bare, options), store }
+  }
+
+  /** A store that keeps the marker, with both calls, supports the sweep; one with either call missing does not. */
+  it('reports whether the store keeps the marker', () => {
+    const { withMarker, without } = services()
+    expect(withMarker.supportsOwedEffects()).toBe(true)
+    expect(without.supportsOwedEffects()).toBe(false)
+    const half = Object.assign(new InMemoryLedgerStore(), { clearEffectsOwed: undefined })
+    expect(new LedgerService(half, { ledger: { hashChain: false } }).supportsOwedEffects()).toBe(false)
+    const other = Object.assign(new InMemoryLedgerStore(), { findEffectsOwed: undefined })
+    expect(new LedgerService(other, { ledger: { hashChain: false } }).supportsOwedEffects()).toBe(false)
+    const third = Object.assign(new InMemoryLedgerStore(), { findEffectsOwedFor: undefined })
+    expect(new LedgerService(third, { ledger: { hashChain: false } }).supportsOwedEffects()).toBe(false)
+  })
+
+  /** A write that names the marker makes the row findable by the sweep's query, and clearing removes it once. */
+  it('passes the marker to the store, finds the row and clears it once', async () => {
+    const { withMarker } = services()
+    const row = await withMarker.append(makeInput({ status: 'pending' }), 'k1', {})
+    expect(await withMarker.findEffectsOwed(new Date(Date.now() + 1_000), 10)).toHaveLength(1)
+    expect(await withMarker.findEffectsOwed(new Date(Date.now() - 60_000), 10)).toHaveLength(0)
+    expect(await withMarker.clearEffectsOwed(row.id)).toBe(true)
+    expect(await withMarker.clearEffectsOwed(row.id)).toBe(false)
+    expect(await withMarker.findEffectsOwed(new Date(Date.now() + 1_000), 10)).toEqual([])
+  })
+
+  /** The marker of one row is found by id with what it kept, and a store without the marker finds none. */
+  it('finds the marker of one row, and none on a store without the marker', async () => {
+    const { withMarker, without } = services()
+    const hold = await withMarker.append(makeInput({ status: 'pending' }), 'k3')
+    await withMarker.transition(hold.id, 'pending', 'posted', undefined, { reservedBilledNanoUsd: 5n, reservedTokens: 3 })
+    expect((await withMarker.findEffectsOwedFor(hold.id))?.reservedTokens).toBe(3)
+    expect(await withMarker.findEffectsOwedFor('missing')).toBeNull()
+    await withMarker.clearEffectsOwed(hold.id)
+    expect(await withMarker.findEffectsOwedFor(hold.id)).toBeNull()
+    expect(await without.findEffectsOwedFor(hold.id)).toBeNull()
+  })
+
+  /** A store without the marker finds nothing and clears nothing, so the sweep is inactive and nothing throws. */
+  it('finds nothing and clears nothing on a store without the marker', async () => {
+    const { without } = services()
+    expect(await without.findEffectsOwed(new Date(), 10)).toEqual([])
+    expect(await without.clearEffectsOwed('any')).toBe(false)
+  })
+
+  /** A transition and a reversal can carry the marker. */
+  it('carries the marker on a transition and on a reversal', async () => {
+    const { withMarker } = services()
+    const hold = await withMarker.append(makeInput({ status: 'pending' }), 'k2')
+    await withMarker.transition(hold.id, 'pending', 'posted', undefined, { reservedBilledNanoUsd: 5n, reservedTokens: 3 })
+    const [owed] = await withMarker.findEffectsOwed(new Date(Date.now() + 1_000), 10)
+    expect(owed?.reservedBilledNanoUsd).toBe(5n)
+    expect(owed?.reservedTokens).toBe(3)
+    await withMarker.clearEffectsOwed(hold.id)
+    const compensating = await withMarker.reverse(hold.id, 'oops', {})
+    expect((await withMarker.findEffectsOwed(new Date(Date.now() + 1_000), 10)).map((row) => row.record.id)).toEqual([compensating.id])
+  })
+})
+
