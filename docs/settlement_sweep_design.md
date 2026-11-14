@@ -57,18 +57,33 @@ The hold reaper's sweep gains a second query next to the expired-hold scan: rows
 
 PR 1 documented one over-count until the sweep: a reference that is not `row` and whose attempt died. The sweep gives each such reference a verdict by looking at the ledger row of its key. It runs from the same tick and needs one store call to list the stale ones: `findStaleReferences(olderThan, limit)` on `IBudgetStore`, returning `{ key, budgetId, attempt, tenantId }`, optional like the others.
 
-| the reference | the ledger row for its key | verdict |
-| --- | --- | --- |
-| named by an attempt, older than the grace | none | `dropReference`: the movement is given back when it was the last reference |
-| named by an attempt, older than the grace | `pending`, `posted` or `reversed`, the same call | **condition B:** `commitReference`: rename to `row`, so a committed call is never under-counted. A reversed row is renamed, not dropped: its reversal already gave the amounts back through the separate application `reverse:<id>`, and dropping the last reference would unapply the original movement a second time. |
-| named by an attempt, older than the grace | any status, not the same call | `dropReference`: the row belongs to a call this reference does not, as defined below the table. |
-| named by an attempt, older than the grace | `released` | `dropReference`, never a rename, so a released row does not keep a reservation. |
-| `row` | `released` | `dropReference` on `row`: the hold was released between the append and the commit and nothing released the reference afterwards. This is the interleaving two reviewers found on PR 1, and it is a required test here. |
-| `row` | `reversed` | keep, for the reason above: the reversal's own application cancels the amounts, and a drop would subtract them twice. |
-| `row` | `pending`, `posted` | keep. |
-| `row` | none | keep: a `capture:<id>` or `reverse:<id>` adjust takes `row` directly and has no row of its own under that key. |
+The verdict is a function of the reference kind, the reference name and the row state, enumerated completely, and the implementation holds it with a test that walks the whole product.
 
-Two limits of the lookup, stated so the verdict is not over-read. The ledger key of a `reserve:<key>` reference is `<key>`; a `record:<call key>` reference maps to `<call key>`; `capture:` and `reverse:` references are not swept by this table (they take `row` directly). A call with no idempotency key used a fresh id, so no ledger row can exist under it and the first row of the table applies. Whether a found row is "the same call" is computed from what the sweep can read, because a reference stores no payer, feature or instant: the budget the reference names (loaded by `budgetId`), the application (its window and its delta) and the ledger row. The call is the same when the budget matches the row's tenant, payer scope and feature restriction (the matching `BudgetService` already applies), the application's window is the window of the row's `occurredAt`, and the row's status fits the kind. A `record:` reference also needs the application's delta to equal the row's billed amount and tokens with a count of one, and a `posted` or `reversed` row. A `reserve:` reference accepts `pending`, `posted` or `reversed` and does not compare the amount, because a capture overwrites the billed amount of a hold's row with the actuals and the application already pins the delta (a retry at another price is refused at take and never holds a reference). A tenant-wide budget cannot tell two payers apart and need not: both attempts share one application whose movement is counted once, so renaming either reference leaves it counted once. A row that is not the same call is the third row of the table, the drop.
+**Inputs.** The reference kind: `reserve:` (a hold) or `record:` (an enforced record). The reference name: named by an attempt and older than the grace, or `row`. The ledger row for its key: none, `pending`, `posted`, `reversed` or `released`. For an attempt-named reference, whether that row is the same call (defined below the matrix).
+
+**Rules, in order.**
+
+1. An attempt-named reference with no row: `dropReference`. The movement is given back when it was the last reference.
+2. An attempt-named reference whose row is not the same call: `dropReference`.
+3. An attempt-named reference whose row is the same call: `commitReference` (rename to `row`) when the row is `pending`, `posted` or `reversed`, so a committed call is never under-counted (condition B); `dropReference` when it is `released`.
+4. A `row` reference: `dropReference` when the row is `released` (the hold was released between the append and the commit and nothing released the reference afterwards); keep in every other state.
+
+**The matrix.** Every cell, with the verdict and why it moves the window the right number of times. "same" and "other" mean the row is or is not the same call.
+
+| reference | none | `pending` | `posted` | `reversed` | `released` |
+| --- | --- | --- | --- | --- | --- |
+| `reserve:` named by an attempt | drop | same: rename, other: drop | same: rename, other: drop | same: rename, other: drop | drop |
+| `record:` named by an attempt | drop | drop (a hold row is never the same call as a record) | same: rename, other: drop | same: rename, other: drop | drop (a record row is never released) |
+| `reserve:` named `row` | keep | keep | keep | keep | drop |
+| `record:` named `row` | keep | keep | keep | keep | keep (a record row is never released) |
+
+- **drop** unapplies the movement when it was the last reference: the window gets one subtraction of the stored delta, once. A drop that is not the last reference moves nothing.
+- **rename** keeps the movement applied, so it is counted once for a live row. On a `reversed` row the reversal's own application `reverse:<id>` already adds the negated amounts, so the window nets to zero; a drop there would subtract the original movement a second time, which is why `reversed` renames and keeps.
+- **keep** leaves the movement applied: a `row` reference on a `pending`, `posted` or `reversed` row is the one that row's call stands on, and a `row` reference with no row belongs to a `capture:<id>` or `reverse:<id>` adjust, which takes `row` directly and has no row of its own under that key.
+
+**The test that holds the matrix.** A table-driven test iterates the whole product (2 kinds, 2 names, 5 row states, same call or not) and fails on a cell that has no verdict, and for each cell asserts the window and the references against a run that never failed. A new row state or reference kind makes the enumeration fail until the matrix names it.
+
+Two limits of the lookup, stated so the verdict is not over-read. The ledger key of a `reserve:<key>` reference is `<key>`; a `record:<call key>` reference maps to `<call key>`; `capture:` and `reverse:` references are not swept by this table (they take `row` directly). A call with no idempotency key used a fresh id, so no ledger row can exist under it and rule 1 applies. Whether a found row is "the same call" is computed from what the sweep can read, because a reference stores no payer, feature or instant: the budget the reference names (loaded by `budgetId`), the application (its window and its delta) and the ledger row. The call is the same when the budget matches the row's tenant, payer scope and feature restriction (the matching `BudgetService` already applies), the application's window is the window of the row's `occurredAt`, and the row's status fits the kind. A `record:` reference also needs the application's delta to equal the row's billed amount and tokens with a count of one, and a `posted` or `reversed` row. A `reserve:` reference accepts `pending`, `posted` or `reversed` and does not compare the amount, because a capture overwrites the billed amount of a hold's row with the actuals and the application already pins the delta (a retry at another price is refused at take and never holds a reference). A tenant-wide budget cannot tell two payers apart and need not: both attempts share one application whose movement is counted once, so renaming either reference leaves it counted once. A row that is not the same call is rule 2, the drop.
 
 **Accepted limit.** A keyed `record()` row that won a race against a `hold()` on the same key is `posted` like a captured hold's row, and the sweep cannot tell them apart: it renames the hold's reference onto it and the reservation stays counted until its window rotates, where the inline path would have dropped it. It needs that race on one key, and the over-count fails closed and is bounded by the window.
 
@@ -105,7 +120,7 @@ A keyed call whose append failed with no row keeps its wallet debit for the retr
 - Boot validation: each relation between `graceSeconds`, `retentionSeconds` and the hold TTL, and each non-whole value, is refused naming the option.
 - Two tenants, and two sweepers at once (sections 2).
 - The failure log: a row that fails every tick produces one summary line per tick, not one per row.
-- The reference table: one test per row, with a tenant-wide budget shared by two payers and a `record:` reference whose application delta differs from the row's amount, with a reversed row for each reference kind (an attempt-named reference of a reversed record is renamed and the window ends equal to a run that never failed; a `row` reference of a reversed row is kept and the window is not subtracted twice), including the released-between-append-and-commit interleaving and the price-change retry.
+- The reference matrix: one test per cell, with a tenant-wide budget shared by two payers and a `record:` reference whose application delta differs from the row's amount, with a reversed row for each reference kind (an attempt-named reference of a reversed record is renamed and the window ends equal to a run that never failed; a `row` reference of a reversed row is kept and the window is not subtracted twice), including the released-between-append-and-commit interleaving and the price-change retry.
 - Pruning: an application inside the retention survives, one past it is deleted with its references, a pending hold's `row` survives, an unmarked terminal row's application is deleted.
 - Real PostgreSQL, two instances: kill the effects between the transition and the budget call (a store double that throws once), run the sweep on both, and assert the wallet, the window and the references against a run that never failed.
 - Contract tests for each new store call, so a custom store is held to the same rule.
