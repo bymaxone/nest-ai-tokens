@@ -847,7 +847,7 @@ options block is set (with `forRoot`; `forRootAsync` always exports them).
 
 A capture, a release and a reversal commit to the ledger first and run their effects after: the wallet legs and the budget
 legs. A marker row in `ai_usage_effects_owed`, written by the same statement as the write, records that the effects are owed, so
-a crash between the two no longer strands them. The ledger table itself gains no column. The reaper's tick finishes the effects of rows whose marker is older than
+a crash between the two no longer strands them. The ledger table itself gains no column. Each tick of the reaper finishes a batch of the rows whose marker is older than
 `settlement.graceSeconds`. Each leg is keyed by what causes it, so running it again moves nothing, and two replicas
 sweeping at once hold no lock between them. The sweep re-emits the event a write owes, at least once, so a consumer must be
 idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
