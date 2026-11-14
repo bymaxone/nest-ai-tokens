@@ -61,6 +61,17 @@ jobs:
           else
             pnpm check:file-length
           fi
+      - name: Spec files open with a purpose and layer header
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # A pull request is also checked against the baseline on its base branch, so the
+          # baseline it carries cannot admit the spec it adds.
+          if [ -n "$BASE_REF" ]; then
+            pnpm check:spec-headers --base "origin/$BASE_REF"
+          else
+            pnpm check:spec-headers
+          fi
       - name: JSDoc coverage + docs fixture type-check
         run: pnpm docs:check
       - name: Reject provider SDK imports (normalizer-first)
