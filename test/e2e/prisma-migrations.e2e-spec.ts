@@ -114,24 +114,44 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     ])
   })
 
+  /** The foreign keys of a schema with no valid, full index led by their columns, as `table.constraint`. */
+  async function foreignKeysWithoutIndex(schema: string): Promise<string[]> {
+    const rows = await prisma.$queryRaw<{ table: string; fk: string }[]>`
+      SELECT c.conrelid::regclass::text AS "table", c.conname AS "fk"
+      FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.connamespace = to_regnamespace(${schema})
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i
+          WHERE i.indrelid = c.conrelid AND i.indisvalid AND i.indpred IS NULL
+            AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] = c.conkey
+        )
+      ORDER BY 1, 2
+    `
+    return rows.map((row) => `${row.table}.${row.fk}`)
+  }
+
   /*
    * Invariant: every foreign key of the migrated schema is served by an index whose leading columns are the key's columns.
    * A foreign key without one makes the delete or update of its parent scan the whole child table, under the parent's row
    * lock; the rule is read from the catalog so that a foreign key a later migration adds is held to it as well.
    */
   it('has an index led by the columns of every foreign key', async () => {
-    const rows = await prisma.$queryRaw<{ table: string; fk: string }[]>`
-      SELECT c.conrelid::regclass::text AS "table", c.conname AS "fk"
-      FROM pg_constraint c
-      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
-        AND NOT EXISTS (
-          SELECT 1 FROM pg_index i
-          WHERE i.indrelid = c.conrelid
-            AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] = c.conkey
-        )
-      ORDER BY 1, 2
-    `
-    expect(rows).toEqual([])
+    expect(await foreignKeysWithoutIndex('public')).toEqual([])
+  })
+
+  /** The rule itself, on a scratch schema the other cases never read: a foreign key whose only index is partial is flagged, and one with a full index is not. */
+  it('flags a foreign key whose only index is partial', async () => {
+    await prisma.$executeRawUnsafe('CREATE SCHEMA "zz_fk_scratch"')
+    try {
+      await prisma.$executeRawUnsafe('CREATE TABLE "zz_fk_scratch"."parent" ("id" INTEGER PRIMARY KEY)')
+      await prisma.$executeRawUnsafe('CREATE TABLE "zz_fk_scratch"."child" ("parentId" INTEGER REFERENCES "zz_fk_scratch"."parent" ("id"))')
+      await prisma.$executeRawUnsafe('CREATE INDEX "child_partial_idx" ON "zz_fk_scratch"."child" ("parentId") WHERE "parentId" > 0')
+      expect(await foreignKeysWithoutIndex('zz_fk_scratch')).toEqual(['zz_fk_scratch.child.child_parentId_fkey'])
+      await prisma.$executeRawUnsafe('CREATE INDEX "child_full_idx" ON "zz_fk_scratch"."child" ("parentId")')
+      expect(await foreignKeysWithoutIndex('zz_fk_scratch')).toEqual([])
+    } finally {
+      await prisma.$executeRawUnsafe('DROP SCHEMA "zz_fk_scratch" CASCADE')
+    }
   })
 
   /** Append persists; a matching replay returns the same row; a mismatch conflicts. */
