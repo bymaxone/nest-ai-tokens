@@ -53,7 +53,7 @@ movement is applied once per application (a key and a budget id); every attempt 
 reference on it, named by the attempt. `consumeWindowOnce` and `adjustWindowOnce` take the reference and answer
 `'applied'`, `'replayed'` when the application already moved the same window by the same delta, or `'mismatch'` when it
 moved another window or another delta (nothing moves and no reference is taken; the service refuses the key as an
-idempotency conflict). `commitReference` renames the attempt's reference to `row`, the call whose ledger row stands, or
+idempotency conflict); `consumeWindowOnce` also answers `'refused'` when a limit stops it, recording nothing. `commitReference` renames the attempt's reference to `row`, the call whose ledger row stands, or
 drops it when `row` is already held. `dropReference` drops one reference and subtracts the movement, from the window it
 moved, when it was the last. The module refuses a store that lacks them at boot. The uniqueness of the application,
 never a read followed by a write, must decide which of several concurrent attempts moves the window, and a take and a
