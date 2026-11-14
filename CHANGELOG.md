@@ -11,8 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 ## [1.1.15] - 2026-11-14
 
 **Apply:** run both migrations, `0002_budget_applications.sql` and `0003_effects_owed.sql`, before you update the package.
-Both are additive: they create tables, indexes and foreign keys and touch no existing table, and each documents its
-rollback. The notes below say what each one is for.
+Both are additive: they create tables, indexes and foreign keys and touch no existing table. The notes below say what each one is for.
 
 **Apply:** run migration `0003_effects_owed.sql` before you update the package. It creates one table,
 `ai_usage_effects_owed`, beside the ledger and touches no existing table, so it is additive: rows written before it owe
@@ -93,7 +92,7 @@ against a server-side clock must use the `now` it is given; an entry's `createdA
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
-**Apply:** run migration `0002_budget_applications.sql` (additive: two new tables, three indexes and two foreign keys; an
+**Apply:** run migration `0002_budget_applications.sql` (additive; an
 existing database needs only this file) before you deploy, or the budget feature fails on its first movement. If you
 implement `IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce`, `commitReference` and `dropReference`. A
 movement is applied once per application (a key and a budget id); every attempt that applies or replays it takes one
