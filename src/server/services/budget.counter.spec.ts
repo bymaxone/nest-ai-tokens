@@ -261,6 +261,16 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_ERROR')
   })
 
+  /** A database that cannot be reached blocks as unavailable (503), not as a store defect. */
+  it('blocks with the unavailable code when the database cannot be reached (failClosed)', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    jest.spyOn(store, 'conditionalConsume').mockRejectedValue(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }))
+    await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_UNAVAILABLE')
+  })
+
   /** The database failure that made the budget fail closed rides on the store error as its cause. */
   it('keeps the database failure as the cause of the fail-closed store error', async () => {
     const counter = new FakeCounter()

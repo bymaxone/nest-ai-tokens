@@ -33,6 +33,7 @@ import type { BudgetWindowSpend, OpenGrant, WalletEntryFilter } from '../server'
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { attachCause } from '../server/errors/attach-cause'
+import { storeFailureCode } from '../server/errors/store-availability'
 import { identifier, identifiers, join, sql, type Sql } from './sql'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
@@ -304,7 +305,7 @@ export function isUniqueViolation(error: unknown): boolean {
 export function storeError(error: unknown): AiTokensException {
   if (error instanceof AiTokensException) return error
   const code = isKnownRequestError(error) ? error.code : undefined
-  return attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, code === undefined ? {} : { code }), error)
+  return attachCause(new AiTokensException(storeFailureCode(error), undefined, code === undefined ? {} : { code }), error)
 }
 
 /**

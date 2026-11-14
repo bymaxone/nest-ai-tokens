@@ -163,6 +163,28 @@ describe('storeError', () => {
     expect('code' in body.error.details).toBe(false)
   })
 
+  /** A connection refused is an availability failure: its own code, with the socket code in the body and the driver error as the cause. */
+  it('reports an unreachable server as the unavailable code', () => {
+    const driver = knownError('ECONNREFUSED')
+    const error = storeError(driver)
+    expect(error.getStatus()).toBe(503)
+    expect(error.cause).toBe(driver)
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_UNAVAILABLE', details: { code: 'ECONNREFUSED' } } })
+  })
+
+  /** A statement defect stays a store error answering 500. */
+  it('reports a defect of the statement as the store error', () => {
+    const error = storeError(knownError('P2021'))
+    expect(error.getStatus()).toBe(500)
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
+  })
+
+  /** A unique violation never reaches the classifier as an availability failure: the store reads it first, and the classifier does not read it as one. */
+  it('does not read a unique violation as unavailable', () => {
+    expect(isUniqueViolation(knownError('P2002'))).toBe(true)
+    expect(storeError(knownError('P2002')).getStatus()).toBe(500)
+  })
+
   /** An error that is already typed passes through, so a specific refusal is not flattened into a store error. */
   it('returns a typed error as it is', () => {
     const typed = storeError(new Error('x'))

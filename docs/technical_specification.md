@@ -1686,7 +1686,8 @@ export interface IBudgetCounterStore {
 | Unique violation on wallet entry idempotency key | Same replay-or-conflict rule |
 | Conditional debit/consume affected 0 rows | `AI_TOKENS_INSUFFICIENT_CREDITS` / `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` (never a store error) |
 | `transition()` from-state mismatch | Returns null → caller resolves (idempotent capture returns the posted record; reaper skips) |
-| Connection/timeout/unknown Prisma errors | `AI_TOKENS_STORE_ERROR` (502) with the driver code in `details` |
+| Connection refused or closed, pool or transaction timeout, statement or lock timeout, serialization failure or deadlock, shutdown (the retryable failures; the codes are listed in `store_unavailable_design.md`) | `AI_TOKENS_STORE_UNAVAILABLE` (503) |
+| Any other unknown Prisma error | `AI_TOKENS_STORE_ERROR` (500) |
 | `Prisma.Decimal` ↔ `number` (markupMultiplier) | Converted at the adapter boundary; exact by construction (4-dp rule, §7.2) |
 
 ### 15.3 Prisma schema (the seven tables)
@@ -1924,7 +1925,8 @@ export class AiTokensException extends HttpException {
 | `AI_TOKENS_HOLD_ALREADY_SETTLED`  | 409  | `capture()` after `release()` (conflicting settlement; repeat `capture()` is idempotent — §11.1) |
 | `AI_TOKENS_IDEMPOTENCY_CONFLICT`  | 409  | Same idempotency key with a different payload hash; or reversing an already-reversed record |
 | `AI_TOKENS_STREAM_USAGE_MISSING`  | 422  | Stream ended without provider usage and no tokenizer fallback was available               |
-| `AI_TOKENS_STORE_ERROR`           | 502  | The persistence adapter raised an unmapped error                                          |
+| `AI_TOKENS_STORE_ERROR`           | 500  | The persistence adapter raised an error that retrying does not fix                        |
+| `AI_TOKENS_STORE_UNAVAILABLE`     | 503  | The persistence adapter cannot serve the call now (connection, timeout, retryable conflict) |
 
 ---
 

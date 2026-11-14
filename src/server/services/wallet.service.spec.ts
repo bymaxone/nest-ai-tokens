@@ -308,6 +308,25 @@ describe('WalletService', () => {
     await expectRejectCode(service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }), 'AI_TOKENS_STORE_ERROR')
   })
 
+  /** A store that cannot be reached is reported as unavailable, 503, with the driver error as the cause. */
+  it('maps an unreachable store to the unavailable code', async () => {
+    const original = Object.assign(new Error('connect ECONNREFUSED'), { name: 'PrismaClientKnownRequestError', code: 'ECONNREFUSED' })
+    const service = new WalletService(throwingStore('appendEntry', original), OPTIONS)
+    const error = await service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect((error as AiTokensException).getStatus()).toBe(503)
+    expect(((error as AiTokensException).getResponse() as { error: { code: string } }).error.code).toBe('AI_TOKENS_STORE_UNAVAILABLE')
+    expect((error as AiTokensException).cause).toBe(original)
+  })
+
+  /** An idempotency conflict is decided before availability and keeps its 409, even when the same error carries an availability code. */
+  it('keeps a conflict as a conflict', async () => {
+    const conflict = Object.assign(new LedgerIdempotencyConflict('t1', 'd1'), { code: 'ECONNRESET' })
+    const service = new WalletService(throwingStore('conditionalDebit', conflict), OPTIONS)
+    const error = await service.debit(REF, { amountNanoUsd: 10n, idempotencyKey: 'd1', reason: 'x' }).catch((e: unknown) => e)
+    expect((error as AiTokensException).getStatus()).toBe(409)
+  })
+
   /** The original store failure rides on the store error as its cause, for a server-side log, and never in the body. */
   it('keeps the original store failure as the cause of the store error', async () => {
     const original = new Error('driver down: connect ECONNREFUSED db.internal:5432')

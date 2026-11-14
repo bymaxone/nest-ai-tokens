@@ -53,6 +53,6 @@ describe('shared catalogs', () => {
     for (const [key, value] of Object.entries(AI_TOKENS_ERROR_CODES)) {
       expect(value).toBe(key)
     }
-    expect(Object.keys(AI_TOKENS_ERROR_CODES)).toHaveLength(15)
+    expect(Object.keys(AI_TOKENS_ERROR_CODES)).toHaveLength(16)
   })
 })
