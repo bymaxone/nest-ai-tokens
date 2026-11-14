@@ -1,41 +1,96 @@
+# Canonical shape of an npm release: the code that builds runs without a credential, and the job that
+# holds the credential runs no code from the package. Copy to `.github/workflows/release.yml` in the
+# repository (the file name matters, see "npm trusted publishing" below) and fill in the marked parts.
+#
+# Why two jobs
+#   `build` installs dependencies, runs the gates and packs. That runs a lot of code (the dependency
+#   tree, the toolchain, the package's own scripts), so it holds `contents: read` and nothing else.
+#   `publish` holds the OIDC token (`id-token: write`) and `contents: write`, installs nothing and
+#   executes nothing from the package: it checks one file against the digest `build` reported and
+#   hands that file to `npm publish`.
+#
+# The rules this file exists to keep
+#   1. Pack ONCE, in `build`. Every gate that looks at the package runs against that tarball, never
+#      against `dist/`: what the gates saw is what gets published, byte for byte.
+#   2. `build` records the tarball's sha256 as a job output. `publish` downloads the artifact, checks
+#      the digest, and publishes that exact file: `npm publish ./<file>.tgz`, never `npm publish`
+#      from a directory, which would pack again.
+#      The digest is the pack step's job output, fixed when that step ends, and not the SHA256SUMS
+#      file: that file travels in the artifact, where a later step could rewrite it along with the
+#      tarball. It is in the artifact for the person who downloads it.
+#   3. `publish` refuses a commit that is not on the default branch. A tag can be created on any commit,
+#      and the environment reviewer approves a run, not a diff.
+#   4. A version that is already on npm is not published again, and the GitHub Release is created only
+#      when it is missing. A re-run completes the release instead of failing or duplicating it.
+#   5. No message prints a value that came from outside the job (a tag name, an input): name the
+#      thing that is wrong, not its content. A value with a newline can start a second workflow command.
+#
+# npm trusted publishing (configured on npmjs.com, per package; nothing here is a secret)
+#   - Repository, workflow file name `release.yml` (the file name only, with the extension) and the
+#     environment name below must match what the package's trusted publisher says, character for
+#     character.
+#   - npm CLI 11.5.1 or newer and Node 22.14 or newer; GitHub-hosted runners only.
+#   - The repository must be public, and `repository.url` in package.json must be that repository,
+#     or no provenance is generated.
+#   - A reusable release workflow is not the pattern here: npm validates the CALLING workflow's name,
+#     and the code holding the token would then come from a ref that moves. Each repository keeps its
+#     own release.yml.
+#
+# Repository settings this relies on (the user changes these, not the workflow):
+#   - Environment `npm-publish` with a required reviewer and a deployment policy that allows tags
+#     `v*.*.*` only.
+#   - A tag ruleset on `v*.*.*` limiting who can create them.
+#
+# Provenance on a publish from a tarball (measured on nest-telemetry 1.0.4, run 43554514730): both the
+# npm publish attestation and the SLSA provenance v1 carry the sha512 of the tarball as their subject,
+# and the provenance names `release.yml` at `refs/tags/<tag>` and the commit it ran on.
+# Verification note: the registry entry of a tarball publish has no `gitHead`, so a check that read it
+# must read the commit from the provenance's `buildDefinition.resolvedDependencies[].digest.gitCommit`.
 name: Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
+  # An interrupted release is re-run from the Actions tab, on the tag.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A release changes shared state: one at a time.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish to npm and create GitHub Release
+  build:
+    name: Build, verify and pack
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Only publish from a semver tag — a manual workflow_dispatch on a branch must never publish.
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-    environment:
-      name: npm-publish
-      url: https://www.npmjs.com/package/@bymax-one/nest-ai-tokens
     permissions:
-      contents: write # gh release create
-      id-token: write # npm OIDC Trusted Publishing — exchanges OIDC for a short-lived token; no NPM_TOKEN secret
+      contents: read
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      version: ${{ steps.pack.outputs.version }}
     steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
-        with:
-          egress-policy: audit
+      - name: Require a version tag
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "::error title=release::A release runs on a version tag, not on a branch."
+            exit 1
+          fi
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history and every tag: a package's published-surface gate can fetch tags and list
+          # them against the CHANGELOG, and that fails on a shallow clone without tags.
           fetch-depth: 0
+          # Nothing here pushes: no credential is left in .git/config for the install to read.
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -47,29 +102,27 @@ jobs:
         with:
           node-version: 24.x
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify tag matches package.json version
+      - name: Verify the tag matches package.json
         run: |
-          PKG=$(node -p "require('./package.json').version")
-          TAG=${GITHUB_REF_NAME#v}
-          if [ "$PKG" != "$TAG" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+          set -euo pipefail
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "$pkg_version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error title=release::The tag does not match the version in package.json."
             exit 1
           fi
 
-      - name: Extract release notes from CHANGELOG
-        # The GitHub Release body is the tag's own CHANGELOG section, so the notes a reader
-        # sees are the ones reviewed in the release PR. It runs before the build and the
-        # publish: a version with no section stops the release before anything is published,
-        # and there is no fallback text. The version is matched as a literal, so the dots in
-        # `1.1.3` match only dots, and only the heading's own first bracket counts, so a
-        # second bracketed token on another heading cannot start the section. The notes go through a file, never through a shell or an
-        # output variable, so nothing inside the CHANGELOG is evaluated or can end the value.
+      - name: Extract the release notes
+        # Before the pack step, which makes the directory read-only. The notes are the CHANGELOG
+        # section of this version, written to a file and never interpolated into a shell. The version
+        # is matched as a literal and only a heading's own first bracket counts. A version with no
+        # section stops the release before anything is packed, and there is no fallback text.
         run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/package"
           VERSION=${GITHUB_REF_NAME#v}
           awk -v ver="$VERSION" '
             /^## \[/ {
@@ -77,51 +130,151 @@ jobs:
               if (index($0, "## [" ver "]") == 1) { found = 1; next }
             }
             found { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
-          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
-            echo "CHANGELOG.md has no non-empty section for $VERSION"
+          ' CHANGELOG.md > "$RUNNER_TEMP/package/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/package/release-notes.md"; then
+            echo "::error title=release::CHANGELOG.md has no non-empty section for this version."
             exit 1
           fi
 
-      - name: Release gate
-        run: pnpm prepublishOnly # typecheck · lint · 100% coverage · build · size
+      - name: Verify the source tree (typecheck, lint, 100% coverage, build, size, published surface)
+        run: pnpm prepublishOnly
 
-      - name: Verify published type resolution
-        # Runs after the build inside prepublishOnly and before the publish, so a
-        # tag cannot ship a tarball whose `exports` map resolves to declarations
-        # for the wrong module format.
-        #
-        # It is a step rather than a prepublishOnly entry because the publish below
-        # runs with `--ignore-scripts` — prepublishOnly already ran as its own step,
-        # and a second run would clean and rebuild the `dist/` the gates validated.
-        # A gate inside prepublishOnly would therefore never run on this path.
-        run: pnpm check:exports
+      - name: Pack once
+        id: pack
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/package"
+          mkdir -p "$out"
+          # The build that goes into the tarball ran in the verify step, so no lifecycle script runs
+          # here. The file is found, not parsed out of npm's output.
+          npm pack --ignore-scripts --pack-destination "$out" > "$RUNNER_TEMP/pack.log" 2>&1 || { cat "$RUNNER_TEMP/pack.log"; exit 1; }
+          set -- "$out"/*.tgz
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "::error title=release::Packing must produce exactly one tarball."
+            exit 1
+          fi
+          file=$(basename "$1")
+          sha256=$(sha256sum "$out/$file" | cut -d ' ' -f 1)
+          printf '%s  %s\n' "$sha256" "$file" > "$out/SHA256SUMS"
+          # This stops an accidental write, not a deliberate one: the same user can undo it. What
+          # catches a tarball that changed after this step is the publish job's digest check.
+          chmod -R a-w "$out"
+          {
+            echo "tarball=$file"
+            echo "sha256=$sha256"
+            echo "version=$(node -p "require('./package.json').version")"
+          } >> "$GITHUB_OUTPUT"
+          tar -tzf "$out/$file" | sed 's/^/  /'
 
-      - name: Consumer load
-        # A step for the same reason: prepublishOnly does not run on the publish
-        # below, which passes `--ignore-scripts`.
-        run: pnpm check:runtime
+      - name: Gates on the tarball
+        # Every gate that looks at the package takes the tarball, not dist/.
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          # The gates get a copy: one that installs dependencies freshly (a smoke test) never has
+          # the file that is published within reach.
+          mkdir -p "$RUNNER_TEMP/gate"
+          cp "$RUNNER_TEMP/package/$TARBALL" "$RUNNER_TEMP/gate/$TARBALL"
+          export PACKAGE_TARBALL="$RUNNER_TEMP/gate/$TARBALL"
+          pnpm exec attw "$PACKAGE_TARBALL" --profile strict
+          pnpm check:runtime
+          pnpm size
 
-      - name: Publish with provenance (OIDC)
-        # `npm publish`, not `pnpm publish`. The registry's `readme` field is
-        # populated from the publish request, and pnpm 11 does not send it: every
-        # package in this family published under pnpm 11 carries an empty `readme`,
-        # while every one published under pnpm 10 — which delegated to the npm CLI
-        # — carries it. The same split shows in `_npmVersion`, present only on the
-        # publishes the npm CLI performed. An empty `readme` renders the npm package
-        # page with no documentation at all, which is where people actually read it.
-        # It already cost this family two corrective patch releases.
-        #
-        # `--ignore-scripts`: npm runs `prepublishOnly` on publish, and this job
-        # already ran it as its own step. Without the flag it runs twice, and the
-        # second run starts by cleaning — deleting and rebuilding the `dist/` the
-        # gates just validated, so the tarball shipped is not the artifact checked.
-        #
-        # `--access public` replaces pnpm's `--no-git-checks`: npm performs no git
-        # check on publish, and the scope needs an explicit public access flag.
-        run: npm publish --provenance --access public --ignore-scripts
+      - name: Upload the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package
+          path: |
+            ${{ runner.temp }}/package/*.tgz
+            ${{ runner.temp }}/package/SHA256SUMS
+            ${{ runner.temp }}/package/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Create GitHub Release
+  publish:
+    name: Publish to npm and create the GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The reviewer approves here, after the build has passed.
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/@bymax-one/nest-ai-tokens
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      # No checkout and no install in this job: nothing from the package runs while the token exists.
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.x
+
+      - name: Require an npm that can publish with OIDC
+        run: |
+          set -euo pipefail
+          have=$(npm --version)
+          if [ "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -n 1)" != "11.5.1" ]; then
+            echo "::error title=release::npm 11.5.1 or newer is required for trusted publishing."
+            exit 1
+          fi
+
+      - name: Require a commit on the default branch
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # `behind` or `identical`: the tagged commit is the tip of the default branch or an ancestor of it.
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$DEFAULT_BRANCH...$GITHUB_SHA" --jq .status)
+          case "$status" in
+            identical|behind) ;;
+            *) echo "::error title=release::The tagged commit is not on the default branch."; exit 1 ;;
+          esac
+
+      - name: Download the package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package
+          path: ${{ runner.temp }}/package
+
+      - name: Check the tarball against the digest the build reported
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/package"
+          # Exactly one tarball, and it is the one the build named; a stray file is a failure.
+          [ "$(find . -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = "1" ]
+          echo "$SHA256  $TARBALL" | sha256sum --check --strict -
+
+      - name: Publish to npm with provenance
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PACKAGE_NAME: '@bymax-one/nest-ai-tokens'
+        run: |
+          set -euo pipefail
+          if npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "This version is already on npm; the publish is skipped."
+            exit 0
+          fi
+          # The file the gates saw, not a fresh pack. Publishing a tarball runs no lifecycle script.
+          npm publish "$RUNNER_TEMP/package/$TARBALL" --provenance --access public
+
+      - name: Create the GitHub Release when it is missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # There is no checkout in this job, so gh cannot infer the repository from a git directory.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "The release for this tag exists."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/package/release-notes.md"

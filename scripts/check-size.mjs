@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // @ts-check
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib'
 
@@ -30,6 +31,20 @@ const EXEMPT = [{ name: 'prices (data-only snapshot)', path: 'dist/prices/index.
 
 let failed = false
 
+// `PACKAGE_TARBALL` names the tarball a release gate has already packed: the bundles are read from the
+// file that is published, not from `dist/`.
+const TARBALL = process.env['PACKAGE_TARBALL']
+
+/**
+ * Reads one built artifact, from the tarball when there is one, else from the working tree.
+ * @param {string} path Path of the artifact relative to the package root.
+ * @returns {Buffer} The file content. Throws when the artifact is missing.
+ */
+function readArtifact(path) {
+  if (TARBALL === undefined || TARBALL === '') return readFileSync(path)
+  return execFileSync('tar', ['-xzOf', TARBALL, `package/${path}`], { maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+}
+
 /**
  * Compute the brotli-compressed byte length of a built bundle.
  * @param {string} path Path to the bundle file.
@@ -38,7 +53,7 @@ let failed = false
 function brotliSize(path) {
   let raw
   try {
-    raw = readFileSync(path)
+    raw = readArtifact(path)
   } catch {
     return null
   }
