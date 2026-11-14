@@ -55,7 +55,7 @@ function isUnavailableSqlState(state: string | undefined): boolean {
  */
 function isTransactionDeadline(fields: ErrorFields): boolean {
   if (fields.code !== 'P2028') return false
-  return typeof fields.meta?.timeout === 'number' || /unable to start a transaction in the given time/i.test(text(fields.message) ?? '')
+  return typeof fields.meta?.timeout === 'number' || /unable to start a transaction in the given time/i.test(String(fields.message))
 }
 
 /** Whether one error, ignoring its `cause`, says the store is unavailable. */
@@ -65,9 +65,8 @@ function isUnavailableItself(fields: ErrorFields): boolean {
   if (isTransactionDeadline(fields)) return true
   const cause = fields.meta?.driverAdapterError?.cause
   if (isUnavailableSqlState(text(fields.meta?.code) ?? text(cause?.originalCode) ?? text(cause?.code))) return true
-  const raw = text(fields.code)
-  if (raw !== undefined && !/^P\d{4}$/.test(raw) && isUnavailableSqlState(raw)) return true
-  const message = text(fields.message) ?? ''
+  if (isUnavailableSqlState(text(fields.code))) return true
+  const message = String(fields.message)
   if (fields.name === 'PrismaClientInitializationError') return UNREACHABLE_MESSAGE.test(message)
   return fields.name !== 'PrismaClientKnownRequestError' && DRIVER_CONNECTION_MESSAGE.test(message)
 }

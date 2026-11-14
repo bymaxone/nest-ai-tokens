@@ -111,6 +111,13 @@ describe('isStoreUnavailable', () => {
     expect(isStoreUnavailable(Object.assign(new Error('Authentication failed'), { name: 'PrismaClientInitializationError', errorCode: 'P1000' }))).toBe(false)
   })
 
+  /** Only a P2028 is read as a transaction deadline: the same meta timeout or message under another code or none is not one. */
+  it('does not read a timeout in the meta or the start-in-time message under another code', () => {
+    expect(isStoreUnavailable(prisma('P2021', { meta: { timeout: 3 } }))).toBe(false)
+    expect(isStoreUnavailable(new Error('Transaction API error: Unable to start a transaction in the given time.'))).toBe(false)
+    expect(isStoreUnavailable(prisma('P2002', {}, 'Unable to start a transaction in the given time.'))).toBe(false)
+  })
+
   /** A P2028 with neither a timeout in its meta nor a message is not a deadline. */
   it('reads a P2028 with no timeout and no message as an error', () => {
     expect(isStoreUnavailable({ code: 'P2028', message: 42 })).toBe(false)
@@ -134,6 +141,9 @@ describe('isStoreUnavailable', () => {
   it('follows the cause chain and stops at its bound', () => {
     const wrapped = attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR'), prisma('P1001'))
     expect(isStoreUnavailable(wrapped)).toBe(true)
+    let edge: unknown = prisma('P1001')
+    for (let i = 0; i < 3; i += 1) edge = attachCause(new Error('wrap'), edge)
+    expect(isStoreUnavailable(edge)).toBe(true)
     let deep: unknown = prisma('P1001')
     for (let i = 0; i < 6; i += 1) deep = attachCause(new Error('wrap'), deep)
     expect(isStoreUnavailable(deep)).toBe(false)
