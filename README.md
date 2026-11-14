@@ -135,13 +135,13 @@ npm i @prisma/adapter-pg
 
 #### Create the tables
 
-`PrismaAiTokensStore` needs eight tables, and the package ships what creates them, inside the
+`PrismaAiTokensStore` needs its tables, and the package ships what creates them, inside the
 installed package:
 
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0001_init.sql` — the SQL for the
-  first seven tables. Apply it with `psql -f` or `prisma db execute --file` before the first boot.
+  base tables. Apply it with `psql -f` or `prisma db execute --file` before the first boot.
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0002_budget_applications.sql` — the
-  eighth, which records each budget movement under what caused it, so that a retry moves nothing a
+  last, which records each budget movement under what caused it, so that a retry moves nothing a
   second time. Apply it after `0001_init.sql`; an existing database needs only this one.
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/schema.prisma.fragment` — the same models
   for merging into your own Prisma schema if you manage migrations with `prisma migrate`.
