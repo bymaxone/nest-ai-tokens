@@ -31,4 +31,5 @@ export const AI_TOKENS_ERROR_MESSAGES: Record<AiTokensErrorCode, string> = {
   AI_TOKENS_STREAM_USAGE_MISSING:
     'The stream ended without provider usage and no tokenizer fallback was available.',
   AI_TOKENS_STORE_ERROR: 'The persistence adapter raised an unexpected error.',
+  AI_TOKENS_STORE_UNAVAILABLE: 'The persistence adapter is temporarily unavailable; the call can be retried.',
 }

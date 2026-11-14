@@ -24,6 +24,7 @@ import type {
 import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
@@ -386,7 +387,7 @@ export class WalletService {
     }
     return error instanceof AiTokensException
       ? error
-      : attachCause(new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, {}), error)
+      : attachCause(new AiTokensException(storeFailureCode(error), undefined, {}), error)
   }
 
   /** Reject a `'key'` owner at runtime (`'key'` scopes cannot own money, §9.1). */
