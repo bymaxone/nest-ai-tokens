@@ -122,6 +122,12 @@ optional injected clock as its fourth constructor argument; the module keeps the
   grant's expiry charged that amount a second time. Skew between the
   application and database clocks no longer moves a grant; keep NTP running on the application hosts.
 
+- **`reconcile` after a grant's expiry could drive the balance below zero on the next debit.** `reconcile` removed the
+  expired remainder from the stored balance without writing the `expiry` entry, and the next debit's sweep wrote that
+  entry and removed the same remainder again, so a wallet that held nothing but the expired grant read minus its
+  remainder. `reconcile` now expires lapsed grants through the same sweep a debit uses, so the entry is written once
+  and a later debit finds nothing left to expire; a second `reconcile` writes no second entry.
+
 ### Changed
 
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is

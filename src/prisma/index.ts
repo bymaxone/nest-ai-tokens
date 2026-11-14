@@ -478,6 +478,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return this.prisma.transaction(async (tx) => {
       await this.lockWallet(tx, wallet.id)
       await this.activateDueGrants(tx, wallet.id, now)
+      await this.sweepExpiredGrants(tx, wallet.id, now)
       const rows = await tx.query<WalletRow[]>(sql`
         UPDATE "ai_wallets" w SET "balanceNanoUsd" = ${spendableBalanceSql(now)}, "updatedAt" = ${DB_NOW_SQL}
         WHERE w."id" = ${wallet.id} RETURNING *
