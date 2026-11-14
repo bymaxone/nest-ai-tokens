@@ -2,10 +2,9 @@ import type { Config } from 'jest'
 import base from './jest.config.ts'
 
 /**
- * Coverage gate configuration (`test:cov:all`). Enforces 100%
- * line/branch/function/statement coverage on every implemented file and folds in
- * the lines exercised by the end-to-end suite. Index barrels are excluded
- * because they only re-export and carry no executable branches.
+ * Coverage run of `test:cov:all`: the unit run of `jest.config.ts` with the `text`, `text-summary` and `lcov`
+ * reporters. It runs the same specs under `src/`, collects the same files and holds the same 100% thresholds; no
+ * end-to-end file is collected. The index barrels are left out by the base `collectCoverageFrom`.
  */
 const config: Config = {
   ...base,
