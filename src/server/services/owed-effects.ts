@@ -43,7 +43,7 @@ export async function settleOwed(deps: OwedEffectsDeps, owed: OwedEffects): Prom
   else if (record.status === 'released') {
     await deps.effects.restoreHold(record)
     await deps.events.holdReleased(record, recoveredReason(), false)
-  } else if (record.status === 'posted') {
+  } else if (record.status === 'posted' || record.status === 'reversed') {
     const reservedBilled = owed.reservedBilledNanoUsd ?? record.billedCostNanoUsd
     const reservedTokens = owed.reservedTokens ?? record.totalTokens
     await deps.effects.settleCapture(record, reservedBilled, reservedTokens, record.billedCostNanoUsd, record.totalTokens)

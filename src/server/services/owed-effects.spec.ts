@@ -42,6 +42,15 @@ describe('settleOwed', () => {
     expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('r1')
   })
 
+  /** A hold captured and then reversed before the sweep still owes its capture legs: the row reads `reversed` with no reversal link. */
+  it('settles the capture legs of a row that was reversed meanwhile', async () => {
+    const d = deps()
+    const owed: OwedEffects = { record: row({ status: 'reversed' }), reservedBilledNanoUsd: 25n, reservedTokens: 15 }
+    await settleOwed(d.deps, owed)
+    expect(d.effects.settleCapture).toHaveBeenCalledWith(owed.record, 25n, 15, 10n, 7)
+    expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('r1')
+  })
+
   /** A marker without reserved values settles against the row's own amounts, which moves nothing. */
   it('falls back to the amounts of the row when the marker kept no reserved values', async () => {
     const d = deps()

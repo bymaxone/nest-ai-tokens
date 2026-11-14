@@ -256,5 +256,29 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
     expect(await sweep(built)).toBe(1)
     expect(await stateOf(built, 'tenant-1')).toEqual(before)
   })
+
+  /**
+   * Invariant: the capture legs of a hold are owed until they run, whatever happens to the row meanwhile. A captured hold
+   * whose wallet leg failed and that is then reversed before the sweep has status `reversed` and no `reversesRecordId`;
+   * the sweep still settles the reserved-minus-actual difference, so the wallet and the budget end as in a run in which
+   * nothing failed.
+   */
+  it('settles the capture legs of a hold that was reversed before the sweep ran', async () => {
+    const control = await build()
+    const { hold: heldControl, caller } = await holdIn(control)
+    const capturedControl = await control.service.capture(heldControl, caller, usage())
+    await control.service.reverse(capturedControl.id, 'oops')
+
+    const built = await build()
+    const { hold } = await holdIn(built)
+    jest.spyOn(built.wallets, 'settleAdjustment').mockRejectedValueOnce(new Error('wallet down'))
+    await expect(built.service.capture(hold, caller, usage())).rejects.toThrow('wallet down')
+    await built.service.reverse(hold.id, 'oops')
+    expect((await built.ledger.findById(hold.id))?.status).toBe('reversed')
+
+    expect(await sweep(built)).toBe(1)
+    expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+    expect(await sweep(built)).toBe(0)
+  })
 })
 
