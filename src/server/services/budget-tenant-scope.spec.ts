@@ -1,6 +1,7 @@
 /**
  * Tenant B cannot delete, rotate, reconcile or overwrite tenant A's budget by its id: each call answers exactly as an
  * unknown id does, with the same result and the same message, and A's budget is left as it was.
+ * @layer test
  */
 import type { Budget } from '../../shared'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
@@ -23,7 +24,7 @@ async function rejection(promise: Promise<unknown>): Promise<{ code: string; mes
   }
 }
 
-/** A store that ignores the tenant of every key, as a custom store written against the old port would. */
+/** A store that ignores the tenant of every key it is given. */
 function tenantBlindStore(inner: InMemoryBudgetStore): IBudgetStore {
   const anyTenant = (key: BudgetKey): BudgetKey => ({ ...key, tenantId: [...inner.tenantsOf(key.id)][0] ?? key.tenantId })
   return {
