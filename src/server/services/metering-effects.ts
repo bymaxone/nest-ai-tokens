@@ -173,15 +173,43 @@ export class MeteringEffects {
   }
 
   /**
-   * Whether the ledger row found for a hold's key holds the budget reservation this hold attempt recorded under the
-   * same key: an enforced row of the same payer that is not a system cost, in any status but released: a released hold gave its reservation back, so a later attempt that applied the key again owns it alone. Unlike
-   * {@link sharesHoldDebit} it does not ask for a wallet, since the reservation is recorded whether or not one is bound.
+   * Whether the ledger row found for a key is the same call as an attempt, so that the references the attempt took are the
+   * movements the row stands for: an enforced row of the same payer, feature and billed amount, and the same instant when
+   * the caller supplied one (a call that supplies none is stamped with the moment of each attempt, so its attempts differ by
+   * that). A hold attempt matches only a pending hold, because a released hold gave its reservation back and a posted row is
+   * a captured hold, whose references are committed already, or a record, which holds another application; a `record()`
+   * attempt matches only a posted or reversed record. A wrong verdict for an identical call is harmless: the first of two
+   * commits names `row` and the other drops its own.
    *
    * @param row The record stored under the key.
-   * @param scope The payer of the attempt that is asking.
+   * @param call The attempt's kind, payer, feature and billed amount, and its instant when the caller supplied it.
    */
-  sharesHoldBudget(row: UsageRecord, scope: MeteringScope): boolean {
-    return row.status !== 'released' && row.enforced && !row.isSystemCost && sameScope(row.scope, scope)
+  sameCall(row: UsageRecord, call: { kind: 'hold' | 'record'; scope: MeteringScope; feature: string; billedCostNanoUsd: bigint; occurredAt?: Date }): boolean {
+    const status = call.kind === 'hold' ? row.status === 'pending' : row.status === 'posted' || row.status === 'reversed'
+    const instant = call.occurredAt === undefined || row.occurredAt.getTime() === call.occurredAt.getTime()
+    return status && instant && row.enforced && !row.isSystemCost && sameScope(row.scope, call.scope) && row.feature === call.feature && row.billedCostNanoUsd === call.billedCostNanoUsd
+  }
+
+  /**
+   * Commit the budget references of a hold whose pending row stands: its reservation is the row's.
+   *
+   * @param context The metering context.
+   * @param delta The reservation.
+   * @param ledgerKey The hold's key.
+   * @param attempt The attempt that reserved.
+   * @param occurredAt The instant that located the budget windows.
+   */
+  async commitHoldBudget(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, occurredAt: Date): Promise<void> {
+    if (this.budgets !== undefined) await this.budgets.commit(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
+  }
+
+  /**
+   * Commit the budget references of an enforced call whose row stands: its consumption is the row's.
+   *
+   * @param enforcement The movement {@link enforce} made.
+   */
+  async commitBudget(enforcement: Enforcement): Promise<void> {
+    if (this.budgets !== undefined) await this.budgets.commit(enforcementContext(enforcement), enforcementDelta(enforcement), enforcement.occurredAt, recordKey(enforcement.key), enforcement.attempt)
   }
 
   /**
@@ -280,20 +308,8 @@ export class MeteringEffects {
    */
   sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return this.sharesBudget(row, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
-  }
-
-  /**
-   * Whether the ledger row found for a key holds the budget consumption this `record()` attempt recorded under the
-   * same key: a posted or reversed row, enforced, not a system cost, of the same payer. It does not ask for a wallet,
-   * since the consumption is recorded whether or not one is bound.
-   *
-   * @param row The record stored under the key.
-   * @param scope The payer of the attempt that is asking.
-   */
-  sharesBudget(row: UsageRecord, scope: MeteringScope): boolean {
     const record = row.status === 'posted' || row.status === 'reversed'
-    return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope)
+    return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
   /**

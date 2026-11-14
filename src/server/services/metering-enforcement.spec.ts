@@ -320,12 +320,14 @@ describe('MeteringEffects.sharesHoldDebit', () => {
   })
 })
 
-describe('MeteringEffects.sharesBudget', () => {
+describe('MeteringEffects.sameCall', () => {
   const PAYER = { type: 'user', id: 'u1' } as const
+  const BILLED = 25_000_000n
+  const INSTANT = new Date('2026-06-15T00:00:00.000Z')
 
-  /** A row holds the call's budget consumption when it is a recorded, enforced row of the same payer, with or without a wallet. */
+  /** A record attempt matches an enforced, recorded row of the same payer, feature and billed amount, and nothing else. */
   it.each([
-    { name: 'the same call shape', over: {}, expected: true },
+    { name: 'the same call', over: {}, expected: true },
     { name: 'a reversed record', over: { status: 'reversed' as const }, expected: true },
     { name: 'a pending hold', over: { status: 'pending' as const }, expected: false },
     { name: 'a released hold', over: { status: 'released' as const }, expected: false },
@@ -333,25 +335,61 @@ describe('MeteringEffects.sharesBudget', () => {
     { name: 'a system cost', over: { isSystemCost: true }, expected: false },
     { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
     { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
-  ])('is $expected for $name, with no wallet bound', ({ over, expected }) => {
-    expect(new MeteringEffects(undefined, undefined).sharesBudget(record({ enforced: true, status: 'posted', ...over }), PAYER)).toBe(expected)
+    { name: 'a row of another feature', over: { feature: 'other.feature' }, expected: false },
+    { name: 'a row of another amount', over: { billedCostNanoUsd: BILLED + 1n }, expected: false },
+  ])('is $expected for a record attempt that meets $name', ({ over, expected }) => {
+    const effects = new MeteringEffects(undefined, undefined)
+    const row = record({ enforced: true, status: 'posted', feature: 'chat.reply', billedCostNanoUsd: BILLED, ...over })
+    expect(effects.sameCall(row, { kind: 'record', scope: PAYER, feature: 'chat.reply', billedCostNanoUsd: BILLED })).toBe(expected)
   })
-})
 
-describe('MeteringEffects.sharesHoldBudget', () => {
-  const PAYER = { type: 'user', id: 'u1' } as const
-
-  /** A hold attempt shares the reservation with a row of the same payer in any status, with or without a wallet. */
+  /** A hold attempt matches only a pending hold of the same payer, feature and billed amount. */
   it.each([
     { name: 'a pending hold', over: { status: 'pending' as const }, expected: true },
     { name: 'a released hold, which gave its reservation back', over: { status: 'released' as const }, expected: false },
-    { name: 'a posted row', over: { status: 'posted' as const }, expected: true },
-    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
-    { name: 'a system cost', over: { isSystemCost: true }, expected: false },
+    { name: 'a posted row, a captured hold or a record', over: { status: 'posted' as const }, expected: false },
     { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
-    { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
-  ])('is $expected for $name, with no wallet bound', ({ over, expected }) => {
-    expect(new MeteringEffects(undefined, undefined).sharesHoldBudget(record({ enforced: true, status: 'pending', ...over }), PAYER)).toBe(expected)
+    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
+    { name: 'a row of another feature', over: { feature: 'other.feature' }, expected: false },
+  ])('is $expected for a hold attempt that meets $name', ({ over, expected }) => {
+    const effects = new MeteringEffects(undefined, undefined)
+    const row = record({ enforced: true, status: 'pending', feature: 'chat.reply', billedCostNanoUsd: BILLED, ...over })
+    expect(effects.sameCall(row, { kind: 'hold', scope: PAYER, feature: 'chat.reply', billedCostNanoUsd: BILLED })).toBe(expected)
+  })
+
+  /** The instant matters only when the caller supplied one: without it each attempt is stamped with its own moment. */
+  it('compares the instant only when the caller supplied one', () => {
+    const effects = new MeteringEffects(undefined, undefined)
+    const row = record({ enforced: true, status: 'posted', feature: 'chat.reply', billedCostNanoUsd: BILLED, occurredAt: INSTANT })
+    const call = { kind: 'record' as const, scope: PAYER, feature: 'chat.reply', billedCostNanoUsd: BILLED }
+    expect(effects.sameCall(row, call)).toBe(true)
+    expect(effects.sameCall(row, { ...call, occurredAt: INSTANT })).toBe(true)
+    expect(effects.sameCall(row, { ...call, occurredAt: new Date(INSTANT.getTime() + 1) })).toBe(false)
+  })
+})
+
+describe('MeteringEffects commit of the budget references', () => {
+  /** A call whose row stands commits the references it took, under the key the consume recorded. */
+  it('commits an enforced call under the call key and a hold under the hold key', async () => {
+    const { service: budgets } = buildBudgetService()
+    const commit = jest.spyOn(budgets, 'commit')
+    const effects = new MeteringEffects(undefined, budgets)
+    const enforcement = enforcementFor(effects)
+    const context = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } as const, feature: 'chat.reply' }
+    const at = new Date('2026-06-15T00:00:00.000Z')
+
+    await effects.commitBudget(enforcement)
+    await effects.commitHoldBudget(context, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'h-1', 'attempt-1', at)
+
+    expect(commit).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), enforcement.occurredAt, 'record:k-1', enforcement.attempt)
+    expect(commit).toHaveBeenNthCalledWith(2, context, { nanoUsd: 10n, tokens: 1, count: 1 }, at, 'reserve:h-1', 'attempt-1')
+  })
+
+  /** Without the budget feature there is nothing to commit. */
+  it('commits nothing when budgets are disabled', async () => {
+    const effects = new MeteringEffects(undefined, undefined)
+    await expect(effects.commitBudget(enforcementFor(effects))).resolves.toBeUndefined()
+    await expect(effects.commitHoldBudget({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }, { billedNanoUsd: 1n, tokens: 1, count: 1 }, 'k', 'a', new Date())).resolves.toBeUndefined()
   })
 })
 

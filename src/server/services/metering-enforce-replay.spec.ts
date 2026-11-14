@@ -379,6 +379,79 @@ describe('record({ enforce: true }) retries', () => {
     expect(status!.spent.count).toBe(1)
   })
 
+  /*
+   * Invariant: a loser gives back the movement of every budget it applied that the winner's call does not match. Two calls of
+   * one payer that reuse a key with different features share the tenant-wide budget, but a budget restricted to the loser's
+   * feature is the loser's alone.
+   */
+  it('gives back a feature-restricted budget the winner of another feature never consumed', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { scope: { type: 'tenant', id: 'tenant-1' }, limitNanoUsd: 1_000_000_000n })
+    await upsertBudget(built, { features: ['foo'], limitNanoUsd: 1_000_000_000n })
+    const winner = await built.service.record({ usage: normalized(), context: context({ feature: 'bar', enforce: true, idempotencyKey: 'k-features' }) })
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(
+      built.service.record({ usage: normalized(), context: context({ feature: 'foo', enforce: true, idempotencyKey: 'k-features' }) }),
+    ).rejects.toThrow('connection reset')
+
+    const spent = (await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })).map((status) => status.spent.nanoUsd).sort()
+    expect(spent).toEqual([0n, winner.billedCostNanoUsd].sort())
+  })
+
+  /*
+   * Invariant: a committed call is always counted. When the sweep reclaims the reference of a slow attempt while its append is
+   * in flight, the attempt's commit takes the movement again after the row is written, and the call succeeds.
+   */
+  it('counts a call whose budget reference was reclaimed while its append was in flight', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const taken: { key: string; budgetId: string; attempt: string }[] = []
+    const consume = built.budgetStore.consumeWindowOnce.bind(built.budgetStore)
+    jest.spyOn(built.budgetStore, 'consumeWindowOnce').mockImplementation((reference, ...rest) => {
+      taken.push(reference)
+      return consume(reference, ...rest)
+    })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      for (const reference of taken) await built.budgetStore.dropReference(reference)
+      return append(...args)
+    })
+
+    const record = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-slow' }) })
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(record.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /*
+   * Invariant: two calls with one key that name no occurredAt, of the same payer, feature and amount, are one call: whichever
+   * appends first, the loser's references end in the winner's and the window counts exactly one.
+   */
+  it('counts the window once for two identical keyed calls that name no instant, whichever of them wins', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-twin' }) }
+    const winner = await built.service.record(input)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const loser = await built.service.record(input)
+
+    expect(loser.id).toBe(winner.id)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+    await built.budgets!.release(context(), { nanoUsd: winner.billedCostNanoUsd, tokens: winner.totalTokens, count: 1 }, winner.occurredAt, 'record:k-twin')
+    expect((await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' }))[0]!.spent.count).toBe(0)
+  })
+
   it('leaves the winner budget consumption alone when the loser meets its row and no wallet is bound', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)

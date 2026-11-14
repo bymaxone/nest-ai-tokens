@@ -39,7 +39,8 @@ const BUDGET_METHODS = [
   'adjustWindow',
   'consumeWindowOnce',
   'adjustWindowOnce',
-  'unapplyWindow',
+  'commitReference',
+  'dropReference',
   'getWindow',
   'setWindowStart',
 ] as const

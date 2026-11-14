@@ -56,7 +56,8 @@ function makeStore(): IAiTokensStore {
     adjustWindow: noop,
     consumeWindowOnce: noop,
     adjustWindowOnce: noop,
-    unapplyWindow: noop,
+    commitReference: noop,
+    dropReference: noop,
     getWindow: noop,
     setWindowStart: noop,
   })
@@ -94,7 +95,8 @@ function makeLiveStore(): IAiTokensStore {
     adjustWindow: reject,
     consumeWindowOnce: reject,
     adjustWindowOnce: reject,
-    unapplyWindow: reject,
+    commitReference: reject,
+    dropReference: reject,
     getWindow: reject,
     setWindowStart: reject,
   }

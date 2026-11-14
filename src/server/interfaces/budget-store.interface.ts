@@ -46,24 +46,35 @@ export interface BudgetApplication {
   /** What caused the movement, deterministic for the cause (a call key, or an operation and a record id). */
   key: string
   budgetId: string
-  /**
-   * The attempt that applies it, unique per attempt. Recorded with the application so that {@link IBudgetStore.unapplyWindow}
-   * called with an owner gives back only what that attempt applied; without one, an application is given back whoever applied it.
-   */
-  owner?: string
 }
 
 /**
- * The verdict of a keyed consume: moved now, already moved by this key with this very delta, refused by a limit (nothing
- * moved), or already moved by this key with a different delta (nothing moved: the key names another call).
+ * A hold on an application by one attempt. An attempt that applies or replays an application takes one reference named
+ * by the attempt, unique per attempt; the reference of the call whose ledger row stands is the one named `row`. An
+ * application is given back when its last reference is dropped.
+ */
+export interface BudgetReference extends BudgetApplication {
+  attempt: string
+}
+
+/**
+ * The verdict of a keyed movement: moved now, already moved by this key in this window with this very delta (a
+ * reference is taken, nothing moves), refused by a limit (nothing moved or held), or already moved by this key in
+ * another window or with another delta (nothing moved or held: the key names another call).
  */
 export type ApplicationOutcome = 'applied' | 'replayed' | 'refused' | 'mismatch'
 
 /**
- * The verdict of giving a keyed movement back: given back now, given back before, no such movement, or still applied by
- * another attempt than the owner asked for (nothing moved).
+ * The verdict of committing a reference: renamed to `row`; dropped because another attempt of the call already holds
+ * `row`; the attempt holds no reference on an application that exists (it was reclaimed); or no such application.
  */
-export type UnapplyOutcome = 'unapplied' | 'already' | 'absent' | 'foreign'
+export type CommitOutcome = 'committed' | 'already' | 'gone' | 'absent'
+
+/**
+ * The verdict of dropping a reference: dropped and other references remain; dropped and it was the last, so the
+ * movement was given back; the application exists and the attempt holds no reference on it; or no such application.
+ */
+export type DropOutcome = 'kept' | 'unapplied' | 'missing' | 'absent'
 
 /** The budget port. */
 export interface IBudgetStore {
@@ -98,20 +109,27 @@ export interface IBudgetStore {
   /** Signed release/adjust of a window's counters (capture delta, release, reverse). */
   adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void>
   /**
-   * {@link conditionalConsume} once per application: `'replayed'` when this application already moved the window and
-   * has not been given back since and moved it by this very delta (nothing moves), `'mismatch'` when it moved it by another
-   * delta (nothing moves), `'refused'` when a limit would be exceeded (nothing moves and no application is recorded). Concurrent attempts with one application move the window once; the uniqueness of the
-   * application, never a read followed by a write, decides which attempt does.
+   * {@link conditionalConsume} once per application, taking a reference for the attempt. `'replayed'` when this
+   * application already moved the same window by this very delta and has not been given back since (nothing moves),
+   * `'mismatch'` when it moved another window or another delta (nothing moves and no reference is taken), `'refused'`
+   * when a limit would be exceeded (nothing moves, and no application or reference is recorded). Concurrent attempts
+   * with one application move the window once; the uniqueness of the application, never a read followed by a write,
+   * decides which attempt does, and a drop and a take of one application never interleave.
    */
-  consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome>
-  /** {@link adjustWindow} once per application; `'replayed'` and `'mismatch'` as for {@link consumeWindowOnce}. */
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'>
+  consumeWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome>
+  /** {@link adjustWindow} once per application, taking a reference; `'replayed'` and `'mismatch'` as for {@link consumeWindowOnce}. */
+  adjustWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'>
   /**
-   * Give back what an application moved: subtract its delta from the window it moved, and mark it given back so that
-   * the same application can be applied again. `'already'` when it was given back before, `'absent'` when no such
-   * application was ever recorded, `'foreign'` when it is applied but its owner is not the one asked for.
+   * Make the attempt's reference the committed one: rename it to `row`. When `row` is already held by another attempt of
+   * the call, drop the attempt's own instead (`'already'`). `'gone'` when the application exists but the attempt holds no
+   * reference on it.
    */
-  unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome>
+  commitReference(reference: BudgetReference): Promise<CommitOutcome>
+  /**
+   * Drop the attempt's reference. When it was the last, subtract the application's delta from the window it moved and mark
+   * the application given back, so that the same key can be applied again.
+   */
+  dropReference(reference: BudgetReference): Promise<DropOutcome>
   /** A window's current spend, or `null` when it has no row yet. */
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null>
   /** Move a budget's active window start (rotateWindow support). */

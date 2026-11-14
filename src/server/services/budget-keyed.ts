@@ -1,12 +1,12 @@
 /**
- * @fileoverview The keyed movements of `BudgetService`: what a movement is recorded under, what a store's verdict on a
- * consume means for the guard around it, and the refusal of a key that names another call. Split out of the service to
- * keep it within its length limit.
+ * @fileoverview The keyed movements of `BudgetService`: what a movement is recorded under, which attempt holds a reference
+ * on it, what a store's verdict on a consume means for the guard around it, and the refusal of a key that names another call.
  * @layer server
  */
 
 import { AiTokensException } from '../errors'
-import type { ApplicationOutcome, BudgetApplication } from '../interfaces'
+import type { ApplicationOutcome, BudgetReference } from '../interfaces'
+import { COMMITTED_REFERENCE } from '../utils/budget-references'
 import type { FailingDimension } from './budget-math'
 
 /** A live counter increment made during a guarded consume (kept for rollback). */
@@ -15,21 +15,23 @@ export interface CounterIncrement {
   amount: bigint
 }
 
-/** The application a keyed movement is recorded under: its key and, when the attempt names one, its owner. */
+/** The application a keyed movement is recorded under and the attempt that holds a reference on it. */
 export interface Keyed {
   key: string
-  owner?: string
+  attempt: string
 }
 
-/** The store's application for a keyed movement of one budget. */
-export function applicationOf(keyed: Keyed, budgetId: string): BudgetApplication {
-  // Stryker disable next-line ConditionalExpression: CE true: spreading { owner: undefined } is equivalent to {} because the stores check owner !== undefined
-  return { key: keyed.key, budgetId, ...(keyed.owner !== undefined ? { owner: keyed.owner } : {}) }
+/** The store's reference for a keyed movement of one budget. */
+export function referenceOf(keyed: Keyed, budgetId: string): BudgetReference {
+  return { key: keyed.key, budgetId, attempt: keyed.attempt }
 }
 
-/** The keyed use of a movement, when a key is given. */
-export function keyedOf(key: string | undefined, owner: string | undefined): Keyed | undefined {
-  return key === undefined ? undefined : { key, ...(owner !== undefined ? { owner } : {}) }
+/**
+ * The keyed use of a movement, when a key is given. An attempt that names none holds the committed reference: the
+ * movement belongs to a ledger row, and only that row's release gives it back.
+ */
+export function keyedOf(key: string | undefined, attempt: string | undefined): Keyed | undefined {
+  return key === undefined ? undefined : { key, attempt: attempt ?? COMMITTED_REFERENCE }
 }
 
 /** What a store's verdict on a consume means for the guard: refused blocks, a mismatch refuses the key, a replay moved nothing. */

@@ -11,7 +11,8 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Budget, MeteringScope } from '@bymax-one/nest-ai-tokens/shared'
-import type { ApplicationOutcome, BudgetApplication, BudgetDelta, BudgetKey, BudgetLimits, BudgetWindowSpend, IBudgetStore, UnapplyOutcome } from '@bymax-one/nest-ai-tokens'
+import type { ApplicationOutcome, BudgetDelta, BudgetKey, BudgetLimits, BudgetReference, BudgetWindowSpend, CommitOutcome, DropOutcome, IBudgetStore } from '@bymax-one/nest-ai-tokens'
+import { COMMITTED_REFERENCE } from '../../src/server/utils/budget-references'
 import { AiTokensException } from '../../src/server/errors'
 
 /** Construction options for the in-memory budget store. */
@@ -32,7 +33,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Window spend keyed by `${budgetId}|${windowStartISO}`. */
   private readonly windows = new Map<string, BudgetWindowSpend>()
   /** What each application moved, keyed by application and budget. */
-  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean; owner: string }>()
+  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean; references: Set<string> }>()
   private readonly now: () => Date
   private readonly unstampedOffsetMs: number
 
@@ -42,7 +43,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
   }
 
   /** Compose the window map key. */
-  private static applicationKey(application: BudgetApplication): string {
+  private static applicationKey(application: { key: string; budgetId: string }): string {
     return JSON.stringify([application.key, application.budgetId])
   }
 
@@ -93,32 +94,41 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve()
   }
 
-  consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
-    // Critical section — synchronous, no await: the application is checked and recorded in one step.
-    const key = InMemoryBudgetStore.applicationKey(application)
-    const found = this.applications.get(key)
-    if (found?.active === true) return Promise.resolve(sameDelta(found.delta, delta) ? 'replayed' : 'mismatch')
-    if (!this.tryConsume(application.budgetId, windowStart, delta, limits)) return Promise.resolve('refused')
-    this.applications.set(key, { windowStart, delta, active: true, owner: application.owner ?? '' })
+  consumeWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
+    // Critical section — synchronous, no await: the application is checked, recorded and referenced in one step.
+    const found = this.applications.get(InMemoryBudgetStore.applicationKey(reference))
+    if (found?.active === true) return Promise.resolve(this.replayOrMismatch(found, reference, windowStart, delta))
+    if (!this.tryConsume(reference.budgetId, windowStart, delta, limits)) return Promise.resolve('refused')
+    this.record(reference, windowStart, delta)
     return Promise.resolve('applied')
   }
 
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
-    const key = InMemoryBudgetStore.applicationKey(application)
-    const found = this.applications.get(key)
-    if (found?.active === true) return Promise.resolve(sameDelta(found.delta, delta) ? 'replayed' : 'mismatch')
-    this.moveWindow(application.budgetId, windowStart, delta)
-    this.applications.set(key, { windowStart, delta, active: true, owner: application.owner ?? '' })
+  adjustWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
+    const found = this.applications.get(InMemoryBudgetStore.applicationKey(reference))
+    if (found?.active === true) return Promise.resolve(this.replayOrMismatch(found, reference, windowStart, delta))
+    this.moveWindow(reference.budgetId, windowStart, delta)
+    this.record(reference, windowStart, delta)
     return Promise.resolve('applied')
   }
 
-  unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome> {
-    const key = InMemoryBudgetStore.applicationKey(application)
-    const found = this.applications.get(key)
+  commitReference(reference: BudgetReference): Promise<CommitOutcome> {
+    const found = this.applications.get(InMemoryBudgetStore.applicationKey(reference))
     if (found === undefined) return Promise.resolve('absent')
-    if (!found.active) return Promise.resolve('already')
-    if (application.owner !== undefined && found.owner !== application.owner) return Promise.resolve('foreign')
-    this.moveWindow(application.budgetId, found.windowStart, { nanoUsd: -found.delta.nanoUsd, tokens: -found.delta.tokens, count: -found.delta.count })
+    if (found.references.has(COMMITTED_REFERENCE)) {
+      if (reference.attempt !== COMMITTED_REFERENCE) found.references.delete(reference.attempt)
+      return Promise.resolve('already')
+    }
+    if (!found.references.delete(reference.attempt)) return Promise.resolve('gone')
+    found.references.add(COMMITTED_REFERENCE)
+    return Promise.resolve('committed')
+  }
+
+  dropReference(reference: BudgetReference): Promise<DropOutcome> {
+    const found = this.applications.get(InMemoryBudgetStore.applicationKey(reference))
+    if (found === undefined) return Promise.resolve('absent')
+    if (!found.references.delete(reference.attempt)) return Promise.resolve('missing')
+    if (!found.active || found.references.size > 0) return Promise.resolve('kept')
+    this.moveWindow(reference.budgetId, found.windowStart, { nanoUsd: -found.delta.nanoUsd, tokens: -found.delta.tokens, count: -found.delta.count })
     found.active = false
     return Promise.resolve('unapplied')
   }
@@ -162,6 +172,18 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Test helper — force a window's spend counters (drift injection for reconcile). */
   forceWindow(budgetId: string, windowStart: Date, spend: BudgetWindowSpend): void {
     this.windows.set(InMemoryBudgetStore.windowKey(budgetId, windowStart), { ...spend })
+  }
+
+  /** Record an application as active and held by the attempt. */
+  private record(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): void {
+    this.applications.set(InMemoryBudgetStore.applicationKey(reference), { windowStart, delta, active: true, references: new Set([reference.attempt]) })
+  }
+
+  /** An active application met again: a replay (the attempt takes a reference) when it moved this window by this delta, else a mismatch. */
+  private replayOrMismatch(found: { windowStart: Date; delta: BudgetDelta; references: Set<string> }, reference: BudgetReference, windowStart: Date, delta: BudgetDelta): 'replayed' | 'mismatch' {
+    if (found.windowStart.getTime() !== windowStart.getTime() || !sameDelta(found.delta, delta)) return 'mismatch'
+    found.references.add(reference.attempt)
+    return 'replayed'
   }
 
   /** The fake's model of the atomic §10.8 multi-dimension conditional UPDATE: every dimension passes or nothing moves. */

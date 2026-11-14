@@ -6,7 +6,12 @@
 
 import {
   adjustWindowSql,
-  applicationStateSql,
+  anyReferenceSql,
+  deleteReferenceSql,
+  lockApplicationSql,
+  referenceHeldSql,
+  renameReferenceSql,
+  takeReferenceSql,
   consumeWindowSql,
   ensureWindowSql,
   recordApplicationSql,
@@ -17,6 +22,7 @@ import { DB_NOW_SQL } from './adapter-sql'
 const WINDOW = new Date('2026-06-01T00:00:00.000Z')
 const DELTA = { nanoUsd: 10n, tokens: 4, count: 1 }
 const APPLICATION = { key: 'k1', budgetId: 'b1' }
+const REFERENCE = { ...APPLICATION, attempt: 'attempt-1' }
 
 describe('window statements', () => {
   /** The zeroed row is created once, and a window that exists is left as it is. */
@@ -52,10 +58,53 @@ describe('application statements', () => {
     expect(statement.text).toContain('INSERT INTO "ai_budget_applications"')
     expect(statement.text).toContain('ON CONFLICT ("key", "budgetId") DO UPDATE')
     expect(statement.text).toContain('WHERE "ai_budget_applications"."unappliedAt" IS NOT NULL')
+    expect(statement.text).toContain('"unappliedAt" = NULL')
     expect(statement.text).toContain('RETURNING "key"')
     expect(statement.text).toContain(DB_NOW_SQL.text)
-    expect(statement.values).toEqual(['k1', 'b1', WINDOW, 10n, 4n, 1, ''])
-    expect(recordApplicationSql({ ...APPLICATION, owner: 'attempt-1' }, WINDOW, DELTA).values.at(-1)).toBe('attempt-1')
+    expect(statement.values).toEqual(['k1', 'b1', WINDOW, 10n, 4n, 1])
+  })
+
+  /** An application is read with its row locked, so a take, a commit and a drop of it never interleave. */
+  it('reads an application with its row locked', () => {
+    const statement = lockApplicationSql(APPLICATION)
+    expect(statement.text).toContain('SELECT "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"')
+    expect(statement.text).toContain('FROM "ai_budget_applications"')
+    expect(statement.text).toContain('FOR UPDATE')
+    expect(statement.values).toEqual(['k1', 'b1'])
+  })
+
+  /** Taking a reference twice is the same as once. */
+  it('takes a reference once per attempt', () => {
+    const statement = takeReferenceSql(REFERENCE)
+    expect(statement.text).toContain('INSERT INTO "ai_budget_references"')
+    expect(statement.text).toContain('ON CONFLICT ("key", "budgetId", "attempt") DO NOTHING')
+    expect(statement.text).toContain(DB_NOW_SQL.text)
+    expect(statement.values).toEqual(['k1', 'b1', 'attempt-1'])
+  })
+
+  /** A reference is looked up by its name, and any reference of an application by the application alone. */
+  it('reads whether a reference, or any reference, is held', () => {
+    const named = referenceHeldSql(APPLICATION, 'row')
+    expect(named.text).toContain('FROM "ai_budget_references"')
+    expect(named.text).toContain('"attempt" = $3')
+    expect(named.values).toEqual(['k1', 'b1', 'row'])
+    const any = anyReferenceSql(APPLICATION)
+    expect(any.text).toContain('FROM "ai_budget_references"')
+    expect(any.text).toContain('LIMIT 1')
+    expect(any.text).not.toContain('"attempt"')
+    expect(any.values).toEqual(['k1', 'b1'])
+  })
+
+  /** A reference is renamed or deleted by its attempt, and nothing is returned when the attempt holds none. */
+  it('renames and deletes the reference of one attempt', () => {
+    const rename = renameReferenceSql(REFERENCE, 'row')
+    expect(rename.text).toContain('UPDATE "ai_budget_references" SET "attempt" = $1')
+    expect(rename.text).toContain('RETURNING "attempt"')
+    expect(rename.values).toEqual(['row', 'k1', 'b1', 'attempt-1'])
+    const remove = deleteReferenceSql(REFERENCE)
+    expect(remove.text).toContain('DELETE FROM "ai_budget_references"')
+    expect(remove.text).toContain('RETURNING "attempt"')
+    expect(remove.values).toEqual(['k1', 'b1', 'attempt-1'])
   })
 
   /** Giving back marks only an active application and returns what it moved. */
@@ -64,15 +113,6 @@ describe('application statements', () => {
     expect(statement.text).toContain('UPDATE "ai_budget_applications" SET "unappliedAt"')
     expect(statement.text).toContain('"unappliedAt" IS NULL')
     expect(statement.text).toContain('RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"')
-    expect(statement.values).toEqual(['k1', 'b1', null, null])
-    expect(unapplySql({ ...APPLICATION, owner: 'attempt-1' }).values).toEqual(['k1', 'b1', 'attempt-1', 'attempt-1'])
-  })
-
-  /** What an application holds is a plain read: its delta and whether it was given back. */
-  it('reads what an application holds', () => {
-    const statement = applicationStateSql(APPLICATION)
-    expect(statement.text).toContain('SELECT "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"')
-    expect(statement.text).toContain('FROM "ai_budget_applications"')
     expect(statement.values).toEqual(['k1', 'b1'])
   })
 })

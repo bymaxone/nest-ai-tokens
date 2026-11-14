@@ -7,7 +7,7 @@
  */
 
 import type { BudgetDelta, IBudgetCounterStore } from '../interfaces'
-import { TENANT, budgetInput, context, expectRejectCode, makeService } from '../../../test/fakes/budget-fixtures'
+import { NOW, TENANT, budgetInput, context, expectRejectCode, makeService } from '../../../test/fakes/budget-fixtures'
 
 const MONTH = new Date('2026-06-01T00:00:00.000Z')
 
@@ -257,7 +257,7 @@ describe('BudgetService keyed movements shared by several attempts', () => {
     const { service, store } = makeService()
     const tenantWide = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
     const allow = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, policy: 'allow' }))
-    await store.adjustWindowOnce({ key: 'call-1', budgetId: allow.id, owner: 'someone' }, MONTH, delta(80n))
+    await store.adjustWindowOnce({ key: 'call-1', budgetId: allow.id, attempt: 'someone' }, MONTH, delta(80n))
     await expectRejectCode(service.consume(context(), delta(30n), undefined, 'call-1', 'mine'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
     expect((await store.getWindow(tenantWide.id, MONTH))?.spentNanoUsd ?? 0n).toBe(0n)
     expect((await store.getWindow(allow.id, MONTH))?.spentNanoUsd).toBe(80n)
@@ -268,7 +268,7 @@ describe('BudgetService keyed movements shared by several attempts', () => {
     const { service, store } = makeService()
     const first = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
     const second = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
-    await store.consumeWindowOnce({ key: 'call-1', budgetId: second.id, owner: 'someone' }, MONTH, delta(80n), {})
+    await store.consumeWindowOnce({ key: 'call-1', budgetId: second.id, attempt: 'someone' }, MONTH, delta(80n), {})
     await expectRejectCode(service.consume(context(), delta(30n), undefined, 'call-1', 'mine'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
     expect((await store.getWindow(first.id, MONTH))?.spentNanoUsd ?? 0n).toBe(0n)
     expect((await store.getWindow(second.id, MONTH))?.spentNanoUsd).toBe(80n)
@@ -317,14 +317,129 @@ describe('BudgetService keyed movements shared by several attempts', () => {
     expect((await store.getWindow(tenantWide.id, MONTH))?.spentNanoUsd).toBe(30n)
   })
 
-  /** A release that names an owner gives back only what that owner applied. */
-  it('releases only the movement of the owner it names', async () => {
+  /*
+   * Invariant: the movement goes back when the last reference on it goes. Two attempts hold the application; the one that
+   * fails drops its own and the movement stays; the other, dropping last, gives it back.
+   */
+  it('gives a movement back only when the last attempt holding it drops its reference', async () => {
     const { service, store } = makeService()
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
     await service.consume(context(), delta(30n), undefined, 'call-1', 'winner')
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'loser')
     await service.release(context(), delta(30n), undefined, 'call-1', 'loser')
     expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
     await service.release(context(), delta(30n), undefined, 'call-1', 'winner')
     expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
+  })
+
+  /** An attempt that holds no reference on a budget (it never matched it) leaves the movement alone instead of subtracting by delta. */
+  it('leaves a movement alone when the attempt that releases never held a reference on it', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'winner')
+    await service.release(context(), delta(30n), undefined, 'call-1', 'stranger')
+    await service.release(context(), delta(30n), undefined, 'other-key', 'stranger')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+  })
+
+  /** The committed reference is the row's: committing names it, and the release of the row gives the movement back. */
+  it('commits an attempt reference as the row reference, which the release of the row drops', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'attempt-a')
+    await service.commit(context(), delta(30n), NOW, 'call-1', 'attempt-a')
+    await service.release(context(), delta(30n), undefined, 'call-1', 'attempt-a')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
+  })
+
+  /*
+   * Invariant: a committed call is always counted. When the reference of a slow attempt was reclaimed while its append was in
+   * flight and the movement went back, the attempt's commit takes the movement again, without limits, and records the row.
+   */
+  it('counts a committed call whose reference was reclaimed, without limits and without failing', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 50n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'slow')
+    await service.release(context(), delta(30n), undefined, 'call-1', 'slow')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
+    await store.adjustWindow(budget.id, MONTH, delta(40n))
+
+    await expect(service.commit(context(), delta(30n), NOW, 'call-1', 'slow')).resolves.toBeUndefined()
+
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(70n)
+    await service.release(context(), delta(30n), undefined, 'call-1')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(40n)
+  })
+
+  /** A reclaimed reference on an application that is still held by another attempt is only given the committed name again. */
+  it('does not count the movement twice when the application is still held by another attempt', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'fast')
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'slow')
+    await service.release(context(), delta(30n), undefined, 'call-1', 'slow')
+    await service.commit(context(), delta(30n), NOW, 'call-1', 'slow')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1', 'fast')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
+  })
+
+  /** A counter follows the movement, not the attempts: it stays while a reference remains and goes with the last one. */
+  it('keeps the counter while another attempt holds the movement and drops it with the last reference', async () => {
+    const counter = new MapCounter()
+    const { service } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'a')
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'b')
+    expect(counter.values.get(costKey(budget.id))).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1', 'a')
+    expect(counter.values.get(costKey(budget.id))).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1', 'b')
+    expect(counter.values.get(costKey(budget.id))).toBe(0n)
+  })
+})
+
+describe('BudgetService keyed movements: reproductions of the review threads', () => {
+  const JULY = new Date('2026-07-10T00:00:00.000Z')
+  const JULY_WINDOW = new Date('2026-07-01T00:00:00.000Z')
+
+  /*
+   * Invariant: the window a movement was applied in is part of what makes a retry the same call. A same-key retry whose
+   * instant falls in another window is a conflict, not a replay that consumes nothing in its own window.
+   */
+  it('refuses a key replayed with an instant in another budget window and moves nothing there', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(80n), undefined, 'call-1')
+    await expectRejectCode(service.consume(context(), delta(80n), JULY, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(80n)
+    expect(await store.getWindow(budget.id, JULY_WINDOW)).toBeNull()
+  })
+
+  /*
+   * Invariant: an attempt gives back only its own hold on a movement. While attempt A is between two budgets, attempt B of
+   * the same key replays A's application on the first budget; when A is then refused by the second, B's movement stands.
+   */
+  it('keeps a movement another attempt replayed when the attempt that applied it is refused by a later budget', async () => {
+    const { service, store } = makeService()
+    const tenantWide = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 0n, features: ['restricted.feature'] }))
+    const original = store.consumeWindowOnce.bind(store)
+    let interleaved = false
+    jest.spyOn(store, 'consumeWindowOnce').mockImplementation(async (application, windowStart, change, limits) => {
+      if (!interleaved && application.budgetId !== tenantWide.id) {
+        interleaved = true
+        await service.consume(context({ feature: 'free.feature' }), delta(30n), undefined, 'call-1', 'attempt-b')
+      }
+      return original(application, windowStart, change, limits)
+    })
+
+    await expectRejectCode(service.consume(context({ feature: 'restricted.feature' }), delta(30n), undefined, 'call-1', 'attempt-a'), 'AI_TOKENS_BUDGET_EXCEEDED')
+
+    expect((await store.getWindow(tenantWide.id, MONTH))?.spentNanoUsd).toBe(30n)
   })
 })

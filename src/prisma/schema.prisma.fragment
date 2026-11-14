@@ -205,12 +205,24 @@ model AiBudgetApplication {
   spentNanoUsd BigInt
   spentTokens  BigInt
   spentCount   Int
-  owner        String // the attempt that applied it
   unappliedAt  DateTime?
   createdAt    DateTime
-  budget       AiBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget       AiBudget            @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  holders      AiBudgetReference[]
 
   @@id([key, budgetId])
   @@index([budgetId])
   @@map("ai_budget_applications")
+}
+
+// One row per attempt that holds a movement; the attempt whose ledger row stands is named "row".
+model AiBudgetReference {
+  key         String
+  budgetId    String
+  attempt     String
+  createdAt   DateTime
+  application AiBudgetApplication @relation(fields: [key, budgetId], references: [key, budgetId], onDelete: Cascade)
+
+  @@id([key, budgetId, attempt])
+  @@map("ai_budget_references")
 }

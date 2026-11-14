@@ -38,7 +38,8 @@ function tenantBlindStore(inner: InMemoryBudgetStore): IBudgetStore {
     adjustWindow: (...args) => inner.adjustWindow(...args),
     consumeWindowOnce: (...args) => inner.consumeWindowOnce(...args),
     adjustWindowOnce: (...args) => inner.adjustWindowOnce(...args),
-    unapplyWindow: (...args) => inner.unapplyWindow(...args),
+    commitReference: (...args) => inner.commitReference(...args),
+    dropReference: (...args) => inner.dropReference(...args),
     getWindow: (...args) => inner.getWindow(...args),
     setWindowStart: (key, windowStart) => inner.setWindowStart(anyTenant(key), windowStart),
   }

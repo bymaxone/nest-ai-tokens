@@ -257,6 +257,7 @@ export class MeteringService {
     } catch (error) {
       return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis })
     }
+    if (enforcement !== null) await this.effects.commitBudget(enforcement)
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
     this.telemetry.recordUsage(record)
@@ -283,9 +284,12 @@ export class MeteringService {
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
-    // The budget movement is recorded under the call's key, so a row of the same shape holds it too: it is given back only when no such row stands.
-    const sharedRow = row !== null && this.effects.sharesBudget(row, appendInput.scope)
-    if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit, !sharedRow)
+    // The budget references this attempt took are committed when the row found is this same call, and dropped otherwise.
+    const sameCall = row !== null && this.effects.sameCall(row, { kind: 'record', scope: appendInput.scope, feature: appendInput.feature, billedCostNanoUsd: appendInput.billedCostNanoUsd, ...(basis.occurredAtSupplied ? { occurredAt: appendInput.occurredAt } : {}) })
+    if (enforcement !== null) {
+      if (sameCall) await this.effects.commitBudget(enforcement)
+      if (!committed) await this.effects.withdraw(enforcement, ownDebit, !sameCall)
+    }
     if (row === null || !conflict) throw error
     return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
   }
@@ -304,9 +308,12 @@ export class MeteringService {
     const { context, delta, ledgerKey, occurredAt, attempt } = held
     const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, ledgerKey))
     if (row === undefined) return
+    // The budget references this attempt took are committed when the row found is this same call, and dropped otherwise.
+    const sameCall = row !== null && this.effects.sameCall(row, { kind: 'hold', scope: context.scope, feature: context.feature, billedCostNanoUsd: delta.billedNanoUsd })
+    if (sameCall) await this.effects.commitHoldBudget(context, delta, ledgerKey, attempt, occurredAt)
     if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
-    await this.effects.compensateHold(context, delta, ledgerKey, attempt, ownDebit, row === null || !this.effects.sharesHoldBudget(row, context.scope))
+    await this.effects.compensateHold(context, delta, ledgerKey, attempt, ownDebit, !sameCall)
   }
 
   /**
@@ -399,6 +406,7 @@ export class MeteringService {
     const attempt = randomUUID()
     if (!isSystemCost) await this.effects.reserveHold(context, delta, ledgerKey, attempt)
     const record = await this.appendPending(context, resolved, billedEstimate, markup.multiplier, occurredAt, ledgerKey, isSystemCost, delta, attempt)
+    if (!isSystemCost) await this.effects.commitHoldBudget(context, delta, ledgerKey, attempt, occurredAt)
     return this.holdOf(record)
   }
 

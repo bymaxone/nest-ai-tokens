@@ -378,14 +378,13 @@ describe('hold() with one idempotency key racing itself', () => {
   })
 
   /*
-   * A posted row found by a losing hold is a captured hold or a record, and nothing on it tells them apart. Against a
-   * captured hold the loser only replays the winner's reservation and moves nothing. Against a record the loser's
-   * reservation is its own, but it is kept, so the worst case is one reservation more in the window until it rolls: an
-   * over-count, never a release of a settled movement.
+   * A posted row found by a losing hold is a captured hold or a record, and nothing on it tells them apart. The loser drops
+   * its own reference either way: against a captured hold it only replayed the winner's reservation, which the committed
+   * reference keeps; against a record it was the sole holder of a reservation of its own and gives it back.
    */
   it.each([
     { name: 'a captured hold of the same payer', winner: 'captured', count: 1 },
-    { name: 'a record of the same payer', winner: 'record', count: 2 },
+    { name: 'a record of the same payer', winner: 'record', count: 1 },
   ])('counts the budget as $count when a losing hold with no wallet meets $name', async ({ winner, count }) => {
     const built = build({ budgets: true, clock: advancing() })
     await seedGpt5(built.pricingStore)

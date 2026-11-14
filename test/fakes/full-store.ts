@@ -45,7 +45,8 @@ export function makeFullStore(): IAiTokensStore {
     adjustWindow: budget.adjustWindow.bind(budget),
     consumeWindowOnce: budget.consumeWindowOnce.bind(budget),
     adjustWindowOnce: budget.adjustWindowOnce.bind(budget),
-    unapplyWindow: budget.unapplyWindow.bind(budget),
+    commitReference: budget.commitReference.bind(budget),
+    dropReference: budget.dropReference.bind(budget),
     getWindow: budget.getWindow.bind(budget),
     setWindowStart: budget.setWindowStart.bind(budget),
   }

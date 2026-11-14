@@ -52,7 +52,8 @@ function makeStore(): IAiTokensStore {
     adjustWindow: reject,
     consumeWindowOnce: reject,
     adjustWindowOnce: reject,
-    unapplyWindow: reject,
+    commitReference: reject,
+    dropReference: reject,
     getWindow: reject,
     setWindowStart: reject,
   }

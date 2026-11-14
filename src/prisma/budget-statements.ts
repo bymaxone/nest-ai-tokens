@@ -1,12 +1,12 @@
 /**
- * @fileoverview The statements that move a budget window, and the ones that record who moved it: the conditional
- * consume of spec §10.8, the signed adjust, and the keyed application rows that make a movement happen once. Pure
- * builders of parameterized SQL, split out of `adapter-sql.ts` to keep that file within its length limit.
+ * @fileoverview The statements that move a budget window and record who holds the movement: the conditional consume of
+ * spec §10.8, the signed adjust, the keyed application rows that make a movement happen once, and the references that
+ * attempts hold on them. Pure builders of parameterized SQL; what runs them, and in which order, is `budget-applications.ts`.
  * @layer prisma
  */
 
 import { randomUUID } from 'node:crypto'
-import type { BudgetApplication, BudgetDelta, BudgetLimits } from '../server'
+import type { BudgetApplication, BudgetDelta, BudgetLimits, BudgetReference } from '../server'
 import { DB_NOW_SQL } from './adapter-sql'
 import { sql, type Sql } from './sql'
 
@@ -51,9 +51,6 @@ export function adjustWindowSql(budgetId: string, windowStart: Date, delta: Budg
   `
 }
 
-/** The owner an application is recorded under when its attempt names none: the empty string, matched by no named owner. */
-const NO_OWNER = ''
-
 /**
  * Record an application, or take over one that was given back. The primary key is the single point where concurrent
  * attempts with one application are serialized: a second insert waits for the first, then finds an active row and
@@ -61,34 +58,69 @@ const NO_OWNER = ''
  */
 export function recordApplicationSql(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Sql {
   return sql`
-    INSERT INTO "ai_budget_applications" ("key", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "owner", "unappliedAt", "createdAt")
-    VALUES (${application.key}, ${application.budgetId}, ${windowStart}, ${delta.nanoUsd}, ${BigInt(delta.tokens)}, ${delta.count}, ${application.owner ?? NO_OWNER}, NULL, ${DB_NOW_SQL})
+    INSERT INTO "ai_budget_applications" ("key", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt", "createdAt")
+    VALUES (${application.key}, ${application.budgetId}, ${windowStart}, ${delta.nanoUsd}, ${BigInt(delta.tokens)}, ${delta.count}, NULL, ${DB_NOW_SQL})
     ON CONFLICT ("key", "budgetId") DO UPDATE
       SET "windowStart" = EXCLUDED."windowStart", "spentNanoUsd" = EXCLUDED."spentNanoUsd", "spentTokens" = EXCLUDED."spentTokens",
-          "spentCount" = EXCLUDED."spentCount", "owner" = EXCLUDED."owner", "unappliedAt" = NULL, "createdAt" = EXCLUDED."createdAt"
+          "spentCount" = EXCLUDED."spentCount", "unappliedAt" = NULL, "createdAt" = EXCLUDED."createdAt"
       WHERE "ai_budget_applications"."unappliedAt" IS NOT NULL
     RETURNING "key"
   `
 }
 
 /**
- * Mark an active application given back and return what it moved; empty when it is absent, already given back, or, when
- * an owner is named, applied by another owner.
+ * What an application holds, with its row locked until the transaction ends: the window and delta it moved and whether it
+ * was given back. A take, a commit and a drop of one application all lock it first, so they never interleave.
  */
-export function unapplySql(application: BudgetApplication): Sql {
-  const owner = application.owner ?? null
+export function lockApplicationSql(application: BudgetApplication): Sql {
   return sql`
-    UPDATE "ai_budget_applications" SET "unappliedAt" = ${DB_NOW_SQL}
-    WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} AND "unappliedAt" IS NULL
-      AND (${owner}::text IS NULL OR "owner" = ${owner})
-    RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"
+    SELECT "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"
+    FROM "ai_budget_applications" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} FOR UPDATE
   `
 }
 
-/** What an application holds: what it moved, whether it was given back, and who applied it; empty when never recorded. */
-export function applicationStateSql(application: BudgetApplication): Sql {
+/** Take a reference for an attempt; taking it twice is the same as once. */
+export function takeReferenceSql(reference: BudgetReference): Sql {
   return sql`
-    SELECT "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"
-    FROM "ai_budget_applications" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId}
+    INSERT INTO "ai_budget_references" ("key", "budgetId", "attempt", "createdAt")
+    VALUES (${reference.key}, ${reference.budgetId}, ${reference.attempt}, ${DB_NOW_SQL})
+    ON CONFLICT ("key", "budgetId", "attempt") DO NOTHING
+  `
+}
+
+/** Whether an application is held under a reference name. */
+export function referenceHeldSql(application: BudgetApplication, attempt: string): Sql {
+  return sql`SELECT 1 AS "held" FROM "ai_budget_references" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} AND "attempt" = ${attempt}`
+}
+
+/** Rename an attempt's reference to the committed name; `RETURNING` is empty when the attempt holds none. */
+export function renameReferenceSql(reference: BudgetReference, committed: string): Sql {
+  return sql`
+    UPDATE "ai_budget_references" SET "attempt" = ${committed}
+    WHERE "key" = ${reference.key} AND "budgetId" = ${reference.budgetId} AND "attempt" = ${reference.attempt}
+    RETURNING "attempt"
+  `
+}
+
+/** Delete an attempt's reference; `RETURNING` is empty when the attempt holds none. */
+export function deleteReferenceSql(reference: BudgetReference): Sql {
+  return sql`
+    DELETE FROM "ai_budget_references"
+    WHERE "key" = ${reference.key} AND "budgetId" = ${reference.budgetId} AND "attempt" = ${reference.attempt}
+    RETURNING "attempt"
+  `
+}
+
+/** Whether any reference is left on an application. */
+export function anyReferenceSql(application: BudgetApplication): Sql {
+  return sql`SELECT 1 AS "held" FROM "ai_budget_references" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} LIMIT 1`
+}
+
+/** Mark an application given back and return what it moved. */
+export function unapplySql(application: BudgetApplication): Sql {
+  return sql`
+    UPDATE "ai_budget_applications" SET "unappliedAt" = ${DB_NOW_SQL}
+    WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} AND "unappliedAt" IS NULL
+    RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"
   `
 }

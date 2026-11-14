@@ -1655,15 +1655,17 @@ export interface IBudgetStore {
   /** Signed release/adjust of a window's counters (capture delta, release, reverse). */
   adjustWindow(budgetId: string, windowStart: Date,
     delta: { nanoUsd: bigint; tokens: number; count: number }): Promise<void>
-  /** conditionalConsume once per application (key + budget): 'replayed' when already applied with this delta, 'mismatch' when applied with another (nothing moves), 'refused' when a limit stops it (nothing recorded). */
-  consumeWindowOnce(application: { key: string; budgetId: string; owner?: string }, windowStart: Date,
+  /** conditionalConsume once per application (key + budget), taking a reference for the attempt: 'replayed' when already applied for this window and delta, 'mismatch' when applied for another (nothing moves, no reference), 'refused' when a limit stops it (nothing recorded). */
+  consumeWindowOnce(reference: { key: string; budgetId: string; attempt: string }, windowStart: Date,
     delta: { nanoUsd: bigint; tokens: number; count: number },
     limits: { nanoUsd?: bigint; tokens?: number; count?: number }): Promise<'applied' | 'replayed' | 'refused' | 'mismatch'>
-  /** adjustWindow once per application; 'replayed' and 'mismatch' as above. */
-  adjustWindowOnce(application: { key: string; budgetId: string; owner?: string }, windowStart: Date,
+  /** adjustWindow once per application, taking a reference; 'replayed' and 'mismatch' as above. */
+  adjustWindowOnce(reference: { key: string; budgetId: string; attempt: string }, windowStart: Date,
     delta: { nanoUsd: bigint; tokens: number; count: number }): Promise<'applied' | 'replayed' | 'mismatch'>
-  /** Give an application back: subtract what it moved from the window it moved, once. 'already' if given back before, 'absent' if never recorded, 'foreign' if it names an owner other than the one that applied it. */
-  unapplyWindow(application: { key: string; budgetId: string; owner?: string }): Promise<'unapplied' | 'already' | 'absent' | 'foreign'>
+  /** Rename the attempt's reference to `row` (the call whose ledger row stands); 'already' when `row` is held, 'gone' when the attempt holds none on an existing application. */
+  commitReference(reference: { key: string; budgetId: string; attempt: string }): Promise<'committed' | 'already' | 'gone' | 'absent'>
+  /** Drop the attempt's reference; when it was the last, subtract what the application moved from the window it moved. */
+  dropReference(reference: { key: string; budgetId: string; attempt: string }): Promise<'kept' | 'unapplied' | 'missing' | 'absent'>
   getWindow(budgetId: string, windowStart: Date): Promise<{ spentNanoUsd: bigint; spentTokens: number; spentCount: number } | null>
   setWindowStart(budgetId: string, windowStart: Date): Promise<void>   // rotateWindow support
 }

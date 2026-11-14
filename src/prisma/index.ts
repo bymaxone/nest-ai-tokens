@@ -38,16 +38,17 @@ import type {
 } from '../shared'
 import type {
   ApplicationOutcome,
-  BudgetApplication,
   BudgetDelta,
   BudgetKey,
   BudgetLimits,
+  BudgetReference,
   BudgetWindowSpend,
+  CommitOutcome,
+  DropOutcome,
   IAiTokensStore,
   LedgerCostSummary,
   OpenGrant,
   PricedModel,
-  UnapplyOutcome,
   WalletEntryFilter,
   WalletEntryPage,
 } from '../server'
@@ -542,16 +543,20 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     })
   }
 
-  consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
-    return this.applications.consume(application, windowStart, delta, limits)
+  consumeWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
+    return this.applications.consume(reference, windowStart, delta, limits)
   }
 
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
-    return this.applications.adjust(application, windowStart, delta)
+  adjustWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
+    return this.applications.adjust(reference, windowStart, delta)
   }
 
-  unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome> {
-    return this.applications.unapply(application)
+  commitReference(reference: BudgetReference): Promise<CommitOutcome> {
+    return this.applications.commit(reference)
+  }
+
+  dropReference(reference: BudgetReference): Promise<DropOutcome> {
+    return this.applications.drop(reference)
   }
 
   async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
