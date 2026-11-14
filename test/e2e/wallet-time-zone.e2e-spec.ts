@@ -153,4 +153,17 @@ describe('wallet grants judged on the application clock the store is given', () 
     expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'early' }), 0n)).toBeNull()
     expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, appNow)).not.toBeNull()
   })
+
+  /*
+   * Invariant: a grant the database clock already reads as expired when it is appended, but the application's
+   * instant reads as live, is credited when a debit judges it at that instant. The append-time credit is judged on
+   * the database clock, so only activation can credit it.
+   */
+  it('credits a grant that was expired by the database clock at append but is live at the given instant', async () => {
+    const store = await storeInZone('UTC')
+    const appNow = new Date(Date.now() - 5_000)
+    await store.appendEntry(ref, grantEntry({ idempotencyKey: 'skewed', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() - 10_000), expiresAt: new Date(Date.now() - 1_000) }))
+    expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, appNow)).not.toBeNull()
+    expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(90n)
+  })
 })

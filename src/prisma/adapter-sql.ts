@@ -593,15 +593,15 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): S
 /**
  * The database clock as a UTC wall-clock timestamp, the fallback when the caller gives no instant. The entry
  * timestamps are `TIMESTAMP` columns without a zone: the application writes `effectiveAt` and `expiresAt` as UTC
- * instants, so a clock they are compared with must be UTC too whatever zone the database session uses. The usage
- * records' `createdAt` and `updatedAt` are written with it as well: the hold reaper compares `createdAt`
+ * instants, so a clock they are compared with must be UTC too whatever zone the database session uses. The wallet entries'
+ * `createdAt`, which orders them, and the usage records' `createdAt` and `updatedAt` are written with it as well: the hold reaper compares `createdAt`
  * with an application instant.
  */
 export const DB_NOW_SQL = sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
 
 /**
- * The instant a wallet statement judges grants and stamps entries on: the caller's `now` as a parameter, so that
- * `effectiveAt`, `expiresAt` and `createdAt` all share the application's clock, or the database clock when none is given.
+ * The instant a wallet statement judges a grant's `effectiveAt` and `expiresAt` on: the caller's `now` as a bound
+ * parameter, so the dates and the comparison share the application's clock, or the database clock when none is given.
  */
 export function clockSql(now: Date | undefined): Sql {
   return now === undefined ? DB_NOW_SQL : sql`${now}`

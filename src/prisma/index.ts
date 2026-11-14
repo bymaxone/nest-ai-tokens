@@ -85,6 +85,7 @@ import {
   ACTIVATED_SQL,
   CREDITED_SQL,
   DB_NOW_SQL,
+  DUE_AT_APPEND_SQL,
   clockSql,
   GRANT_REMAINING_JOINED_SQL,
   GRANT_REMAINING_SQL,
@@ -652,8 +653,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    * Credit, once each, every grant that is now due, not credited yet and not expired: an `adjustment`
    * entry keyed `activate:<grantId>` records the credit, and the stored balance is then set to the signed
    * sum of the entries rather than incremented, so a balance that already counts a grant (as an earlier
-   * `reconcile` left it) is not credited a second time. A grant that was due as it was appended is
-   * credited by its own row and is not touched here.
+   * `reconcile` left it) is not credited a second time. A grant that was due as it was appended,
+   * judged on the stored `createdAt`, is credited by its own row and is not touched here.
    * @internal
    */
   private async activateDueGrants(tx: SqlExecutor, walletId: string, now?: Date): Promise<void> {
@@ -661,7 +662,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       SELECT g."id", g."priority", g."amountNanoUsd"
       FROM "ai_wallet_entries" g
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant'
-        AND g."effectiveAt" > g."createdAt"
+        AND NOT ${DUE_AT_APPEND_SQL}
         AND g."effectiveAt" <= ${clockSql(now)} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${clockSql(now)})
         AND NOT ${ACTIVATED_SQL}
     `)

@@ -116,7 +116,8 @@ optional injected clock as its fourth constructor argument; the module keeps the
   from `effectiveAt` until `expiresAt` as the database server read them, so a database clock behind the application's
   kept a grant that had expired by the application's clock spendable (free usage), and a clock ahead of it expired one
   early. The SQL store now judges grants on the `now` the service passes, so the dates and the comparison share the application's clock;
-  the entry's `createdAt`, which orders the entries and is the `'fifo'` burn order and breaks ties in the others, stays on the database clock. Skew between the
+  the entry's `createdAt`, which orders the entries and is the `'fifo'` burn order and breaks ties in the others, stays on the database clock. A grant that the database clock already read as expired when it was written, but the application's clock reads as live, is now credited at the next debit
+  or `reconcile`; it used to stay uncredited. Skew between the
   application and database clocks no longer moves a grant; keep NTP running on the application hosts.
 
 ### Changed

@@ -425,7 +425,7 @@ are the ones that decide and instances that disagree move a grant between them. 
 yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
 entry keyed `activate:<grantId>` (reason `grant activated`); that entry is bookkeeping, so a report of
 operator adjustments should skip it. Keys starting `activate:` or `expiry:` are reserved for the store,
-and a clash fails with `AI_TOKENS_INVALID_CONFIG`. A grant whose `expiresAt` falls within the clock skew of the moment it is written can be read as already expired, and is then never credited.
+and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
 
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
