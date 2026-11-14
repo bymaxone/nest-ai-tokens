@@ -271,6 +271,16 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_UNAVAILABLE')
   })
 
+  /** A custom store is classified by the same shape rules: a plain error naming a closed connection is unavailable. */
+  it('classifies a custom budget store error by its message (failClosed)', async () => {
+    const counter = new FakeCounter()
+    counter.failIncr = true
+    const { service, store } = makeService({ options: { counter, failClosed: true } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    jest.spyOn(store, 'conditionalConsume').mockRejectedValue(new Error('Connection closed'))
+    await expectRejectCode(service.consume(context(), delta(40n)), 'AI_TOKENS_STORE_UNAVAILABLE')
+  })
+
   /** The database failure that made the budget fail closed rides on the store error as its cause. */
   it('keeps the database failure as the cause of the fail-closed store error', async () => {
     const counter = new FakeCounter()

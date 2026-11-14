@@ -21,7 +21,7 @@ pool or a transaction that ran out of time, a statement or lock timeout, a shutd
 deadlock (retryable by design: run the call again). Every other store failure stays `AI_TOKENS_STORE_ERROR` and now
 answers 500 instead of 502, because retrying it does not help. A client, a load balancer rule or an alert that matches
 502 for the store must match 503 for an outage and 500 for the rest. No `Retry-After` header is set. A unique violation
-is still replayed or refused as the 409 conflict. Nothing changes for a custom store. A server that is paused (its
+is still replayed or refused as the 409 conflict. A custom store's errors are classified by the same rules, so a plain `Error` whose message names a closed or terminated connection answers 503. A server that is paused (its
 socket stays open and nothing answers) fails after the driver's own connection or transaction wait, so set one: the
 `connectionTimeoutMillis` of the pool, or Prisma's `connect_timeout` and `pool_timeout`.
 
