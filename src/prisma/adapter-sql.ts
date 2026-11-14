@@ -656,6 +656,20 @@ export function spendableBalanceSql(now?: Date): Sql {
   )`
 }
 
+/**
+ * The unspent remainder of a wallet's credited grants that are not effective yet at `now`. The materialized
+ * balance already counts them, because a grant is credited at append on the store's clock, so a debit must not
+ * be funded by them: the open-grants query leaves them out, and a debit they funded would carry no allocation.
+ */
+export function pendingGrantsSql(walletId: string, now?: Date): Sql {
+  return sql`(
+    SELECT COALESCE(SUM(${GRANT_REMAINING_JOINED_SQL}), 0)
+    FROM "ai_wallet_entries" g ${GRANT_REMAINING_JOIN_SQL}
+    WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
+      AND g."effectiveAt" > ${clockSql(now)} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${clockSql(now)})
+  )`
+}
+
 /** Serialize a budget window kind to its stored text form. */
 export function serializeWindow(window: BudgetWindowKind): string {
   return typeof window === 'object' ? `custom:${window.customSeconds.toString()}` : window

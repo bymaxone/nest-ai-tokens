@@ -87,6 +87,7 @@ import {
   DB_NOW_SQL,
   DUE_AT_APPEND_SQL,
   clockSql,
+  pendingGrantsSql,
   GRANT_REMAINING_JOINED_SQL,
   GRANT_REMAINING_SQL,
   SIGNED_BALANCE_SQL,
@@ -435,7 +436,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         const cost = -entry.amountNanoUsd
         const reserved = await tx.query<WalletRow[]>(sql`
           UPDATE "ai_wallets" SET "balanceNanoUsd" = "balanceNanoUsd" - ${cost}, "updatedAt" = ${DB_NOW_SQL}
-          WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${cost} >= ${-overdraftNanoUsd} RETURNING *
+          WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${pendingGrantsSql(wallet.id, now)} - ${cost} >= ${-overdraftNanoUsd} RETURNING *
         `)
         if (reserved[0] === undefined) return null
         const debit = await this.insertWalletEntry(tx, wallet.id, entry)

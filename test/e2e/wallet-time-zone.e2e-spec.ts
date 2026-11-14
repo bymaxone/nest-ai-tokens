@@ -166,4 +166,20 @@ describe('wallet grants judged on the application clock the store is given', () 
     expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, appNow)).not.toBeNull()
     expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(90n)
   })
+
+  /*
+   * Invariant: a grant the database clock credited at append, whose effectiveAt the application instant has not reached,
+   * funds no debit: the debit is refused, nothing is allocated or written, and once the instant reaches it the grant
+   * is burned with an allocation.
+   */
+  it('does not let a credited grant that is not effective at the given instant fund a debit', async () => {
+    const store = await storeInZone('UTC')
+    const early = new Date(Date.now() - 10_000)
+    await store.appendEntry(ref, grantEntry({ idempotencyKey: 'ahead', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() - 1_000) }))
+    expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'early' }), 0n, early)).toBeNull()
+    expect((await store.listEntries(ref, { type: 'debit' })).total).toBe(0)
+    const debit = await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, new Date())
+    expect(debit).not.toBeNull()
+    expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(90n)
+  })
 })

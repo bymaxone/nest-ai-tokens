@@ -10,7 +10,7 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
 import { T0, T1, newRecord, rendered } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
@@ -335,6 +335,16 @@ describe('balance SQL', () => {
     const statement = spendableBalanceSql(T1)
     expect(statement.text).toContain(`AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${UTC_PARAMETER(3)}`)
     expect(statement.text).not.toContain('CURRENT_TIMESTAMP')
+    expect(statement.values.at(-1)).toBe(T1)
+  })
+
+  /** The not-yet-effective remainder is read at the given instant, for the credited grants of one wallet. */
+  it('sums the credited grants that are not effective at the given instant', () => {
+    const statement = pendingGrantsSql('w1', T1)
+    expect(statement.text).toContain(`g."effectiveAt" > ${UTC_PARAMETER(statement.values.length - 1)}`)
+    expect(statement.text).toContain(`g."type" = 'grant'`)
+    expect(statement.text).not.toContain('CURRENT_TIMESTAMP')
+    expect(statement.values[0]).toBe('w1')
     expect(statement.values.at(-1)).toBe(T1)
   })
 

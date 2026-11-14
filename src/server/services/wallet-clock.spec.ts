@@ -72,4 +72,25 @@ describe('wallet grants are judged on the application clock', () => {
     const debit = await service.debit(REF, { amountNanoUsd: 3n, idempotencyKey: 'd', reason: 'r' })
     expect(store.allocationsOf(debit.id)).toEqual([{ debitEntryId: debit.id, grantEntryId: first.id, amountNanoUsd: 3n }])
   })
+
+  /*
+   * Invariant: a grant the store credited at append because its own clock is ahead, but that is not effective yet by
+   * the application clock, funds no debit; once effective it is burned with an allocation, and at its expiry only
+   * what is unspent is swept, so the user is never charged twice for the same value.
+   */
+  it('refuses a debit a not-yet-effective credited grant would fund, and charges nothing twice at expiry', async () => {
+    let app = START
+    const store = new InMemoryWalletStore({ now: () => new Date(app + SKEW_MS) })
+    const service = new WalletService(store, OPTIONS, undefined, () => new Date(app))
+    await service.grant(REF, { amountNanoUsd: 100n, effectiveAt: new Date(START + 1_000), expiresAt: new Date(START + 60_000), idempotencyKey: 'g', reason: 'r' })
+    await expect(service.debit(REF, { amountNanoUsd: 10n, idempotencyKey: 'early', reason: 'r' })).rejects.toBeInstanceOf(AiTokensException)
+    expect(store.entriesOf(REF).filter((entry) => entry.type === 'debit')).toHaveLength(0)
+    app = START + 2_000
+    const debit = await service.debit(REF, { amountNanoUsd: 10n, idempotencyKey: 'ok', reason: 'r' })
+    expect(store.allocationsOf(debit.id)).toHaveLength(1)
+    app = START + 61_000
+    await expect(service.debit(REF, { amountNanoUsd: 1n, idempotencyKey: 'late', reason: 'r' })).rejects.toBeInstanceOf(AiTokensException)
+    expect((await store.getWallet(REF))?.balanceNanoUsd).toBe(0n)
+    expect((await service.reconcile(REF)).nanoUsd).toBe(0n)
+  })
 })

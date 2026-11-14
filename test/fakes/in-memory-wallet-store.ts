@@ -137,7 +137,7 @@ export class InMemoryWalletStore implements IWalletStore {
     this.sweepExpiredGrants(wallet, at)
     // `entry.amountNanoUsd` is negative for a debit, so the reserve adds it: this is
     // the fake's model of `balance - cost >= -overdraft` from the §9.4 conditional UPDATE.
-    if (wallet.balanceNanoUsd + entry.amountNanoUsd < -overdraftNanoUsd) return null
+    if (wallet.balanceNanoUsd - this.pendingGrants(wallet, at) + entry.amountNanoUsd < -overdraftNanoUsd) return null
     const debit = this.insert(wallet, entry, [])
     this.allocateDebit(wallet, debit, at)
     return debit
@@ -304,6 +304,17 @@ export class InMemoryWalletStore implements IWalletStore {
         [{ grantEntryId: grant.id, amountNanoUsd: remaining }],
       )
     }
+  }
+
+  /** The unspent remainder of credited grants that are not effective yet at `now`: counted by the balance, not spendable. */
+  private pendingGrants(wallet: Wallet, now: Date): bigint {
+    let total = 0n
+    for (const grant of this.entries.get(wallet.id) ?? []) {
+      if (grant.type !== 'grant' || !this.isCredited(wallet, grant)) continue
+      if (grant.effectiveAt <= now || (grant.expiresAt !== undefined && grant.expiresAt <= now)) continue
+      total += grant.amountNanoUsd - this.allocatedOf(grant.id)
+    }
+    return total
   }
 
   /** Greedily allocate a debit across the spendable grants in burn order. */
