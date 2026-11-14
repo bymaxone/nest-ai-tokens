@@ -1171,10 +1171,10 @@ export class BudgetService {
    * Force a fresh window NOW (or at a given start) — called by the host on subscription
    * renewal or plan change. Also updates anchorAt so subsequent windows follow the new cycle.
    */
-  rotateWindow(budgetId: string, newWindowStart?: Date): Promise<void>
+  rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void>
 
   /** Recompute a window's spent counters from the ledger using the §10.7 predicate. */
-  reconcileWindow(budgetId: string, windowStart: Date): Promise<void>
+  reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void>
 }
 ```
 

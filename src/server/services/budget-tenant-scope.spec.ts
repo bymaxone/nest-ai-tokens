@@ -27,7 +27,7 @@ async function rejection(promise: Promise<unknown>): Promise<{ code: string; mes
 function tenantBlindStore(inner: InMemoryBudgetStore): IBudgetStore {
   const anyTenant = (key: BudgetKey): BudgetKey => ({ ...key, tenantId: [...inner.tenantsOf(key.id)][0] ?? key.tenantId })
   return {
-    upsert: (budget) => inner.upsert(budget),
+    upsert: (budget) => inner.upsertAnyTenant(budget),
     remove: (key) => inner.remove(anyTenant(key)),
     findBudgetById: (key) => inner.findBudgetById(anyTenant(key)),
     findMatching: (_tenantId, scope) => inner.findMatchingAnyTenant(scope),
@@ -114,6 +114,17 @@ describe('BudgetService admin paths are tenant-scoped', () => {
     expect(touched).not.toHaveBeenCalled()
     expect(removed).not.toHaveBeenCalled()
   })
+
+  /** The refusal is only for an id another tenant owns: an unused id, and the tenant's own id, still upsert. */
+  it('upserts a new explicit id and updates the tenant own budget by id', async () => {
+    const { service, store } = makeService()
+    const created = await service.upsertBudget({ ...budgetInput(), id: 'explicit-id' })
+    const updated = await service.upsertBudget({ ...budgetInput(), id: created.id, limitNanoUsd: 5n })
+
+    expect(created.id).toBe('explicit-id')
+    expect(updated.limitNanoUsd).toBe(5n)
+    expect((await store.findBudgetById({ tenantId: TENANT, id: 'explicit-id' }))?.limitNanoUsd).toBe(5n)
+  })
 })
 
 describe('BudgetService does not trust a store that ignores the tenant', () => {
@@ -144,5 +155,27 @@ describe('BudgetService does not trust a store that ignores the tenant', () => {
     await service.consume(context({ tenantId: OTHER }), { nanoUsd: 5n, tokens: 0, count: 1 })
 
     expect(await inner.getWindow(budget.id, WINDOW)).toBeNull()
+  })
+
+  it('refuses an upsert that would overwrite the budget of another tenant through a blind store', async () => {
+    const { service, inner, a } = blind()
+    const budget = await a()
+    const before = await inner.findBudgetById({ tenantId: TENANT, id: budget.id })
+
+    const refused = await rejection(service.upsertBudget({ ...budgetInput(), tenantId: OTHER, id: budget.id, limitNanoUsd: 1n }))
+
+    expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(refused?.message).not.toContain(TENANT)
+    expect(await inner.findBudgetById({ tenantId: TENANT, id: budget.id })).toEqual(before)
+  })
+
+  it('does not return a budget the store stored under another tenant', async () => {
+    const inner = new InMemoryBudgetStore({ now: () => NOW })
+    const wrong: IBudgetStore = { ...tenantBlindStore(inner), upsert: (budget) => inner.upsertAnyTenant({ ...budget, tenantId: TENANT }) }
+    const service = new BudgetService(wrong, new LedgerService(new InMemoryLedgerStore()), { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true }, () => NOW)
+
+    const refused = await rejection(service.upsertBudget({ ...budgetInput(), tenantId: OTHER }))
+
+    expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 })

@@ -161,7 +161,12 @@ export class BudgetService {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics; tests check error code only
       if (!(threshold > 0 && threshold <= 1)) throw invalid(`softThresholds must be within (0, 1], received ${String(threshold)}`)
     }
+    if (input.id !== undefined) {
+      const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
+      if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
+    }
     const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy })
+    if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
     return budget
@@ -686,6 +691,12 @@ export class BudgetService {
 function assertTenant(tenantId: unknown): asserts tenantId is string {
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   if (typeof tenantId !== 'string' || tenantId === '') throw invalid('tenantId must be a non-empty string')
+}
+
+/** The refusal of a budget id another tenant owns: a config error that does not say whose it is. */
+function unavailableBudgetId(): AiTokensException {
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  return invalid('budget id is not available')
 }
 
 /** Build the invalid-config exception with an actionable reason. */

@@ -113,6 +113,14 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve()
   }
 
+  /** Test helper — create or replace a budget WITHOUT the tenant check, as a tenant-blind store would. */
+  upsertAnyTenant(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
+    const existing = input.id === undefined ? undefined : this.budgets.get(input.id)
+    const budget: Budget = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? this.now() }
+    this.budgets.set(budget.id, budget)
+    return Promise.resolve({ ...budget })
+  }
+
   /** Test helper — the tenants that own `budgetId` (zero or one), for a store double that ignores the tenant. */
   tenantsOf(budgetId: string): string[] {
     const budget = this.budgets.get(budgetId)

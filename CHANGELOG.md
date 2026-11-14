@@ -26,7 +26,8 @@ Values such as `0.5` are now refused; use whole seconds.
 `IBudgetStore` yourself, `remove`, `findBudgetById` and `setWindowStart` now take a `BudgetKey` (`{ tenantId, id }`)
 instead of a bare budget id, so a store written against the old port no longer type-checks and cannot ignore the
 tenant; `upsert` must refuse an `id` that belongs to another tenant. The service checks the tenant of what a store
-returns, so a store that ignores it is not believed, but `upsert` can only be enforced by the store. `removeBudget`,
+returns, so a store that ignores it is not believed, and it refuses an `upsert` id that the store reveals as another
+tenant's; a store that hides another tenant's id behind the key must refuse it in `upsert` itself. `removeBudget`,
 `rotateWindow` and `reconcileWindow` answer another tenant's id exactly as an unknown id, and `upsertBudget` with an
 id that belongs to another tenant rejects with `AI_TOKENS_INVALID_CONFIG` instead of overwriting it; a tenant that
 is not a non-empty string is refused before the store is touched.
@@ -84,8 +85,8 @@ is not a non-empty string is refused before the store is touched.
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 43391 bytes brotli, with the enforcement that now runs before the record is
-  written, the settlement of a failed hold append, the option validation and the tenant check of the budget admin paths; its budget moves from 42000 to 43400.
+- The `server` bundle grows from 41597 to 43420 bytes brotli, with the enforcement that now runs before the record is
+  written, the settlement of a failed hold append, the option validation and the tenant check of the budget admin paths; its budget moves from 42000 to 43450.
 
 ## [1.1.14] - 2026-11-13
 
