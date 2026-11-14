@@ -20,11 +20,12 @@ const BUDGETS = [
   // the same settlement of a failed append for a hold, the tenant check of the budget admin paths, and the caller check of capture and
   // release. The budget keeps headroom so a correct fix is not squeezed to fit. A change that grows this bundle past the budget states why in its
   // commit and its CHANGELOG entry.
-  // 49_595: the budget-reference sweeper, the verdict and lookup module that decides each reference, the settlement
-  // retention option and its boot validation, and the key helpers they share.
+  // 49_667: the budget-reference sweeper, the verdict and lookup module that decides each reference, the settlement
+  // retention option and its boot validation, the key helpers they share, and the read of the compensating row's marker
+  // before a reversal's application is pruned.
   // The prisma bundle's 15_411 holds the stale-reference, prune and given-back statements and the budget-row
   // statement builders.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 49_595 },
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 49_667 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_411 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
