@@ -419,8 +419,9 @@ console.log(balance.nanoUsd) // current balance
 ```
 
 A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`, judged on the database's clock: skew
-between your application's clock and the database's delays a grant effective "now" by up to that skew, never the other way, so
-keep NTP running on both. One that is not
+between your application's clock and the database's moves both instants by up to that skew, in either direction (a grant
+effective "now" waits when the application is ahead, and a dated grant is due early or expires late when the database is
+ahead or behind), so keep NTP running on both. One that is not
 yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
 entry keyed `activate:<grantId>` (reason `grant activated`); that entry is bookkeeping, so a report of
 operator adjustments should skip it. Keys starting `activate:` or `expiry:` are reserved for the store,
