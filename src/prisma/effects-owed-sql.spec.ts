@@ -6,7 +6,7 @@
  */
 
 import { DB_NOW_SQL } from './adapter-sql'
-import { clearEffectsOwedSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
+import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { sql } from './sql'
 import { T1, usageRow } from '../../test/fakes/prisma-rows'
 
@@ -42,6 +42,15 @@ describe('the effects-owed SQL builders', () => {
     expect(query.text).toContain('WHERE o."owedAt" < ')
     expect(query.text).toContain('ORDER BY o."owedAt" ASC, o."recordId" ASC LIMIT ')
     expect(query.values).toEqual([T1, 50])
+  })
+
+  /** The lookup of one row's marker joins the same columns and filters by the record id. */
+  it('selects the marker of one row with what it kept', () => {
+    const query = effectsOwedForSql('rec-1')
+    expect(query.text).toContain('o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens"')
+    expect(query.text).toContain('FROM "ai_usage_effects_owed" o JOIN "ai_usage_records" r ON r."id" = o."recordId"')
+    expect(query.text).toContain('WHERE o."recordId" = $1')
+    expect(query.values).toEqual(['rec-1'])
   })
 
   /** Clearing deletes the marker of one row and reports the id when it had one. */

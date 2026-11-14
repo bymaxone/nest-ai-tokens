@@ -63,7 +63,7 @@ import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
 import { adjustWindowSql, consumeWindowSql, ensureWindowSql } from './budget-statements'
 import { empty, join, sql, type Sql } from './sql'
-import { clearEffectsOwedSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
+import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
@@ -178,6 +178,11 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   async findEffectsOwed(olderThan: Date, limit: number): Promise<OwedEffects[]> {
     return (await this.prisma.query<UsageRow[]>(effectsOwedSql(olderThan, limit))).map(mapOwedRow)
+  }
+
+  async findEffectsOwedFor(id: string): Promise<OwedEffects | null> {
+    const [row] = await this.prisma.query<UsageRow[]>(effectsOwedForSql(id))
+    return row === undefined ? null : mapOwedRow(row)
   }
 
   async clearEffectsOwed(id: string): Promise<boolean> {

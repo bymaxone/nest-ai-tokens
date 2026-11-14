@@ -5,7 +5,8 @@
  */
 import type { UsageRecord } from '../../shared'
 import type { OwedEffects } from '../interfaces'
-import { settleOwed, type OwedEffectsDeps } from './owed-effects'
+import { Logger } from '@nestjs/common'
+import { clearOwed, reverseAfterCapture, reverseOrLeaveOwed, settleOwed, type OwedEffectsDeps } from './owed-effects'
 
 /** A usage record with the given overrides. */
 function row(over: Partial<UsageRecord> = {}): UsageRecord {
@@ -18,14 +19,14 @@ function row(over: Partial<UsageRecord> = {}): UsageRecord {
 /** The collaborators as jest mocks, with the deps they build. */
 interface Mocks {
   deps: OwedEffectsDeps
-  ledger: { findById: jest.Mock; transition: jest.Mock; clearEffectsOwed: jest.Mock }
+  ledger: { findById: jest.Mock; transition: jest.Mock; findEffectsOwedFor: jest.Mock; clearEffectsOwed: jest.Mock }
   effects: { settleCapture: jest.Mock; restoreHold: jest.Mock; reverseEffects: jest.Mock }
   events: { usageRecorded: jest.Mock; holdReleased: jest.Mock; usageReversed: jest.Mock }
 }
 
 /** Build the mocks; `original` is what the lookup of a reversal's original returns. */
 function deps(original: UsageRecord | null = null): Mocks {
-  const ledger = { findById: jest.fn(() => Promise.resolve(original)), transition: jest.fn(() => Promise.resolve(null)), clearEffectsOwed: jest.fn(() => Promise.resolve(true)) }
+  const ledger = { findById: jest.fn(() => Promise.resolve(original)), transition: jest.fn(() => Promise.resolve(null)), findEffectsOwedFor: jest.fn(() => Promise.resolve(null)), clearEffectsOwed: jest.fn(() => Promise.resolve(true)) }
   const effects = { settleCapture: jest.fn(() => Promise.resolve()), restoreHold: jest.fn(() => Promise.resolve()), reverseEffects: jest.fn(() => Promise.resolve()) }
   const events = { usageRecorded: jest.fn(() => Promise.resolve()), holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()) }
   return { deps: { ledger, effects, events } as unknown as OwedEffectsDeps, ledger, effects, events }
@@ -123,3 +124,77 @@ describe('settleOwed', () => {
     expect(d.ledger.clearEffectsOwed).not.toHaveBeenCalled()
   })
 })
+
+describe('reverseAfterCapture', () => {
+  /** The capture legs an original still owes are settled, and their marker cleared, before the reversal's legs run. */
+  it('settles the outstanding capture legs of the original before it reverses', async () => {
+    const d = deps()
+    const original = row({ id: 'orig', status: 'reversed' })
+    const calls: string[] = []
+    d.ledger.findEffectsOwedFor.mockResolvedValueOnce({ record: original, reservedBilledNanoUsd: 25n, reservedTokens: 15 })
+    d.effects.settleCapture.mockImplementation(() => { calls.push('capture'); return Promise.resolve() })
+    d.effects.reverseEffects.mockImplementation(() => { calls.push('reverse'); return Promise.resolve() })
+    await reverseAfterCapture(d.deps, original, 'why')
+    expect(calls).toEqual(['capture', 'reverse'])
+    expect(d.effects.settleCapture).toHaveBeenCalledWith(original, 25n, 15, 10n, 7)
+    expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('orig')
+    expect(d.effects.reverseEffects).toHaveBeenCalledWith(original, 'why')
+  })
+
+  /** An original that owes nothing (a record, or a capture whose legs ran) is reversed straight away. */
+  it('reverses straight away when the original owes nothing', async () => {
+    const d = deps()
+    await reverseAfterCapture(d.deps, row({ id: 'orig' }), 'why')
+    expect(d.effects.settleCapture).not.toHaveBeenCalled()
+    expect(d.effects.reverseEffects).toHaveBeenCalledTimes(1)
+  })
+
+  /** A capture leg that fails again stops the reversal's legs: reversing first would put the clamp back in the wrong order. */
+  it('does not reverse when the capture legs fail again', async () => {
+    const d = deps()
+    d.ledger.findEffectsOwedFor.mockResolvedValueOnce({ record: row({ id: 'orig' }) })
+    d.effects.settleCapture.mockRejectedValueOnce(new Error('budget down'))
+    await expect(reverseAfterCapture(d.deps, row({ id: 'orig' }), 'why')).rejects.toThrow('budget down')
+    expect(d.effects.reverseEffects).not.toHaveBeenCalled()
+  })
+})
+
+describe('reverseOrLeaveOwed', () => {
+  /** A reversal whose legs ran clears the marker of its compensating row. */
+  it('clears the marker of the compensating row when the legs ran', async () => {
+    const d = deps()
+    const logger = new Logger('t')
+    await reverseOrLeaveOwed(d.deps, logger, row({ id: 'orig' }), 'why', 'comp')
+    expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('comp')
+  })
+
+  /** A leg that fails is logged and the marker stays, so the sweep finishes it; nothing is thrown. */
+  it('logs a failed leg and keeps the marker', async () => {
+    const d = deps()
+    d.effects.reverseEffects.mockRejectedValueOnce(new Error('wallet down'))
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(reverseOrLeaveOwed(d.deps, new Logger('t'), row({ id: 'orig' }), 'why', 'comp')).resolves.toBeUndefined()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('left to the settlement sweep'))
+      expect(d.ledger.clearEffectsOwed).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('clearOwed', () => {
+  /** A marker that cannot be cleared is logged and not thrown: the keyed legs ran. */
+  it('logs and swallows a failed clearing', async () => {
+    const d = deps()
+    d.ledger.clearEffectsOwed.mockRejectedValueOnce(new Error('connection lost'))
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(clearOwed(d.deps.ledger, new Logger('t'), 'r1')).resolves.toBeUndefined()
+      expect(warn).toHaveBeenCalledWith('failed to clear the effects-owed marker of r1')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+

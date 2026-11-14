@@ -57,8 +57,23 @@ async function settleReversal(deps: OwedEffectsDeps, compensating: UsageRecord, 
   const original = await deps.ledger.findById(originalId)
   if (original === null) return
   if (original.status === 'posted') await deps.ledger.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
-  if (original.enforced && !original.isSystemCost) await deps.effects.reverseEffects(original, recoveredReason())
+  if (original.enforced && !original.isSystemCost) await reverseAfterCapture(deps, original, recoveredReason())
   await deps.events.usageReversed(original, compensating.id, recoveredReason())
+}
+
+/**
+ * Reverse an original's effects after settling the capture legs it still owes. The reversal subtracts the actuals, and a
+ * budget window is clamped at zero, so the capture's difference between the actuals and the reservation has to be in the
+ * window first; settled the other way round, the clamp eats part of the reversal and the difference is added back after it.
+ *
+ * @param deps The ledger, the effects and the event hooks.
+ * @param original The original record being reversed.
+ * @param reason The reason stated on the refund.
+ */
+export async function reverseAfterCapture(deps: OwedEffectsDeps, original: UsageRecord, reason: string): Promise<void> {
+  const outstanding = await deps.ledger.findEffectsOwedFor(original.id)
+  if (outstanding !== null) await settleOwed(deps, outstanding)
+  await deps.effects.reverseEffects(original, reason)
 }
 
 /**
@@ -79,24 +94,22 @@ export async function clearOwed(ledger: LedgerService, logger: Logger, id: strin
 }
 
 /**
- * Run the legs of a reversal inline. When one fails the marker stays on the compensating row and the sweep finishes it,
- * and the reversal still returns: the ledger transition committed.
+ * Run the legs of a reversal inline, after the capture legs the original still owes. When one fails the marker stays on the
+ * compensating row and the sweep finishes it, and the reversal still returns: the ledger transition committed.
  *
- * @param ledger The ledger service.
- * @param effects The effects the inline path runs.
+ * @param deps The ledger, the effects and the event hooks.
  * @param logger Where a failed leg is logged.
  * @param original The reversed original record.
  * @param reason The caller's stated reason.
  * @param compensatingId The id of the compensating row that carries the marker.
  */
-export async function reverseOrLeaveOwed(ledger: LedgerService, effects: MeteringEffects, logger: Logger, original: UsageRecord, reason: string, compensatingId: string): Promise<void> {
+export async function reverseOrLeaveOwed(deps: OwedEffectsDeps, logger: Logger, original: UsageRecord, reason: string, compensatingId: string): Promise<void> {
   try {
-    await effects.reverseEffects(original, reason)
+    await reverseAfterCapture(deps, original, reason)
   } catch {
     // Stryker disable next-line StringLiteral: logger text is internal observability
     logger.warn('a leg of a reversal failed; its effects are left to the settlement sweep')
     return
   }
-  await clearOwed(ledger, logger, compensatingId)
+  await clearOwed(deps.ledger, logger, compensatingId)
 }
-

@@ -148,8 +148,8 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
     expect(await sweep(built)).toBe(0)
   })
 
-  /** A reversal whose refund fails is no longer lost: the marker stays on the compensating row and the sweep finishes it. */
-  it('settles a reversal whose refund failed, which used to be logged and lost', async () => {
+  /** A reversal whose refund fails stays marked on the compensating row, and the sweep completes it. */
+    it('keeps a failed reversal refund marked and completes it in the sweep', async () => {
     const control = await build()
     const recordedControl = await control.service.record({ usage: usage(), context: context({ enforce: true, idempotencyKey: 'k' }) })
     await control.service.reverse(recordedControl.id, 'oops')
@@ -259,9 +259,8 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
 
   /**
    * Invariant: the capture legs of a hold are owed until they run, whatever happens to the row meanwhile. A captured hold
-   * whose wallet leg failed and that is then reversed before the sweep has status `reversed` and no `reversesRecordId`;
-   * the sweep still settles the reserved-minus-actual difference, so the wallet and the budget end as in a run in which
-   * nothing failed.
+   * whose wallet leg failed and that is then reversed has its reserved-minus-actual difference settled by the reversal,
+   * so the wallet and the budget end as in a run in which nothing failed and nothing is left owed.
    */
   it('settles the capture legs of a hold that was reversed before the sweep ran', async () => {
     const control = await build()
@@ -276,7 +275,57 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
     await built.service.reverse(hold.id, 'oops')
     expect((await built.ledger.findById(hold.id))?.status).toBe('reversed')
 
-    expect(await sweep(built)).toBe(1)
+    expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+    expect(await sweep(built)).toBe(0)
+  })
+
+  /** The actuals of this capture exceed what the hold reserved, in cost and in tokens, so a reversal that subtracts them first is clamped at zero. */
+  const BIGGER = (): NormalizedUsage => usage(3_000, 1_500)
+
+  /** One run: an optional other spend, a hold, a capture whose budget adjustment fails or not, then the reversal as the case says. */
+  async function reversedRun(options: { otherSpend: boolean; captureFails: boolean; settleAgainFails?: boolean }): Promise<{ built: Built; id: string }> {
+    const built = await build()
+    if (options.otherSpend) await built.service.record({ usage: usage(), context: context({ enforce: true, idempotencyKey: 'other' }) })
+    const { hold, caller } = await holdIn(built)
+    if (options.captureFails) jest.spyOn(built.budgets, 'adjust').mockRejectedValueOnce(new Error('budget down'))
+    if (options.captureFails) await expect(built.service.capture(hold, caller, BIGGER())).rejects.toThrow('budget down')
+    else await built.service.capture(hold, caller, BIGGER())
+    if (options.settleAgainFails === true) jest.spyOn(built.budgets, 'adjust').mockRejectedValueOnce(new Error('budget down again'))
+    await built.service.reverse(hold.id, 'oops')
+    return { built, id: hold.id }
+  }
+
+  /**
+   * Invariant: a reversal settles the original's outstanding capture legs before it reverses, so the window never goes
+   * below what the call added and the clamp at zero cannot eat the reversal. Reserve 100, actuals 200 (cost and tokens),
+   * the capture's budget adjustment fails, the hold is reversed inline: the window returns to its pre-call value.
+   */
+  it('settles the outstanding capture legs before the inline reversal, in cost and in tokens', async () => {
+    const control = (await reversedRun({ otherSpend: false, captureFails: false })).built
+    const { built } = await reversedRun({ otherSpend: false, captureFails: true })
+    expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+    expect(await stateOf(built, 'tenant-1')).toMatchObject({ spent: 0n, tokens: 0, count: 0 })
+    expect(await sweep(built)).toBe(0)
+  })
+
+  /** The same invariant when the reversal's settle of the original fails too, so both rows stay owed and the sweep must order them itself, compensating row first. */
+  it('settles the original\'s capture legs before the reversal legs in the sweep, whichever row it reaches first', async () => {
+    const control = (await reversedRun({ otherSpend: false, captureFails: false })).built
+    const { built, id } = await reversedRun({ otherSpend: false, captureFails: true, settleAgainFails: true })
+    const owed = await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)
+    expect(owed.map((item) => item.record.id)).toContain(id)
+    expect(owed).toHaveLength(2)
+    const compensatingFirst = [...owed].sort((a) => (a.record.reversesRecordId === undefined ? 1 : -1))
+    for (const item of compensatingFirst) await built.service.settleOwedEffects(item)
+    expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+    expect(await stateOf(built, 'tenant-1')).toMatchObject({ spent: 0n, tokens: 0, count: 0 })
+    expect(await sweep(built)).toBe(0)
+  })
+
+  /** With other spend in the window the clamp never bites, so the order did not matter; the result is the same as the control. */
+  it('ends as the control when the window holds other spend', async () => {
+    const control = (await reversedRun({ otherSpend: true, captureFails: false })).built
+    const { built } = await reversedRun({ otherSpend: true, captureFails: true })
     expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
     expect(await sweep(built)).toBe(0)
   })

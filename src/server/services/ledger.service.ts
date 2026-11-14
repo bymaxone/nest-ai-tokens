@@ -230,7 +230,7 @@ export class LedgerService {
 
   /** Whether the store keeps the effects-owed marker, so the owed-effects sweep can run against it. */
   supportsOwedEffects(): boolean {
-    return this.store.findEffectsOwed !== undefined && this.store.clearEffectsOwed !== undefined
+    return this.store.findEffectsOwed !== undefined && this.store.findEffectsOwedFor !== undefined && this.store.clearEffectsOwed !== undefined
   }
 
   /**
@@ -241,6 +241,15 @@ export class LedgerService {
    */
   async findEffectsOwed(olderThan: Date, limit: number): Promise<OwedEffects[]> {
     return this.store.findEffectsOwed === undefined ? [] : this.store.findEffectsOwed(olderThan, limit)
+  }
+
+  /**
+   * The marker of one row, or `null` when it owes nothing or the store keeps no marker.
+   *
+   * @param id The row id.
+   */
+  async findEffectsOwedFor(id: string): Promise<OwedEffects | null> {
+    return this.store.findEffectsOwedFor === undefined ? null : this.store.findEffectsOwedFor(id)
   }
 
   /**

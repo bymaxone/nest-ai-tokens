@@ -93,6 +93,19 @@ describe('the effects-owed marker in PostgreSQL', () => {
     expect(await markerOf(ids[0] ?? '')).toBeUndefined()
   })
 
+  /** The marker of one row is read by its id with what it kept, and is absent once cleared or for a row that owes nothing. */
+  it('reads the marker of one row by id', async () => {
+    const hold = await pg.store.append(record({ idempotencyKey: 'for-1' }), 'h')
+    await pg.store.transition(hold.id, 'pending', 'posted', { billedCostNanoUsd: 5n }, false, { reservedBilledNanoUsd: 25_000_000n, reservedTokens: 1500 })
+    const found = await pg.store.findEffectsOwedFor?.(hold.id)
+    expect(found?.reservedBilledNanoUsd).toBe(25_000_000n)
+    expect(found?.reservedTokens).toBe(1500)
+    expect(found?.record.id).toBe(hold.id)
+    expect(await pg.store.findEffectsOwedFor?.('missing')).toBeNull()
+    await pg.store.clearEffectsOwed?.(hold.id)
+    expect(await pg.store.findEffectsOwedFor?.(hold.id)).toBeNull()
+  })
+
   /** A write that matches no row leaves no marker: the transition from the wrong state returns null and writes nothing. */
   it('leaves no marker when the transition matched no row', async () => {
     const hold = await pg.store.append(record({ idempotencyKey: 'wrong-state-1' }), 'h')

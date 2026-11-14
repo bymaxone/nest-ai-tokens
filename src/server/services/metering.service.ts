@@ -534,7 +534,7 @@ export class MeteringService {
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
     const compensating = await this.ledger.reverse(usageRecordId, reason, {})
     const original = await this.ledger.findById(usageRecordId)
-    if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed(this.ledger, this.effects, this.logger, original, reason, compensating.id)
+    if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed({ ledger: this.ledger, effects: this.effects, events: this.events }, this.logger, original, reason, compensating.id)
     else await clearOwed(this.ledger, this.logger, compensating.id)
     await this.events.usageReversed(original ?? compensating, compensating.id, reason)
     await this.events.audit('ai_tokens.usage.reversed', { tenantId: compensating.tenantId, usageRecordId, reversalRecordId: compensating.id, reason })

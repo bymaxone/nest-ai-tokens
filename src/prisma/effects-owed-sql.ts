@@ -42,6 +42,15 @@ export function effectsOwedSql(olderThan: Date, limit: number): Sql {
   `
 }
 
+/** The marker of one row with what it kept, joined to its row (a reversal reads it to settle the original first). */
+export function effectsOwedForSql(id: string): Sql {
+  return sql`
+    SELECT r.*, o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens"
+    FROM "ai_usage_effects_owed" o JOIN "ai_usage_records" r ON r."id" = o."recordId"
+    WHERE o."recordId" = ${id}
+  `
+}
+
 /** Clear the marker of one row; returns the id when the row had one, nothing otherwise (so a repeat reports `false`). */
 export function clearEffectsOwedSql(id: string): Sql {
   return sql`DELETE FROM "ai_usage_effects_owed" WHERE "recordId" = ${id} RETURNING "recordId"`

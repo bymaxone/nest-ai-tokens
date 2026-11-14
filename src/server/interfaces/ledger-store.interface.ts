@@ -94,6 +94,11 @@ export interface ILedgerStore {
    */
   findEffectsOwed?(olderThan: Date, limit: number): Promise<OwedEffects[]>
   /**
+   * OPTIONAL: the marker of one row with what it kept, or `null` when the row owes nothing. A reversal reads it to
+   * settle the original's capture legs before it reverses.
+   */
+  findEffectsOwedFor?(id: string): Promise<OwedEffects | null>
+  /**
    * OPTIONAL: clear the marker of a row once its effects have run. Idempotent; `false` when the row has none.
    */
   clearEffectsOwed?(id: string): Promise<boolean>
