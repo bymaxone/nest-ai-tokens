@@ -14,7 +14,7 @@ import type { MeteringEffects } from './metering-effects'
 import type { OwedEffects } from '../interfaces'
 
 /** The reason stated on the effects and events a sweep produces. */
-const RECOVERED_REASON = 'effects recovered by the settlement sweep'
+const recoveredReason = (): string => 'effects recovered by the settlement sweep'
 
 /** The collaborators of the settlement of an owed row. */
 export interface OwedEffectsDeps {
@@ -42,7 +42,7 @@ export async function settleOwed(deps: OwedEffectsDeps, owed: OwedEffects): Prom
   if (record.reversesRecordId !== undefined) await settleReversal(deps, record, record.reversesRecordId)
   else if (record.status === 'released') {
     await deps.effects.restoreHold(record)
-    await deps.events.holdReleased(record, RECOVERED_REASON, false)
+    await deps.events.holdReleased(record, recoveredReason(), false)
   } else if (record.status === 'posted') {
     const reservedBilled = owed.reservedBilledNanoUsd ?? record.billedCostNanoUsd
     const reservedTokens = owed.reservedTokens ?? record.totalTokens
@@ -57,8 +57,8 @@ async function settleReversal(deps: OwedEffectsDeps, compensating: UsageRecord, 
   const original = await deps.ledger.findById(originalId)
   if (original === null) return
   if (original.status === 'posted') await deps.ledger.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
-  if (original.enforced && !original.isSystemCost) await deps.effects.reverseEffects(original, RECOVERED_REASON)
-  await deps.events.usageReversed(original, compensating.id, RECOVERED_REASON)
+  if (original.enforced && !original.isSystemCost) await deps.effects.reverseEffects(original, recoveredReason())
+  await deps.events.usageReversed(original, compensating.id, recoveredReason())
 }
 
 /**

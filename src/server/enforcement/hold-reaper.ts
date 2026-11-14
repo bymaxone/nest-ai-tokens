@@ -156,6 +156,6 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         failed.push(item.record.id)
       }
     }
-    if (failed.length > 0) this.logger.warn(`${SETTLEMENT_FAILED_LOG_KEY} count=${String(failed.length)} first=${failed.slice(0, 1).join('')}`)
+    if (failed.length > 0) this.logger.warn(`${SETTLEMENT_FAILED_LOG_KEY} count=${String(failed.length)} first=${String(failed.slice(0, 1))}`)
   }
 }
