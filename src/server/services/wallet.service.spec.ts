@@ -71,7 +71,7 @@ function makeService(
     ...(over.now !== undefined ? { now: over.now } : {}),
   })
   const rec = recordingHooks()
-  const service = new WalletService(store, { ...OPTIONS, ...over.options }, rec.hooks)
+  const service = new WalletService(store, { ...OPTIONS, ...over.options }, rec.hooks, over.now)
   return { service, store, granted: rec.granted, depleted: rec.depleted, audits: rec.audits }
 }
 

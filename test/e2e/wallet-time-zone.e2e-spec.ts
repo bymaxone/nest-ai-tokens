@@ -130,3 +130,30 @@ describe.each(ZONES)('wallet crediting on a database whose session zone is %s', 
     expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(0n)
   })
 })
+
+describe('wallet grants judged on the application clock the store is given', () => {
+  const ref: WalletRef = { tenantId: 'clock', ownerType: 'user', ownerId: 'u1' }
+
+  /*
+   * Invariant: a grant the database clock still reads as live is lapsed when the application's instant says so,
+   * and a grant the database clock reads as not yet effective is spendable when the application's instant says so.
+   * The instants are minutes away from the database's, so no timing is involved.
+   */
+  it('judges expiry, effectiveness and the entry stamp on the given instant, not the database clock', async () => {
+    const store = await storeInZone('Asia/Tokyo')
+    const appNow = new Date(Date.now() + 120_000)
+    await store.appendEntry(ref, grantEntry({ idempotencyKey: 'lapsing', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() - 1_000), expiresAt: new Date(Date.now() + 60_000) }))
+    expect(await store.openGrants(ref, 'expiry', appNow)).toHaveLength(0)
+    expect(await store.openGrants(ref, 'expiry')).toHaveLength(1)
+    expect(await store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: 'late' }), 0n, appNow)).toBeNull()
+    expect((await store.reconcile(ref, appNow)).balanceNanoUsd).toBe(0n)
+
+    const future = new Date(Date.now() + 60_000)
+    const later = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'pending', amountNanoUsd: 50n, effectiveAt: future }), [], new Date(Date.now()))
+    expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'early' }), 0n)).toBeNull()
+    expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, appNow)).not.toBeNull()
+    expect(later.createdAt.getTime()).toBeLessThan(future.getTime())
+    const stamped = (await store.listEntries(ref, { type: 'debit' })).entries[0]
+    expect(stamped?.createdAt.getTime()).toBe(appNow.getTime())
+  })
+})

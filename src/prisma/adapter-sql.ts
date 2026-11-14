@@ -591,14 +591,21 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): S
 }
 
 /**
- * The database clock every spendability decision is judged on, so no application clock enters it, as a
- * UTC wall-clock timestamp. The entry timestamps are `TIMESTAMP` columns without a zone: the application
- * writes `effectiveAt` and `expiresAt` as UTC instants, so the clock they are compared with, and the
- * `createdAt` the store writes, must be UTC too whatever zone the database session uses. The usage
+ * The database clock as a UTC wall-clock timestamp, the fallback when the caller gives no instant. The entry
+ * timestamps are `TIMESTAMP` columns without a zone: the application writes `effectiveAt` and `expiresAt` as UTC
+ * instants, so a clock they are compared with must be UTC too whatever zone the database session uses. The usage
  * records' `createdAt` and `updatedAt` are written with it as well: the hold reaper compares `createdAt`
  * with an application instant.
  */
 export const DB_NOW_SQL = sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
+
+/**
+ * The instant a wallet statement judges grants and stamps entries on: the caller's `now` as a parameter, so that
+ * `effectiveAt`, `expiresAt` and `createdAt` all share the application's clock, or the database clock when none is given.
+ */
+export function clockSql(now: Date | undefined): Sql {
+  return now === undefined ? DB_NOW_SQL : sql`${now}`
+}
 
 /** Whether the grant aliased `g` was due as it was appended (judged on its stored `createdAt`). */
 export const DUE_AT_APPEND_SQL = sql`(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))`
@@ -638,15 +645,14 @@ export const SIGNED_BALANCE_SQL = sql`(
 
 /**
  * The spendable-balance expression for `reconcile` (over the outer `w` alias): the signed sum of the
- * entries minus the unspent remainder of any credited grant that has expired. Judged on the database
- * clock, like the debit path.
+ * entries minus the unspent remainder of any credited grant that has expired at `now`, like the debit path.
  */
-export function spendableBalanceSql(): Sql {
+export function spendableBalanceSql(now?: Date): Sql {
   return sql`${SIGNED_BALANCE_SQL} - (
     SELECT COALESCE(SUM(${GRANT_REMAINING_JOINED_SQL}), 0)
     FROM "ai_wallet_entries" g ${GRANT_REMAINING_JOIN_SQL}
     WHERE g."walletId" = w."id" AND g."type" = 'grant' AND ${CREDITED_SQL}
-      AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${DB_NOW_SQL}
+      AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${clockSql(now)}
   )`
 }
 

@@ -10,7 +10,7 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
 import { T0, T1, newRecord, rendered } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
@@ -278,6 +278,13 @@ describe('balance SQL', () => {
     expect(DB_NOW_SQL.text).toBe("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
   })
 
+  /** Without an instant the database clock is the fallback; with one, the instant is bound as a UTC parameter. */
+  it('judges on the instant it is given, and on the database clock only without one', () => {
+    expect(clockSql(undefined).text).toBe(DB_NOW_SQL.text)
+    expect(clockSql(T1).text).toBe(UTC_PARAMETER(1))
+    expect(clockSql(T1).values).toEqual([T1])
+  })
+
   /** A grant is due as appended when it was effective, and not yet expired, at its own createdAt. */
   it('defines due-at-append on the stored createdAt', () => {
     expect(DUE_AT_APPEND_SQL.text).toBe('(g."effectiveAt" <= g."createdAt" AND (g."expiresAt" IS NULL OR g."expiresAt" > g."createdAt"))')
@@ -321,6 +328,14 @@ describe('balance SQL', () => {
   /** The signed balance counts every entry but a grant that was not due as appended. */
   it('sums the entries except a grant that was not due as appended', () => {
     expect(SIGNED_BALANCE_SQL.text).toContain(`g."walletId" = w."id" AND (g."type" <> 'grant' OR ${DUE_AT_APPEND_SQL.text})`)
+  })
+
+  /** The expiry cut-off of the spendable balance is the given instant, not the database clock. */
+  it('expires grants at the instant it is given', () => {
+    const statement = spendableBalanceSql(T1)
+    expect(statement.text).toContain(`AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${UTC_PARAMETER(3)}`)
+    expect(statement.text).not.toContain('CURRENT_TIMESTAMP')
+    expect(statement.values.at(-1)).toBe(T1)
   })
 
   /** The spendable balance subtracts the unspent remainder of credited grants that have expired. */
