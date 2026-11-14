@@ -321,11 +321,11 @@ describe('BudgetService — live counter fast path (§10.8)', () => {
     const counter = new FakeCounter()
     const { service } = makeService({ options: { counter } })
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
-    await service.rotateWindow(budget.id, new Date('2026-06-20T00:00:00.000Z'))
+    await service.rotateWindow(budget.id, TENANT, new Date('2026-06-20T00:00:00.000Z'))
     expect(counter.resetKeys.some((key) => key.includes(':cost'))).toBe(true)
     counter.failReset = true
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
-    await expect(service.rotateWindow(budget.id, new Date('2026-06-21T00:00:00.000Z'))).resolves.toBeUndefined()
+    await expect(service.rotateWindow(budget.id, TENANT, new Date('2026-06-21T00:00:00.000Z'))).resolves.toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to reset budget counter for'))
     warn.mockRestore()
   })

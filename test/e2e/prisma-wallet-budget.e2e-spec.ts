@@ -260,8 +260,8 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     const budget = await store.upsert({ tenantId: 'e2e', scope: { type: 'user', id: 'u1' }, limitNanoUsd: 100n, window: 'month', softThresholds: [], policy: 'block' })
     const windowStart = new Date('2026-06-01T00:00:00.000Z')
     await store.conditionalConsume(budget.id, windowStart, delta(10n), { nanoUsd: 100n })
-    await store.remove(budget.id)
-    expect(await store.findBudgetById(budget.id)).toBeNull()
+    await store.remove({ tenantId: 'e2e', id: budget.id })
+    expect(await store.findBudgetById({ tenantId: 'e2e', id: budget.id })).toBeNull()
     expect(await store.getWindow(budget.id, windowStart)).toBeNull()
   })
 
@@ -281,7 +281,7 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
   it('round-trips a custom-seconds window', async () => {
     await truncateBudgets()
     const budget = await store.upsert({ tenantId: 'e2e', scope: { type: 'user', id: 'u1' }, limitNanoUsd: 100n, window: { customSeconds: 86_400 }, softThresholds: [0.9], policy: 'allow' })
-    const reloaded = await store.findBudgetById(budget.id)
+    const reloaded = await store.findBudgetById({ tenantId: 'e2e', id: budget.id })
     expect(reloaded?.window).toEqual({ customSeconds: 86_400 })
     expect(reloaded?.softThresholds).toEqual([0.9])
     expect(reloaded?.policy).toBe('allow')

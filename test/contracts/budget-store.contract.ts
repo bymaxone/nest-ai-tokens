@@ -91,5 +91,30 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       const window = await store.getWindow('adj', windowStart)
       expect(window).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
     })
+
+    /**
+     * The admin paths are tenant-scoped: another tenant's key finds nothing, removes nothing, moves no window, and an
+     * upsert with an id that belongs to another tenant is refused, leaving the owner's row as it was.
+     */
+    it('keeps the budget of one tenant out of reach of another tenant by id', async () => {
+      const store = await make()
+      await seedBudget(store, 'owned')
+      const owner = { tenantId: 'budget-contract', id: 'owned' }
+      const stranger = { tenantId: 'other-tenant', id: 'owned' }
+      const before = await store.findBudgetById(owner)
+      expect(before).not.toBeNull()
+
+      expect(await store.findBudgetById(stranger)).toBeNull()
+      await store.remove(stranger)
+      await store.setWindowStart(stranger, windowStart)
+      await expect(
+        store.upsert({ id: 'owned', tenantId: 'other-tenant', scope: { type: 'tenant', id: 'other-tenant' }, window: 'day', softThresholds: [], policy: 'allow' }),
+      ).rejects.toThrow()
+
+      expect(await store.findBudgetById(owner)).toEqual(before)
+      expect(await store.getWindow('owned', windowStart)).toBeNull()
+      await store.remove(owner)
+      expect(await store.findBudgetById(owner)).toBeNull()
+    })
   })
 }

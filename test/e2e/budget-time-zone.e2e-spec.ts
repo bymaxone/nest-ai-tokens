@@ -88,7 +88,7 @@ describe.each(ZONES)('budget timestamps on a database whose session zone is %s',
     const before = (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]
     expect(before?.spent.tokens).toBe(800)
 
-    await app.budgets.reconcileWindow(budget.id, before?.windowStart as Date)
+    await app.budgets.reconcileWindow(budget.id, 'e2e', before?.windowStart as Date)
 
     const after = (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]
     expect(after?.spent.tokens).toBe(800)
@@ -108,7 +108,7 @@ describe.each(ZONES)('budget timestamps on a database whose session zone is %s',
     expect(Date.now() - start.getTime()).toBeLessThan(2 * HOUR_MS)
     expect(before?.spent.tokens).toBe(1500)
 
-    await app.budgets.reconcileWindow(budget.id, start)
+    await app.budgets.reconcileWindow(budget.id, 'e2e', start)
 
     const after = (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]
     expect(after?.spent.tokens).toBe(1500)

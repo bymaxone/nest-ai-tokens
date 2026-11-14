@@ -31,6 +31,7 @@ import { attachCause } from '../errors/attach-cause'
 import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey, type CounterDimensionName } from './budget.keys'
 import type {
   BudgetDelta,
+  BudgetKey,
   BudgetLimits,
   BudgetWindowSpend,
   IBudgetCounterStore,
@@ -156,6 +157,7 @@ export class BudgetService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
   async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
+    assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
@@ -176,7 +178,10 @@ export class BudgetService {
    * @param tenantId The owning tenant (audit context).
    */
   async removeBudget(budgetId: string, tenantId: string): Promise<void> {
-    await this.store.remove(budgetId)
+    assertTenant(tenantId)
+    // A budget of another tenant answers as an unknown id does: nothing is removed and nothing is audited.
+    if ((await this.findOwned({ tenantId, id: budgetId })) === null) return
+    await this.store.remove({ tenantId, id: budgetId })
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the method completes, not the event payload shape
     await this.events.audit('ai_tokens.budget.removed', { tenantId, budgetId })
   }
@@ -190,7 +195,7 @@ export class BudgetService {
    * @returns The applicable budgets.
    */
   list(tenantId: string, scope?: MeteringScope): Promise<Budget[]> {
-    return this.store.findMatching(tenantId, scope ?? { type: 'tenant', id: tenantId })
+    return this.matching(tenantId, scope ?? { type: 'tenant', id: tenantId })
   }
 
   /**
@@ -199,15 +204,17 @@ export class BudgetService {
    * `ai_tokens.audit`.
    *
    * @param budgetId The budget id.
+   * @param tenantId The owning tenant; a budget of another tenant answers as an unknown id.
    * @param newWindowStart The new window start; defaults to now.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the budget does not exist.
    */
-  async rotateWindow(budgetId: string, newWindowStart?: Date): Promise<void> {
-    const budget = await this.requireBudget(budgetId)
+  async rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void> {
+    assertTenant(tenantId)
+    const budget = await this.requireBudget({ tenantId, id: budgetId })
     const start = newWindowStart ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
     await this.store.upsert({ ...budget, anchorAt: start })
-    await this.store.setWindowStart(budgetId, windowStart)
+    await this.store.setWindowStart({ tenantId, id: budgetId }, windowStart)
     const counter = this.options.counter
     if (counter !== undefined) {
       for (const dimension of counterDimensions({ nanoUsd: 1n, tokens: 1, count: 1 }, limitsOf(budget))) {
@@ -334,10 +341,12 @@ export class BudgetService {
    * ledger is the reconcilable source of truth; the window row is a cache.
    *
    * @param budgetId The budget id.
+   * @param tenantId The owning tenant; a budget of another tenant answers as an unknown id.
    * @param windowStart A window start for the budget.
    */
-  async reconcileWindow(budgetId: string, windowStart: Date): Promise<void> {
-    const budget = await this.requireBudget(budgetId)
+  async reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void> {
+    assertTenant(tenantId)
+    const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
     // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
     const filter = { tenantId: budget.tenantId, from: windowStart, ...(windowEnd !== null ? { to: windowEnd } : {}) }
@@ -371,7 +380,7 @@ export class BudgetService {
    * res.json(toJsonSafe(budgets)) // bigint fields become decimal strings (§15.5)
    */
   async status(tenantId: string, scope: MeteringScope): Promise<BudgetStatus[]> {
-    const budgets = await this.store.findMatching(tenantId, scope)
+    const budgets = await this.matching(tenantId, scope)
     const statuses: BudgetStatus[] = []
     for (const budget of budgets) {
       const windowStart = windowStartFor(budget, this.now())
@@ -622,7 +631,7 @@ export class BudgetService {
 
   /** The matching, feature-relevant budgets located in the current window. */
   private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string, at?: Date): Promise<LocatedWindow[]> {
-    const budgets = await this.store.findMatching(tenantId, scope)
+    const budgets = await this.matching(tenantId, scope)
     const now = at ?? this.now()
     return budgets
       .filter((budget) => featureMatches(budget.features, feature))
@@ -642,11 +651,22 @@ export class BudgetService {
   }
 
   /** Load a budget by id or throw an invalid-config error. */
-  private async requireBudget(budgetId: string): Promise<Budget> {
-    const budget = await this.store.findBudgetById(budgetId)
+  private async requireBudget(key: BudgetKey): Promise<Budget> {
+    const budget = await this.findOwned(key)
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    if (budget === null) throw invalid(`budget ${budgetId} does not exist`)
+    if (budget === null) throw invalid(`budget ${key.id} does not exist`)
     return budget
+  }
+
+  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. */
+  private async findOwned(key: BudgetKey): Promise<Budget | null> {
+    const budget = await this.store.findBudgetById(key)
+    return budget !== null && budget.tenantId === key.tenantId ? budget : null
+  }
+
+  /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
+  private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
+    return (await this.store.findMatching(tenantId, scope)).filter((budget) => budget.tenantId === tenantId)
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
@@ -664,6 +684,12 @@ export class BudgetService {
       throw invalid('a budget must define at least one limit dimension')
     }
   }
+}
+
+/** Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key. */
+function assertTenant(tenantId: unknown): asserts tenantId is string {
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  if (typeof tenantId !== 'string' || tenantId === '') throw invalid('tenantId must be a non-empty string')
 }
 
 /** Build the invalid-config exception with an actionable reason. */
