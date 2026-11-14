@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Specs of the store availability classifier: each Prisma code, socket code, driver message and SQLSTATE it
+ * reads, built from the error shapes captured on PostgreSQL 16 with Prisma 7 and Prisma 6, and the defects it must not read
+ * as an outage.
+ * @layer server
+ */
+
 import { AiTokensException } from './ai-tokens-exception'
 import { attachCause } from './attach-cause'
 import { isStoreUnavailable, storeFailureCode } from './store-availability'
