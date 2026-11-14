@@ -40,7 +40,14 @@ overrides:
   # so testcontainers keeps archiver 7 and only its glob moves.
   'minimatch@>=10.0.0 <11.0.1': '>=11.0.1'
   'test-exclude@7': '^8.0.0'
-  'glob@10': '^13.0.6'
+  # GHSA-3g3m-2fjr-6pw4 (glob >=9.0.0 <=14.0.1) and GHSA-g3hv-75wg-m249 (minimatch <11.0.1)
+  # are fixed in glob 14.0.2 and minimatch 11.0.1. Every glob line and the minimatch 9 and 10
+  # lines that glob and its dependents pull in move to those releases; build-time and
+  # test-time only.
+  'glob@10': '^14.0.2'
+  'glob@13': '^14.0.2'
+  'minimatch@9': '^11.0.1'
+  'minimatch@10': '^11.0.1'
   # GHSA-6j4f-fj2g-mc7p and GHSA-qhr7-859c-m2p7 (CVSS 7.5 each), GHSA-q2hr-2g5m-vwhr
   # (CVSS 5.3). The floors are the release that fixes all three on each major line.
   'brace-expansion@1': '^1.1.21'
