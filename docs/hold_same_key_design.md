@@ -44,6 +44,7 @@ What a caller sees, per outcome:
 - Unit, in-memory stores: a concurrent pair with one key on one instance returns one hold and reduces the wallet by one reservation; a later `capture()` and a reaper sweep never refund more than was debited.
 - Unit: the loser of a key conflict (the replay lookup missed) with the same call shape keeps the winner's debit and gives back only its budget; with another payer, a record row, or a system-cost row it refunds its own.
 - Unit: an append that commits then throws keeps the reservation and its retry replays the hold.
+- Unit: a loser that meets a captured-hold row, and a loser that meets a `record()` row of the same payer, keep their debit and refund nothing (the stated direction of the ambiguity).
 - Unit and end to end: the winner releases its hold before the loser's recovery lookup; the wallet ends at its starting balance, not above it.
 - End to end, real PostgreSQL and two instances: the measured race above with the wallet balance, the pending row count and the budget window asserted after each run, N = 2 and 10.
 
@@ -51,7 +52,8 @@ What a caller sees, per outcome:
 
 - Two instances racing one key can still consume the budget twice for the one hold when the loser's append returns the stored row without an error (the payloads match), so no release runs; the key-conflict path does release. Budget consumption has no per-call marker. That is the settlement design (a per-call budget marker keyed by the idempotency key).
 - A price or markup change between a failed append and its retry changes the estimate, and the retry then fails with the key conflict while the kept debit stays without a row. Same limit as `record()`.
-- A hold that was already captured is posted and cannot be told from a record row by status.
+- **A captured hold and a `record()` row are both posted and nothing on the row tells them apart.** There is no hold id, capture link or call-kind column on `ai_usage_records`; `updatedAt` differs for a settled hold only as a side effect of the settlement, which is not a contract, so the design does not read it. The ambiguity is resolved in one direction on purpose: a posted row of the same payer, enforced and not a system cost, is treated as sharing the debit, for a record loser and for a hold loser alike, so the loser keeps its debit and refunds nothing. The cost of a wrong guess is then an overcharge of one reservation when a `record()` and a `hold()` that was captured collide on one key (the two use different wallet keys, `record:<key>` and `hold:<key>`, so the loser's debit was its own); the other direction would refund a settled debit, which is free usage and is not allowed. Unit cases pin both: a loser that meets a captured-hold row, and a loser that meets a `record()` row of the same payer, each keep their debit.
+- **An orphan debit.** A keyed hold whose append failed with no row keeps its `hold:<key>` debit for the retry to replay. If the client never retries, that debit has no row: the reaper sweeps rows, so it cannot find it, and nothing releases it, so the reservation stays out of the wallet. The bound is one reservation per failed append that is never retried, with no time limit. Owner: the settlement design (the next item), which adds the sweep: refund the `hold:<key>` and `record:<key>` debits that have no ledger row once they are older than the hold TTL. It needs a way to list wallet entries by key prefix, which the store port does not have; this PR does not add it.
 
 ## Cost
 
