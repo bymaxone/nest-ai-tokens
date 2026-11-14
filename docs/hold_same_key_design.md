@@ -4,14 +4,19 @@ Status: **design only. Nothing is implemented.** Basis: a measured race on Postg
 
 ## What is measured
 
-`hold()` called N times concurrently with one idempotency key, on two instances, with a wallet funded for 100 holds:
+Measured against main 01df8ed (the same mechanism as the first measurement on 4e9a29f), two Nest instances over two Prisma clients, one PostgreSQL, the wallet funded for 100 holds (625,000,000 nano; one hold is 6,250,000), the table read straight from `ai_usage_records`:
 
-| N | outcomes | pending hold rows | wallet balance |
-| --- | --- | --- | --- |
-| 2 | 1 ok, 1 `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 1 | unchanged (100 of 100 holds still funded) |
-| 10 | 7 ok, 3 `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 1 | unchanged |
+| case | outcomes | pending rows | released rows | wallet balance (a correct run) |
+| --- | --- | --- | --- | --- |
+| `hold()` x2, one key | 1 ok, 1 `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 1 | 0 | 625,000,000 (618,750,000) |
+| `hold()` x10, one key | 1 ok, 9 conflicts in the last run (7 ok, 3 conflicts in the first, where six callers replayed the winner's row at the lookup) | 1 | 0 | 625,000,000 (618,750,000) |
+| the winner holds and releases, the loser misses the row at its lookup and loses the append | the loser gets the conflict | 0 | 1 | **631,250,000** (625,000,000) |
 
-One reservation should be missing from the wallet in both rows. None is: the live hold reserves nothing, so its `capture()` credits the difference between the estimate and the actual cost to a wallet that was never debited, and a later release or reaper sweep refunds the estimate a second time.
+The budget window is right in the first two rows (spent 6,250,000, count 1): the loser releases its own consumption.
+
+One reservation should be missing from the wallet in the first two rows. None is: the live hold reserves nothing, so its `capture()` credits the difference between the estimate and the actual cost to a wallet that was never debited, and a later release or reaper sweep refunds the estimate a second time.
+
+The third row is worse: the wallet ends above its starting balance by one reservation of credit that nothing paid for, because the winner's release refunded the one debit (`release:<id>`) and the loser's rollback refunded it again (`hold-rollback:<key>`). That makes the defect a P1: it creates credit from nothing.
 
 ## Why
 
