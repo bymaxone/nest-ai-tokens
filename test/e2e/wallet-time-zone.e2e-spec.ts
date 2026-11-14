@@ -139,7 +139,7 @@ describe('wallet grants judged on the application clock the store is given', () 
    * and a grant the database clock reads as not yet effective is spendable when the application's instant says so.
    * The instants are minutes away from the database's, so no timing is involved.
    */
-  it('judges expiry, effectiveness and the entry stamp on the given instant, not the database clock', async () => {
+  it('judges expiry and effectiveness on the given instant, not the database clock', async () => {
     const store = await storeInZone('Asia/Tokyo')
     const appNow = new Date(Date.now() + 120_000)
     await store.appendEntry(ref, grantEntry({ idempotencyKey: 'lapsing', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() - 1_000), expiresAt: new Date(Date.now() + 60_000) }))
@@ -149,11 +149,8 @@ describe('wallet grants judged on the application clock the store is given', () 
     expect((await store.reconcile(ref, appNow)).balanceNanoUsd).toBe(0n)
 
     const future = new Date(Date.now() + 60_000)
-    const later = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'pending', amountNanoUsd: 50n, effectiveAt: future }), [], new Date(Date.now()))
+    await store.appendEntry(ref, grantEntry({ idempotencyKey: 'pending', amountNanoUsd: 50n, effectiveAt: future }))
     expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'early' }), 0n)).toBeNull()
     expect(await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'ok' }), 0n, appNow)).not.toBeNull()
-    expect(later.createdAt.getTime()).toBeLessThan(future.getTime())
-    const stamped = (await store.listEntries(ref, { type: 'debit' })).entries[0]
-    expect(stamped?.createdAt.getTime()).toBe(appNow.getTime())
   })
 })

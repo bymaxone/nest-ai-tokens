@@ -28,8 +28,9 @@ export interface WalletEntryFilter {
 /**
  * The prepaid wallet port.
  *
- * Every method that judges a grant's `effectiveAt` or `expiresAt`, or stamps an entry's `createdAt`, takes the
- * instant `now` on the caller's clock, the one the service stamps `effectiveAt` from. A store that compares
+ * Every method that judges a grant's `effectiveAt` or `expiresAt` takes the instant `now` on the caller's clock,
+ * the one the service stamps `effectiveAt` from. An entry's `createdAt` stays the store's own clock: it orders the
+ * entries, so one clock must stamp them all. A store that compares
  * against a clock of its own, such as a database server's, MUST use the `now` it is given and fall back to its
  * own clock only when none is given: two clocks that disagree make a grant spendable on one and lapsed on the other.
  */
@@ -38,13 +39,12 @@ export interface IWalletStore {
   getWallet(ref: WalletRef): Promise<Wallet | null>
   /**
    * Create the wallet when missing (idempotent) and append the entry plus any
-   * grant allocations in one transaction. The entry's `createdAt` is `now`.
+   * grant allocations in one transaction.
    */
   appendEntry(
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations?: { grantEntryId: string; amountNanoUsd: bigint }[],
-    now?: Date,
   ): Promise<WalletEntry>
   /**
    * Atomic conditional debit against the materialized balance. `null` = insufficient (§9.4). Judged at `now`, it first credits, once each, the

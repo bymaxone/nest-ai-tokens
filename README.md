@@ -420,12 +420,12 @@ console.log(balance.nanoUsd) // current balance
 
 A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`, judged on your application's
 clock: the service passes the current instant to the store, so a database whose clock differs does not
-move a grant, and the entry timestamps share that clock. Keep NTP running on the application hosts, since their clocks
+move a grant. Entries are ordered, and grants burn, by the database's creation time. Keep NTP running on the application hosts, since their clocks
 are the ones that decide and instances that disagree move a grant between them. One that is not
 yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
 entry keyed `activate:<grantId>` (reason `grant activated`); that entry is bookkeeping, so a report of
 operator adjustments should skip it. Keys starting `activate:` or `expiry:` are reserved for the store,
-and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
+and a clash fails with `AI_TOKENS_INVALID_CONFIG`. A grant whose `expiresAt` falls within the clock skew of the moment it is written can be read as already expired, and is then never credited.
 
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`

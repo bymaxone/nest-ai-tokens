@@ -112,16 +112,14 @@ export class InMemoryWalletStore implements IWalletStore {
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
-    now?: Date,
   ): Promise<WalletEntry> {
     assertCallerKey(entry.idempotencyKey)
-    const at = now ?? this.now()
     const autoCreate = entry.type === 'grant' || (entry.type === 'adjustment' && entry.amountNanoUsd > 0n)
-    const wallet = this.resolveWallet(ref, autoCreate, at)
+    const wallet = this.resolveWallet(ref, autoCreate)
     if (wallet === null) throw new WalletMissingError()
     const replay = this.replayOrConflict(ref, wallet, entry)
     if (replay !== null) return replay
-    return this.insert(wallet, entry, allocations, at)
+    return this.insert(wallet, entry, allocations)
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await -- async so a conflict throw surfaces as a rejected promise; the reserve critical section below stays synchronous (atomic).
@@ -140,7 +138,7 @@ export class InMemoryWalletStore implements IWalletStore {
     // `entry.amountNanoUsd` is negative for a debit, so the reserve adds it: this is
     // the fake's model of `balance - cost >= -overdraft` from the §9.4 conditional UPDATE.
     if (wallet.balanceNanoUsd + entry.amountNanoUsd < -overdraftNanoUsd) return null
-    const debit = this.insert(wallet, entry, [], at)
+    const debit = this.insert(wallet, entry, [])
     this.allocateDebit(wallet, debit, at)
     return debit
   }
@@ -166,7 +164,7 @@ export class InMemoryWalletStore implements IWalletStore {
     if (wallet === undefined) return Promise.reject(new WalletMissingError())
     this.activateDueGrants(wallet, at)
     wallet.balanceNanoUsd = this.spendableBalance(wallet, at)
-    wallet.updatedAt = at
+    wallet.updatedAt = this.now()
     return Promise.resolve(wallet)
   }
 
@@ -188,11 +186,12 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /** Fetch or (optionally) create the wallet for a ref. */
-  private resolveWallet(ref: WalletRef, autoCreate: boolean, now: Date): Wallet | null {
+  private resolveWallet(ref: WalletRef, autoCreate: boolean): Wallet | null {
     const key = InMemoryWalletStore.keyOf(ref)
     const existing = this.wallets.get(key)
     if (existing !== undefined) return existing
     if (!autoCreate) return null
+    const now = this.now()
     const wallet: Wallet = {
       id: randomUUID(),
       tenantId: ref.tenantId,
@@ -220,9 +219,8 @@ export class InMemoryWalletStore implements IWalletStore {
     wallet: Wallet,
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[],
-    at: Date,
   ): WalletEntry {
-    const stored: WalletEntry = { ...entry, id: randomUUID(), walletId: wallet.id, createdAt: at }
+    const stored: WalletEntry = { ...entry, id: randomUUID(), walletId: wallet.id, createdAt: this.now() }
     ;(this.entries.get(wallet.id) as WalletEntry[]).push(stored)
     this.idempotency.set(InMemoryWalletStore.replayKey(wallet.id, entry.idempotencyKey), {
       entry: stored,
@@ -278,7 +276,7 @@ export class InMemoryWalletStore implements IWalletStore {
         effectiveAt: now,
         idempotencyKey: activationKey(grant.id),
         reason: 'grant activated',
-      }, [], now)
+      }, [])
       activated = true
     }
     if (activated) wallet.balanceNanoUsd = this.signedBalance(wallet)
@@ -304,7 +302,6 @@ export class InMemoryWalletStore implements IWalletStore {
           reason: 'grant expired',
         },
         [{ grantEntryId: grant.id, amountNanoUsd: remaining }],
-        now,
       )
     }
   }

@@ -57,13 +57,19 @@ describe('wallet grants are judged on the application clock', () => {
   })
 
   /*
-   * Invariant: an entry's `createdAt` is the instant the service passed, so a grant stamped due at append
-   * is judged due on that same clock.
+   * Invariant: the burn order follows the order the entries were written by the store's own clock, not the
+   * application's: with an application clock that runs backwards between two grants, a debit still drains the grant
+   * written first.
    */
-  it('stamps an entry with the instant it was given', async () => {
-    const { service, store } = skewed()
-    const entry = await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'g', reason: 'r' })
-    expect(entry.createdAt.getTime()).toBe(START)
-    expect(store.entriesOf(REF)[0]?.createdAt.getTime()).toBe(START)
+  it("burns the grant written first under 'fifo' although the application clock ran backwards between the writes", async () => {
+    let app = START
+    const store = new InMemoryWalletStore({ burnOrder: 'fifo', now: (): Date => new Date(START + store.entriesOf(REF).length) })
+    const service = new WalletService(store, { ...OPTIONS, burnOrder: 'fifo' }, undefined, () => new Date(app))
+    const first = await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'a', reason: 'r' })
+    app -= 5_000
+    await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'b', reason: 'r' })
+    app = START + 10_000
+    const debit = await service.debit(REF, { amountNanoUsd: 3n, idempotencyKey: 'd', reason: 'r' })
+    expect(store.allocationsOf(debit.id)).toEqual([{ debitEntryId: debit.id, grantEntryId: first.id, amountNanoUsd: 3n }])
   })
 })

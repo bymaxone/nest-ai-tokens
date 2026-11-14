@@ -40,9 +40,9 @@ callers whose usage is typed; a caller whose usage is `any`, or plain JavaScript
 { tenantId, scope } (since 1.1.15)" (or the `release` form), before anything is read. The interceptor and `meter()`
 already hold the context and are unchanged for you.
 
-**Apply:** if you implement `IWalletStore` yourself, `appendEntry`, `conditionalDebit`, `openGrants` and `reconcile` now
+**Apply:** if you implement `IWalletStore` yourself, `conditionalDebit`, `openGrants` and `reconcile` now
 take an optional trailing `now` (a `Date`), which `WalletService` passes when it calls them. A store that compares grants
-against a server-side clock must use the `now` it is given, and stamp the entry's `createdAt` with it; a store that
+against a server-side clock must use the `now` it is given; an entry's `createdAt` stays the store's own clock, which orders the entries; a store that
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
@@ -115,8 +115,8 @@ optional injected clock as its fourth constructor argument; the module keeps the
 - **A wallet grant was judged on the database's clock while the application stamped its dates.** Grants were spendable
   from `effectiveAt` until `expiresAt` as the database server read them, so a database clock behind the application's
   kept a grant that had expired by the application's clock spendable (free usage), and a clock ahead of it expired one
-  early. The SQL store now judges grants on the `now` the service passes, and stamps the entry's `createdAt` with it,
-  so the dates and the comparison share the application's clock. Skew between the
+  early. The SQL store now judges grants on the `now` the service passes, so the dates and the comparison share the application's clock;
+  the entry's `createdAt`, which orders the entries and sets the burn order, stays on the database clock. Skew between the
   application and database clocks no longer moves a grant; keep NTP running on the application hosts.
 
 ### Changed

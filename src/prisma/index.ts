@@ -402,14 +402,13 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
-    now?: Date,
   ): Promise<WalletEntry> {
     assertCallerKey(entry.idempotencyKey)
     try {
       return await this.prisma.transaction(async (tx) => {
         const wallet = await this.ensureWallet(tx, ref, walletAutoCreatable(entry))
         if (wallet === null) throw new WalletMissingError()
-        const stored = await this.insertWalletEntry(tx, wallet.id, entry, now)
+        const stored = await this.insertWalletEntry(tx, wallet.id, entry)
         await this.insertAllocations(tx, stored.id, allocations)
         await this.applyBalanceDelta(tx, wallet.id, walletBalanceDelta(stored))
         return stored
@@ -438,7 +437,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
           WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${cost} >= ${-overdraftNanoUsd} RETURNING *
         `)
         if (reserved[0] === undefined) return null
-        const debit = await this.insertWalletEntry(tx, wallet.id, entry, now)
+        const debit = await this.insertWalletEntry(tx, wallet.id, entry)
         await this.insertAllocations(tx, debit.id, await this.burnDown(tx, wallet.id, cost, now))
         return debit
       })
@@ -464,7 +463,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const offset = filter.offset === undefined ? empty : sql`OFFSET ${filter.offset}`
     const [entries, counts] = await Promise.all([
       this.prisma.query<WalletEntryRow[]>(
-        sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC ${limit} ${offset}`,
+        sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC, "id" ASC ${limit} ${offset}`,
       ),
       this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
     ]).catch(rethrowAsStoreError)
@@ -590,10 +589,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   /** Insert a wallet entry, returning the stored row. */
-  private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry, now?: Date): Promise<WalletEntry> {
+  private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry): Promise<WalletEntry> {
     const rows = await tx.query<WalletEntryRow[]>(sql`
       INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
-      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${clockSql(now)})
+      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL})
       RETURNING *
     `)
     return mapWalletEntryRow(firstOrThrow(rows))
@@ -630,7 +629,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   }
 
   /**
-   * Insert a system entry (an activation or an expiry) stamped at `now`, once per
+   * Insert a system entry (an activation or an expiry) effective at `now` and created on the database clock, once per
    * key. Returns the stored row, or `undefined` when the key already exists.
    * @internal
    */
@@ -642,7 +641,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   ): Promise<WalletEntry | undefined> {
     const rows = await tx.query<WalletEntryRow[]>(sql`
       INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
-      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${clockSql(now)}, NULL, NULL, ${entry.idempotencyKey}, ${entry.reason}, ${clockSql(now)})
+      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${clockSql(now)}, NULL, NULL, ${entry.idempotencyKey}, ${entry.reason}, ${DB_NOW_SQL})
       ON CONFLICT ("walletId", "idempotencyKey") DO NOTHING
       RETURNING *
     `)
@@ -728,10 +727,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   private openGrantsSql(walletId: string, order: 'expiry' | 'priority' | 'fifo', now?: Date): Sql {
     const orderBy =
       order === 'priority'
-        ? sql`g."priority" ASC, g."createdAt" ASC`
+        ? sql`g."priority" ASC, g."createdAt" ASC, g."id" ASC`
         : order === 'fifo'
-          ? sql`g."createdAt" ASC`
-          : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC`
+          ? sql`g."createdAt" ASC, g."id" ASC`
+          : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC, g."id" ASC`
     return sql`
       SELECT g.*, ${GRANT_REMAINING_JOINED_SQL}::bigint AS "remaining"
       FROM "ai_wallet_entries" g ${GRANT_REMAINING_JOIN_SQL}

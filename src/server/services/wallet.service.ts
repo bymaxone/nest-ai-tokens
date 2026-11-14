@@ -155,7 +155,7 @@ export class WalletService {
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-    }, now)
+    })
     const granted: WalletGrantedEventData = {
       walletId: entry.walletId,
       entryId: entry.id,
@@ -239,7 +239,7 @@ export class WalletService {
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-    }, now)
+    })
   }
 
   /**
@@ -264,7 +264,7 @@ export class WalletService {
       effectiveAt: now,
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-    }, now)
+    })
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check method completion, not event payload shape
     await this.events.audit('ai_tokens.wallet.adjusted', {
       tenantId: ref.tenantId,
@@ -304,7 +304,7 @@ export class WalletService {
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-    }, now)
+    })
   }
 
   /**
@@ -343,10 +343,10 @@ export class WalletService {
   }
 
   /** Append a non-debit entry, mapping a store idempotency/missing-wallet signal to the catalog. */
-  private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>, now: Date): Promise<WalletEntry> {
+  private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>): Promise<WalletEntry> {
     try {
       // Stryker disable next-line StringLiteral: placeholder walletId; the store's insert always assigns the real wallet id and never reads this sentinel, so any string here is equivalent
-      return await this.store.appendEntry(ref, { walletId: '', ...entry }, undefined, now)
+      return await this.store.appendEntry(ref, { walletId: '', ...entry })
     } catch (error) {
       throw this.mapStoreError(error, ref, entry.idempotencyKey)
     }
