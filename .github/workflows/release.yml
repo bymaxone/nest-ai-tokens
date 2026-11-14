@@ -211,6 +211,10 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    env:
+      # The one place the package name is written for this job: the forward-only check and the publish
+      # step both read it.
+      PACKAGE_NAME: '@bymax-one/nest-ai-tokens'
     steps:
       - name: Harden runner
         # Egress is audited, not blocked: the report lists every host the job reached, which is how a
@@ -247,6 +251,63 @@ jobs:
             *) echo "::error title=release::The tagged commit is not on the default branch."; exit 1 ;;
           esac
 
+      - name: Require a release that moves forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          # No message below prints the tag, a version or a registry answer: they come from outside the job.
+          release_tag='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if ! [[ "$GITHUB_REF_NAME" =~ $release_tag ]]; then
+            echo "::error title=release::A release tag is vMAJOR.MINOR.PATCH, with no prerelease or build suffix."
+            exit 1
+          fi
+          # The previous release is the greatest stable tag below this one (this tag is added, so a listing that
+          # lags behind the push still finds its place). A first release has none.
+          # gh's own diagnostic can carry the request URL, so its stderr goes to a file, not the log.
+          if ! tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' 2> "$RUNNER_TEMP/gh.err"); then
+            echo "::error title=release::The release tags could not be listed, so the previous release cannot be found."
+            exit 1
+          fi
+          previous=$( { printf '%s\n' "$tags" | grep -E "$release_tag" || true; printf '%s\n' "$GITHUB_REF_NAME"; } \
+            | sort -V | awk -v self="$GITHUB_REF_NAME" '$0 == self { print prev; exit } { prev = $0 }')
+          if [ -n "$previous" ]; then
+            # `ahead`: the tagged commit has commits the previous release does not. `identical`, `behind`
+            # and `diverged` are all a release that does not move forward.
+            if ! status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$previous...$GITHUB_SHA" --jq .status 2> "$RUNNER_TEMP/gh.err"); then
+              echo "::error title=release::The tagged commit could not be compared with the previous release tag."
+              exit 1
+            fi
+            if [ "$status" != "ahead" ]; then
+              echo "::error title=release::The tagged commit is not ahead of the previous release tag."
+              exit 1
+            fi
+          fi
+          # A version already on npm is the re-run of rule 4, handled by the publish step.
+          if npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "This version is already on npm."
+            exit 0
+          fi
+          if ! published=$(npm view "$PACKAGE_NAME" versions --json 2> "$RUNNER_TEMP/npm-view.err"); then
+            # Only "this package has never been published" lets a first release through.
+            if grep -q 'E404' "$RUNNER_TEMP/npm-view.err"; then
+              echo "The package is not on npm yet; nothing to compare the version with."
+              exit 0
+            fi
+            echo "::error title=release::The npm registry could not be read, so the version cannot be compared."
+            exit 1
+          fi
+          highest=$(printf '%s' "$published" | node -e '
+            const all = [].concat(JSON.parse(require("fs").readFileSync(0, "utf8")));
+            console.log(all.filter((v) => /^[0-9]+\.[0-9]+\.[0-9]+$/.test(v)).join("\n"));
+          ' | sort -V | tail -n 1)
+          # Strictly greater: a version the listing already holds is not newer, even when the exact lookup above did not answer.
+          if [ -n "$highest" ] && { [ "$highest" = "$VERSION" ] || [ "$(printf '%s\n%s\n' "$highest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; }; then
+            echo "::error title=release::The version is not greater than the highest version on npm."
+            exit 1
+          fi
+
       - name: Download the package
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -268,7 +329,6 @@ jobs:
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
           VERSION: ${{ needs.build.outputs.version }}
-          PACKAGE_NAME: '@bymax-one/nest-ai-tokens'
         run: |
           set -euo pipefail
           if npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; then
