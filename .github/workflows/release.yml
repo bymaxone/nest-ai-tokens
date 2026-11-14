@@ -77,9 +77,7 @@ jobs:
     steps:
       - name: Harden runner
         # Egress is audited, not blocked: the report lists every host the job reached, which is how a
-        # new outbound call from a dependency shows up. The step belongs to the template, so an adopter
-        # copies it with the file; a release.yml copied before this step existed adds it by hand, in
-        # both jobs.
+        # new outbound call from a dependency shows up.
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
@@ -216,9 +214,7 @@ jobs:
     steps:
       - name: Harden runner
         # Egress is audited, not blocked: the report lists every host the job reached, which is how a
-        # new outbound call from a dependency shows up. The step belongs to the template, so an adopter
-        # copies it with the file; a release.yml copied before this step existed adds it by hand, in
-        # both jobs.
+        # new outbound call from a dependency shows up.
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
