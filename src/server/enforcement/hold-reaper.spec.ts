@@ -109,7 +109,7 @@ describe('HoldReaper', () => {
     await reaper.sweep()
     expect((await wallets.getBalance(walletRef)).nanoUsd).toBe(100_000_000n)
     const usage: NormalizedUsage = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 }
-    const captureError = await built.service.capture(hold, usage).catch((e: unknown) => e)
+    const captureError = await built.service.capture(hold, context(), usage).catch((e: unknown) => e)
     expect((captureError as { getResponse: () => { error: { code: string } } }).getResponse().error.code).toBe('AI_TOKENS_HOLD_EXPIRED')
   })
 

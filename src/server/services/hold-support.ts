@@ -20,7 +20,8 @@ import type {
 } from '../../shared'
 import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../shared'
 import { AiTokensException } from '../errors'
-import type { HoldEstimate, MeteringContext } from '../interfaces'
+import { setErrorMessage } from '../errors/set-error-message'
+import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import type { PricingService } from './pricing.service'
 
 /** The placeholder recorded for a token/amount estimate that carries no model (§11.1). */
@@ -279,4 +280,23 @@ export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     reason: 'capture requires an already-normalized usage or a preset normalizer',
   })
+}
+
+/**
+ * Throw unless `caller` is a tenant and a payer scope: `{ non-empty string tenantId, scope object with string type and id }`.
+ * The compiler cannot vouch for an `any` or plain-JavaScript caller, and a wrong value in this position, such as a usage
+ * object, would otherwise be read as a caller, so it is refused here, before the store is read, with a message that says
+ * what to pass.
+ *
+ * @param caller The value passed as the caller.
+ * @param signature The call to show in the message, e.g. `capture(hold, caller, usage)`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG`.
+ */
+export function assertCaller(caller: unknown, signature: string): asserts caller is HoldCaller {
+  const { tenantId, scope } = (caller ?? {}) as Partial<HoldCaller>
+  if (typeof tenantId !== 'string' || tenantId === '' || typeof scope?.type !== 'string' || typeof scope.id !== 'string') {
+    const message = `${signature}: the second argument must be the caller { tenantId, scope } (since 1.1.15)`
+    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics beyond the code and the message
+    throw setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: message }), message)
+  }
 }

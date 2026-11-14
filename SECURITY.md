@@ -50,7 +50,7 @@ Every admin-plane mutation emits an `ai_tokens.audit` event with actor propagati
 
 ### Cross-tenant hold validation
 
-`capture()` and `release()` revalidate the hold against the persistence store and reject any hold whose `tenantId` or `scope` does not match the caller's context. The error code is `AI_TOKENS_HOLD_NOT_FOUND` (deliberately indistinguishable from a nonexistent hold — no information leakage).
+`capture(hold, caller, usage)` and `release(hold, caller, reason)` load the hold by `hold.id` from the persistence store and require the stored record's `tenantId` and `scope` to equal the `caller` the host passes, which must come from its verified auth context. The `tenantId` and `scope` carried on the `Hold` object are not read, so a forged or round-tripped `Hold` gains nothing beyond knowing the record id. A hold of another caller answers `AI_TOKENS_HOLD_NOT_FOUND`, the same answer as a nonexistent hold (no existence oracle). A `caller` that is not a non-empty tenant string and a scope is refused with `AI_TOKENS_INVALID_CONFIG` before the store is read. The input tokens of an aborted stream come from the stored hold, never from `hold.estimatedTokens`.
 
 ### Idempotency-key scope
 

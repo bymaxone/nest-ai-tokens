@@ -178,7 +178,7 @@ describe('hold() with one idempotency key racing itself', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 10_000_000_000n)
     const winner = await built.service.hold(context({ idempotencyKey: 'h-2' }), ESTIMATE_A)
-    await built.service.release(winner, 'released before the loser recovers')
+    await built.service.release(winner, context(), 'released before the loser recovers')
     jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
 
     await expect(built.service.hold(context({ idempotencyKey: 'h-2' }), ESTIMATE_A)).rejects.toThrow()
@@ -281,7 +281,7 @@ describe('hold() with one idempotency key racing itself', () => {
     await grant(built, 10_000_000_000n)
     if (winner === 'captured') {
       const won = await built.service.hold(context({ idempotencyKey: 'h-7' }), ESTIMATE_A)
-      await built.service.capture(won, normalized())
+      await built.service.capture(won, context(), normalized())
     } else {
       await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'h-7' }) })
     }

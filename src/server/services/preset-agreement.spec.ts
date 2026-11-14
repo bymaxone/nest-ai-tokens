@@ -85,7 +85,7 @@ async function boot(strict: boolean, store: IAiTokensStore = makeStore()): Promi
 /** Settle a call through hold then capture, sized by a bare token count. */
 async function holdCapture(metering: MeteringService, context: MeteringContext, preset: ProviderPreset, raw: unknown): Promise<UsageRecord> {
   const hold = await metering.hold({ ...context, preset }, { tokens: 1500 })
-  return metering.capture(hold, raw, preset)
+  return metering.capture(hold, context, raw, preset)
 }
 
 describe('every preset names the provider its normalizer stamps', () => {

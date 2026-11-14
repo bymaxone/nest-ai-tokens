@@ -252,7 +252,7 @@ describe('README behaviours around record(), holds and prices', () => {
     )
 
     const hold = await metering.hold(requestContext({ idempotencyKey: 'hold-1', preset: providerPresets.vercelAiSdk, baseModel: 'gpt-5-mini' }), { tokens: 1500 })
-    const captured = await metering.capture(hold, VERCEL_RESULT, providerPresets.vercelAiSdk)
+    const captured = await metering.capture(hold, requestContext(), VERCEL_RESULT, providerPresets.vercelAiSdk)
     const recorded = await metering
       .record({ usage: VERCEL_RESULT, preset: providerPresets.vercelAiSdk, context: requestContext({ idempotencyKey: 'record-1' }) })
       .catch((error: unknown) => error)

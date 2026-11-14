@@ -497,11 +497,16 @@ try {
   }
 } catch (err) {
   // Aborted or provider error: bill partial usage. capture() is idempotent.
-  await metering.capture(hold, collector)
+  await metering.capture(hold, ctx, collector)
   throw err
 }
-await metering.capture(hold, collector) // settle with provider-final actuals
+await metering.capture(hold, ctx, collector) // settle with provider-final actuals
 ```
+
+`capture(hold, caller, usage)` and `release(hold, caller, reason)` take the caller, `{ tenantId, scope }` from your verified auth context
+(the `ctx` of the hold works). The stored hold must belong to that caller: a hold of another tenant or payer, and a hold that does not
+exist, both answer `AI_TOKENS_HOLD_NOT_FOUND`, and the tenant and scope on the `Hold` object are not read. A second argument that is
+not a tenant and a scope (the shape of earlier versions) is refused with `AI_TOKENS_INVALID_CONFIG` before anything is read.
 
 A stream cut short has no provider-final usage. When the collector is built with a `tokenizer`, it falls back to a count of the output text; without one, settling it throws `AI_TOKENS_STREAM_USAGE_MISSING`.
 
@@ -567,7 +572,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | `AI_TOKENS_BUDGET_EXCEEDED`      | 402  | A hard spend budget blocks the call                                              |
 | `AI_TOKENS_QUOTA_EXCEEDED`       | 429  | A hard token/count quota blocks the call                                         |
 | `AI_TOKENS_INSUFFICIENT_CREDITS` | 402  | Wallet debit failed (balance + overdraft below amount)                           |
-| `AI_TOKENS_HOLD_NOT_FOUND`       | 404  | `capture()`/`release()` on an unknown or cross-tenant hold                       |
+| `AI_TOKENS_HOLD_NOT_FOUND`       | 404  | `capture()`/`release()` on an unknown hold or one of another caller              |
 | `AI_TOKENS_HOLD_EXPIRED`         | 410  | `capture()` after the reaper swept the hold (retry via `record()`)               |
 | `AI_TOKENS_HOLD_ALREADY_SETTLED` | 409  | `capture()` after `release()`                                                    |
 | `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed record |

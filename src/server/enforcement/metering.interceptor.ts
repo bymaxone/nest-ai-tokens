@@ -90,7 +90,7 @@ export class MeteringInterceptor implements NestInterceptor {
 
   /** Capture the guard's hold when present, else record enforcing post-hoc. */
   private async capture(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, usage: unknown): Promise<UsageRecord> {
-    if (enrichment?.hold !== undefined) return this.metering.capture(enrichment.hold, usage, config.preset)
+    if (enrichment?.hold !== undefined) return this.metering.capture(enrichment.hold, enrichment.context, usage, config.preset)
     const context = await this.resolveContext(executionContext, config, enrichment)
     return this.metering.record({
       usage,
@@ -118,7 +118,7 @@ export class MeteringInterceptor implements NestInterceptor {
     if (enrichment?.hold === undefined) return throwError(() => error)
     const holdId = enrichment.hold.id
     // Stryker disable next-line StringLiteral: release reason is internal audit text; tests check error propagation behavior
-    const released = this.metering.release(enrichment.hold, 'handler threw').catch(() => {
+    const released = this.metering.release(enrichment.hold, enrichment.context, 'handler threw').catch(() => {
       // Stryker disable next-line BlockStatement: best-effort hold release; the reaper reclaims unreleased holds
       // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)

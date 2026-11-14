@@ -530,7 +530,7 @@ describe('MeteringService.hold', () => {
     const hold = await built.service.hold(context(), ESTIMATE_A)
     const roundTripped = JSON.parse(JSON.stringify({ ...hold, estimatedCostNanoUsd: hold.estimatedCostNanoUsd.toString() })) as Record<string, unknown>
     expect(roundTripped.id).toBe(hold.id)
-    const captured = await built.service.capture({ ...hold }, normalized())
+    const captured = await built.service.capture({ ...hold }, context(), normalized())
     expect(captured.status).toBe('posted')
   })
 
@@ -545,7 +545,7 @@ describe('MeteringService.hold', () => {
     const pending = await built.ledgerStore.findById(hold.id)
     expect(pending?.enforced).toBe(false)
     expect(pending?.systemCostCategory).toBe('retry')
-    await built.service.release(hold, 'system release')
+    await built.service.release(hold, context(), 'system release')
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
 
@@ -628,7 +628,7 @@ describe('MeteringService.capture', () => {
     await grant(built, 100_000_000n)
     await upsertBudget(built, { limitTokens: 100_000, limitCount: 100 })
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const record = await built.service.capture(hold, normalized())
+    const record = await built.service.capture(hold, context(), normalized())
     expect(record.status).toBe('posted')
     expect(record.billedCostNanoUsd).toBe(6_250_000n)
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
@@ -643,7 +643,7 @@ describe('MeteringService.capture', () => {
     await grant(built, 100_000_000n)
     await upsertBudget(built, { limitTokens: 100_000, limitCount: 100 })
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized({ inputTokens: 500, outputTokens: 250 }))
+    await built.service.capture(hold, context(), normalized({ inputTokens: 500, outputTokens: 250 }))
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(96_875_000n)
     const budget = (await (built.budgets!).status('tenant-1', { type: 'user', id: 'u1' }))[0]
     expect(budget?.spent).toEqual({ nanoUsd: 3_125_000n, tokens: 750, count: 1 })
@@ -656,7 +656,7 @@ describe('MeteringService.capture', () => {
     await grant(built, 100_000_000n)
     await upsertBudget(built, { limitTokens: 100_000, limitCount: 100 })
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized({ inputTokens: 2000, outputTokens: 1000 }))
+    await built.service.capture(hold, context(), normalized({ inputTokens: 2000, outputTokens: 1000 }))
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(87_500_000n)
     const budget = (await (built.budgets!).status('tenant-1', { type: 'user', id: 'u1' }))[0]
     expect(budget?.spent).toEqual({ nanoUsd: 12_500_000n, tokens: 3000, count: 1 })
@@ -668,8 +668,8 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const first = await built.service.capture(hold, normalized())
-    const second = await built.service.capture(hold, normalized())
+    const first = await built.service.capture(hold, context(), normalized())
+    const second = await built.service.capture(hold, context(), normalized())
     expect(second.id).toBe(first.id)
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
   })
@@ -680,9 +680,9 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const first = await built.service.capture(hold, normalized())
+    const first = await built.service.capture(hold, context(), normalized())
     // With the `status !== 'pending'` guard → false (CE), the repeat would fall through and throw on this malformed usage.
-    const second = await built.service.capture(hold, { not: 'usage' })
+    const second = await built.service.capture(hold, context(), { not: 'usage' })
     expect(second.id).toBe(first.id)
     expect(second.status).toBe('posted')
   })
@@ -693,8 +693,8 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.release(hold, 'abort')
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    await built.service.release(hold, context(), 'abort')
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
@@ -723,8 +723,8 @@ describe('MeteringService.capture', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     clock = new Date(clock.getTime() + 3_600_000)
-    await built.service.release(hold, 'expired')
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    await built.service.release(hold, context(), 'expired')
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
   })
 
@@ -738,11 +738,11 @@ describe('MeteringService.capture', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     const record = await built.ledgerStore.findById(hold.id)
-    await built.service.release(hold, 'abort')
+    await built.service.release(hold, context(), 'abort')
     // Inject a clock 30 s past the record's real createdAt — inside the 60 s TTL. With `× 1000` the hold has NOT
     // expired (expiry = createdAt + 60_000 ms); a `÷ 1000` mutation collapses the TTL to ~0.06 ms → false expiry.
     clock = new Date(record!.createdAt.getTime() + 30_000)
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
@@ -755,14 +755,14 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized())
+    await built.service.capture(hold, context(), normalized())
     const record = await built.ledgerStore.findById(hold.id)
     await built.service.reverse(hold.id, 'refund') // posted → reversed
     // Move the injected clock far past the (real-clock) TTL. A 'released' record would read as expired here;
     // a 'reversed' one must NOT enter that branch. The `status === 'released'` → true (CE) mutation would
     // reclassify this as HOLD_EXPIRED.
     clock = new Date(record!.createdAt.getTime() + 3_600_000)
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
@@ -772,7 +772,7 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const error = await built.service.capture({ ...hold, tenantId: 'other' }, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context({ tenantId: 'other' }), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
   })
 
@@ -780,7 +780,7 @@ describe('MeteringService.capture', () => {
   it('rejects an unknown hold id with HOLD_NOT_FOUND', async () => {
     const built = build()
     const hold: Hold = { id: 'missing', tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, estimatedTokens: 0, estimatedCostNanoUsd: 0n, expiresAt: new Date() }
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
   })
 
@@ -790,7 +790,7 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const error = await built.service.capture(hold, { not: 'usage' }).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), { not: 'usage' }).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
   })
 
@@ -800,7 +800,7 @@ describe('MeteringService.capture', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const record = await built.service.capture(hold, normalized({ inputTokens: 1000, outputTokens: 500 }))
+    const record = await built.service.capture(hold, context(), normalized({ inputTokens: 1000, outputTokens: 500 }))
     expect(record.markupMultiplier).toBe(3)
     expect(record.billedCostNanoUsd).toBe(18_750_000n)
     expect(record.priceVersionId).not.toBeNull()
@@ -815,7 +815,7 @@ describe('MeteringService.release', () => {
     await grant(built, 100_000_000n)
     await upsertBudget(built, { limitTokens: 100_000, limitCount: 100 })
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.release(hold, 'user aborted')
+    await built.service.release(hold, context(), 'user aborted')
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
     const budget = (await (built.budgets!).status('tenant-1', { type: 'user', id: 'u1' }))[0]
     expect(budget?.spent).toEqual({ nanoUsd: 0n, tokens: 0, count: 0 })
@@ -828,8 +828,8 @@ describe('MeteringService.release', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.release(hold, 'a')
-    await built.service.release(hold, 'b')
+    await built.service.release(hold, context(), 'a')
+    await built.service.release(hold, context(), 'b')
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
     expect(built.events.holdReleased).toHaveBeenCalledTimes(1)
   })
@@ -840,11 +840,11 @@ describe('MeteringService.release', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized())
+    await built.service.capture(hold, context(), normalized())
     // The posted-hold branch fires a warn and returns; the `record.status === 'posted'` → false (CE)
     // mutation would skip that branch (no warn), so we assert the warn is emitted.
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
-    await built.service.release(hold, 'late')
+    await built.service.release(hold, context(), 'late')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
@@ -857,7 +857,7 @@ describe('MeteringService.release', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    const error = await built.service.release({ ...hold, scope: { type: 'user', id: 'other' } }, 'x').catch((e: unknown) => e)
+    const error = await built.service.release(hold, context({ scope: { type: 'user', id: 'other' } }), 'x').catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
   })
 
@@ -869,7 +869,7 @@ describe('MeteringService.release', () => {
     const hold = await built.service.hold(context(), ESTIMATE_A) // scope { type: 'user', id: 'u1' }
     // Same id 'u1', different type 'key': sameScope must be false. The `a.type === b.type` → true (CE) mutation
     // would ignore the type mismatch and let the release proceed instead of throwing.
-    const error = await built.service.release({ ...hold, scope: { type: 'key', id: 'u1' } }, 'x').catch((e: unknown) => e)
+    const error = await built.service.release(hold, context({ scope: { type: 'key', id: 'u1' } }), 'x').catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
   })
 
@@ -879,11 +879,11 @@ describe('MeteringService.release', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.release(hold, 'first')
+    await built.service.release(hold, context(), 'first')
     const transitionSpy = jest.spyOn(built.ledgerStore, 'transition')
     // With the `record.status !== 'pending'` guard → false (CE), the second release would fall through and call
     // transition(pending → released) again on the already-released record.
-    await built.service.release(hold, 'second')
+    await built.service.release(hold, context(), 'second')
     expect(transitionSpy).not.toHaveBeenCalled()
   })
 })
@@ -1108,7 +1108,7 @@ describe('MeteringService coverage edges', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     const preset = { provider: 'openai' as const, ratingMode: 'rate-table' as const, normalizer: (): NormalizedUsage => { throw new Error('boom') } }
-    const error = await built.service.capture(hold, {}, preset).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), {}, preset).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
   })
 
@@ -1119,7 +1119,7 @@ describe('MeteringService coverage edges', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     const preset = { provider: 'openai' as const, ratingMode: 'rate-table' as const, normalizer: (): NormalizedUsage => { throw new AiTokensException('AI_TOKENS_STORE_ERROR') } }
-    const error = await built.service.capture(hold, {}, preset).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), {}, preset).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_STORE_ERROR')
   })
 
@@ -1130,7 +1130,7 @@ describe('MeteringService coverage edges', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     jest.spyOn(built.ledgerStore, 'transition').mockResolvedValueOnce(null)
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
@@ -1143,7 +1143,7 @@ describe('MeteringService coverage edges', () => {
     const pending = await built.ledgerStore.findById(hold.id)
     jest.spyOn(built.ledgerStore, 'transition').mockResolvedValueOnce(null)
     jest.spyOn(built.ledgerStore, 'findById').mockResolvedValueOnce(pending).mockResolvedValueOnce(null)
-    const error = await built.service.capture(hold, normalized()).catch((e: unknown) => e)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
   })
 
@@ -1180,7 +1180,7 @@ describe('MeteringService coverage edges', () => {
     const options = { ratingMode: 'rate-table', markup: 1, ledger: { hashChain: false }, pricing: { strict: false, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} }, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 } } as ResolvedAiTokensOptions
     const service = new MeteringService(new LedgerService(ledgerStore, options), new PricingService(options, pricingStore), new MarkupResolver(options), options)
     const hold = await service.hold(context(), ESTIMATE_A)
-    await service.release(hold, 'noop')
+    await service.release(hold, context(), 'noop')
     const record = await service.record({ usage: normalized(), context: context() })
     const compensating = await service.reverse(record.id, 'noop')
     expect(compensating.reversesRecordId).toBe(record.id)
@@ -1227,7 +1227,7 @@ describe('MeteringService additional edges', () => {
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
     jest.spyOn(built.ledgerStore, 'transition').mockResolvedValueOnce(null)
-    await built.service.release(hold, 'raced')
+    await built.service.release(hold, context(), 'raced')
     expect(built.events.holdReleased).not.toHaveBeenCalled()
   })
 
@@ -1265,8 +1265,8 @@ describe('MeteringService additional edges', () => {
     const service = new MeteringService(new LedgerService(ledgerStore, options), new PricingService(options, pricingStore), new MarkupResolver(options), options)
     const hold = await service.hold(context(), ESTIMATE_A)
     expect(hold.expiresAt.getTime()).toBeGreaterThan(Date.now())
-    await service.release(hold, 'x')
-    const error = await service.capture(hold, normalized()).catch((e: unknown) => e)
+    await service.release(hold, context(), 'x')
+    const error = await service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
@@ -1286,7 +1286,7 @@ describe('MeteringService additional edges', () => {
     const built = build({ wallets: true })
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), { amountNanoUsd: 0n })
-    await built.service.release(hold, 'x')
+    await built.service.release(hold, context(), 'x')
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
 
@@ -1365,7 +1365,7 @@ describe('MeteringService additional edges', () => {
     await seedGpt5(built.pricingStore)
     await upsertBudget(built, { limitTokens: 100_000, limitCount: 100 })
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized({ inputTokens: 500, outputTokens: 250 }))
+    await built.service.capture(hold, context(), normalized({ inputTokens: 500, outputTokens: 250 }))
     const budget = (await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' }))[0]
     expect(budget?.spent.nanoUsd).toBe(3_125_000n)
   })
@@ -1397,7 +1397,7 @@ describe('MeteringService additional edges', () => {
     await grant(built, 100_000_000n)
     await upsertBudget(built)
     const hold = await built.service.hold(context({ isSystemCost: true }), ESTIMATE_A)
-    const record = await built.service.capture(hold, normalized())
+    const record = await built.service.capture(hold, context(), normalized())
     expect(record.isSystemCost).toBe(true)
     expect((await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(100_000_000n)
   })
@@ -1419,7 +1419,7 @@ describe('MeteringService additional edges', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized({ inputTokens: 500, outputTokens: 250 }))
+    await built.service.capture(hold, context(), normalized({ inputTokens: 500, outputTokens: 250 }))
     expect((await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(96_875_000n)
   })
 })
@@ -1435,7 +1435,7 @@ describe('MeteringService.capture — streaming collector', () => {
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
     collector.push({ choices: [{ delta: { content: 'one two three' } }] })
-    const record = await built.service.capture(hold, collector, providerPresets.openaiChat)
+    const record = await built.service.capture(hold, context(), collector, providerPresets.openaiChat)
     expect(record.status).toBe('posted')
     expect(record.inputTokens).toBe(1500) // hold.estimatedTokens (variant A total) — the §5.6 input fallback
     expect(record.outputTokens).toBe(3)
@@ -1449,7 +1449,7 @@ describe('MeteringService.capture — streaming collector', () => {
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
     collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 800, completion_tokens: 400 } })
-    const record = await built.service.capture(hold, collector)
+    const record = await built.service.capture(hold, context(), collector)
     expect(record.inputTokens).toBe(800)
     expect(record.outputTokens).toBe(400)
   })
@@ -1467,7 +1467,7 @@ describe('MeteringService.capture — streaming collector', () => {
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
     collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 800, completion_tokens: -400 } })
-    const record = await built.service.capture(hold, collector)
+    const record = await built.service.capture(hold, context(), collector)
     expect(record.inputTokens).toBe(800)
     expect(record.outputTokens).toBe(0)
   })
@@ -1480,7 +1480,7 @@ describe('MeteringService.capture — streaming collector', () => {
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A) // estimatedTokens 1500
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
     collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 0, completion_tokens: 400 } })
-    const record = await built.service.capture(hold, collector)
+    const record = await built.service.capture(hold, context(), collector)
     // usedFallback is false, so `usedFallback && inputTokens === 0` is false. The LogicalOperator (&& → ||) and the
     // `usedFallback` → true (CE) mutations would flip the guard and overwrite input with the 1500-token estimate.
     expect(record.inputTokens).toBe(0)
@@ -1496,7 +1496,7 @@ describe('MeteringService.capture — streaming collector', () => {
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
     collector.setPromptTokens(700)
     collector.push({ choices: [{ delta: { content: 'one two three' } }] })
-    const record = await built.service.capture(hold, collector, providerPresets.openaiChat)
+    const record = await built.service.capture(hold, context(), collector, providerPresets.openaiChat)
     // usedFallback is true but finalized.inputTokens is 700 (≠ 0), so the guard stays false. The `inputTokens === 0`
     // → true (CE) mutation would overwrite the real 700 count with the 1500-token estimate.
     expect(record.inputTokens).toBe(700)
@@ -1521,7 +1521,7 @@ describe('MeteringService telemetry (§14.1)', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized())
+    await built.service.capture(hold, context(), normalized())
     expect(sink.recordUsage).toHaveBeenCalledTimes(1)
   })
 
@@ -1583,7 +1583,7 @@ describe('MeteringService content sidecar (§14.2)', () => {
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context(), ESTIMATE_A)
-    await built.service.capture(hold, normalized(), undefined, { completion: 'streamed reply' })
+    await built.service.capture(hold, context(), normalized(), undefined, { completion: 'streamed reply' })
     expect(puts).toEqual(['completion'])
   })
 })
@@ -1598,7 +1598,7 @@ describe('MeteringService hold→capture money invariant', () => {
         await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
         const hold = await built.service.hold(context({ preset: providerPresets.openrouter }), { amountNanoUsd: estimate })
         const usage = normalized({ provider: 'openrouter', inputTokens: 0, outputTokens: 0, providerReportedCostNanoUsd: actual })
-        await built.service.capture(hold, usage, providerPresets.openrouter)
+        await built.service.capture(hold, context(), usage, providerPresets.openrouter)
         const balance = (await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd
         const window = (await (built.budgets!).status('tenant-1', { type: 'user', id: 'u1' }))[0]
         expect(balance).toBe(1_000_000_000n - actual)
@@ -1639,7 +1639,7 @@ describe('MeteringService hold settlement across a budget window boundary (§10.
 
     clock.at = DAY_TWO
     await (built.budgets!).consume(context(), { nanoUsd: RESERVED, tokens: 0, count: 0 })
-    await built.service.release(hold, 'client gave up')
+    await built.service.release(hold, context(), 'client gave up')
 
     expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
     expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(RESERVED)
@@ -1654,7 +1654,7 @@ describe('MeteringService hold settlement across a budget window boundary (§10.
 
     clock.at = DAY_TWO
     await (built.budgets!).consume(context(), { nanoUsd: RESERVED, tokens: 0, count: 0 })
-    await built.service.capture(hold, normalized({ inputTokens: 0, outputTokens: 0 }))
+    await built.service.capture(hold, context(), normalized({ inputTokens: 0, outputTokens: 0 }))
 
     expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
     expect(await spentIn(built, budgetId, WINDOW_TWO)).toBe(RESERVED)
@@ -1680,7 +1680,7 @@ describe('MeteringService hold settlement across a budget window boundary (§10.
     const hold = await built.service.hold(context(), ESTIMATE_A)
     clock.at = new Date('2026-06-10T23:59:30.000Z')
 
-    await built.service.release(hold, 'client gave up')
+    await built.service.release(hold, context(), 'client gave up')
 
     expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
   })
