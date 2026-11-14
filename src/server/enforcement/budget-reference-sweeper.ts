@@ -132,8 +132,15 @@ export class BudgetReferenceSweeper {
     if (lookup === null) return
     const row = lookup.by === 'key' ? await this.ledger.findByIdempotencyKey(reference.tenantId, lookup.value) : await this.ledger.findById(lookup.value)
     if (row?.tenantId !== reference.tenantId || !lookup.ended(row.status)) return
-    if (this.ledger.supportsOwedEffects() && (await this.ledger.findEffectsOwedFor(row.id)) !== null) return
+    // A reversal's marker is on the compensating row, which the original names, so both rows are read.
+    if (this.ledger.supportsOwedEffects() && (await this.owesEffects(row))) return
     await this.store.pruneApplication?.(reference, before)
+  }
+
+  /** Whether the row, or the compensating row that reversed it, still owes effects. */
+  private async owesEffects(row: UsageRecord): Promise<boolean> {
+    if ((await this.ledger.findEffectsOwedFor(row.id)) !== null) return true
+    return row.reversedByRecordId !== undefined && (await this.ledger.findEffectsOwedFor(row.reversedByRecordId)) !== null
   }
 
   /** Give one reference its verdict and apply it. */

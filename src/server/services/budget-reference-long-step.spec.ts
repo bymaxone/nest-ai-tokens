@@ -12,7 +12,8 @@ import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
-import type { ResolvedAiTokensOptions } from '../config'
+import { applyDefaults } from '../config'
+import { makeFullStore } from '../../../test/fakes/full-store'
 import { BudgetReferenceSweeper } from '../enforcement/budget-reference-sweeper'
 import type { HoldEstimate, MeteringContext } from '../interfaces'
 import { BudgetService } from './budget.service'
@@ -67,22 +68,26 @@ async function rig(withWallet = true): Promise<Rig> {
   const pricingStore = new InMemoryPricingStore()
   const walletStore = new InMemoryWalletStore({ now })
   const budgetStore = new InMemoryBudgetStore({ now })
-  const options = {
-    ratingMode: 'rate-table', markup: 1, ledger: { hashChain: false },
+  const options = applyDefaults({
+    store: makeFullStore(),
+    markup: 1,
     pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
     holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 },
-    wallets: { enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
-    budgets: { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true },
-  } as unknown as ResolvedAiTokensOptions
+    wallets: { creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
+    budgets: { defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true },
+    settlement: { graceSeconds: GRACE },
+  })
+  const { wallets: walletOptions, budgets: budgetOptions } = options
+  if (!walletOptions.enabled || !budgetOptions.enabled) throw new Error('the fixture enables wallets and budgets')
   const ledger = new LedgerService(ledgerStore, options)
-  const wallets = new WalletService(walletStore, options.wallets as never)
-  const budgets = new BudgetService(budgetStore, ledger, options.budgets as never, now)
+  const wallets = new WalletService(walletStore, walletOptions)
+  const budgets = new BudgetService(budgetStore, ledger, budgetOptions, now)
   const instance = (): MeteringService => new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, undefined, withWallet ? wallets : undefined, budgets, now)
   const service = instance()
   await pricingStore.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1_250_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
   await wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 10_000_000_000n, idempotencyKey: 'grant', reason: 'seed' })
   await budgets.upsertBudget({ tenantId: 'tenant-1', scope: { type: 'tenant', id: 'tenant-1' }, window: 'month', limitNanoUsd: 1_000_000_000n })
-  const sweeper = new BudgetReferenceSweeper(budgetStore, ledger, { graceSeconds: GRACE, holdTtlSeconds: 3_600, retentionSeconds: 604_800 }, now)
+  const sweeper = new BudgetReferenceSweeper(budgetStore, ledger, { graceSeconds: options.settlement.graceSeconds, holdTtlSeconds: options.holds.ttlSeconds, retentionSeconds: options.settlement.retentionSeconds }, now)
   return { service, other: instance(), ledgerStore, pricingStore, walletStore, budgetStore, budgets, sweeper, advance }
 }
 

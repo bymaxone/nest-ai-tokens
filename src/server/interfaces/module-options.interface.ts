@@ -106,7 +106,8 @@ export interface BymaxAiTokensModuleOptions {
      * How long a budget application and its references are kept after they were given back, or after the ledger row they
      * belong to ended, before the sweep deletes them, in whole seconds. It must exceed `graceSeconds` and `holds.ttlSeconds`.
      * Default `604800` (7 days), a figure without a deployment measurement. A pending hold's committed reference is never
-     * deleted.
+     * deleted. Keep it longer than any step of a call can stay stuck: a call that commits after its record was deleted is
+     * not counted until `reconcileWindow` runs.
      */
     retentionSeconds?: number
   }

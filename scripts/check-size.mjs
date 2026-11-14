@@ -23,7 +23,7 @@ const BUDGETS = [
   // 49_595: the budget-reference sweeper, the verdict and lookup module that decides each reference, the settlement
   // retention option and its boot validation, and the key helpers they share.
   // The prisma bundle's 15_411 holds the stale-reference, prune and given-back statements and the budget-row
-  // statements that moved out of the adapter's index into builders.
+  // statement builders.
   { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 49_595 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_411 },

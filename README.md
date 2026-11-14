@@ -883,6 +883,9 @@ Limits you can rely on:
   and the over-count fails closed.
 - The record of a movement is deleted after the retention. A key is replayed from its ledger row, which holds the
   call, so a replay after the retention takes no budget movement.
+- A step of a call that stays stuck for longer than the grace plus the retention is outside what the sweep repairs: its
+  movement was given back and its record deleted, so its commit finds no record, counts nothing, and a later
+  `reconcileWindow` counts the call from its ledger row. Keep the retention longer than any call can run.
 
 ---
 

@@ -367,6 +367,27 @@ describe('BudgetReferenceSweeper', () => {
       expect(await references(r.budgets)).toEqual([])
     })
 
+    /**
+     * Invariant: a reversal whose effects are still owed keeps the application that deduplicates its budget leg. The marker of a
+     * reversal is on the compensating row, not on the original the key names, so the pruning reads both; deleting it would let the
+     * sweep's retry subtract the reversal's amounts a second time and erase unrelated spend.
+     */
+    it('keeps the application of a reversal whose compensating row still owes effects, and deletes it once they were finished', async () => {
+      const r = await rig()
+      const original = await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'posted', idempotencyKey: 'rev-orig', occurredAt: OCCURRED }), 'hash')
+      const compensating = await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'posted', idempotencyKey: `reverse:${original.id}`, reversesRecordId: original.id, occurredAt: OCCURRED }), 'hash', undefined, { reason: 'refund' })
+      await r.ledgerStore.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
+      const reference = { key: `reverse:${original.id}`, budgetId: 'b1', attempt: 'a' }
+      await r.budgets.adjustWindowOnce(reference, WINDOW, DELTA)
+      await r.budgets.commitReference(reference)
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect(await references(r.budgets)).toEqual([`reverse:${original.id}/row`])
+      await r.ledgerStore.clearEffectsOwed(compensating.id)
+      await r.sweeper.sweep()
+      expect(await references(r.budgets)).toEqual([])
+    })
+
     /** A committed reference with no row under its key, or under a key the table does not know, is left alone. */
     it('keeps a reference whose row is missing and one whose key it does not know', async () => {
       const r = await rig()
