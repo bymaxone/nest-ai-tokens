@@ -116,5 +116,73 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       await store.remove(owner)
       expect(await store.findBudgetById(owner)).toBeNull()
     })
+
+    /*
+     * Invariant: one application moves a window once. The same key applied twice, one after the other, moves it once;
+     * the second answer is 'replayed'. A consume and an adjust behave the same.
+     */
+    it('moves a window once for one application, whether consumed or adjusted', async () => {
+      const store = await make()
+      await seedBudget(store, 'once')
+      const consumed = { key: 'consume-key', budgetId: 'once' }
+      expect(await store.consumeWindowOnce(consumed, windowStart, delta(10n, 4, 1), { nanoUsd: 100n })).toBe('applied')
+      expect(await store.consumeWindowOnce(consumed, windowStart, delta(10n, 4, 1), { nanoUsd: 100n })).toBe('replayed')
+      const adjusted = { key: 'adjust-key', budgetId: 'once' }
+      expect(await store.adjustWindowOnce(adjusted, windowStart, delta(5n, 1, 0))).toBe('applied')
+      expect(await store.adjustWindowOnce(adjusted, windowStart, delta(5n, 1, 0))).toBe('replayed')
+      expect(await store.getWindow('once', windowStart)).toEqual({ spentNanoUsd: 15n, spentTokens: 5, spentCount: 1 })
+    })
+
+    /*
+     * Invariant: concurrent attempts with one application move the window once, whichever instance wins: exactly one
+     * 'applied', the others 'replayed', and the window holds one consumption.
+     */
+    it('lets exactly one of many concurrent attempts with one application move the window', async () => {
+      const store = await make()
+      await seedBudget(store, 'race')
+      const outcomes = await Promise.all(
+        Array.from({ length: 8 }, () => store.consumeWindowOnce({ key: 'race-key', budgetId: 'race' }, windowStart, delta(10n), { nanoUsd: 1_000n })),
+      )
+      expect(outcomes.filter((outcome) => outcome === 'applied')).toHaveLength(1)
+      expect(outcomes.filter((outcome) => outcome === 'replayed')).toHaveLength(7)
+      expect(await store.getWindow('race', windowStart)).toEqual({ spentNanoUsd: 10n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /*
+     * Invariant: a refused consume records no application, so the same key can be tried again once there is headroom,
+     * and then moves the window once.
+     */
+    it('records nothing for a refused consume, so the key can be applied later', async () => {
+      const store = await make()
+      await seedBudget(store, 'refused')
+      await store.adjustWindow('refused', windowStart, delta(95n))
+      const application = { key: 'later', budgetId: 'refused' }
+      expect(await store.consumeWindowOnce(application, windowStart, delta(10n), { nanoUsd: 100n })).toBe('refused')
+      expect(await store.unapplyWindow(application)).toBe('absent')
+      await store.adjustWindow('refused', windowStart, delta(-50n))
+      expect(await store.consumeWindowOnce(application, windowStart, delta(10n), { nanoUsd: 100n })).toBe('applied')
+      expect(await store.getWindow('refused', windowStart)).toEqual({ spentNanoUsd: 55n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /*
+     * Invariant: giving an application back subtracts what it moved, from the window it moved, once. A second give-back
+     * is 'already', a stranger is 'absent', and the same key applies again afterwards.
+     */
+    it('gives an application back once, from the window it moved, and lets the key apply again', async () => {
+      const store = await make()
+      await seedBudget(store, 'back')
+      const other = new Date('2026-07-01T00:00:00.000Z')
+      const application = { key: 'back-key', budgetId: 'back' }
+      expect(await store.consumeWindowOnce(application, windowStart, delta(30n, 2, 1), {})).toBe('applied')
+      expect(await store.unapplyWindow({ key: 'nobody', budgetId: 'back' })).toBe('absent')
+      expect(await store.unapplyWindow(application)).toBe('unapplied')
+      expect(await store.unapplyWindow(application)).toBe('already')
+      expect(await store.getWindow('back', windowStart)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
+      expect(await store.getWindow('back', other)).toBeNull()
+      expect(await store.adjustWindowOnce(application, other, delta(7n))).toBe('applied')
+      expect(await store.getWindow('back', other)).toEqual({ spentNanoUsd: 7n, spentTokens: 0, spentCount: 0 })
+      expect(await store.unapplyWindow(application)).toBe('unapplied')
+      expect(await store.getWindow('back', other)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
+    })
   })
 }

@@ -278,6 +278,81 @@ describe('record({ enforce: true }) retries', () => {
     expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
   })
 
+  /*
+   * Invariant: the consumption recorded under a call's key belongs to the stored row, with or without a wallet bound. A
+   * call whose append committed before the error keeps it, and a loser that meets the winner's row does not give
+   * the winner's consumption back.
+   */
+  it('keeps the budget consumption of a committed call when no wallet is bound', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-b1' }) }
+
+    await expect(built.service.record(input)).rejects.toThrow('timed out after commit')
+    const retried = await built.service.record(input)
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /** A row of the same payer that carries another instant is not this attempt's own: a call without a key gives its own wallet debit back. */
+  it('refunds a call without a key when the row found after the error carries another instant', async () => {
+    const clock = (): Date => new Date('2026-06-15T00:00:00.000Z')
+    const built = build({ wallets: true, budgets: true, clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-other' }) })
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, occurredAt: new Date(clock().getTime() + 1) })
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('connection reset')
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.billedCostNanoUsd)
+  })
+
+  /** A row of another payer that carries this attempt's instant is not this attempt's own either. */
+  it('refunds a call without a key when the row found after the error belongs to another payer', async () => {
+    const clock = (): Date => new Date('2026-06-15T00:00:00.000Z')
+    const built = build({ wallets: true, budgets: true, clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-other' }) })
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, scope: { type: 'user', id: 'u2' } })
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('connection reset')
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.billedCostNanoUsd)
+  })
+
+  it('leaves the winner budget consumption alone when the loser meets its row and no wallet is bound', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-b2' }) }
+    const winner = await built.service.record(input)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(built.service.record(input)).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
   it('gives its budget consumption back when the row found after a generic append error belongs to another attempt', async () => {
     const built = build({ wallets: true, budgets: true })
     await seedGpt5(built.pricingStore)

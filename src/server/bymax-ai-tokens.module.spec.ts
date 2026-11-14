@@ -54,6 +54,9 @@ function makeStore(): IAiTokensStore {
     findMatching: noop,
     conditionalConsume: noop,
     adjustWindow: noop,
+    consumeWindowOnce: noop,
+    adjustWindowOnce: noop,
+    unapplyWindow: noop,
     getWindow: noop,
     setWindowStart: noop,
   })
@@ -89,6 +92,9 @@ function makeLiveStore(): IAiTokensStore {
     findMatching: reject,
     conditionalConsume: reject,
     adjustWindow: reject,
+    consumeWindowOnce: reject,
+    adjustWindowOnce: reject,
+    unapplyWindow: reject,
     getWindow: reject,
     setWindowStart: reject,
   }

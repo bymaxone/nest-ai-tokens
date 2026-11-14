@@ -46,6 +46,15 @@ against a server-side clock must use the `now` it is given; an entry's `createdA
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
+**Apply:** run migration `0002_budget_applications.sql` (additive: one new table and one foreign key; an existing
+database needs only this file) before you deploy, or the budget feature fails on its first movement. If you implement
+`IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce` and `unapplyWindow`: each takes an application
+(a key and a budget id), moves the window once per application and answers `'replayed'` when that application already
+moved it, and `unapplyWindow` subtracts what an application moved, from the window it moved, once. The module refuses
+a store that lacks them at boot. The uniqueness of the application, never a read followed by a write, must decide
+which of several concurrent attempts moves the window. A hold that is pending when you upgrade has no application,
+so releasing it subtracts its delta as before.
+
 ### Security
 
 - **High severity: a tenant could delete, rotate, reconcile or overwrite another tenant's budget by its id.** `removeBudget`,
@@ -128,11 +137,19 @@ optional injected clock as its fourth constructor argument; the module keeps the
   remainder. `reconcile` now expires lapsed grants through the same sweep a debit uses, so the entry is written once
   and a later debit finds nothing left to expire; a second `reconcile` writes no second entry.
 
+- **A budget movement was not safe to repeat.** `consume`, `adjust` and `release` moved a window every time they ran,
+  so a keyed call attempted on two instances at once consumed each budget twice when the loser's append returned the
+  stored row, and a retry after a failure part-way through several budgets consumed the earlier ones again. Each
+  movement is now recorded under what caused it (the call's key, or an operation and a record id) and a repeat
+  moves nothing: a hold's reservation, a `record({ enforce: true })` consumption, a capture settlement, a release
+  and a reversal each apply once. A release gives back exactly what its consume recorded, in the window it moved.
+
 ### Changed
 
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
 - The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
+- The `server` bundle grows by 786 bytes brotli (to 44549) with the keyed budget movements; its budget moves from 43810 to 44590.
 
 ## [1.1.14] - 2026-11-13
 

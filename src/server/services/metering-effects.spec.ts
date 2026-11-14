@@ -475,7 +475,7 @@ describe('MeteringEffects.settleCapture', () => {
     await effects.settleCapture(settled, 15_000_000n, 1500, 10_000_000n, 1000)
 
     // The third argument locates the window the hold consumed, whenever the capture lands.
-    expect(adjust).toHaveBeenCalledWith(expect.anything(), { nanoUsd: -5_000_000n, tokens: -500, count: 0 }, settled.occurredAt)
+    expect(adjust).toHaveBeenCalledWith(expect.anything(), { nanoUsd: -5_000_000n, tokens: -500, count: 0 }, settled.occurredAt, 'capture:rec-1')
   })
 })
 
@@ -566,8 +566,8 @@ describe('MeteringEffects.restoreHold', () => {
     const held = record({ billedCostNanoUsd: 10_000_000n, occurredAt: new Date('2026-06-10T23:59:00.000Z') })
     await effects.restoreHold(held)
 
-    // The third argument locates the window the hold consumed, whenever it is released.
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), held.occurredAt)
+    // The third argument locates the window the hold consumed, whenever it is released; the key gives back what the hold's key recorded.
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), held.occurredAt, `reserve:${held.idempotencyKey}`)
     expect(release).toHaveBeenCalledTimes(1)
     expect(refund).toHaveBeenCalledTimes(1)
   })
@@ -632,13 +632,13 @@ describe('MeteringEffects.reverseEffects', () => {
     const { service: wallets } = buildWalletService()
     jest.spyOn(wallets, 'refund').mockRejectedValueOnce(new Error('refund down'))
     const { service: budgets } = buildBudgetService()
-    const release = jest.spyOn(budgets, 'release').mockResolvedValue()
+    const adjust = jest.spyOn(budgets, 'adjust').mockResolvedValue()
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(wallets, budgets)
     await expect(effects.reverseEffects(record(), 'reason')).resolves.toBeUndefined()
-    // Budget release still runs despite wallet failure
-    expect(release).toHaveBeenCalled()
+    // The budget release still runs despite the wallet failure
+    expect(adjust).toHaveBeenCalled()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to refund a wallet debit during reversal'))
     warn.mockRestore()
   })
@@ -650,12 +650,13 @@ describe('MeteringEffects.reverseEffects', () => {
    */
   it('releases the budget in the window of the reversed record', async () => {
     const { service: budgets } = buildBudgetService()
-    const release = jest.spyOn(budgets, 'release')
+    const adjust = jest.spyOn(budgets, 'adjust')
     const reversed = record({ billedCostNanoUsd: 10_000_000n, occurredAt: new Date('2026-06-10T23:59:00.000Z') })
 
     await new MeteringEffects(undefined, budgets).reverseEffects(reversed, 'reason')
 
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), reversed.occurredAt)
+    // The release is a negative adjustment once per reversed record, in the window the record consumed.
+    expect(adjust).toHaveBeenCalledWith(expect.anything(), { nanoUsd: -10_000_000n, tokens: -reversed.totalTokens, count: -1 }, reversed.occurredAt, `reverse:${reversed.id}`)
   })
 
   /**
@@ -665,7 +666,7 @@ describe('MeteringEffects.reverseEffects', () => {
    */
   it('does not throw when the budget release fails during reversal', async () => {
     const { service: budgets } = buildBudgetService()
-    jest.spyOn(budgets, 'release').mockRejectedValueOnce(new Error('release down'))
+    jest.spyOn(budgets, 'adjust').mockRejectedValueOnce(new Error('release down'))
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(undefined, budgets)

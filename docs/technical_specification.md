@@ -1655,6 +1655,15 @@ export interface IBudgetStore {
   /** Signed release/adjust of a window's counters (capture delta, release, reverse). */
   adjustWindow(budgetId: string, windowStart: Date,
     delta: { nanoUsd: bigint; tokens: number; count: number }): Promise<void>
+  /** conditionalConsume once per application (key + budget): 'replayed' when already applied and not given back, 'refused' when a limit stops it (nothing recorded). */
+  consumeWindowOnce(application: { key: string; budgetId: string }, windowStart: Date,
+    delta: { nanoUsd: bigint; tokens: number; count: number },
+    limits: { nanoUsd?: bigint; tokens?: number; count?: number }): Promise<'applied' | 'replayed' | 'refused'>
+  /** adjustWindow once per application; 'replayed' when already applied and not given back. */
+  adjustWindowOnce(application: { key: string; budgetId: string }, windowStart: Date,
+    delta: { nanoUsd: bigint; tokens: number; count: number }): Promise<'applied' | 'replayed'>
+  /** Give an application back: subtract what it moved from the window it moved, once. 'already' if given back before, 'absent' if never recorded. */
+  unapplyWindow(application: { key: string; budgetId: string }): Promise<'unapplied' | 'already' | 'absent'>
   getWindow(budgetId: string, windowStart: Date): Promise<{ spentNanoUsd: bigint; spentTokens: number; spentCount: number } | null>
   setWindowStart(budgetId: string, windowStart: Date): Promise<void>   // rotateWindow support
 }

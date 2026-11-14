@@ -32,6 +32,9 @@ function makeStore(): IAiTokensStore {
     findMatching: fn,
     conditionalConsume: fn,
     adjustWindow: fn,
+    consumeWindowOnce: fn,
+    adjustWindowOnce: fn,
+    unapplyWindow: fn,
     getWindow: fn,
     setWindowStart: fn,
   }
@@ -108,7 +111,7 @@ describe('validateOptions', () => {
     ['ledger', {}, ['append', 'transition', 'findByIdempotencyKey', 'findById', 'findExpiredHolds', 'query', 'sumCost', 'lastHash']],
     ['pricing', {}, ['resolveRate', 'upsertPrice', 'getPriceHistory', 'listModels']],
     ['wallet', { wallets: {} }, ['getWallet', 'appendEntry', 'conditionalDebit', 'openGrants', 'listEntries', 'reconcile']],
-    ['budget', { budgets: {} }, ['upsert', 'remove', 'findBudgetById', 'findMatching', 'conditionalConsume', 'adjustWindow', 'getWindow', 'setWindowStart']],
+    ['budget', { budgets: {} }, ['upsert', 'remove', 'findBudgetById', 'findMatching', 'conditionalConsume', 'adjustWindow', 'consumeWindowOnce', 'adjustWindowOnce', 'unapplyWindow', 'getWindow', 'setWindowStart']],
   ] as const)('requires every %s port method', (_port, feature, methods) => {
     for (const method of methods) {
       const { [method as keyof IAiTokensStore]: _removed, ...store } = makeStore()

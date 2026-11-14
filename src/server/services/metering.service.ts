@@ -283,15 +283,18 @@ export class MeteringService {
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
-    if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit)
+    // The budget movement is recorded under the call's key, so a row of the same shape holds it too: it is given back only when no such row stands.
+    const sharedRow = row !== null && this.effects.sharesBudget(row, appendInput.scope)
+    if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit, !sharedRow)
     if (row === null || !conflict) throw error
     return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
   }
 
   /**
    * Undo what a hold attempt reserved when its pending append threw, deciding from the row the ledger holds for the key:
-   * nothing when the ledger cannot say or the append committed (the row is the same payer's and carries this attempt's instant), the budget
-   * alone when the row shares the wallet debit or a keyed retry will replay it, and both otherwise.
+   * nothing when the ledger cannot say, the append committed (the row is the same payer's and carries this attempt's instant) or the
+   * row shares the reservation (it holds the budget movement and the debit both), the budget alone when a keyed retry will replay
+   * the debit, and both otherwise.
    * @internal
    */
   private async settleFailedHold(
@@ -303,7 +306,7 @@ export class MeteringService {
     if (row === undefined) return
     if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
-    await this.effects.compensateHold(context, delta, ledgerKey, ownDebit)
+    await this.effects.compensateHold(context, delta, ledgerKey, ownDebit, row === null || !this.effects.sharesHoldBudget(row, context.scope))
   }
 
   /**

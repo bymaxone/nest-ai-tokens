@@ -57,7 +57,7 @@ const EXCLUSIONS: readonly Exclusion[] = [
 ]
 
 /** Shipped files that are data, not TypeScript, copied next to the Prisma bundle by `tsup.config.ts`. */
-const SHIPPED_DATA = ['src/prisma/schema.prisma.fragment', 'src/prisma/migrations/0001_init.sql']
+const SHIPPED_DATA = ['src/prisma/schema.prisma.fragment', 'src/prisma/migrations/0001_init.sql', 'src/prisma/migrations/0002_budget_applications.sql']
 
 /** The text of a file under the repository root. */
 function read(path: string): string {

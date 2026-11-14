@@ -7,16 +7,14 @@
  * @layer test
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 import type { WalletRef } from '@bymax-one/nest-ai-tokens/shared'
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { debitEntry, grantEntry } from '../contracts/wallet-store.contract'
 import { startPostgres, type PostgresFixture } from './harness'
+import { shippedMigrationSql } from './migration-files'
 
-const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 const ZONES = ['UTC', 'America/Sao_Paulo', 'Asia/Tokyo'] as const
 
 let pg: PostgresFixture
@@ -34,7 +32,7 @@ afterAll(async () => {
 
 /** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
-  return readFileSync(MIGRATION, 'utf8')
+  return shippedMigrationSql()
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')

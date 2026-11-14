@@ -745,4 +745,3 @@ export function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>)
     ', ',
   )
 }
-

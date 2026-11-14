@@ -38,6 +38,22 @@ export interface BudgetWindowSpend {
   spentCount: number
 }
 
+/**
+ * What caused a movement of a budget window, and the budget it moved. A store keeps one record per application, and
+ * the pair is unique: a second movement under the same application moves nothing.
+ */
+export interface BudgetApplication {
+  /** What caused the movement, deterministic for the cause (a call key, or an operation and a record id). */
+  key: string
+  budgetId: string
+}
+
+/** The verdict of a keyed consume: moved now, already moved by this key, or refused by a limit (nothing moved). */
+export type ApplicationOutcome = 'applied' | 'replayed' | 'refused'
+
+/** The verdict of giving a keyed movement back: given back now, given back before, or no such movement. */
+export type UnapplyOutcome = 'unapplied' | 'already' | 'absent'
+
 /** The budget port. */
 export interface IBudgetStore {
   /**
@@ -70,6 +86,21 @@ export interface IBudgetStore {
   ): Promise<boolean>
   /** Signed release/adjust of a window's counters (capture delta, release, reverse). */
   adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void>
+  /**
+   * {@link conditionalConsume} once per application: `'replayed'` when this application already moved the window and
+   * has not been given back since (nothing moves), `'refused'` when a limit would be exceeded (nothing moves and no
+   * application is recorded). Concurrent attempts with one application move the window once; the uniqueness of the
+   * application, never a read followed by a write, decides which attempt does.
+   */
+  consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome>
+  /** {@link adjustWindow} once per application; `'replayed'` when this application already moved the window and was not given back since. */
+  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'>
+  /**
+   * Give back what an application moved: subtract its delta from the window it moved, and mark it given back so that
+   * the same application can be applied again. `'already'` when it was given back before, `'absent'` when no such
+   * application was ever recorded.
+   */
+  unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome>
   /** A window's current spend, or `null` when it has no row yet. */
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null>
   /** Move a budget's active window start (rotateWindow support). */

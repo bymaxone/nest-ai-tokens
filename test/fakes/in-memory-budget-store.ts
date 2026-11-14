@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Budget, MeteringScope } from '@bymax-one/nest-ai-tokens/shared'
-import type { BudgetDelta, BudgetKey, BudgetLimits, BudgetWindowSpend, IBudgetStore } from '@bymax-one/nest-ai-tokens'
+import type { ApplicationOutcome, BudgetApplication, BudgetDelta, BudgetKey, BudgetLimits, BudgetWindowSpend, IBudgetStore, UnapplyOutcome } from '@bymax-one/nest-ai-tokens'
 import { AiTokensException } from '../../src/server/errors'
 
 /** Construction options for the in-memory budget store. */
@@ -31,6 +31,8 @@ export class InMemoryBudgetStore implements IBudgetStore {
   private readonly budgets = new Map<string, Budget>()
   /** Window spend keyed by `${budgetId}|${windowStartISO}`. */
   private readonly windows = new Map<string, BudgetWindowSpend>()
+  /** What each application moved, keyed by application and budget. */
+  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean }>()
   private readonly now: () => Date
   private readonly unstampedOffsetMs: number
 
@@ -40,6 +42,10 @@ export class InMemoryBudgetStore implements IBudgetStore {
   }
 
   /** Compose the window map key. */
+  private static applicationKey(application: BudgetApplication): string {
+    return JSON.stringify([application.key, application.budgetId])
+  }
+
   private static windowKey(budgetId: string, windowStart: Date): string {
     return `${budgetId}|${windowStart.toISOString()}`
   }
@@ -78,31 +84,40 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve(matched.map((budget) => ({ ...budget })))
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- async only so the atomic body below returns a settled promise; there is no await inside the critical section.
-  async conditionalConsume(
-    budgetId: string,
-    windowStart: Date,
-    delta: BudgetDelta,
-    limits: BudgetLimits,
-  ): Promise<boolean> {
-    // Critical section — synchronous, no await: the fake's model of the atomic §10.8
-    // multi-dimension conditional UPDATE. Every dimension passes or nothing moves.
-    const window = this.ensureWindow(budgetId, windowStart)
-    if (limits.nanoUsd !== undefined && window.spentNanoUsd + delta.nanoUsd > limits.nanoUsd) return false
-    if (limits.tokens !== undefined && window.spentTokens + delta.tokens > limits.tokens) return false
-    if (limits.count !== undefined && window.spentCount + delta.count > limits.count) return false
-    window.spentNanoUsd += delta.nanoUsd
-    window.spentTokens += delta.tokens
-    window.spentCount += delta.count
-    return true
+  conditionalConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<boolean> {
+    return Promise.resolve(this.tryConsume(budgetId, windowStart, delta, limits))
   }
 
   adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void> {
-    const window = this.ensureWindow(budgetId, windowStart)
-    window.spentNanoUsd = max0(window.spentNanoUsd + delta.nanoUsd)
-    window.spentTokens = Math.max(0, window.spentTokens + delta.tokens)
-    window.spentCount = Math.max(0, window.spentCount + delta.count)
+    this.moveWindow(budgetId, windowStart, delta)
     return Promise.resolve()
+  }
+
+  consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
+    // Critical section — synchronous, no await: the application is checked and recorded in one step.
+    const key = InMemoryBudgetStore.applicationKey(application)
+    if (this.applications.get(key)?.active === true) return Promise.resolve('replayed')
+    if (!this.tryConsume(application.budgetId, windowStart, delta, limits)) return Promise.resolve('refused')
+    this.applications.set(key, { windowStart, delta, active: true })
+    return Promise.resolve('applied')
+  }
+
+  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'> {
+    const key = InMemoryBudgetStore.applicationKey(application)
+    if (this.applications.get(key)?.active === true) return Promise.resolve('replayed')
+    this.moveWindow(application.budgetId, windowStart, delta)
+    this.applications.set(key, { windowStart, delta, active: true })
+    return Promise.resolve('applied')
+  }
+
+  unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome> {
+    const key = InMemoryBudgetStore.applicationKey(application)
+    const found = this.applications.get(key)
+    if (found === undefined) return Promise.resolve('absent')
+    if (!found.active) return Promise.resolve('already')
+    this.moveWindow(application.budgetId, found.windowStart, { nanoUsd: -found.delta.nanoUsd, tokens: -found.delta.tokens, count: -found.delta.count })
+    found.active = false
+    return Promise.resolve('unapplied')
   }
 
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
@@ -144,6 +159,26 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Test helper — force a window's spend counters (drift injection for reconcile). */
   forceWindow(budgetId: string, windowStart: Date, spend: BudgetWindowSpend): void {
     this.windows.set(InMemoryBudgetStore.windowKey(budgetId, windowStart), { ...spend })
+  }
+
+  /** The fake's model of the atomic §10.8 multi-dimension conditional UPDATE: every dimension passes or nothing moves. */
+  private tryConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): boolean {
+    const window = this.ensureWindow(budgetId, windowStart)
+    if (limits.nanoUsd !== undefined && window.spentNanoUsd + delta.nanoUsd > limits.nanoUsd) return false
+    if (limits.tokens !== undefined && window.spentTokens + delta.tokens > limits.tokens) return false
+    if (limits.count !== undefined && window.spentCount + delta.count > limits.count) return false
+    window.spentNanoUsd += delta.nanoUsd
+    window.spentTokens += delta.tokens
+    window.spentCount += delta.count
+    return true
+  }
+
+  /** A signed window move, each dimension floored at zero. */
+  private moveWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): void {
+    const window = this.ensureWindow(budgetId, windowStart)
+    window.spentNanoUsd = max0(window.spentNanoUsd + delta.nanoUsd)
+    window.spentTokens = Math.max(0, window.spentTokens + delta.tokens)
+    window.spentCount = Math.max(0, window.spentCount + delta.count)
   }
 
   /** Fetch or create (zeroed) the window row for first-touch consumption. */

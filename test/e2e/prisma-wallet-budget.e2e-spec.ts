@@ -9,8 +9,6 @@
  * @layer test
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
@@ -20,8 +18,8 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { grantEntry, debitEntry, runWalletStoreContract } from '../contracts/wallet-store.contract'
 import { delta, runBudgetStoreContract } from '../contracts/budget-store.contract'
 import { POSTGRES_IMAGE } from './images'
+import { shippedMigrationSql } from './migration-files'
 
-const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
 /**
  * Build a client for a Testcontainers database.
@@ -38,7 +36,7 @@ function clientFor(url: string): PrismaClient {
 
 /** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
-  return readFileSync(MIGRATION, 'utf8')
+  return shippedMigrationSql()
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')

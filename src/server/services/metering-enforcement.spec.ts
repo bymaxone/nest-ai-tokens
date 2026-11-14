@@ -192,8 +192,8 @@ describe('MeteringEffects.enforce', () => {
 
     await expect(effects.enforce(back)).rejects.toThrow()
 
-    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt)
+    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`)
   })
 
   /**
@@ -219,7 +219,7 @@ describe('MeteringEffects.withdraw', () => {
     await effects.withdraw(enforcement, true)
 
     expect(refund).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountNanoUsd: enforcement.billedNanoUsd, idempotencyKey: 'record-rollback:k-1', reason: 'enforcement rollback' }))
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), enforcement.occurredAt)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), enforcement.occurredAt, `record:${enforcement.key}`)
   })
 
   /** When another attempt appended the row, its wallet debit is the one the key replays, so this attempt refunds nothing. */
@@ -317,6 +317,78 @@ describe('MeteringEffects.sharesHoldDebit', () => {
   /** Without the wallet feature no row stands for a wallet debit. */
   it('is false when wallets are disabled', () => {
     expect(new MeteringEffects(undefined, undefined).sharesHoldDebit(record({ enforced: true, status: 'pending' }), PAYER)).toBe(false)
+  })
+})
+
+describe('MeteringEffects.sharesBudget', () => {
+  const PAYER = { type: 'user', id: 'u1' } as const
+
+  /** A row holds the call's budget consumption when it is a recorded, enforced row of the same payer, with or without a wallet. */
+  it.each([
+    { name: 'the same call shape', over: {}, expected: true },
+    { name: 'a reversed record', over: { status: 'reversed' as const }, expected: true },
+    { name: 'a pending hold', over: { status: 'pending' as const }, expected: false },
+    { name: 'a released hold', over: { status: 'released' as const }, expected: false },
+    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
+    { name: 'a system cost', over: { isSystemCost: true }, expected: false },
+    { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
+    { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
+  ])('is $expected for $name, with no wallet bound', ({ over, expected }) => {
+    expect(new MeteringEffects(undefined, undefined).sharesBudget(record({ enforced: true, status: 'posted', ...over }), PAYER)).toBe(expected)
+  })
+})
+
+describe('MeteringEffects.sharesHoldBudget', () => {
+  const PAYER = { type: 'user', id: 'u1' } as const
+
+  /** A hold attempt shares the reservation with a row of the same payer in any status, with or without a wallet. */
+  it.each([
+    { name: 'a pending hold', over: { status: 'pending' as const }, expected: true },
+    { name: 'a released hold', over: { status: 'released' as const }, expected: true },
+    { name: 'a posted row', over: { status: 'posted' as const }, expected: true },
+    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
+    { name: 'a system cost', over: { isSystemCost: true }, expected: false },
+    { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
+    { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
+  ])('is $expected for $name, with no wallet bound', ({ over, expected }) => {
+    expect(new MeteringEffects(undefined, undefined).sharesHoldBudget(record({ enforced: true, status: 'pending', ...over }), PAYER)).toBe(expected)
+  })
+})
+
+describe('MeteringEffects budget give-back that is not this attempt\'s own', () => {
+  /** A withdraw told the budget movement belongs to the stored row leaves the budget alone. */
+  it('does not release the budget when told the movement is the stored row\'s', async () => {
+    const { service: budgets } = buildBudgetService()
+    const release = jest.spyOn(budgets, 'release')
+    const effects = new MeteringEffects(undefined, budgets)
+
+    await effects.withdraw(enforcementFor(effects), false, false)
+
+    expect(release).not.toHaveBeenCalled()
+  })
+
+  /** A hold rollback told the reservation belongs to the stored row leaves the budget alone. */
+  it('does not release a hold reservation when told it is the stored row\'s', async () => {
+    const { service: budgets } = buildBudgetService()
+    const release = jest.spyOn(budgets, 'release')
+    const effects = new MeteringEffects(undefined, budgets)
+
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false, false)
+
+    expect(release).not.toHaveBeenCalled()
+  })
+
+  /** A give-back that is the attempt's own releases under the key the consume recorded. */
+  it('releases under the hold key and the call key', async () => {
+    const { service: budgets } = buildBudgetService()
+    const release = jest.spyOn(budgets, 'release')
+    const effects = new MeteringEffects(undefined, budgets)
+
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false)
+    await effects.withdraw(enforcementFor(effects), false)
+
+    expect(release).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), undefined, 'reserve:k-1')
+    expect(release).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.anything(), 'record:k-1')
   })
 })
 

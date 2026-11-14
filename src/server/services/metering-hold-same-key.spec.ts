@@ -19,6 +19,7 @@ import { MarkupResolver } from './markup.resolver'
 import { MeteringService, type MeteringEventHooks } from './metering.service'
 import { PricingService } from './pricing.service'
 import { WalletService } from './wallet.service'
+import { LedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
 /** A representative metering context; `over` replaces any field. */
 function context(over: Partial<MeteringContext> = {}): MeteringContext {
@@ -249,6 +250,100 @@ describe('hold() with one idempotency key racing itself', () => {
     expect(await balance(built)).toBe(10_000_000_000n - retried.estimatedCostNanoUsd)
     const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
     expect(status!.spent.nanoUsd).toBe(retried.estimatedCostNanoUsd)
+  })
+
+  /** The reservation recorded under a hold's key belongs to the stored row whether or not a wallet is bound. */
+  it('keeps the budget reservation of a committed hold when no wallet is bound', async () => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+    const ctx = context({ idempotencyKey: 'h-b1' })
+
+    await expect(built.service.hold(ctx, ESTIMATE_A)).rejects.toThrow('timed out after commit')
+    const retried = await built.service.hold(ctx, ESTIMATE_A)
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.estimatedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  it('gives back the budget reservation of a keyed hold whose append failed with no row, so a retry reserves again', async () => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    const ctx = context({ idempotencyKey: 'h-b2' })
+
+    await expect(built.service.hold(ctx, ESTIMATE_A)).rejects.toThrow('connection reset')
+    const [after] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(after!.spent.nanoUsd).toBe(0n)
+    const retried = await built.service.hold(ctx, ESTIMATE_A)
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.estimatedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /*
+   * Invariant: what a failed hold appends is judged by the row the ledger holds. A hold without a key whose append
+   * committed keeps its reservation (the reaper reclaims it); a row that is not this attempt's own, found after an error
+   * that is not the key conflict, or after the conflict itself, leaves the attempt's own reservation to be given back.
+   */
+  const FIXED = new Date('2026-06-15T00:00:00.000Z')
+
+  it('keeps the wallet and budget reservation of a hold without a key whose append committed before the error', async () => {
+    const built = build({ wallets: true, budgets: true, clock: () => FIXED })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+
+    await expect(built.service.hold(context(), ESTIMATE_A)).rejects.toThrow('timed out after commit')
+
+    expect(await balance(built)).toBeLessThan(10_000_000_000n)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.count).toBe(1)
+  })
+
+  it('refunds a hold without a key when the row found after the error carries another instant', async () => {
+    const built = build({ wallets: true, budgets: true, clock: () => FIXED })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.hold(context({ idempotencyKey: 'h-other' }), ESTIMATE_A)
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, occurredAt: new Date(FIXED.getTime() + 1) })
+
+    await expect(built.service.hold(context(), ESTIMATE_A)).rejects.toThrow('connection reset')
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.estimatedCostNanoUsd)
+  })
+
+  it('gives a hold back when the append lost the key conflict to a row that is not the same shape', async () => {
+    const built = build({ wallets: true, budgets: true, clock: () => FIXED })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.hold(context({ idempotencyKey: 'h-other' }), ESTIMATE_A)
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new LedgerIdempotencyConflict('tenant-1', 'whatever'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, enforced: false })
+
+    await expect(built.service.hold(context(), ESTIMATE_A)).rejects.toThrow()
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.estimatedCostNanoUsd)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(other.estimatedCostNanoUsd)
   })
 
   it('moves nothing and rethrows when the ledger cannot say whether the row was written', async () => {

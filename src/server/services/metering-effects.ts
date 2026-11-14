@@ -34,6 +34,16 @@ interface WalletLeg {
 }
 
 /** Build a budget delta from an effect delta. */
+/** The application key of a hold's budget reservation: one per hold key, so every attempt at the hold shares it. */
+function reserveKey(ledgerKey: string): string {
+  return `reserve:${ledgerKey}`
+}
+
+/** The application key of a `record({ enforce: true })` call's budget consumption: one per call key. */
+function recordKey(callKey: string): string {
+  return `record:${callKey}`
+}
+
 function budgetDelta(delta: EffectDelta): BudgetDelta {
   return { nanoUsd: delta.billedNanoUsd, tokens: delta.tokens, count: delta.count }
 }
@@ -99,29 +109,30 @@ export class MeteringEffects {
    * @throws {AiTokensException} The dimension's budget/quota/credits error on a shortfall (prior steps compensated).
    */
   async reserveHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string): Promise<void> {
-    if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta))
+    if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta), undefined, reserveKey(ledgerKey))
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract; signed=false/true are equivalent for non-negative amounts
     const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
     if (leg === null) return
     try {
       await leg.wallets.debit(leg.ref, { amountNanoUsd: delta.billedNanoUsd, idempotencyKey: `hold:${ledgerKey}`, reason: 'auth-hold reservation' })
     } catch (error) {
-      if (this.budgets !== undefined) await this.budgets.release(context, budgetDelta(delta))
+      if (this.budgets !== undefined) await this.budgets.release(context, budgetDelta(delta), undefined, reserveKey(ledgerKey))
       throw error
     }
   }
 
   /**
-   * Compensate a hold whose pending ledger insert failed: release the budget consumption and, when `refundWallet`
-   * is set, refund the wallet debit. A keyed hold whose retry replays its debit leaves `refundWallet` unset.
+   * Compensate a hold whose pending ledger insert failed: give back the budget movement recorded under the hold's key
+   * when `releaseBudget` is set and, when `refundWallet` is set, refund the wallet debit. A keyed hold whose retry replays its debit leaves `refundWallet` unset.
    * Best-effort — failures are logged so the original insert error surfaces unmasked.
    *
    * @param context The metering context.
    * @param delta The reservation to unwind.
    * @param ledgerKey The stable key deriving the wallet rollback idempotency key.
    * @param refundWallet Whether the wallet debit is this attempt's own to refund.
+   * @param releaseBudget Whether the budget movement recorded under the hold's key is this attempt's own to give back.
    */
-  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, refundWallet = true): Promise<void> {
+  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, refundWallet = true, releaseBudget = true): Promise<void> {
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = refundWallet ? this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false) : null
     if (leg !== null) {
@@ -132,9 +143,9 @@ export class MeteringEffects {
         this.logger.warn('failed to refund a hold debit during rollback')
       }
     }
-    if (this.budgets === undefined) return
+    if (this.budgets === undefined || !releaseBudget) return
     try {
-      await this.budgets.release(context, budgetDelta(delta))
+      await this.budgets.release(context, budgetDelta(delta), undefined, reserveKey(ledgerKey))
     } catch {
       // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget reservation during rollback')
@@ -153,7 +164,19 @@ export class MeteringEffects {
    */
   sharesHoldDebit(row: UsageRecord, scope: MeteringScope): boolean {
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    return this.sharesHoldBudget(row, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+  }
+
+  /**
+   * Whether the ledger row found for a hold's key holds the budget reservation this hold attempt recorded under the
+   * same key: an enforced row of the same payer that is not a system cost, in any status. Unlike
+   * {@link sharesHoldDebit} it does not ask for a wallet, since the reservation is recorded whether or not one is bound.
+   *
+   * @param row The record stored under the key.
+   * @param scope The payer of the attempt that is asking.
+   */
+  sharesHoldBudget(row: UsageRecord, scope: MeteringScope): boolean {
+    return row.enforced && !row.isSystemCost && sameScope(row.scope, scope)
   }
 
   /**
@@ -173,6 +196,7 @@ export class MeteringEffects {
         contextOf(record),
         { nanoUsd: actualBilledNanoUsd - reservedBilledNanoUsd, tokens: actualTokens - reservedTokens, count: 0 },
         record.occurredAt,
+        `capture:${record.id}`,
       )
     }
     const walletDelta = reservedBilledNanoUsd - actualBilledNanoUsd
@@ -190,7 +214,7 @@ export class MeteringEffects {
   async restoreHold(record: UsageRecord): Promise<void> {
     if (record.isSystemCost) return
     if (this.budgets !== undefined) {
-      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt)
+      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt, reserveKey(record.idempotencyKey))
     }
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
@@ -218,7 +242,7 @@ export class MeteringEffects {
     }
     if (this.budgets === undefined) return
     try {
-      await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt)
+      await this.budgets.adjust(contextOf(record), { nanoUsd: -record.billedCostNanoUsd, tokens: -record.totalTokens, count: -1 }, record.occurredAt, `reverse:${record.id}`)
     } catch {
       // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget consumption during reversal')
@@ -250,9 +274,21 @@ export class MeteringEffects {
    * @param scope The payer of the attempt that is asking.
    */
   sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
-    const record = row.status === 'posted' || row.status === 'reversed'
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    return this.sharesBudget(row, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+  }
+
+  /**
+   * Whether the ledger row found for a key holds the budget consumption this `record()` attempt recorded under the
+   * same key: a posted or reversed row, enforced, not a system cost, of the same payer. It does not ask for a wallet,
+   * since the consumption is recorded whether or not one is bound.
+   *
+   * @param row The record stored under the key.
+   * @param scope The payer of the attempt that is asking.
+   */
+  sharesBudget(row: UsageRecord, scope: MeteringScope): boolean {
+    const record = row.status === 'posted' || row.status === 'reversed'
+    return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope)
   }
 
   /**
@@ -267,28 +303,29 @@ export class MeteringEffects {
   async enforce(enforcement: Enforcement): Promise<void> {
     const delta = enforcementDelta(enforcement)
     const context = enforcementContext(enforcement)
-    if (this.budgets !== undefined) await this.budgets.consume(context, delta, enforcement.occurredAt)
+    if (this.budgets !== undefined) await this.budgets.consume(context, delta, enforcement.occurredAt, recordKey(enforcement.key))
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(enforcement.tenantId, enforcement.scope, enforcement.billedNanoUsd, false)
     if (leg === null) return
     try {
       await leg.wallets.debit(leg.ref, { amountNanoUsd: enforcement.billedNanoUsd, idempotencyKey: `record:${enforcement.key}`, reason: 'post-hoc enforcement' })
     } catch (error) {
-      if (this.budgets !== undefined) await this.budgets.release(context, delta, enforcement.occurredAt)
+      if (this.budgets !== undefined) await this.budgets.release(context, delta, enforcement.occurredAt, recordKey(enforcement.key))
       throw error
     }
   }
 
   /**
-   * Undo {@link enforce} for a call whose ledger row was not appended. The budget consumption is always released;
-   * the wallet debit is refunded only when `refundWallet` is set, which a caller leaves unset when another attempt
+   * Undo {@link enforce} for a call whose ledger row was not appended. The budget movement recorded under the call's key is
+   * given back unless `releaseBudget` is unset; the wallet debit is refunded only when `refundWallet` is set, which a caller leaves unset when another attempt
    * with the same key appended its row, because that attempt's debit is the one the debit key replays.
    * Best-effort: a failure is logged so the original error surfaces unmasked.
    *
    * @param enforcement The movement {@link enforce} made.
    * @param refundWallet Whether to refund the wallet debit as well.
+   * @param releaseBudget Whether the budget movement recorded under the call's key is this attempt's own to give back.
    */
-  async withdraw(enforcement: Enforcement, refundWallet: boolean): Promise<void> {
+  async withdraw(enforcement: Enforcement, refundWallet: boolean, releaseBudget = true): Promise<void> {
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = refundWallet ? this.legFor(enforcement.tenantId, enforcement.scope, enforcement.billedNanoUsd, false) : null
     if (leg !== null) {
@@ -298,9 +335,9 @@ export class MeteringEffects {
         this.logger.warn('failed to refund a wallet debit while withdrawing')
       }
     }
-    if (this.budgets === undefined) return
+    if (this.budgets === undefined || !releaseBudget) return
     try {
-      await this.budgets.release(enforcementContext(enforcement), enforcementDelta(enforcement), enforcement.occurredAt)
+      await this.budgets.release(enforcementContext(enforcement), enforcementDelta(enforcement), enforcement.occurredAt, recordKey(enforcement.key))
     } catch {
       this.logger.warn('failed to release a budget consumption while withdrawing')
     }
