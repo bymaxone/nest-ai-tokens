@@ -123,8 +123,9 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await -- async so a conflict throw surfaces as a rejected promise; the reserve critical section below stays synchronous (atomic).
-  async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint): Promise<WalletEntry | null> {
+  async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, overdraftNanoUsd: bigint, now?: Date): Promise<WalletEntry | null> {
     assertCallerKey(entry.idempotencyKey)
+    const at = now ?? this.now()
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return null
     const replay = this.replayOrConflict(ref, wallet, entry)
@@ -132,20 +133,20 @@ export class InMemoryWalletStore implements IWalletStore {
     // Critical section — synchronous, no await: the fake's model of the atomic §9.4
     // conditional UPDATE. Due grants are credited and expired grants swept first so the
     // materialized column reflects only spendable credit before the reserve is checked.
-    this.activateDueGrants(wallet)
-    this.sweepExpiredGrants(wallet)
+    this.activateDueGrants(wallet, at)
+    this.sweepExpiredGrants(wallet, at)
     // `entry.amountNanoUsd` is negative for a debit, so the reserve adds it: this is
     // the fake's model of `balance - cost >= -overdraft` from the §9.4 conditional UPDATE.
-    if (wallet.balanceNanoUsd + entry.amountNanoUsd < -overdraftNanoUsd) return null
+    if (wallet.balanceNanoUsd - this.pendingGrants(wallet, at) + entry.amountNanoUsd < -overdraftNanoUsd) return null
     const debit = this.insert(wallet, entry, [])
-    this.allocateDebit(wallet, debit)
+    this.allocateDebit(wallet, debit, at)
     return debit
   }
 
-  openGrants(ref: WalletRef, order: BurnOrder): Promise<OpenGrant[]> {
+  openGrants(ref: WalletRef, order: BurnOrder, now?: Date): Promise<OpenGrant[]> {
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return Promise.resolve([])
-    return Promise.resolve(this.spendableGrants(wallet, order))
+    return Promise.resolve(this.spendableGrants(wallet, order, now ?? this.now()))
   }
 
   listEntries(ref: WalletRef, filter: WalletEntryFilter = {}): Promise<WalletEntryPage> {
@@ -157,11 +158,12 @@ export class InMemoryWalletStore implements IWalletStore {
     return Promise.resolve({ entries: matched.slice(offset, end), total: matched.length })
   }
 
-  reconcile(ref: WalletRef): Promise<Wallet> {
+  reconcile(ref: WalletRef, now?: Date): Promise<Wallet> {
+    const at = now ?? this.now()
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return Promise.reject(new WalletMissingError())
-    this.activateDueGrants(wallet)
-    wallet.balanceNanoUsd = this.spendableBalance(wallet)
+    this.activateDueGrants(wallet, at)
+    wallet.balanceNanoUsd = this.spendableBalance(wallet, at)
     wallet.updatedAt = this.now()
     return Promise.resolve(wallet)
   }
@@ -261,8 +263,7 @@ export class InMemoryWalletStore implements IWalletStore {
    * balance to the signed sum of the entries rather than incrementing it, so a balance that already
    * counts a grant (as an earlier reconcile left it) is not credited a second time.
    */
-  private activateDueGrants(wallet: Wallet): void {
-    const now = this.now()
+  private activateDueGrants(wallet: Wallet, now: Date): void {
     let activated = false
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant' || this.isCredited(wallet, grant)) continue
@@ -282,8 +283,7 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /** Write an `expiry` entry (with its allocation) for every expired grant with a remainder. */
-  private sweepExpiredGrants(wallet: Wallet): void {
-    const now = this.now()
+  private sweepExpiredGrants(wallet: Wallet, now: Date): void {
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant') continue
       if (grant.expiresAt === undefined || grant.expiresAt > now) continue
@@ -306,11 +306,22 @@ export class InMemoryWalletStore implements IWalletStore {
     }
   }
 
+  /** The unspent remainder of credited grants that are not effective yet at `now`: counted by the balance, not spendable. */
+  private pendingGrants(wallet: Wallet, now: Date): bigint {
+    let total = 0n
+    for (const grant of this.entries.get(wallet.id) ?? []) {
+      if (grant.type !== 'grant' || !this.isCredited(wallet, grant)) continue
+      if (grant.effectiveAt <= now || (grant.expiresAt !== undefined && grant.expiresAt <= now)) continue
+      total += grant.amountNanoUsd - this.allocatedOf(grant.id)
+    }
+    return total
+  }
+
   /** Greedily allocate a debit across the spendable grants in burn order. */
-  private allocateDebit(wallet: Wallet, debit: WalletEntry): void {
+  private allocateDebit(wallet: Wallet, debit: WalletEntry, now: Date): void {
     let remaining = -debit.amountNanoUsd
     const trail: WalletAllocation[] = []
-    for (const grant of this.spendableGrants(wallet, this.burnOrder)) {
+    for (const grant of this.spendableGrants(wallet, this.burnOrder, now)) {
       if (remaining <= 0n) break
       const take = grant.remainingNanoUsd < remaining ? grant.remainingNanoUsd : remaining
       trail.push({ debitEntryId: debit.id, grantEntryId: grant.id, amountNanoUsd: take })
@@ -320,8 +331,7 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /** Grants that are effective now, not expired, and still have a remainder, in burn order. */
-  private spendableGrants(wallet: Wallet, order: BurnOrder): OpenGrant[] {
-    const now = this.now()
+  private spendableGrants(wallet: Wallet, order: BurnOrder, now: Date): OpenGrant[] {
     const open = (this.entries.get(wallet.id) ?? [])
       .filter(
         (entry) =>
@@ -365,8 +375,7 @@ export class InMemoryWalletStore implements IWalletStore {
    * that is not credited counts for nothing. `reconcile` writes this back to the materialized column,
    * healing any drift.
    */
-  private spendableBalance(wallet: Wallet): bigint {
-    const now = this.now()
+  private spendableBalance(wallet: Wallet, now: Date): bigint {
     let total = this.signedBalance(wallet)
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant' || !this.isCredited(wallet, grant)) continue

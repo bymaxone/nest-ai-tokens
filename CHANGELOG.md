@@ -40,6 +40,12 @@ callers whose usage is typed; a caller whose usage is `any`, or plain JavaScript
 { tenantId, scope } (since 1.1.15)" (or the `release` form), before anything is read. The interceptor and `meter()`
 already hold the context and are unchanged for you.
 
+**Apply:** if you implement `IWalletStore` yourself, `conditionalDebit`, `openGrants` and `reconcile` now
+take an optional trailing `now` (a `Date`), which `WalletService` passes when it calls them. A store that compares grants
+against a server-side clock must use the `now` it is given; an entry's `createdAt` stays the store's own clock, which orders the entries; a store that
+ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
+optional injected clock as its fourth constructor argument; the module keeps the wall clock.
+
 ### Security
 
 - **High severity: a tenant could delete, rotate, reconcile or overwrite another tenant's budget by its id.** `removeBudget`,
@@ -106,10 +112,21 @@ already hold the context and are unchanged for you.
   the store writes it as given (`IBudgetStore.upsert` accepts an optional `createdAt`, kept when the budget already
   exists); a store that does not take it falls back to its own clock, as before.
 
+- **A wallet grant was judged on the database's clock while the application stamped its dates.** Grants were spendable
+  from `effectiveAt` until `expiresAt` as the database server read them, so a database clock behind the application's
+  kept a grant that had expired by the application's clock spendable (free usage), and a clock ahead of it expired one
+  early. The SQL store now judges grants on the `now` the service passes, so the dates and the comparison share the application's clock;
+  the entry's `createdAt`, which orders the entries and is the `'fifo'` burn order and breaks ties in the others, stays on the database clock. A grant that the database clock already read as expired when it was written, but the application's clock reads as live, is now credited at the next debit
+  or `reconcile`; it used to stay uncredited. A grant the store credited when it was written, because its own clock was ahead, but that is not effective yet by
+  the application's clock, no longer funds a debit; before, such a debit was allowed and left no allocation, so the
+  grant's expiry charged that amount a second time. Skew between the
+  application and database clocks no longer moves a grant; keep NTP running on the application hosts.
+
 ### Changed
 
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
+- The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
 
 ## [1.1.14] - 2026-11-13
 

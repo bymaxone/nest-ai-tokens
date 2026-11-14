@@ -106,11 +106,13 @@ export class WalletService {
    * @param store The wallet persistence port.
    * @param options The resolved wallet settings (credit rate, overdraft).
    * @param events The event hooks; the module wires them to the dispatcher.
+   * @param now The injected clock; every grant's effective and expiry instant is judged on it, by the store too.
    */
   constructor(
     private readonly store: IWalletStore,
     private readonly options: WalletServiceOptions,
     private readonly events: WalletEventHooks = NOOP_WALLET_HOOKS,
+    private readonly now: () => Date = (): Date => new Date(),
   ) {}
 
   /**
@@ -141,13 +143,14 @@ export class WalletService {
    */
   async grant(ref: WalletRef, input: GrantInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (input.amountNanoUsd <= 0n) throw this.invalid('grant amount must be greater than 0')
     const entry = await this.append(ref, {
       type: 'grant',
       amountNanoUsd: input.amountNanoUsd,
       priority: input.priority ?? 0,
-      effectiveAt: input.effectiveAt ?? new Date(),
+      effectiveAt: input.effectiveAt ?? now,
       // Stryker disable next-line ConditionalExpression: CE true: spreading { expiresAt: undefined } is equivalent to {} because InMemoryWalletStore and consumers check expiresAt !== undefined
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       idempotencyKey: input.idempotencyKey,
@@ -185,6 +188,7 @@ export class WalletService {
    */
   async debit(ref: WalletRef, input: DebitInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (input.amountNanoUsd <= 0n) throw this.invalid('debit amount must be greater than 0')
     if (input.usageRecordId === undefined && input.reason === undefined) {
@@ -197,14 +201,14 @@ export class WalletService {
       type: 'debit',
       amountNanoUsd: -input.amountNanoUsd,
       priority: 0,
-      effectiveAt: new Date(),
+      effectiveAt: now,
       // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
       // Stryker disable next-line ConditionalExpression: CE true: spreading { reason: undefined } is equivalent to {} because store and consumers check reason !== undefined
       ...(input.reason !== undefined ? { reason: input.reason } : {}),
     }
-    const debited = await this.conditionalDebit(ref, entry, input.amountNanoUsd)
+    const debited = await this.conditionalDebit(ref, entry, input.amountNanoUsd, now)
     const balance = await this.store.getWallet(ref)
     if (balance !== null && balance.balanceNanoUsd <= 0n) {
       await this.events.depleted(ref, { walletId: debited.walletId, balanceNanoUsd: balance.balanceNanoUsd })
@@ -223,13 +227,14 @@ export class WalletService {
    */
   async refund(ref: WalletRef, input: RefundInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (input.amountNanoUsd <= 0n) throw this.invalid('refund amount must be greater than 0')
     return this.append(ref, {
       type: 'refund',
       amountNanoUsd: input.amountNanoUsd,
       priority: 0,
-      effectiveAt: new Date(),
+      effectiveAt: now,
       // Stryker disable next-line ConditionalExpression,ObjectLiteral: CE true / OL {}: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
@@ -249,13 +254,14 @@ export class WalletService {
    */
   async adjust(ref: WalletRef, input: AdjustInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (input.amountNanoUsd === 0n) throw this.invalid('adjustment amount must not be 0')
     const entry = await this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
       priority: 0,
-      effectiveAt: new Date(),
+      effectiveAt: now,
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
     })
@@ -285,13 +291,14 @@ export class WalletService {
    */
   async settleAdjustment(ref: WalletRef, input: SettleAdjustmentInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (input.amountNanoUsd === 0n) throw this.invalid('settlement adjustment amount must not be 0')
     return this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
       priority: 0,
-      effectiveAt: new Date(),
+      effectiveAt: now,
       // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
@@ -325,7 +332,7 @@ export class WalletService {
    */
   async reconcile(ref: WalletRef): Promise<WalletBalance> {
     this.assertOwner(ref)
-    const wallet = await this.store.reconcile(ref)
+    const wallet = await this.store.reconcile(ref, this.now())
     // Stryker disable next-line ObjectLiteral,StringLiteral: audit event name and payload are internal observability; tests check the reconciled balance, not event shape
     await this.events.audit('ai_tokens.wallet.reconciled', {
       tenantId: ref.tenantId,
@@ -346,10 +353,10 @@ export class WalletService {
   }
 
   /** Run the atomic conditional debit, mapping `null` to insufficient credits (§9.4). */
-  private async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, requested: bigint): Promise<WalletEntry> {
+  private async conditionalDebit(ref: WalletRef, entry: NewWalletEntry, requested: bigint, now: Date): Promise<WalletEntry> {
     let result: WalletEntry | null
     try {
-      result = await this.store.conditionalDebit(ref, entry, this.options.overdraftNanoUsd)
+      result = await this.store.conditionalDebit(ref, entry, this.options.overdraftNanoUsd, now)
     } catch (error) {
       throw this.mapStoreError(error, ref, entry.idempotencyKey)
     }
