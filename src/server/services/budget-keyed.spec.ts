@@ -232,6 +232,16 @@ describe('BudgetService.release and adjust under a key', () => {
     expect(counter.values.get(costKey(budget.id))).toBe(50n)
   })
 
+  /** Two legacy holds are released under keys of their own: the receipt of one never stands in for the other. */
+  it('subtracts the legacy release of each hold, whatever the other held', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(100n, 10, 2))
+    await service.release(context(), delta(30n, 3, 1), undefined, 'reserve:hold-a', 'row')
+    await service.release(context(), delta(30n, 3, 1), undefined, 'reserve:hold-b', 'row')
+    expect(await store.getWindow(budget.id, MONTH)).toEqual({ spentNanoUsd: 40n, spentTokens: 4, spentCount: 0 })
+  })
+
   /** The key can be consumed again after it was given back, which is what a retry after a withdrawn attempt needs. */
   it('lets the key be consumed again after it was given back', async () => {
     const { service, store } = makeService()

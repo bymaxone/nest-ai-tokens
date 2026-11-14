@@ -175,6 +175,7 @@ describe('migration 0003', () => {
       `SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'ai_usage_effects_owed' ORDER BY column_name`)
     expect(columns).toEqual([
       { column_name: 'owedAt', is_nullable: 'NO' },
+      { column_name: 'reason', is_nullable: 'YES' },
       { column_name: 'recordId', is_nullable: 'NO' },
       { column_name: 'reservedBilledNanoUsd', is_nullable: 'YES' },
       { column_name: 'reservedTokens', is_nullable: 'YES' },
