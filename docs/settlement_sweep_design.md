@@ -6,7 +6,7 @@ This is PR 2 of the series. PR 1 made every budget movement safe to repeat, whic
 
 ## Scope: two pull requests (ruled)
 
-The order ruled for the series was: marker and sweep, then counter repair, then the orphan-debit sweep. The orphan give-back and the refund-then-retry-exactly-once tests are the orphan-debit sweep of the first note (item 5). Ruled: **two pull requests, in this order**:
+The order ruled for the series was: marker and sweep, then counter repair, then the orphan-debit sweep. The orphan give-back and the refund-then-retry-exactly-once tests are the orphan-debit sweep of the first note (item 4). Ruled: **two pull requests, in this order**:
 
 - **2a** (this note, sections 1 to 5): the marker, the owed-effects sweep, the reference sweep (conditions B and C), pruning.
 - **2b** (section 6): the orphan debit give-back and the exactly-once refund tests.
@@ -51,7 +51,7 @@ The hold reaper's sweep gains a second query next to the expired-hold scan: rows
 - **Claim: no lock is held.** The sweep selects owed rows **without a row lock**. Several replicas, or one replica's two overlapping ticks, may run one row: every leg is idempotent by key (the wallet entry keys, the budget application keys), so a duplicate run moves nothing and clearing the marker is idempotent. `FOR UPDATE SKIP LOCKED` is rejected because the wallet and budget calls go through other ports, possibly other connections, and a lock held across them is a long transaction and a lock wait. A test runs two sweepers at once over the same owed rows and asserts the wallet, the window and the references against a run with one sweeper.
 - **Tenant.** Every effect the sweep runs carries the row's own `tenantId` (the context is built from the row, never from the sweeper). A red test with two tenants asserts that sweeping one tenant's owed row never moves the other tenant's wallet, budget or references.
 - **Failure.** A row whose effects fail again keeps its marker; the next tick retries. The log does not flood: the sweep logs **one summary per tick** under a stable key with the count of failed rows and the first record id, never amounts text, and a tick with no failure logs nothing. No retry counter and no dead-letter table in this PR: a persistent failure is an operator signal, and adding state for it is a separate decision.
-- **Events.** The sweep re-emits the event and the span the transition owes (`usageRecorded`, `holdReleased`, `usageReversed`), at least once; consumers are already told to be idempotent on the record id. An ordinary `record()` carries no marker, so the events of a committed-then-error append stay a documented limit (settlement note, item 7).
+- **Events.** The sweep re-emits the event and the span the transition owes (`usageRecorded`, `holdReleased`, `usageReversed`), at least once; consumers are already told to be idempotent on the record id. An ordinary `record()` carries no marker, so the events of a committed-then-error append stay a documented limit (settlement note, item 6).
 
 ## 3. The budget-reference sweep (conditions B and C)
 
