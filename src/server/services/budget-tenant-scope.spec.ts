@@ -3,9 +3,10 @@
  * unknown id does, with the same result and the same message, and A's budget is left as it was.
  * @layer test
  */
-import type { Budget } from '../../shared'
+import type { AiTokensErrorResponse, Budget } from '../../shared'
+import type { AiTokensException } from '../errors'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
-import { NOW, TENANT, budgetInput, codeOf, context, makeService } from '../../../test/fakes/budget-fixtures'
+import { NOW, TENANT, budgetInput, context, makeService } from '../../../test/fakes/budget-fixtures'
 import { BudgetService } from './budget.service'
 import { LedgerService } from './ledger.service'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
@@ -14,13 +15,14 @@ import type { BudgetKey, IBudgetStore } from '../interfaces'
 const OTHER = 'tenant-b'
 const WINDOW = new Date('2026-06-01T00:00:00.000Z')
 
-/** The message of the rejection of a promise, or `undefined` when it resolved. */
-async function rejection(promise: Promise<unknown>): Promise<{ code: string; message: string } | undefined> {
+/** The code, message and reason of the rejection of a promise (the body a client receives), or `undefined` when it resolved. */
+async function rejection(promise: Promise<unknown>): Promise<{ code: string; message: string; reason: string } | undefined> {
   try {
     await promise
     return undefined
   } catch (error) {
-    return { code: codeOf(error), message: (error as Error).message }
+    const body = (error as AiTokensException).getResponse() as AiTokensErrorResponse
+    return { code: body.error.code, message: body.error.message, reason: String((body.error.details as { reason?: string } | undefined)?.reason) }
   }
 }
 
@@ -63,7 +65,8 @@ describe('BudgetService admin paths are tenant-scoped', () => {
     const unknown = await rejection(service.rotateWindow('does-not-exist', OTHER, new Date('2026-06-20T00:00:00.000Z')))
 
     expect(foreign?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(foreign?.message.replace(a.id, 'ID')).toBe(unknown?.message.replace('does-not-exist', 'ID'))
+    expect(foreign?.message).toBe(unknown?.message)
+    expect(foreign?.reason.replace(a.id, 'ID')).toBe(unknown?.reason.replace('does-not-exist', 'ID'))
     expect(await store.findBudgetById({ tenantId: TENANT, id: a.id })).toEqual(before)
   })
 
@@ -76,7 +79,8 @@ describe('BudgetService admin paths are tenant-scoped', () => {
     const unknown = await rejection(service.reconcileWindow('does-not-exist', OTHER, WINDOW))
 
     expect(foreign?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(foreign?.message.replace(a.id, 'ID')).toBe(unknown?.message.replace('does-not-exist', 'ID'))
+    expect(foreign?.message).toBe(unknown?.message)
+    expect(foreign?.reason.replace(a.id, 'ID')).toBe(unknown?.reason.replace('does-not-exist', 'ID'))
     expect(await store.getWindow(a.id, WINDOW)).toEqual({ spentNanoUsd: 7n, spentTokens: 7, spentCount: 7 })
   })
 
@@ -88,7 +92,7 @@ describe('BudgetService admin paths are tenant-scoped', () => {
     const refused = await rejection(service.upsertBudget({ ...budgetInput(), tenantId: OTHER, id: a.id, limitNanoUsd: 1n }))
 
     expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(refused?.message).not.toContain(TENANT)
+    expect(JSON.stringify(refused)).not.toContain(TENANT)
     expect(await store.findBudgetById({ tenantId: TENANT, id: a.id })).toEqual(before)
   })
 
@@ -166,7 +170,7 @@ describe('BudgetService does not trust a store that ignores the tenant', () => {
     const refused = await rejection(service.upsertBudget({ ...budgetInput(), tenantId: OTHER, id: budget.id, limitNanoUsd: 1n }))
 
     expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(refused?.message).not.toContain(TENANT)
+    expect(JSON.stringify(refused)).not.toContain(TENANT)
     expect(await inner.findBudgetById({ tenantId: TENANT, id: budget.id })).toEqual(before)
   })
 

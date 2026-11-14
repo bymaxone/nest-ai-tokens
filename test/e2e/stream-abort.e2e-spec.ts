@@ -37,7 +37,7 @@ describe('E2E — stream abort (§5.6)', () => {
     collector.push({ choices: [{ delta: { content: 'the quick brown' } }] })
     collector.push({ choices: [{ delta: { content: ' fox jumps' } }] })
     // no final usage chunk — the stream aborted
-    const record = await app.metering.capture(hold, collector)
+    const record = await app.metering.capture(hold, e2eContext(), collector)
     expect(record.status).toBe('posted')
     expect(record.outputTokens).toBe(5) // tokenizer word count
     expect(record.inputTokens).toBe(1_200) // hold.estimatedTokens (800 + 400) — the §5.6 input fallback

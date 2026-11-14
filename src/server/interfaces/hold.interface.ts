@@ -28,6 +28,16 @@ export interface Hold {
   expiresAt: Date
 }
 
+/**
+ * The caller of `capture()` and `release()`: the tenant and the payer scope the host resolved from its verified auth
+ * context. A {@link MeteringContext} satisfies it. The stored hold must belong to this caller; the tenant and scope
+ * the {@link Hold} object carries are never trusted.
+ */
+export interface HoldCaller {
+  tenantId: string
+  scope: MeteringScope
+}
+
 /** The three ways to size a hold, as a discriminated union. */
 export type HoldEstimate =
   | {

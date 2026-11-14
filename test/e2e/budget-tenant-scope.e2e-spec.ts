@@ -26,12 +26,13 @@ afterAll(async () => {
 })
 
 /** The code and message a rejection carries, or `undefined` when the promise resolved. */
-async function answer(promise: Promise<unknown>): Promise<{ code: string; message: string } | undefined> {
+async function answer(promise: Promise<unknown>): Promise<{ code: string; message: string; reason: string } | undefined> {
   try {
     await promise
     return undefined
   } catch (error) {
-    return { code: ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code, message: (error as Error).message }
+    const body = ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error
+    return { code: body.code, message: body.message, reason: String((body.details as { reason?: string } | undefined)?.reason) }
   }
 }
 
@@ -61,10 +62,10 @@ describe('budget admin paths are tenant-scoped on PostgreSQL', () => {
     expect(removed).toBeUndefined()
     expect(removedUnknown).toBeUndefined()
     expect(rotated?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(rotated?.message.replace(a.id, 'ID')).toBe(rotatedUnknown?.message.replace('00000000-0000-0000-0000-000000000000', 'ID'))
-    expect(reconciled?.message.replace(a.id, 'ID')).toBe(reconciledUnknown?.message.replace('00000000-0000-0000-0000-000000000000', 'ID'))
+    expect(rotated?.reason.replace(a.id, 'ID')).toBe(rotatedUnknown?.reason.replace('00000000-0000-0000-0000-000000000000', 'ID'))
+    expect(reconciled?.reason.replace(a.id, 'ID')).toBe(reconciledUnknown?.reason.replace('00000000-0000-0000-0000-000000000000', 'ID'))
     expect(overwritten?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(overwritten?.message).not.toContain(A)
+    expect(JSON.stringify(overwritten)).not.toContain(A)
     expect(await snapshot(a.id)).toBe(before)
 
     await app.budgets.removeBudget(a.id, A)

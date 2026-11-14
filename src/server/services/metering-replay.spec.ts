@@ -279,7 +279,7 @@ describe('record(): a key that belongs to a hold', () => {
   /** A hold that has not settled is not a recorded call, so reusing its key to record is a different request. */
   it.each([
     ['pending', async (_booted: Booted, _hold: Awaited<ReturnType<MeteringService['hold']>>): Promise<void> => undefined],
-    ['released', async (booted: Booted, hold: Awaited<ReturnType<MeteringService['hold']>>): Promise<void> => booted.metering.release(hold, 'test')],
+    ['released', async (booted: Booted, hold: Awaited<ReturnType<MeteringService['hold']>>): Promise<void> => booted.metering.release(hold, CONTEXT, 'test')],
   ])('conflicts with a %s hold and leaves it as it was', async (status, settle) => {
     const booted = await boot()
     const hold = await booted.metering.hold(HOLD_CONTEXT, ESTIMATE)
@@ -297,7 +297,7 @@ describe('record(): a key that belongs to a hold', () => {
   it('returns the settled record of a captured hold and moves nothing', async () => {
     const booted = await boot()
     const hold = await booted.metering.hold(HOLD_CONTEXT, ESTIMATE)
-    const captured = await booted.metering.capture(hold, RAW, providerPresets.openaiChat)
+    const captured = await booted.metering.capture(hold, CONTEXT, RAW, providerPresets.openaiChat)
     const afterCapture = await snapshot(booted)
 
     const replay = await booted.metering.record({ usage: RAW, preset: providerPresets.openaiChat, context: CONTEXT })

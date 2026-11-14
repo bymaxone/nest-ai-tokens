@@ -61,7 +61,7 @@ describe('E2E — hold reaper across replicas (§8.3)', () => {
     const status = (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]
     expect(status?.spent.count).toBe(0)
 
-    const error = await app.metering.capture(hold, e2eUsage()).catch((e: unknown) => e)
+    const error = await app.metering.capture(hold, e2eContext(), e2eUsage()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
   })
 })

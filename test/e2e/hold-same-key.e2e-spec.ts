@@ -68,7 +68,7 @@ describe('hold() with one key racing itself on two instances', () => {
   it('does not credit the wallet twice when the winner released before the loser recovered', async () => {
     await reset()
     const hold = await a.metering.hold(e2eContext({ idempotencyKey: 'rel-1' }), ESTIMATE)
-    await a.metering.release(hold, 'released before the loser recovers')
+    await a.metering.release(hold, e2eContext(), 'released before the loser recovers')
     // The loser misses the winner's row at its replay lookup, then loses the append.
     jest.spyOn(b.ledger, 'findByIdempotencyKey').mockResolvedValueOnce(null)
     const loser = await Promise.allSettled([b.metering.hold(e2eContext({ idempotencyKey: 'rel-1' }), ESTIMATE)])

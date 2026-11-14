@@ -31,7 +31,7 @@ import type {
 import { computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { CostEstimate, Hold, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
+import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
 import type { ReplayBasis } from '../utils/replay-match'
@@ -52,6 +52,7 @@ import { NO_OP_CONTENT_CAPTURE } from './content-capture'
 import type { ContentCapture } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
+  assertCaller,
   clampUsageCounts,
   isNormalizedUsage,
   normalizeCaptureUsage,
@@ -402,17 +403,18 @@ export class MeteringService {
    * on an already-settled hold returns the posted record unchanged. Applies the
    * ±delta between the actual and the reserved estimate to wallet/budget/counter.
    *
-   * @param hold The hold to settle (revalidated against the store + caller tenant).
+   * @param hold The hold to settle; only its id is read, the stored hold must belong to `caller`.
+   * @param caller The tenant and payer scope from the host's verified auth context.
    * @param usage The raw provider usage or an already-normalized usage.
    * @param preset The preset normalizing the usage (or provider-reported mode).
    * @param content Optional prompt/completion text for the sidecar (§14.2) — the ONLY text path.
    * @returns The posted usage record.
-   * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` (cross-tenant/missing), `_HOLD_EXPIRED` (reaped), `_HOLD_ALREADY_SETTLED` (released).
+   * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` (another caller's or missing, indistinguishable), `_HOLD_EXPIRED` (reaped), `_HOLD_ALREADY_SETTLED` (released), `AI_TOKENS_INVALID_CONFIG` for a caller that is not a tenant and a scope.
    */
-  async capture(hold: Hold, usage: unknown, preset?: ProviderPreset, content?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
-    const record = await this.loadHoldRecord(hold)
+  async capture(hold: Hold, caller: HoldCaller, usage: unknown, preset?: ProviderPreset, content?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
+    const record = await this.loadHoldRecord(hold, caller, 'capture(hold, caller, usage)')
     if (record.status !== 'pending') return this.settledOrConflict(record)
-    const normalized = await this.finalizeCaptureUsage(usage, hold, preset)
+    const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
     const usageForRating: NormalizedUsage = {
       ...normalized,
       provider: record.provider,
@@ -442,12 +444,13 @@ export class MeteringService {
    * 4). NEVER bills. A no-op (with a warning) on an already-captured hold; a no-op
    * on an already-released hold. Multi-caller safe via the atomic transition claim.
    *
-   * @param hold The hold to void (revalidated against the store + caller tenant).
+   * @param hold The hold to void; only its id is read, the stored hold must belong to `caller`.
+   * @param caller The tenant and payer scope from the host's verified auth context.
    * @param reason The caller's stated reason (surfaced on `ai_tokens.hold.released`).
-   * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` on a cross-tenant/missing hold.
+   * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` on another caller's or a missing hold (indistinguishable).
    */
-  async release(hold: Hold, reason: string): Promise<void> {
-    const record = await this.loadHoldRecord(hold)
+  async release(hold: Hold, caller: HoldCaller, reason: string): Promise<void> {
+    const record = await this.loadHoldRecord(hold, caller, 'release(hold, caller, reason)')
     // Stryker disable next-line BlockStatement: 'posted' status returns via the !== 'pending' guard below; body is logger.warn only
     if (record.status === 'posted') {
       // Stryker disable next-line StringLiteral: logger text is internal observability; callers observe that release is a no-op for captured holds
@@ -484,18 +487,18 @@ export class MeteringService {
     try {
       result = await fn()
     } catch (error) {
-      await this.release(hold, 'metered function threw')
+      await this.release(hold, context, 'metered function threw')
       throw error
     }
     try {
-      const usage = await this.capture(hold, extract(result), context.preset)
+      const usage = await this.capture(hold, context, extract(result), context.preset)
       this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     } catch (error) {
       // Release the reservation so a capture failure (malformed usage, transient store
       // error) does not strand wallet/budget headroom for the full TTL; a release on an
       // already-posted hold is a safe no-op. Never mask the original error.
-      await this.release(hold, 'capture failed').catch(() => undefined)
+      await this.release(hold, context, 'capture failed').catch(() => undefined)
       throw error
     }
   }
@@ -614,16 +617,16 @@ export class MeteringService {
     }
   }
 
-  /** Load a hold's record and reject a cross-tenant/scope or missing hold as HOLD_NOT_FOUND (§14.4). */
-  private async loadHoldRecord(hold: Hold): Promise<UsageRecord> {
+  /**
+   * Load a hold's record for `caller`: a hold that is missing or that another caller owns is HOLD_NOT_FOUND (§14.4),
+   * the same answer for both, and a caller that is not a tenant and a scope is a configuration error. Only `hold.id` is read; the tenant and scope on the object are not evidence.
+   */
+  private async loadHoldRecord(hold: Hold, caller: HoldCaller, signature: string): Promise<UsageRecord> {
+    assertCaller(caller, signature)
     const record = await this.ledger.findById(hold.id)
+    if (record !== null && record.tenantId === caller.tenantId && sameScope(record.scope, caller.scope)) return record
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-    if (record === null) throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, { holdId: hold.id })
-    if (record.tenantId !== hold.tenantId || !sameScope(record.scope, hold.scope)) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
-      throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, { holdId: hold.id })
-    }
-    return record
+    throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, { holdId: hold.id })
   }
 
   /** Dispatch a non-pending hold record: posted → idempotent return; released → expired/settled. */
@@ -653,18 +656,18 @@ export class MeteringService {
   /**
    * Normalize the usage handed to `capture()`. A {@link StreamUsageCollector} is
    * finalized here; when it fell back to a tokenizer count with no prompt tokens
-   * (input `0`), the hold's estimated tokens supply the aborted-stream input
+   * (input `0`), the stored hold's token total supplies the aborted-stream input
    * fallback (spec §5.6 order: collector prompt count → hold estimate → 0).
    */
-  private async finalizeCaptureUsage(usage: unknown, hold: Hold, preset?: ProviderPreset): Promise<NormalizedUsage> {
+  private async finalizeCaptureUsage(usage: unknown, storedTokens: number, preset?: ProviderPreset): Promise<NormalizedUsage> {
     if (usage instanceof StreamUsageCollector) {
       const finalized = await usage.finalize()
       // Clamp the collector's own final just as the non-stream path is clamped: a provider-final
       // stream can carry negative counts or cost, and returning it raw let those reach the signed
       // settlement. It is already normalized, so `normalizeCaptureUsage` only floors the negatives.
-      // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on hold.estimatedTokens: the override runs only when finalized.inputTokens === 0, and estimatedTokens is a non-negative token total; at estimatedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `hold.estimatedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at estimatedTokens === 0 the override sets inputTokens back to 0, unchanged)
-      if (usage.usedFallback && finalized.inputTokens === 0 && hold.estimatedTokens > 0) {
-        return normalizeCaptureUsage({ ...finalized, inputTokens: hold.estimatedTokens })
+      // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on storedTokens: the override runs only when finalized.inputTokens === 0, and storedTokens is a non-negative token total; at estimatedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `hold.estimatedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at estimatedTokens === 0 the override sets inputTokens back to 0, unchanged)
+      if (usage.usedFallback && finalized.inputTokens === 0 && storedTokens > 0) {
+        return normalizeCaptureUsage({ ...finalized, inputTokens: storedTokens })
       }
       return normalizeCaptureUsage(finalized)
     }

@@ -367,7 +367,7 @@ describe('record({ enforce: true }) retries', () => {
     await expect(built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-15' }) })).rejects.toThrow()
 
     expect(await balance(built)).toBe(afterHold)
-    await built.service.release(hold, 'test')
+    await built.service.release(hold, context(), 'test')
     expect(await balance(built)).toBe(10_000_000_000n)
   })
 
