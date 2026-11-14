@@ -299,14 +299,14 @@ export class MeteringService {
    */
   private async settleFailedHold(
     error: unknown,
-    held: { context: MeteringContext; delta: EffectDelta; ledgerKey: string; occurredAt: Date },
+    held: { context: MeteringContext; delta: EffectDelta; ledgerKey: string; occurredAt: Date; attempt: string },
   ): Promise<void> {
-    const { context, delta, ledgerKey, occurredAt } = held
+    const { context, delta, ledgerKey, occurredAt, attempt } = held
     const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, ledgerKey))
     if (row === undefined) return
     if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
-    await this.effects.compensateHold(context, delta, ledgerKey, ownDebit, row === null || !this.effects.sharesHoldBudget(row, context.scope))
+    await this.effects.compensateHold(context, delta, ledgerKey, attempt, ownDebit, row === null || !this.effects.sharesHoldBudget(row, context.scope))
   }
 
   /**
@@ -396,8 +396,9 @@ export class MeteringService {
     const isSystemCost = context.isSystemCost ?? false
     const ledgerKey = context.idempotencyKey ?? `hold:${randomUUID()}`
     const delta = { billedNanoUsd: billedEstimate, tokens: resolved.estimatedTokens, count: 1 }
-    if (!isSystemCost) await this.effects.reserveHold(context, delta, ledgerKey)
-    const record = await this.appendPending(context, resolved, billedEstimate, markup.multiplier, occurredAt, ledgerKey, isSystemCost, delta)
+    const attempt = randomUUID()
+    if (!isSystemCost) await this.effects.reserveHold(context, delta, ledgerKey, attempt)
+    const record = await this.appendPending(context, resolved, billedEstimate, markup.multiplier, occurredAt, ledgerKey, isSystemCost, delta, attempt)
     return this.holdOf(record)
   }
 
@@ -573,6 +574,7 @@ export class MeteringService {
     ledgerKey: string,
     isSystemCost: boolean,
     delta: { billedNanoUsd: bigint; tokens: number; count: number },
+    attempt: string,
   ): Promise<UsageRecord> {
     try {
       return await this.ledger.append(
@@ -596,7 +598,7 @@ export class MeteringService {
         ledgerKey,
       )
     } catch (error) {
-      if (!isSystemCost) await this.settleFailedHold(error, { context, delta, ledgerKey, occurredAt })
+      if (!isSystemCost) await this.settleFailedHold(error, { context, delta, ledgerKey, occurredAt, attempt })
       throw error
     }
   }

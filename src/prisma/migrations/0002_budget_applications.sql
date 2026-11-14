@@ -5,7 +5,8 @@
 -- keyed by what caused it, so that running it again moves nothing. The key and the budget form
 -- the primary key, which is what makes the insert the single point where concurrent attempts
 -- are serialized. The row keeps the delta and the window it moved, so that giving the
--- movement back (a compensation) needs no arguments and releases the very window it consumed;
+-- movement back (a compensation) needs no arguments and releases the very window it consumed,
+-- and the attempt that applied it ("owner"), so that an attempt only gives back what it applied;
 -- "unappliedAt" marks it given back and lets the same key be applied again.
 --
 -- Additive: it creates one table and one foreign key and touches no existing table.
@@ -17,6 +18,7 @@ CREATE TABLE "ai_budget_applications" (
   "spentNanoUsd" BIGINT NOT NULL,
   "spentTokens"  BIGINT NOT NULL,
   "spentCount"   INTEGER NOT NULL,
+  "owner"        TEXT NOT NULL,
   "unappliedAt"  TIMESTAMP(3),
   "createdAt"    TIMESTAMP(3) NOT NULL,
   CONSTRAINT "ai_budget_applications_pkey" PRIMARY KEY ("key", "budgetId")

@@ -546,7 +546,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return this.applications.consume(application, windowStart, delta, limits)
   }
 
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'> {
+  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
     return this.applications.adjust(application, windowStart, delta)
   }
 

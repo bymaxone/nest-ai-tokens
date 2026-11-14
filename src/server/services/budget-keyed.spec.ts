@@ -237,3 +237,94 @@ describe('BudgetService.release and adjust under a key', () => {
     expect(counter.values.get(costKey(budget.id))).toBe(30n)
   })
 })
+
+describe('BudgetService keyed movements shared by several attempts', () => {
+  /*
+   * Invariant: a key met again with another amount names another call: it is refused as an idempotency conflict, and the
+   * first call's movement stands.
+   */
+  it('refuses a key recorded with another amount and keeps the first movement', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1')
+    await expectRejectCode(service.consume(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    await expectRejectCode(service.adjust(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+  })
+
+  /** A non-blocking budget refuses a key recorded with another amount as well, giving back what this attempt applied before it. */
+  it('refuses a key recorded with another amount on an allow budget', async () => {
+    const { service, store } = makeService()
+    const tenantWide = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
+    const allow = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, policy: 'allow' }))
+    await store.adjustWindowOnce({ key: 'call-1', budgetId: allow.id, owner: 'someone' }, MONTH, delta(80n))
+    await expectRejectCode(service.consume(context(), delta(30n), undefined, 'call-1', 'mine'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect((await store.getWindow(tenantWide.id, MONTH))?.spentNanoUsd ?? 0n).toBe(0n)
+    expect((await store.getWindow(allow.id, MONTH))?.spentNanoUsd).toBe(80n)
+  })
+
+  /** A mismatch on a later budget gives back what this attempt applied on the earlier ones, and nothing else. */
+  it('gives back the earlier budgets this attempt applied when a later budget refuses the key', async () => {
+    const { service, store } = makeService()
+    const first = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
+    const second = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await store.consumeWindowOnce({ key: 'call-1', budgetId: second.id, owner: 'someone' }, MONTH, delta(80n), {})
+    await expectRejectCode(service.consume(context(), delta(30n), undefined, 'call-1', 'mine'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect((await store.getWindow(first.id, MONTH))?.spentNanoUsd ?? 0n).toBe(0n)
+    expect((await store.getWindow(second.id, MONTH))?.spentNanoUsd).toBe(80n)
+  })
+
+  /** A mismatch in the fast path of a live counter gives back its increment and is refused as a conflict too. */
+  it('gives back the counter increment of a key refused as another call', async () => {
+    const counter = new MapCounter()
+    const { service, store } = makeService({ options: { counter } })
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1')
+    await expectRejectCode(service.consume(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(counter.values.get(costKey(budget.id))).toBe(30n)
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+  })
+
+  /** With the counter down, a key recorded with another amount is refused by the database alone. */
+  it('refuses a key recorded with another amount when the counter is unavailable', async () => {
+    const counter = new MapCounter()
+    jest.spyOn(counter, 'incrIfBelow').mockRejectedValue(new Error('counter down'))
+    const { service } = makeService({ options: { counter } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1')
+    await expectRejectCode(service.consume(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+  })
+
+  /** A mismatch under a counter that already rejects the retry on its own consumption is still a conflict, not a block. */
+  it('refuses a key recorded with another amount even when the counter rejects it', async () => {
+    const counter = new MapCounter()
+    const { service } = makeService({ options: { counter } })
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
+    await service.consume(context(), delta(60n), undefined, 'call-1')
+    await expectRejectCode(service.consume(context(), delta(90n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+  })
+
+  /*
+   * Invariant: a replay belongs to the attempt that applied it. When a later budget refuses the replaying attempt, the
+   * earlier budgets' movements it only replayed are left alone.
+   */
+  it('leaves the movement of an earlier attempt alone when a replaying attempt is blocked by a later budget', async () => {
+    const { service, store } = makeService()
+    const tenantWide = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'first')
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 0n, features: ['restricted.feature'] }))
+    await expectRejectCode(service.consume(context({ feature: 'restricted.feature' }), delta(30n), undefined, 'call-1', 'second'), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect((await store.getWindow(tenantWide.id, MONTH))?.spentNanoUsd).toBe(30n)
+  })
+
+  /** A release that names an owner gives back only what that owner applied. */
+  it('releases only the movement of the owner it names', async () => {
+    const { service, store } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'winner')
+    await service.release(context(), delta(30n), undefined, 'call-1', 'loser')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
+    await service.release(context(), delta(30n), undefined, 'call-1', 'winner')
+    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
+  })
+})

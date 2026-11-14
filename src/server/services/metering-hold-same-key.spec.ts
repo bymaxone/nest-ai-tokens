@@ -346,6 +346,64 @@ describe('hold() with one idempotency key racing itself', () => {
     expect(status!.spent.nanoUsd).toBe(other.estimatedCostNanoUsd)
   })
 
+  /** A late reservation that reactivates the key after the winner released it is given back when its append meets the released row. */
+  it('gives back a late budget reservation when the winner already released the hold', async () => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const winner = await built.service.hold(context({ idempotencyKey: 'h-late' }), ESTIMATE_A)
+    await built.service.release(winner, context(), 'released before the loser reserves')
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.hold(context({ idempotencyKey: 'h-late' }), ESTIMATE_A)).rejects.toThrow()
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(0n)
+    expect(status!.spent.count).toBe(0)
+  })
+
+  /** The same rule for a hold: a reservation the loser applied stays when the winner's pending row stands. */
+  it('leaves a reservation the loser applied in place when the winner hold of the same shape stands', async () => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const winner = await built.service.hold(context({ idempotencyKey: 'h-owned' }), ESTIMATE_A)
+    await built.budgets!.release(context(), { nanoUsd: winner.estimatedCostNanoUsd, tokens: 1500, count: 1 }, undefined, 'reserve:h-owned')
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.hold(context({ idempotencyKey: 'h-owned' }), ESTIMATE_A)).rejects.toThrow()
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /*
+   * A posted row found by a losing hold is a captured hold or a record, and nothing on it tells them apart. Against a
+   * captured hold the loser only replays the winner's reservation and moves nothing. Against a record the loser's
+   * reservation is its own, but it is kept, so the worst case is one reservation more in the window until it rolls: an
+   * over-count, never a release of a settled movement.
+   */
+  it.each([
+    { name: 'a captured hold of the same payer', winner: 'captured', count: 1 },
+    { name: 'a record of the same payer', winner: 'record', count: 2 },
+  ])('counts the budget as $count when a losing hold with no wallet meets $name', async ({ winner, count }) => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    if (winner === 'captured') {
+      const won = await built.service.hold(context({ idempotencyKey: 'h-8' }), ESTIMATE_A)
+      await built.service.capture(won, context(), normalized())
+    } else {
+      await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'h-8' }) })
+    }
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+
+    await expect(built.service.hold(context({ idempotencyKey: 'h-8' }), ESTIMATE_A)).rejects.toThrow()
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.count).toBe(count)
+  })
+
   it('moves nothing and rethrows when the ledger cannot say whether the row was written', async () => {
     const built = build({ wallets: true, budgets: true, clock: advancing() })
     await seedGpt5(built.pricingStore)

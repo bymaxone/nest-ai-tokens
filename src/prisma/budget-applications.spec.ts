@@ -11,6 +11,8 @@ import { SqlClient, type PrismaRawClient, type RawExecutor } from './raw-client'
 const WINDOW = new Date('2026-06-01T00:00:00.000Z')
 const APPLICATION = { key: 'k1', budgetId: 'b1' }
 const DELTA = { nanoUsd: 10n, tokens: 4, count: 1 }
+/** The state of an active application that moved `DELTA`. */
+const STORED = { spentNanoUsd: 10n, spentTokens: 4n, spentCount: 1, unappliedAt: null }
 
 /** What a scripted client answers to a statement, chosen by a fragment of its text; the first match wins. */
 type Script = [fragment: string, rows: unknown[]][]
@@ -45,7 +47,7 @@ function scripted(script: Script): { applications: BudgetApplications; ran: stri
 
 /** The leading words of each recorded statement, for comparing the order. */
 function kinds(ran: string[]): string[] {
-  return ran.map((text) => (/(INSERT INTO "\w+"|UPDATE "\w+"|SELECT 1)/.exec(text) ?? [text])[0])
+  return ran.map((text) => (/(INSERT INTO "\w+"|UPDATE "\w+"|SELECT "spentNanoUsd")/.exec(text) ?? [text])[0])
 }
 
 describe('BudgetApplications.consume', () => {
@@ -56,11 +58,22 @@ describe('BudgetApplications.consume', () => {
     expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"', 'INSERT INTO "ai_budget_windows"', 'UPDATE "ai_budget_windows"'])
   })
 
-  /** An attempt that finds an active application moves nothing: only the insert runs. */
-  it('replays without touching the window when the application is active', async () => {
-    const { applications, ran } = scripted([])
+  /** An attempt that finds an active application with its own delta moves nothing: only the insert and the read run. */
+  it('replays without touching the window when the application is active with the same delta', async () => {
+    const { applications, ran } = scripted([['FROM "ai_budget_applications"', [STORED]]])
     expect(await applications.consume(APPLICATION, WINDOW, DELTA, {})).toBe('replayed')
-    expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"'])
+    expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"', 'SELECT "spentNanoUsd"'])
+  })
+
+  /** An active application recorded with another amount names another call: nothing moves, and each dimension is compared. */
+  it.each([
+    { name: 'cost', stored: { ...STORED, spentNanoUsd: 11n } },
+    { name: 'tokens', stored: { ...STORED, spentTokens: 5n } },
+    { name: 'count', stored: { ...STORED, spentCount: 2 } },
+  ])('answers a mismatch when the active application differs in $name', async ({ stored }) => {
+    const { applications, ran } = scripted([['FROM "ai_budget_applications"', [stored]]])
+    expect(await applications.consume(APPLICATION, WINDOW, DELTA, {})).toBe('mismatch')
+    expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"', 'SELECT "spentNanoUsd"'])
   })
 
   /** A limit that refuses the consume rolls the whole transaction back, the application with it. */
@@ -90,11 +103,18 @@ describe('BudgetApplications.adjust', () => {
     expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"', 'INSERT INTO "ai_budget_windows"', 'UPDATE "ai_budget_windows"'])
   })
 
-  /** An active application moves nothing. */
-  it('replays without touching the window when the application is active', async () => {
-    const { applications, ran } = scripted([])
-    expect(await applications.adjust(APPLICATION, WINDOW, DELTA)).toBe('replayed')
-    expect(kinds(ran)).toEqual(['INSERT INTO "ai_budget_applications"'])
+  /** An active application with the same delta moves nothing; with another it names another call. */
+  it('replays when the active application has the same delta and refuses a mismatch', async () => {
+    const same = scripted([['FROM "ai_budget_applications"', [STORED]]])
+    expect(await same.applications.adjust(APPLICATION, WINDOW, DELTA)).toBe('replayed')
+    expect(kinds(same.ran)).toEqual(['INSERT INTO "ai_budget_applications"', 'SELECT "spentNanoUsd"'])
+    const other = scripted([['FROM "ai_budget_applications"', [{ ...STORED, spentNanoUsd: 99n }]]])
+    expect(await other.applications.adjust(APPLICATION, WINDOW, DELTA)).toBe('mismatch')
+  })
+
+  /** A replay whose stored row vanished between the insert and the read is not the same call either. */
+  it('answers a mismatch when the active application cannot be read', async () => {
+    expect(await scripted([]).applications.adjust(APPLICATION, WINDOW, DELTA)).toBe('mismatch')
   })
 })
 
@@ -120,11 +140,13 @@ describe('BudgetApplications.unapply', () => {
     expect(ran.find((call) => call.text.includes('INSERT INTO "ai_budget_windows"'))!.values).toContain(stored.windowStart.toISOString())
   })
 
-  /** A row that exists but is no longer active was given back before; no row at all was never recorded. */
-  it("answers 'already' for a row given back before and 'absent' for none", async () => {
-    const already = scripted([['SELECT 1', [{ found: 1 }]]])
+  /** A row given back before is 'already', an active row of another owner is 'foreign', no row at all is 'absent'. */
+  it("answers 'already', 'foreign' and 'absent' for a row that was not given back now", async () => {
+    const already = scripted([['FROM "ai_budget_applications"', [{ ...STORED, unappliedAt: new Date() }]]])
     expect(await already.applications.unapply(APPLICATION)).toBe('already')
-    expect(kinds(already.ran)).toEqual(['UPDATE "ai_budget_applications"', 'SELECT 1'])
+    expect(kinds(already.ran)).toEqual(['UPDATE "ai_budget_applications"', 'SELECT "spentNanoUsd"'])
+    const foreign = scripted([['FROM "ai_budget_applications"', [{ ...STORED, unappliedAt: null }]]])
+    expect(await foreign.applications.unapply({ ...APPLICATION, owner: 'another' })).toBe('foreign')
     expect(await scripted([]).applications.unapply(APPLICATION)).toBe('absent')
   })
 })

@@ -129,3 +129,61 @@ describe('a keyed hold raced on two instances with budgets bound and no wallet',
     }
   })
 })
+
+describe('two payers reusing one key under a tenant-wide budget, raced over two instances', () => {
+  const ESTIMATE: HoldEstimate = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 }
+  const TENANT_WIDE: MeteringScope = { type: 'tenant', id: 'e2e' }
+  const PAYERS: MeteringScope[] = [{ type: 'user', id: 'u1' }, { type: 'user', id: 'u2' }]
+
+  /*
+   * Invariant: the application of the tenant-wide budget is shared by the two payers' attempts, and the winner of the
+   * ledger append owns it. Whatever the interleaving, the budget counts the winner's call once: a loser that only replayed
+   * the application never gives it back, and nothing is counted twice.
+   */
+  it('keeps the tenant-wide consumption of the call that won the key', async () => {
+    await pg.prisma.$executeRawUnsafe('TRUNCATE TABLE "ai_budget_applications", "ai_budget_windows", "ai_budgets", "ai_usage_records" CASCADE')
+    const c = await bootMeteringModule({ store: pg.store, wallets: false })
+    const d = await bootMeteringModule({ store: pg.storeB, wallets: false })
+    try {
+      await upsertBudget(c.budgets, { scope: TENANT_WIDE, window: 'total', limitNanoUsd: 1_000_000_000_000n })
+      await Promise.allSettled(
+        Array.from({ length: 12 }, (_, i) =>
+          (i % 2 === 0 ? c : d).metering.record({
+            usage: e2eUsage(),
+            context: e2eContext({ scope: PAYERS[i % 3 === 0 ? 0 : 1]!, idempotencyKey: 'two-payers', enforce: true }),
+            occurredAt: new Date('2026-06-15T12:00:00.000Z'),
+          }),
+        ),
+      )
+      const rows = await pg.prisma.$queryRawUnsafe<{ n: bigint }[]>('SELECT count(*) AS n FROM "ai_usage_records" WHERE "idempotencyKey" = \'two-payers\'')
+      expect(Number(rows[0]?.n)).toBe(1)
+      const [status] = await c.budgets.status('e2e', PAYERS[0]!)
+      expect(status?.spent.count).toBe(1)
+    } finally {
+      await c.close()
+      await d.close()
+    }
+  })
+
+  /** The same race for a hold: one pending row, and the tenant-wide budget counts the reservation once. */
+  it('keeps the tenant-wide reservation of the hold that won the key', async () => {
+    await pg.prisma.$executeRawUnsafe('TRUNCATE TABLE "ai_budget_applications", "ai_budget_windows", "ai_budgets", "ai_usage_records" CASCADE')
+    const c = await bootMeteringModule({ store: pg.store, wallets: false })
+    const d = await bootMeteringModule({ store: pg.storeB, wallets: false })
+    try {
+      await upsertBudget(c.budgets, { scope: TENANT_WIDE, window: 'total', limitNanoUsd: 1_000_000_000_000n })
+      await Promise.allSettled(
+        Array.from({ length: 12 }, (_, i) =>
+          (i % 2 === 0 ? c : d).metering.hold(e2eContext({ scope: PAYERS[i % 3 === 0 ? 0 : 1]!, idempotencyKey: 'two-payers-hold' }), ESTIMATE),
+        ),
+      )
+      const rows = await pg.prisma.$queryRawUnsafe<{ n: bigint }[]>('SELECT count(*) AS n FROM "ai_usage_records" WHERE "idempotencyKey" = \'two-payers-hold\' AND "status" = \'pending\'')
+      expect(Number(rows[0]?.n)).toBe(1)
+      const [status] = await c.budgets.status('e2e', PAYERS[0]!)
+      expect(status?.spent.count).toBe(1)
+    } finally {
+      await c.close()
+      await d.close()
+    }
+  })
+})

@@ -6,7 +6,7 @@
 
 import {
   adjustWindowSql,
-  applicationExistsSql,
+  applicationStateSql,
   consumeWindowSql,
   ensureWindowSql,
   recordApplicationSql,
@@ -54,7 +54,8 @@ describe('application statements', () => {
     expect(statement.text).toContain('WHERE "ai_budget_applications"."unappliedAt" IS NOT NULL')
     expect(statement.text).toContain('RETURNING "key"')
     expect(statement.text).toContain(DB_NOW_SQL.text)
-    expect(statement.values).toEqual(['k1', 'b1', WINDOW, 10n, 4n, 1])
+    expect(statement.values).toEqual(['k1', 'b1', WINDOW, 10n, 4n, 1, ''])
+    expect(recordApplicationSql({ ...APPLICATION, owner: 'attempt-1' }, WINDOW, DELTA).values.at(-1)).toBe('attempt-1')
   })
 
   /** Giving back marks only an active application and returns what it moved. */
@@ -63,13 +64,15 @@ describe('application statements', () => {
     expect(statement.text).toContain('UPDATE "ai_budget_applications" SET "unappliedAt"')
     expect(statement.text).toContain('"unappliedAt" IS NULL')
     expect(statement.text).toContain('RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"')
-    expect(statement.values).toEqual(['k1', 'b1'])
+    expect(statement.values).toEqual(['k1', 'b1', null, null])
+    expect(unapplySql({ ...APPLICATION, owner: 'attempt-1' }).values).toEqual(['k1', 'b1', 'attempt-1', 'attempt-1'])
   })
 
-  /** Whether an application was ever recorded, given back or not, is a plain existence read. */
-  it('reads whether an application was ever recorded', () => {
-    const statement = applicationExistsSql(APPLICATION)
-    expect(statement.text).toContain('SELECT 1 AS "found" FROM "ai_budget_applications"')
+  /** What an application holds is a plain read: its delta and whether it was given back. */
+  it('reads what an application holds', () => {
+    const statement = applicationStateSql(APPLICATION)
+    expect(statement.text).toContain('SELECT "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"')
+    expect(statement.text).toContain('FROM "ai_budget_applications"')
     expect(statement.values).toEqual(['k1', 'b1'])
   })
 })

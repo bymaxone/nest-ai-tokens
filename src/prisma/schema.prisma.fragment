@@ -205,6 +205,7 @@ model AiBudgetApplication {
   spentNanoUsd BigInt
   spentTokens  BigInt
   spentCount   Int
+  owner        String // the attempt that applied it
   unappliedAt  DateTime?
   createdAt    DateTime
   budget       AiBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)

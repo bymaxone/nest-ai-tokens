@@ -32,7 +32,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Window spend keyed by `${budgetId}|${windowStartISO}`. */
   private readonly windows = new Map<string, BudgetWindowSpend>()
   /** What each application moved, keyed by application and budget. */
-  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean }>()
+  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean; owner: string }>()
   private readonly now: () => Date
   private readonly unstampedOffsetMs: number
 
@@ -96,17 +96,19 @@ export class InMemoryBudgetStore implements IBudgetStore {
   consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
     // Critical section — synchronous, no await: the application is checked and recorded in one step.
     const key = InMemoryBudgetStore.applicationKey(application)
-    if (this.applications.get(key)?.active === true) return Promise.resolve('replayed')
+    const found = this.applications.get(key)
+    if (found?.active === true) return Promise.resolve(sameDelta(found.delta, delta) ? 'replayed' : 'mismatch')
     if (!this.tryConsume(application.budgetId, windowStart, delta, limits)) return Promise.resolve('refused')
-    this.applications.set(key, { windowStart, delta, active: true })
+    this.applications.set(key, { windowStart, delta, active: true, owner: application.owner ?? '' })
     return Promise.resolve('applied')
   }
 
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'> {
+  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
     const key = InMemoryBudgetStore.applicationKey(application)
-    if (this.applications.get(key)?.active === true) return Promise.resolve('replayed')
+    const found = this.applications.get(key)
+    if (found?.active === true) return Promise.resolve(sameDelta(found.delta, delta) ? 'replayed' : 'mismatch')
     this.moveWindow(application.budgetId, windowStart, delta)
-    this.applications.set(key, { windowStart, delta, active: true })
+    this.applications.set(key, { windowStart, delta, active: true, owner: application.owner ?? '' })
     return Promise.resolve('applied')
   }
 
@@ -115,6 +117,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
     const found = this.applications.get(key)
     if (found === undefined) return Promise.resolve('absent')
     if (!found.active) return Promise.resolve('already')
+    if (application.owner !== undefined && found.owner !== application.owner) return Promise.resolve('foreign')
     this.moveWindow(application.budgetId, found.windowStart, { nanoUsd: -found.delta.nanoUsd, tokens: -found.delta.tokens, count: -found.delta.count })
     found.active = false
     return Promise.resolve('unapplied')
@@ -191,6 +194,11 @@ export class InMemoryBudgetStore implements IBudgetStore {
     }
     return window
   }
+}
+
+/** Whether two deltas move every dimension alike. */
+function sameDelta(a: BudgetDelta, b: BudgetDelta): boolean {
+  return a.nanoUsd === b.nanoUsd && a.tokens === b.tokens && a.count === b.count
 }
 
 /** Whether a budget is scoped tenant-wide (matches every subject in the tenant). */

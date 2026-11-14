@@ -192,8 +192,8 @@ describe('MeteringEffects.enforce', () => {
 
     await expect(effects.enforce(back)).rejects.toThrow()
 
-    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`)
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`)
+    expect(consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`, back.attempt)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), back.occurredAt, `record:${back.key}`, back.attempt)
   })
 
   /**
@@ -219,7 +219,7 @@ describe('MeteringEffects.withdraw', () => {
     await effects.withdraw(enforcement, true)
 
     expect(refund).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountNanoUsd: enforcement.billedNanoUsd, idempotencyKey: 'record-rollback:k-1', reason: 'enforcement rollback' }))
-    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), enforcement.occurredAt, `record:${enforcement.key}`)
+    expect(release).toHaveBeenCalledWith(expect.anything(), expect.anything(), enforcement.occurredAt, `record:${enforcement.key}`, enforcement.attempt)
   })
 
   /** When another attempt appended the row, its wallet debit is the one the key replays, so this attempt refunds nothing. */
@@ -344,7 +344,7 @@ describe('MeteringEffects.sharesHoldBudget', () => {
   /** A hold attempt shares the reservation with a row of the same payer in any status, with or without a wallet. */
   it.each([
     { name: 'a pending hold', over: { status: 'pending' as const }, expected: true },
-    { name: 'a released hold', over: { status: 'released' as const }, expected: true },
+    { name: 'a released hold, which gave its reservation back', over: { status: 'released' as const }, expected: false },
     { name: 'a posted row', over: { status: 'posted' as const }, expected: true },
     { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
     { name: 'a system cost', over: { isSystemCost: true }, expected: false },
@@ -373,7 +373,7 @@ describe('MeteringEffects budget give-back that is not this attempt\'s own', () 
     const release = jest.spyOn(budgets, 'release')
     const effects = new MeteringEffects(undefined, budgets)
 
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false, false)
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false, false)
 
     expect(release).not.toHaveBeenCalled()
   })
@@ -384,11 +384,12 @@ describe('MeteringEffects budget give-back that is not this attempt\'s own', () 
     const release = jest.spyOn(budgets, 'release')
     const effects = new MeteringEffects(undefined, budgets)
 
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false)
-    await effects.withdraw(enforcementFor(effects), false)
+    const enforcement = enforcementFor(effects)
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false)
+    await effects.withdraw(enforcement, false)
 
-    expect(release).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), undefined, 'reserve:k-1')
-    expect(release).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.anything(), 'record:k-1')
+    expect(release).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), undefined, 'reserve:k-1', 'attempt-1')
+    expect(release).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.anything(), 'record:k-1', enforcement.attempt)
   })
 })
 
@@ -401,7 +402,7 @@ describe('MeteringEffects.compensateHold', () => {
     const release = jest.spyOn(budgets, 'release')
     const effects = new MeteringEffects(wallets, budgets)
 
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false)
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false)
 
     expect(refund).not.toHaveBeenCalled()
     expect(release).toHaveBeenCalledTimes(1)

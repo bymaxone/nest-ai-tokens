@@ -6,7 +6,7 @@
  */
 
 import type { ApplicationOutcome, BudgetApplication, BudgetDelta, BudgetLimits, UnapplyOutcome } from '../server'
-import { adjustWindowSql, applicationExistsSql, consumeWindowSql, ensureWindowSql, recordApplicationSql, unapplySql } from './budget-statements'
+import { adjustWindowSql, applicationStateSql, consumeWindowSql, ensureWindowSql, recordApplicationSql, unapplySql } from './budget-statements'
 import type { SqlClient, SqlExecutor } from './raw-client'
 
 /** What `unapplySql` returns for an application that was active. */
@@ -15,6 +15,14 @@ interface MovedRow {
   spentNanoUsd: bigint
   spentTokens: bigint
   spentCount: number
+}
+
+/** What `applicationStateSql` returns. */
+interface StateRow {
+  spentNanoUsd: bigint
+  spentTokens: bigint
+  spentCount: number
+  unappliedAt: Date | null
 }
 
 /** Thrown inside the transaction to roll the application back when a limit refuses the consume. */
@@ -28,7 +36,7 @@ export class BudgetApplications {
   async consume(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
     try {
       return await this.prisma.transaction(async (tx) => {
-        if (!(await this.record(tx, application, windowStart, delta))) return 'replayed'
+        if (!(await this.record(tx, application, windowStart, delta))) return this.replayOrMismatch(tx, application, delta)
         await tx.execute(ensureWindowSql(application.budgetId, windowStart))
         const moved = await tx.query<{ id: string }[]>(consumeWindowSql(application.budgetId, windowStart, delta, limits))
         if (moved[0] === undefined) throw new RefusedByLimit()
@@ -41,9 +49,9 @@ export class BudgetApplications {
   }
 
   /** Move a window once per application, without a limit. */
-  adjust(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'> {
+  adjust(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
     return this.prisma.transaction(async (tx) => {
-      if (!(await this.record(tx, application, windowStart, delta))) return 'replayed'
+      if (!(await this.record(tx, application, windowStart, delta))) return this.replayOrMismatch(tx, application, delta)
       await tx.execute(ensureWindowSql(application.budgetId, windowStart))
       await tx.execute(adjustWindowSql(application.budgetId, windowStart, delta))
       return 'applied'
@@ -55,12 +63,26 @@ export class BudgetApplications {
     return this.prisma.transaction(async (tx) => {
       const rows = await tx.query<MovedRow[]>(unapplySql(application))
       const moved = rows[0]
-      if (moved === undefined) return (await tx.query<unknown[]>(applicationExistsSql(application))).length > 0 ? 'already' : 'absent'
+      if (moved === undefined) return this.whyNotGivenBack(tx, application)
       const delta = { nanoUsd: -moved.spentNanoUsd, tokens: -Number(moved.spentTokens), count: -moved.spentCount }
       await tx.execute(ensureWindowSql(application.budgetId, moved.windowStart))
       await tx.execute(adjustWindowSql(application.budgetId, moved.windowStart, delta))
       return 'unapplied'
     })
+  }
+
+  /** An active application met this attempt: it is a replay when it moved this very delta, and another call's key when not. */
+  private async replayOrMismatch(tx: SqlExecutor, application: BudgetApplication, delta: BudgetDelta): Promise<'replayed' | 'mismatch'> {
+    const [state] = await tx.query<StateRow[]>(applicationStateSql(application))
+    const same = state?.spentNanoUsd === delta.nanoUsd && Number(state.spentTokens) === delta.tokens && state.spentCount === delta.count
+    return same ? 'replayed' : 'mismatch'
+  }
+
+  /** Why nothing was given back: never recorded, given back before, or applied by another owner than the one asked for. */
+  private async whyNotGivenBack(tx: SqlExecutor, application: BudgetApplication): Promise<'absent' | 'already' | 'foreign'> {
+    const [state] = await tx.query<StateRow[]>(applicationStateSql(application))
+    if (state === undefined) return 'absent'
+    return state.unappliedAt === null ? 'foreign' : 'already'
   }
 
   /** Whether this attempt recorded the application, so that it is the one that moves the window. */

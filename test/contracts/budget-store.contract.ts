@@ -184,5 +184,40 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       expect(await store.unapplyWindow(application)).toBe('unapplied')
       expect(await store.getWindow('back', other)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
     })
+
+    /*
+     * Invariant: an active application met again with another delta is a mismatch, not a replay: the key names another
+     * call, and nothing moves.
+     */
+    it('answers a mismatch for an active application met with another delta, and moves nothing', async () => {
+      const store = await make()
+      await seedBudget(store, 'mismatch')
+      const application = { key: 'mismatch-key', budgetId: 'mismatch' }
+      expect(await store.consumeWindowOnce(application, windowStart, delta(30n, 1, 1), {})).toBe('applied')
+      expect(await store.consumeWindowOnce(application, windowStart, delta(80n, 1, 1), {})).toBe('mismatch')
+      expect(await store.consumeWindowOnce(application, windowStart, delta(30n, 2, 1), {})).toBe('mismatch')
+      expect(await store.consumeWindowOnce(application, windowStart, delta(30n, 1, 2), {})).toBe('mismatch')
+      expect(await store.adjustWindowOnce(application, windowStart, delta(80n, 1, 1))).toBe('mismatch')
+      expect(await store.adjustWindowOnce(application, windowStart, delta(30n, 1, 1))).toBe('replayed')
+      expect(await store.getWindow('mismatch', windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 1, spentCount: 1 })
+    })
+
+    /*
+     * Invariant: an attempt gives back only what it applied. A give-back that names another owner finds the application
+     * 'foreign' and moves nothing; one that names the owner, or none, gives it back.
+     */
+    it('gives an application back only to the owner that applied it', async () => {
+      const store = await make()
+      await seedBudget(store, 'owned-by')
+      const application = { key: 'owner-key', budgetId: 'owned-by', owner: 'attempt-a' }
+      expect(await store.consumeWindowOnce(application, windowStart, delta(30n), {})).toBe('applied')
+      expect(await store.consumeWindowOnce({ ...application, owner: 'attempt-b' }, windowStart, delta(30n), {})).toBe('replayed')
+      expect(await store.unapplyWindow({ ...application, owner: 'attempt-b' })).toBe('foreign')
+      expect(await store.getWindow('owned-by', windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 0, spentCount: 0 })
+      expect(await store.unapplyWindow(application)).toBe('unapplied')
+      expect(await store.unapplyWindow({ ...application, owner: 'attempt-b' })).toBe('already')
+      expect(await store.consumeWindowOnce({ ...application, owner: 'attempt-b' }, windowStart, delta(30n), {})).toBe('applied')
+      expect(await store.unapplyWindow({ key: 'owner-key', budgetId: 'owned-by' })).toBe('unapplied')
+    })
   })
 }

@@ -46,13 +46,24 @@ export interface BudgetApplication {
   /** What caused the movement, deterministic for the cause (a call key, or an operation and a record id). */
   key: string
   budgetId: string
+  /**
+   * The attempt that applies it, unique per attempt. Recorded with the application so that {@link IBudgetStore.unapplyWindow}
+   * called with an owner gives back only what that attempt applied; without one, an application is given back whoever applied it.
+   */
+  owner?: string
 }
 
-/** The verdict of a keyed consume: moved now, already moved by this key, or refused by a limit (nothing moved). */
-export type ApplicationOutcome = 'applied' | 'replayed' | 'refused'
+/**
+ * The verdict of a keyed consume: moved now, already moved by this key with this very delta, refused by a limit (nothing
+ * moved), or already moved by this key with a different delta (nothing moved: the key names another call).
+ */
+export type ApplicationOutcome = 'applied' | 'replayed' | 'refused' | 'mismatch'
 
-/** The verdict of giving a keyed movement back: given back now, given back before, or no such movement. */
-export type UnapplyOutcome = 'unapplied' | 'already' | 'absent'
+/**
+ * The verdict of giving a keyed movement back: given back now, given back before, no such movement, or still applied by
+ * another attempt than the owner asked for (nothing moved).
+ */
+export type UnapplyOutcome = 'unapplied' | 'already' | 'absent' | 'foreign'
 
 /** The budget port. */
 export interface IBudgetStore {
@@ -88,17 +99,17 @@ export interface IBudgetStore {
   adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void>
   /**
    * {@link conditionalConsume} once per application: `'replayed'` when this application already moved the window and
-   * has not been given back since (nothing moves), `'refused'` when a limit would be exceeded (nothing moves and no
-   * application is recorded). Concurrent attempts with one application move the window once; the uniqueness of the
+   * has not been given back since and moved it by this very delta (nothing moves), `'mismatch'` when it moved it by another
+   * delta (nothing moves), `'refused'` when a limit would be exceeded (nothing moves and no application is recorded). Concurrent attempts with one application move the window once; the uniqueness of the
    * application, never a read followed by a write, decides which attempt does.
    */
   consumeWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome>
-  /** {@link adjustWindow} once per application; `'replayed'` when this application already moved the window and was not given back since. */
-  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed'>
+  /** {@link adjustWindow} once per application; `'replayed'` and `'mismatch'` as for {@link consumeWindowOnce}. */
+  adjustWindowOnce(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'>
   /**
    * Give back what an application moved: subtract its delta from the window it moved, and mark it given back so that
    * the same application can be applied again. `'already'` when it was given back before, `'absent'` when no such
-   * application was ever recorded.
+   * application was ever recorded, `'foreign'` when it is applied but its owner is not the one asked for.
    */
   unapplyWindow(application: BudgetApplication): Promise<UnapplyOutcome>
   /** A window's current spend, or `null` when it has no row yet. */

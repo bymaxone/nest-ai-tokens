@@ -51,6 +51,9 @@ export function adjustWindowSql(budgetId: string, windowStart: Date, delta: Budg
   `
 }
 
+/** The owner an application is recorded under when its attempt names none: the empty string, matched by no named owner. */
+const NO_OWNER = ''
+
 /**
  * Record an application, or take over one that was given back. The primary key is the single point where concurrent
  * attempts with one application are serialized: a second insert waits for the first, then finds an active row and
@@ -58,26 +61,34 @@ export function adjustWindowSql(budgetId: string, windowStart: Date, delta: Budg
  */
 export function recordApplicationSql(application: BudgetApplication, windowStart: Date, delta: BudgetDelta): Sql {
   return sql`
-    INSERT INTO "ai_budget_applications" ("key", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt", "createdAt")
-    VALUES (${application.key}, ${application.budgetId}, ${windowStart}, ${delta.nanoUsd}, ${BigInt(delta.tokens)}, ${delta.count}, NULL, ${DB_NOW_SQL})
+    INSERT INTO "ai_budget_applications" ("key", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "owner", "unappliedAt", "createdAt")
+    VALUES (${application.key}, ${application.budgetId}, ${windowStart}, ${delta.nanoUsd}, ${BigInt(delta.tokens)}, ${delta.count}, ${application.owner ?? NO_OWNER}, NULL, ${DB_NOW_SQL})
     ON CONFLICT ("key", "budgetId") DO UPDATE
       SET "windowStart" = EXCLUDED."windowStart", "spentNanoUsd" = EXCLUDED."spentNanoUsd", "spentTokens" = EXCLUDED."spentTokens",
-          "spentCount" = EXCLUDED."spentCount", "unappliedAt" = NULL, "createdAt" = EXCLUDED."createdAt"
+          "spentCount" = EXCLUDED."spentCount", "owner" = EXCLUDED."owner", "unappliedAt" = NULL, "createdAt" = EXCLUDED."createdAt"
       WHERE "ai_budget_applications"."unappliedAt" IS NOT NULL
     RETURNING "key"
   `
 }
 
-/** Mark an active application given back and return what it moved; empty when it is absent or already given back. */
+/**
+ * Mark an active application given back and return what it moved; empty when it is absent, already given back, or, when
+ * an owner is named, applied by another owner.
+ */
 export function unapplySql(application: BudgetApplication): Sql {
+  const owner = application.owner ?? null
   return sql`
     UPDATE "ai_budget_applications" SET "unappliedAt" = ${DB_NOW_SQL}
     WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} AND "unappliedAt" IS NULL
+      AND (${owner}::text IS NULL OR "owner" = ${owner})
     RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"
   `
 }
 
-/** Whether an application, given back or not, was ever recorded. */
-export function applicationExistsSql(application: BudgetApplication): Sql {
-  return sql`SELECT 1 AS "found" FROM "ai_budget_applications" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId}`
+/** What an application holds: what it moved, whether it was given back, and who applied it; empty when never recorded. */
+export function applicationStateSql(application: BudgetApplication): Sql {
+  return sql`
+    SELECT "spentNanoUsd", "spentTokens", "spentCount", "unappliedAt"
+    FROM "ai_budget_applications" WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId}
+  `
 }

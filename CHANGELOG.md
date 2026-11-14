@@ -49,10 +49,12 @@ optional injected clock as its fourth constructor argument; the module keeps the
 **Apply:** run migration `0002_budget_applications.sql` (additive; an existing
 database needs only this file) before you deploy, or the budget feature fails on its first movement. If you implement
 `IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce` and `unapplyWindow`: each takes an application
-(a key and a budget id); the first two move the window once and answer `'replayed'` when that application already
-moved it, and `unapplyWindow` subtracts what an application moved, from the window it moved, once. The module refuses
-a store that lacks them at boot. The uniqueness of the application, never a read followed by a write, must decide
-which of several concurrent attempts moves the window. A hold that is pending when you upgrade has no application,
+(a key, a budget id and an optional owner). The first two move the window once and answer `'replayed'` when that
+application already moved it with the same delta, and `'mismatch'` when it moved it with another (nothing moves; the
+service refuses the key as an idempotency conflict). `unapplyWindow` subtracts what an application moved, from the window
+it moved, once, and answers `'foreign'` without moving anything when it names an owner other than the attempt that applied
+it. The module refuses a store that lacks them at boot. The uniqueness of the application, never a read followed by a write,
+must decide which of several concurrent attempts moves the window. A hold that is pending when you upgrade has no application,
 so releasing it subtracts its delta as before. The table holds one row per keyed budget movement and grows with the ledger; a later patch prunes rows older than a key can still be replayed.
 
 ### Security
@@ -149,7 +151,7 @@ so releasing it subtracts its delta as before. The table holds one row per keyed
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
 - The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
-- The `server` bundle grows by 881 bytes brotli (to 44644) with the keyed budget movements; its budget moves from 43810 to 44690.
+- The `server` bundle grows by 1268 bytes brotli (to 45031) with the keyed budget movements; its budget moves from 43810 to 45080.
 
 ## [1.1.14] - 2026-11-13
 

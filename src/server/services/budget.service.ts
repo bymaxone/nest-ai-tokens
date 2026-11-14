@@ -41,6 +41,7 @@ import type {
 } from '../interfaces'
 import { addSpend, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
 import type { FailingDimension } from './budget-math'
+import { applicationOf, guardOf, keyNamesAnotherCall, keyedOf, type CounterIncrement, type GuardResult, type Keyed } from './budget-keyed'
 import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
@@ -83,40 +84,20 @@ interface LocatedWindow {
   limits: BudgetLimits
 }
 
-/** A live counter increment made during a guarded consume (kept for rollback). */
-interface CounterIncrement {
-  key: string
-  amount: bigint
-}
-
 /** A recorded consumption, kept for rollback on a partial multi-budget failure. */
 interface Consumed {
   budgetId: string
   windowStart: Date
   delta: BudgetDelta
   increments: CounterIncrement[]
-  /** The application key the consumption was recorded under, so a rollback gives that application back. */
-  key?: string
+  /** The application the consumption was recorded under, so a rollback gives back what this attempt applied. */
+  keyed?: Keyed
 }
 
 /** The counter fast-path outcome: a hard reject (with its failing dimension) or a pass to the DB. */
 type FastPathResult =
   | { rejected: true; failing: FailingDimension }
   | { rejected: false; increments: CounterIncrement[]; available: boolean }
-
-/**
- * The result of a guarded consume: whether it passed, the live counter increments
- * it made, and — when a counter fast-path reject decided the block — the failing
- * dimension so the caller raises the correct §16 code (the DB path defers to
- * {@link failingDimension} instead).
- */
-interface GuardResult {
-  ok: boolean
-  increments: CounterIncrement[]
-  failing?: FailingDimension
-  /** The application was already recorded by an earlier attempt, so nothing moved and the counters were left alone. */
-  replayed?: boolean
-}
 
 /** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
 const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
@@ -248,14 +229,16 @@ export class BudgetService {
    *   charged to its own window, so its rollback and reversal release the window it consumed.
    * @param key What caused the consumption: with a key, each budget's window moves once however many attempts or
    *   instances run it, and {@link release} with the same key gives that movement back. Without one it moves every time.
+   * @param owner The attempt that consumes, unique per attempt: a release with the same owner gives back only what this
+   *   attempt applied, never a movement another attempt recorded under the key.
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` (402, cost) or `AI_TOKENS_QUOTA_EXCEEDED` (429, tokens/count) when a `'block'` budget is exhausted.
    */
-  async consume(context: MeteringContext, delta: BudgetDelta, at?: Date, key?: string): Promise<void> {
+  async consume(context: MeteringContext, delta: BudgetDelta, at?: Date, key?: string, owner?: string): Promise<void> {
     const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature, at)
     const consumed: Consumed[] = []
     for (const located of windows) {
       const before = (await this.store.getWindow(located.budget.id, located.windowStart)) ?? ZERO_SPEND
-      await this.applyConsumption(context, located, delta, before, consumed, key)
+      await this.applyConsumption(context, located, delta, before, consumed, keyedOf(key, owner))
     }
   }
 
@@ -269,14 +252,17 @@ export class BudgetService {
    *   `occurredAt`, so a settlement after a window boundary releases the window the hold consumed.
    * @param key The key {@link consume} recorded the movement under: each window gives that movement back once, the
    *   window it moved, and a window with no such movement (one that predates keys) is released by `delta` as before.
+   * @param owner The attempt that releases: only a movement that attempt applied is given back, and a movement another
+   *   attempt applied is left alone.
    */
-  async release(context: MeteringContext, delta: BudgetDelta, at?: Date, key?: string): Promise<void> {
+  async release(context: MeteringContext, delta: BudgetDelta, at?: Date, key?: string, owner?: string): Promise<void> {
     const windows = await this.matchingWindows(context.tenantId, context.scope, context.feature, at)
     const counter = this.options.counter
+    const keyed = keyedOf(key, owner)
     for (const located of windows) {
-      if (key !== undefined) {
-        const outcome = await this.store.unapplyWindow({ key, budgetId: located.budget.id })
-        if (outcome === 'already') continue
+      if (keyed !== undefined) {
+        const outcome = await this.store.unapplyWindow(applicationOf(keyed, located.budget.id))
+        if (outcome === 'already' || outcome === 'foreign') continue
         if (outcome === 'unapplied') {
           await this.decrementCounters(counter, delta, located)
           continue
@@ -285,6 +271,13 @@ export class BudgetService {
       await this.store.adjustWindow(located.budget.id, located.windowStart, negate(delta))
       await this.decrementCounters(counter, delta, located)
     }
+  }
+
+  /** Move a window once for `key`; whether the key had already moved it. A key recorded with another amount names another call. */
+  private async adjustOnceReplayed(key: string, located: LocatedWindow, delta: BudgetDelta): Promise<boolean> {
+    const outcome = await this.store.adjustWindowOnce({ key, budgetId: located.budget.id }, located.windowStart, delta)
+    if (outcome === 'mismatch') throw keyNamesAnotherCall()
+    return outcome === 'replayed'
   }
 
   /** Decrement the live counter of each limited dimension by `delta`, when a counter is bound. */
@@ -314,7 +307,7 @@ export class BudgetService {
     for (const located of windows) {
       const before = (await this.store.getWindow(located.budget.id, located.windowStart)) ?? ZERO_SPEND
       if (key === undefined) await this.store.adjustWindow(located.budget.id, located.windowStart, delta)
-      else if ((await this.store.adjustWindowOnce({ key, budgetId: located.budget.id }, located.windowStart, delta)) === 'replayed') continue
+      else if (await this.adjustOnceReplayed(key, located, delta)) continue
       if (counter === undefined) continue
       const spends = dimensionSpends(addSpend(before, delta))
       const ttl = counterTtlSeconds(located.windowStart, located.windowEnd)
@@ -421,39 +414,47 @@ export class BudgetService {
     delta: BudgetDelta,
     before: BudgetWindowSpend,
     consumed: Consumed[],
-    key?: string,
+    keyed?: Keyed,
   ): Promise<void> {
     let increments: CounterIncrement[] = []
     let replayed: boolean
     if (located.budget.policy === 'block') {
-      const result = await this.guardedConsume(located, delta, key)
+      const result = await this.guardedConsume(located, delta, keyed)
       if (!result.ok) {
         await this.rollback(consumed)
+        if (result.mismatch === true) throw keyNamesAnotherCall()
         await this.blockExceeded(context, located, before, delta, result.failing)
       }
       increments = result.increments
       replayed = result.replayed === true
     } else {
-      replayed = await this.adjustForConsume(located, delta, key)
+      replayed = await this.adjustForConsume(located, delta, keyed, consumed)
       if (!replayed) await this.softOverLimit(context, located, before, delta)
     }
-    consumed.push({ budgetId: located.budget.id, windowStart: located.windowStart, delta, increments, ...(key !== undefined ? { key } : {}) })
+    // Only a movement this attempt applied is kept for the rollback of a later budget's block: a replay belongs to the attempt that applied it.
+    // Stryker disable next-line ConditionalExpression: CE true: spreading { keyed: undefined } is equivalent to {} because the rollback checks keyed === undefined
+    if (!replayed) consumed.push({ budgetId: located.budget.id, windowStart: located.windowStart, delta, increments, ...(keyed !== undefined ? { keyed } : {}) })
     // A replayed application moved nothing, so there is no new spend to signal.
     if (!replayed) await this.signalThresholds(context, located, before, addSpend(before, delta))
   }
 
   /** Record the spend of a non-blocking budget; whether this application had already moved the window. */
-  private async adjustForConsume(located: LocatedWindow, delta: BudgetDelta, key?: string): Promise<boolean> {
-    if (key === undefined) {
+  private async adjustForConsume(located: LocatedWindow, delta: BudgetDelta, keyed: Keyed | undefined, consumed: Consumed[]): Promise<boolean> {
+    if (keyed === undefined) {
       await this.store.adjustWindow(located.budget.id, located.windowStart, delta)
       return false
     }
-    return (await this.store.adjustWindowOnce({ key, budgetId: located.budget.id }, located.windowStart, delta)) === 'replayed'
+    const outcome = await this.store.adjustWindowOnce(applicationOf(keyed, located.budget.id), located.windowStart, delta)
+    if (outcome === 'mismatch') {
+      await this.rollback(consumed)
+      throw keyNamesAnotherCall()
+    }
+    return outcome === 'replayed'
   }
 
   /** The authoritative consume of a window: once per application when keyed, every time when not. */
-  private async consumeInStore(located: LocatedWindow, delta: BudgetDelta, key?: string): Promise<ApplicationOutcome> {
-    if (key !== undefined) return this.store.consumeWindowOnce({ key, budgetId: located.budget.id }, located.windowStart, delta, located.limits)
+  private async consumeInStore(located: LocatedWindow, delta: BudgetDelta, keyed?: Keyed): Promise<ApplicationOutcome> {
+    if (keyed !== undefined) return this.store.consumeWindowOnce(applicationOf(keyed, located.budget.id), located.windowStart, delta, located.limits)
     return (await this.store.conditionalConsume(located.budget.id, located.windowStart, delta, located.limits)) ? 'applied' : 'refused'
   }
 
@@ -466,19 +467,16 @@ export class BudgetService {
    * is also down, `failClosed` blocks (else it allows with a warning). Without a
    * counter it is the plain DB conditional consume.
    */
-  private async guardedConsume(located: LocatedWindow, delta: BudgetDelta, key?: string): Promise<GuardResult> {
+  private async guardedConsume(located: LocatedWindow, delta: BudgetDelta, keyed?: Keyed): Promise<GuardResult> {
     const counter = this.options.counter
-    if (counter === undefined) {
-      const outcome = await this.consumeInStore(located, delta, key)
-      return { ok: outcome !== 'refused', increments: [], replayed: outcome === 'replayed' }
-    }
+    if (counter === undefined) return guardOf(await this.consumeInStore(located, delta, keyed))
     const fast = await this.counterFastPath(counter, located, delta)
-    if (!fast.rejected) return this.databaseConsume(counter, located, delta, fast.increments, fast.available, key)
-    if (key === undefined) return { ok: false, increments: [], failing: fast.failing }
+    if (!fast.rejected) return this.databaseConsume(counter, located, delta, fast.increments, fast.available, keyed)
+    if (keyed === undefined) return { ok: false, increments: [], failing: fast.failing }
     // A retry whose application is already recorded is over the counter only because its own consumption is in it:
     // the database, which holds the application, decides.
-    const outcome = await this.consumeInStore(located, delta, key)
-    return outcome === 'refused' ? { ok: false, increments: [], failing: fast.failing } : { ok: true, increments: [], replayed: outcome === 'replayed' }
+    // The counter's dimension is read only when the result is a block.
+    return { ...guardOf(await this.consumeInStore(located, delta, keyed)), failing: fast.failing }
   }
 
   /**
@@ -522,15 +520,20 @@ export class BudgetService {
     delta: BudgetDelta,
     increments: CounterIncrement[],
     counterAvailable: boolean,
-    key?: string,
+    keyed?: Keyed,
   ): Promise<GuardResult> {
     try {
-      const outcome = await this.consumeInStore(located, delta, key)
+      const outcome = await this.consumeInStore(located, delta, keyed)
       if (outcome === 'replayed') {
         // Nothing moved, so the increments the fast path just made are given back.
         // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []`, so decrementing is a no-op
         if (counterAvailable) await this.decrCounters(counter, increments)
         return { ok: true, increments: [], replayed: true }
+      }
+      if (outcome === 'mismatch') {
+        // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []`, so decrementing is a no-op
+        if (counterAvailable) await this.decrCounters(counter, increments)
+        return { ok: false, increments: [], mismatch: true }
       }
       if (outcome === 'refused') {
         // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
@@ -700,8 +703,8 @@ export class BudgetService {
   private async rollback(consumed: Consumed[]): Promise<void> {
     const counter = this.options.counter
     for (const entry of consumed) {
-      if (entry.key === undefined) await this.store.adjustWindow(entry.budgetId, entry.windowStart, negate(entry.delta))
-      else await this.store.unapplyWindow({ key: entry.key, budgetId: entry.budgetId })
+      if (entry.keyed === undefined) await this.store.adjustWindow(entry.budgetId, entry.windowStart, negate(entry.delta))
+      else await this.store.unapplyWindow(applicationOf(entry.keyed, entry.budgetId))
       if (counter !== undefined) await this.decrCounters(counter, entry.increments)
     }
   }
