@@ -33,6 +33,7 @@ interface Rig {
   ledgerStore: InMemoryLedgerStore
   sweeper: BudgetReferenceSweeper
   advance: (seconds: number) => void
+  now: () => Date
   budget: Budget
 }
 
@@ -42,7 +43,7 @@ async function rig(over: { pageSize?: number; pages?: number } = {}): Promise<Ri
   const ledgerStore = new InMemoryLedgerStore()
   const budget = await budgets.upsert({ id: 'b1', tenantId: 't1', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
   const sweeper = new BudgetReferenceSweeper(budgets, new LedgerService(ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, now, over)
-  return { budgets, ledgerStore, sweeper, advance, budget }
+  return { budgets, ledgerStore, sweeper, advance, now, budget }
 }
 
 /** The references left on every application, as `key/attempt`. */
@@ -323,6 +324,25 @@ describe('BudgetReferenceSweeper', () => {
       await r.sweeper.sweep()
       expect(await references(r.budgets)).toEqual([])
       expect((await r.budgets.getWindow('b1', WINDOW))?.spentNanoUsd).toBe(25n)
+    })
+
+    /**
+     * Invariant: a released hold's reservation is given back by the verdict, never deleted by the pruning. The two ages are
+     * independent (the held walk judges it after the hold TTL plus the grace and can lag behind a cursor), so deleting its
+     * application first would leave the movement counted with nothing left to give it back.
+     */
+    it('leaves the reservation of a released hold to the verdict even when it is older than the retention', async () => {
+      const r = await rig()
+      const short = new BudgetReferenceSweeper(r.budgets, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: TTL }, r.now)
+      await committed(r, 'reserve:rel', 'released')
+      r.advance(TTL + 1)
+      await short.sweep()
+      expect(await references(r.budgets)).toEqual(['reserve:rel/row'])
+      expect((await r.budgets.getWindow('b1', WINDOW))?.spentNanoUsd).toBe(25n)
+      r.advance(GRACE)
+      await r.sweeper.sweep()
+      expect(await references(r.budgets)).toEqual([])
+      expect(await r.budgets.getWindow('b1', WINDOW)).toEqual(ZERO)
     })
 
     /** A hold that is still pending is the only thing its reference stands on: it is never pruned, however old. */

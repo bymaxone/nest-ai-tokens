@@ -167,7 +167,8 @@ describe('judge', () => {
 describe('lookupOf', () => {
   /** Each key names where its row is found and which status ends it; a key the table does not know has no lookup. */
   it.each([
-    ['reserve:h1', 'key', 'h1', { pending: false, posted: true, reversed: true, released: true }],
+    // A released hold's reservation is the verdict's to give back, so it does not end the application.
+    ['reserve:h1', 'key', 'h1', { pending: false, posted: true, reversed: true, released: false }],
     ['record:r1', 'key', 'r1', { pending: false, posted: true, reversed: true, released: true }],
     ['capture:id1', 'id', 'id1', { pending: false, posted: true, reversed: true, released: true }],
     ['reverse:id2', 'id', 'id2', { pending: false, posted: false, reversed: true, released: false }],

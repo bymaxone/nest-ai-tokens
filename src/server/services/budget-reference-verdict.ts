@@ -112,13 +112,14 @@ export interface RowLookup {
 
 /**
  * How to find the ledger row an application belongs to and when that row has ended, for the pruning of applications; `null`
- * for a key the table does not know, whose application is then never deleted. A hold's reservation and a record's
- * consumption end with any status but `pending`; a capture ends the same way; a reversal ends with `reversed`; the release
- * of a hold's reservation ends with `released`.
+ * for a key the table does not know, whose application is then never deleted. A record's consumption and a capture end with
+ * any status but `pending`; a reversal ends with `reversed`; the release of a hold's reservation ends with `released`. A
+ * hold's own reservation ends when it was captured or reversed, and never when it was released: a released hold's reference
+ * is given back by the verdict, and only the application that gives back leaves is deleted afterwards.
  */
 export function lookupOf(key: string): RowLookup | null {
   const notPending = (status: UsageStatus): boolean => status !== 'pending'
-  if (key.startsWith(RESERVE_KEY_PREFIX)) return { by: 'key', value: key.slice(RESERVE_KEY_PREFIX.length), ended: notPending }
+  if (key.startsWith(RESERVE_KEY_PREFIX)) return { by: 'key', value: key.slice(RESERVE_KEY_PREFIX.length), ended: (status) => status === 'posted' || status === 'reversed' }
   if (key.startsWith(RECORD_KEY_PREFIX)) return { by: 'key', value: key.slice(RECORD_KEY_PREFIX.length), ended: notPending }
   if (key.startsWith(CAPTURE_KEY_PREFIX)) return { by: 'id', value: key.slice(CAPTURE_KEY_PREFIX.length), ended: notPending }
   if (key.startsWith(REVERSE_KEY_PREFIX)) return { by: 'id', value: key.slice(REVERSE_KEY_PREFIX.length), ended: (status) => status === 'reversed' }
