@@ -253,5 +253,111 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       expect(await store.commitReference({ ...reference, attempt: 'b' })).toBe('committed')
       expect(await store.commitReference({ ...reference, attempt: 'row' })).toBe('already')
     })
+
+    /*
+     * Invariant: the stale-reference listing names what an attempt left behind and nothing else. `attempt` lists the
+     * references that were not committed, `held` lists the committed `row` references of holds (`reserve:` keys), each with
+     * the window and delta its application moved; a reference that was dropped is not listed, and `olderThan` bounds the
+     * listing from above, strictly.
+     */
+    it('lists the references an attempt left behind and the committed references of holds, each with its application', async () => {
+      const store = await make()
+      await seedBudget(store, 'stale')
+      const future = new Date(Date.now() + 3_600_000)
+      const reference = (key: string, attempt: string) => ({ key, budgetId: 'stale', attempt })
+      await store.consumeWindowOnce(reference('record:orphan', 'a1'), windowStart, delta(30n, 5, 1), {})
+      await store.consumeWindowOnce(reference('reserve:held', 'a2'), windowStart, delta(40n, 7, 1), {})
+      await store.commitReference(reference('reserve:held', 'a2'))
+      await store.consumeWindowOnce(reference('record:kept', 'a3'), windowStart, delta(1n), {})
+      await store.commitReference(reference('record:kept', 'a3'))
+      await store.consumeWindowOnce(reference('record:dropped', 'a4'), windowStart, delta(2n), {})
+      await store.dropReference(reference('record:dropped', 'a4'))
+      const attempt = await store.findStaleReferences!({ selection: 'attempt', olderThan: future, limit: 50 })
+      expect(attempt.map(({ key, tenantId, attempt: name, windowStart: at, delta: moved }) => ({ key, tenantId, name, at, moved }))).toEqual([
+        { key: 'record:orphan', tenantId: 'budget-contract', name: 'a1', at: windowStart, moved: delta(30n, 5, 1) },
+      ])
+      const held = await store.findStaleReferences!({ selection: 'held', olderThan: future, limit: 50 })
+      expect(held.map(({ key, attempt: name, delta: moved }) => ({ key, name, moved }))).toEqual([{ key: 'reserve:held', name: 'row', moved: delta(40n, 7, 1) }])
+      expect(await store.findStaleReferences!({ selection: 'attempt', olderThan: new Date(0), limit: 50 })).toEqual([])
+      expect(await store.findStaleReferences!({ selection: 'held', olderThan: new Date(0), limit: 50 })).toEqual([])
+    })
+
+    /** The pages follow the order `(createdAt, key, budgetId, attempt)`: every reference appears once, whatever the page size. */
+    it.each([1, 2, 5])('pages the stale references in order, every one once, with a page of %i', async (limit) => {
+      const store = await make()
+      await seedBudget(store, 'page')
+      const future = new Date(Date.now() + 3_600_000)
+      for (const key of ['record:c', 'record:a', 'record:b', 'record:d', 'record:e']) {
+        await store.consumeWindowOnce({ key, budgetId: 'page', attempt: 'x' }, windowStart, delta(1n), {})
+      }
+      const seen: string[] = []
+      let after
+      for (let round = 0; round < 10; round++) {
+        const page = await store.findStaleReferences!({ selection: 'attempt', olderThan: future, limit, ...(after === undefined ? {} : { after }) })
+        if (page.length === 0) break
+        expect(page.length).toBeLessThanOrEqual(limit)
+        seen.push(...page.map((found) => found.key))
+        const last = page[page.length - 1]!
+        after = { createdAt: last.createdAt, key: last.key, budgetId: last.budgetId, attempt: last.attempt }
+      }
+      expect([...seen].sort()).toEqual(['record:a', 'record:b', 'record:c', 'record:d', 'record:e'])
+      expect(new Set(seen).size).toBe(5)
+    })
+
+    /** The `retained` selection lists the committed references of every key, and only those older than the bound. */
+    it('lists every committed reference older than the bound under the retained selection', async () => {
+      const store = await make()
+      await seedBudget(store, 'ret')
+      const future = new Date(Date.now() + 3_600_000)
+      const reference = (key: string, attempt: string) => ({ key, budgetId: 'ret', attempt })
+      for (const key of ['reserve:a', 'record:b', 'capture:c']) {
+        await store.consumeWindowOnce(reference(key, 'x'), windowStart, delta(1n), {})
+        await store.commitReference(reference(key, 'x'))
+      }
+      await store.consumeWindowOnce(reference('record:open', 'x'), windowStart, delta(1n), {})
+      const listed = await store.findStaleReferences!({ selection: 'retained', olderThan: future, limit: 50 })
+      expect(listed.map((found) => `${found.key}/${found.attempt}`).sort()).toEqual(['capture:c/row', 'record:b/row', 'reserve:a/row'])
+      expect(await store.findStaleReferences!({ selection: 'retained', olderThan: new Date(0), limit: 50 })).toEqual([])
+    })
+
+    /*
+     * Invariant: pruning deletes the record that made a movement replayable and moves nothing. It refuses an application an
+     * attempt still holds, one that is younger than the bound, and one that does not exist; after it the key is a fresh one.
+     */
+    it('prunes an application whose references are all committed, and only then', async () => {
+      const store = await make()
+      await seedBudget(store, 'prune')
+      const future = new Date(Date.now() + 3_600_000)
+      const application = { key: 'record:p', budgetId: 'prune' }
+      await store.consumeWindowOnce({ ...application, attempt: 'a' }, windowStart, delta(30n), {})
+      await store.consumeWindowOnce({ ...application, attempt: 'b' }, windowStart, delta(30n), {})
+      await store.commitReference({ ...application, attempt: 'a' })
+      expect(await store.pruneApplication!(application, future)).toBe(false)
+      await store.dropReference({ ...application, attempt: 'b' })
+      expect(await store.pruneApplication!(application, new Date(0))).toBe(false)
+      expect(await store.pruneApplication!(application, future)).toBe(true)
+      expect(await store.pruneApplication!(application, future)).toBe(false)
+      expect(await store.findStaleReferences!({ selection: 'retained', olderThan: future, limit: 50 })).toEqual([])
+      expect(await store.getWindow('prune', windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 0, spentCount: 0 })
+      expect(await store.consumeWindowOnce({ ...application, attempt: 'c' }, windowStart, delta(30n), {})).toBe('applied')
+    })
+
+    /** Given-back applications older than the bound go, newer ones stay, and the window is as the drop left it. */
+    it('prunes the applications given back before the bound, up to the limit', async () => {
+      const store = await make()
+      await seedBudget(store, 'back2')
+      const future = new Date(Date.now() + 3_600_000)
+      for (const key of ['record:g1', 'record:g2', 'record:g3']) {
+        await store.consumeWindowOnce({ key, budgetId: 'back2', attempt: 'a' }, windowStart, delta(5n), {})
+        await store.dropReference({ key, budgetId: 'back2', attempt: 'a' })
+      }
+      await store.consumeWindowOnce({ key: 'record:live', budgetId: 'back2', attempt: 'a' }, windowStart, delta(5n), {})
+      expect(await store.pruneGivenBack!(new Date(0), 10)).toBe(0)
+      expect(await store.pruneGivenBack!(future, 2)).toBe(2)
+      expect(await store.pruneGivenBack!(future, 10)).toBe(1)
+      expect(await store.pruneGivenBack!(future, 10)).toBe(0)
+      expect(await store.getWindow('back2', windowStart)).toEqual({ spentNanoUsd: 5n, spentTokens: 0, spentCount: 0 })
+      expect(await store.dropReference({ key: 'record:live', budgetId: 'back2', attempt: 'a' })).toBe('unapplied')
+    })
   })
 }

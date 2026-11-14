@@ -38,13 +38,14 @@ import type {
 } from '../shared'
 import type {
   ApplicationOutcome,
-  BudgetDelta,
+  BudgetApplication, BudgetDelta,
   BudgetKey,
   BudgetLimits,
   BudgetReference,
   BudgetWindowSpend,
   CommitOutcome,
   DropOutcome,
+  StaleReference, StaleReferenceQuery,
   IAiTokensStore,
   LedgerCostSummary,
   OpenGrant,
@@ -61,7 +62,7 @@ import type {
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
-import { adjustWindowSql, consumeWindowSql, ensureWindowSql } from './budget-statements'
+import { adjustWindowSql, consumeWindowSql, ensureWindowSql, findBudgetSql, matchingBudgetsSql, removeBudgetSql, removeBudgetWindowsSql, resetWindowSql, windowSql } from './budget-statements'
 import { empty, join, sql, type Sql } from './sql'
 import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
@@ -524,25 +525,18 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   async remove(key: BudgetKey): Promise<void> {
     await this.prisma.transaction(async (tx) => {
-      await tx.execute(sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" IN (SELECT "id" FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId})`)
-      await tx.execute(sql`DELETE FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId}`)
+      await tx.execute(removeBudgetWindowsSql(key.id, key.tenantId))
+      await tx.execute(removeBudgetSql(key.id, key.tenantId))
     })
   }
 
   async findBudgetById(key: BudgetKey): Promise<Budget | null> {
-    const rows = await this.prisma.query<BudgetRow[]>(sql`SELECT * FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId} LIMIT 1`)
+    const rows = await this.prisma.query<BudgetRow[]>(findBudgetSql(key.id, key.tenantId))
     return rows[0] === undefined ? null : mapBudgetRow(rows[0])
   }
 
   async findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
-    const now = new Date()
-    const rows = await this.prisma.query<BudgetRow[]>(sql`
-      SELECT * FROM "ai_budgets"
-      WHERE "tenantId" = ${tenantId}
-        AND ("scopeType" = 'tenant' OR ("scopeType" = ${scope.type} AND "scopeId" = ${scope.id}))
-        AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
-    `)
-    return rows.map(mapBudgetRow)
+    return (await this.prisma.query<BudgetRow[]>(matchingBudgetsSql(tenantId, scope, new Date()))).map(mapBudgetRow)
   }
 
   async conditionalConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<boolean> {
@@ -575,19 +569,25 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return this.applications.drop(reference)
   }
 
+  findStaleReferences(query: StaleReferenceQuery): Promise<StaleReference[]> {
+    return this.applications.stale(query)
+  }
+
+  pruneApplication(application: BudgetApplication, before: Date): Promise<boolean> {
+    return this.applications.prune(application, before)
+  }
+
+  pruneGivenBack(before: Date, limit: number): Promise<number> {
+    return this.applications.pruneGivenBack(before, limit)
+  }
+
   async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
-    const rows = await this.prisma.query<BudgetWindowRow[]>(
-      sql`SELECT * FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart} LIMIT 1`,
-    )
+    const rows = await this.prisma.query<BudgetWindowRow[]>(windowSql(budgetId, windowStart))
     return rows[0] === undefined ? null : mapBudgetWindowRow(rows[0])
   }
 
   async setWindowStart(key: BudgetKey, windowStart: Date): Promise<void> {
-    await this.prisma.execute(sql`
-      INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
-      SELECT ${randomUUID()}, "id", ${windowStart}, 0, 0, 0, ${DB_NOW_SQL} FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId}
-      ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = ${DB_NOW_SQL}
-    `)
+    await this.prisma.execute(resetWindowSql(key.id, key.tenantId, windowStart))
   }
 
   /** Load the wallet within a transaction (existence + id for the conditional debit). */

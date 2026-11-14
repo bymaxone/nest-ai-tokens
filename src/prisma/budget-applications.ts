@@ -6,7 +6,7 @@
  * @layer prisma
  */
 
-import type { ApplicationOutcome, BudgetDelta, BudgetLimits, BudgetReference, CommitOutcome, DropOutcome } from '../server'
+import type { ApplicationOutcome, BudgetApplication, BudgetDelta, BudgetLimits, BudgetReference, CommitOutcome, DropOutcome, StaleReference, StaleReferenceQuery } from '../server'
 import { COMMITTED_REFERENCE } from '../server/utils/budget-references'
 import {
   adjustWindowSql,
@@ -14,8 +14,11 @@ import {
   consumeWindowSql,
   deleteReferenceSql,
   ensureWindowSql,
+  pruneApplicationSql,
+  pruneGivenBackSql,
   lockApplicationSql,
   recordApplicationSql,
+  staleReferencesSql,
   referenceHeldSql,
   renameReferenceSql,
   takeReferenceSql,
@@ -30,6 +33,19 @@ interface StateRow {
   spentTokens: bigint
   spentCount: number
   unappliedAt: Date | null
+}
+
+/** What `staleReferencesSql` returns. */
+interface StaleRow {
+  key: string
+  budgetId: string
+  attempt: string
+  createdAt: Date
+  tenantId: string
+  windowStart: Date
+  spentNanoUsd: bigint
+  spentTokens: bigint
+  spentCount: number
 }
 
 /** Thrown inside the transaction to roll the application back when a limit refuses the consume. */
@@ -83,6 +99,33 @@ export class BudgetApplications {
       await tx.execute(adjustWindowSql(reference.budgetId, moved.windowStart, delta))
       return 'unapplied'
     })
+  }
+
+  /** Delete an application that only committed references hold and that is older than `before`, under its row lock. */
+  prune(application: BudgetApplication, before: Date): Promise<boolean> {
+    return this.prisma.transaction(async (tx) => {
+      if ((await tx.query<StateRow[]>(lockApplicationSql(application)))[0] === undefined) return false
+      return (await tx.query<unknown[]>(pruneApplicationSql(application, before))).length > 0
+    })
+  }
+
+  /** Delete up to `limit` applications that were given back before `before`. */
+  async pruneGivenBack(before: Date, limit: number): Promise<number> {
+    return (await this.prisma.query<unknown[]>(pruneGivenBackSql(before, limit))).length
+  }
+
+  /** A page of the references older than a bound, with what each application moved. */
+  async stale(query: StaleReferenceQuery): Promise<StaleReference[]> {
+    const rows = await this.prisma.query<StaleRow[]>(staleReferencesSql(query))
+    return rows.map((row) => ({
+      key: row.key,
+      budgetId: row.budgetId,
+      attempt: row.attempt,
+      createdAt: row.createdAt,
+      tenantId: row.tenantId,
+      windowStart: row.windowStart,
+      delta: { nanoUsd: row.spentNanoUsd, tokens: Number(row.spentTokens), count: row.spentCount },
+    }))
   }
 
   /** Record or find the application, take the attempt's reference and, for a new application, move the window. */

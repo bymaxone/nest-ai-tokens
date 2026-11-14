@@ -10,6 +10,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
+import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 
 const LEDGER_METHODS = [
   'append',
@@ -149,15 +150,27 @@ function validateHolds(options: BymaxAiTokensModuleOptions): void {
   requireBoundedInteger('holds.reaperIntervalSeconds', holds.reaperIntervalSeconds, MAX_TIMER_SECONDS)
 }
 
-/** Validate the settlement sweep: a boolean switch and a grace of whole seconds that a timer unit can hold. */
+/**
+ * Validate the settlement sweep: a boolean switch, a grace of whole seconds that a timer unit can hold, and a retention
+ * of whole seconds that exceeds both the grace and the hold TTL. The relations are checked on the effective values, the
+ * defaults included, because a retention that is shorter than the longest a hold or a sweep can still judge a key would
+ * delete the application that protects it.
+ */
 function validateSettlement(options: BymaxAiTokensModuleOptions): void {
   const settlement = options.settlement
-  if (settlement === undefined) return
-  if (settlement.enabled !== undefined && typeof settlement.enabled !== 'boolean') {
+  if (settlement?.enabled !== undefined && typeof settlement.enabled !== 'boolean') {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     throw invalidConfig(`settlement.enabled must be a boolean, received ${String(settlement.enabled)}`)
   }
-  requireBoundedInteger('settlement.graceSeconds', settlement.graceSeconds, MAX_TIMER_SECONDS)
+  requireBoundedInteger('settlement.graceSeconds', settlement?.graceSeconds, MAX_TIMER_SECONDS)
+  requireBoundedInteger('settlement.retentionSeconds', settlement?.retentionSeconds, MAX_TTL_SECONDS)
+  const retention = settlement?.retentionSeconds ?? D.settlement.retentionSeconds
+  const grace = settlement?.graceSeconds ?? D.settlement.graceSeconds
+  const ttl = options.holds?.ttlSeconds ?? D.holds.ttlSeconds
+  if (retention <= grace || retention <= ttl) {
+    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+    throw invalidConfig(`settlement.retentionSeconds must exceed settlement.graceSeconds and holds.ttlSeconds, received ${String(retention)} with ${String(grace)} and ${String(ttl)}`)
+  }
 }
 
 /** Validate the content-capture TTL and the report export cap: positive integers. */

@@ -6,7 +6,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { BudgetApplication, BudgetDelta, BudgetLimits, BudgetReference } from '../server'
+import type { BudgetApplication, BudgetDelta, BudgetLimits, BudgetReference, StaleReferenceQuery } from '../server'
+import type { MeteringScope } from '../shared'
+import { COMMITTED_REFERENCE, RESERVE_KEY_PREFIX } from '../server/utils/budget-references'
 import { DB_NOW_SQL } from './adapter-sql'
 import { sql, type Sql } from './sql'
 
@@ -122,5 +124,98 @@ export function unapplySql(application: BudgetApplication): Sql {
     UPDATE "ai_budget_applications" SET "unappliedAt" = ${DB_NOW_SQL}
     WHERE "key" = ${application.key} AND "budgetId" = ${application.budgetId} AND "unappliedAt" IS NULL
     RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"
+  `
+}
+
+/**
+ * A page of the references that are older than a bound, each with the window and delta of its application, in the order
+ * `(createdAt, key, budgetId, attempt)`. The text columns are compared in the byte order of the `C` collation, in the
+ * keyset and in the sort alike, so that a page boundary falls where the store's own ordering says whatever the database's
+ * collation is.
+ */
+export function staleReferencesSql(query: StaleReferenceQuery): Sql {
+  const wanted =
+    query.selection === 'attempt'
+      ? sql`r."attempt" <> ${COMMITTED_REFERENCE}`
+      : query.selection === 'retained'
+        ? sql`r."attempt" = ${COMMITTED_REFERENCE}`
+        : sql`r."attempt" = ${COMMITTED_REFERENCE} AND left(r."key", ${RESERVE_KEY_PREFIX.length}) = ${RESERVE_KEY_PREFIX}`
+  const after =
+    query.after === undefined
+      ? sql`TRUE`
+      : sql`(r."createdAt", r."key" COLLATE "C", r."budgetId" COLLATE "C", r."attempt" COLLATE "C") > (${query.after.createdAt}, ${query.after.key}::text COLLATE "C", ${query.after.budgetId}::text COLLATE "C", ${query.after.attempt}::text COLLATE "C")`
+  return sql`
+    SELECT r."key", r."budgetId", r."attempt", r."createdAt", b."tenantId", a."windowStart", a."spentNanoUsd", a."spentTokens", a."spentCount"
+    FROM "ai_budget_references" r JOIN "ai_budget_applications" a ON a."key" = r."key" AND a."budgetId" = r."budgetId"
+    JOIN "ai_budgets" b ON b."id" = r."budgetId"
+    WHERE r."createdAt" < ${query.olderThan} AND ${wanted} AND ${after}
+    ORDER BY r."createdAt" ASC, r."key" COLLATE "C" ASC, r."budgetId" COLLATE "C" ASC, r."attempt" COLLATE "C" ASC
+    LIMIT ${query.limit}
+  `
+}
+
+/**
+ * Delete an application, and its references with it, when every reference left on it is the committed one and it is older
+ * than `before`. The caller holds the application's row lock, so no attempt takes a reference between the check and the
+ * delete. `RETURNING` is empty when nothing was deleted.
+ */
+export function pruneApplicationSql(application: BudgetApplication, before: Date): Sql {
+  return sql`
+    DELETE FROM "ai_budget_applications" a
+    WHERE a."key" = ${application.key} AND a."budgetId" = ${application.budgetId} AND a."createdAt" < ${before}
+      AND NOT EXISTS (SELECT 1 FROM "ai_budget_references" r WHERE r."key" = a."key" AND r."budgetId" = a."budgetId" AND r."attempt" <> ${COMMITTED_REFERENCE})
+    RETURNING a."key"
+  `
+}
+
+/**
+ * Delete up to `limit` applications that were given back before `before`, oldest first. The outer condition repeats the
+ * test, so an application that a retry re-activated between the listing and the delete is not deleted.
+ */
+export function pruneGivenBackSql(before: Date, limit: number): Sql {
+  return sql`
+    DELETE FROM "ai_budget_applications"
+    WHERE ("key", "budgetId") IN (SELECT "key", "budgetId" FROM "ai_budget_applications" WHERE "unappliedAt" < ${before} ORDER BY "unappliedAt" ASC LIMIT ${limit})
+      AND "unappliedAt" < ${before}
+    RETURNING "key"
+  `
+}
+
+/** Delete the windows of a budget the tenant owns. */
+export function removeBudgetWindowsSql(budgetId: string, tenantId: string): Sql {
+  return sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" IN (SELECT "id" FROM "ai_budgets" WHERE "id" = ${budgetId} AND "tenantId" = ${tenantId})`
+}
+
+/** Delete a budget the tenant owns. */
+export function removeBudgetSql(budgetId: string, tenantId: string): Sql {
+  return sql`DELETE FROM "ai_budgets" WHERE "id" = ${budgetId} AND "tenantId" = ${tenantId}`
+}
+
+/** One budget of a tenant by id. */
+export function findBudgetSql(budgetId: string, tenantId: string): Sql {
+  return sql`SELECT * FROM "ai_budgets" WHERE "id" = ${budgetId} AND "tenantId" = ${tenantId} LIMIT 1`
+}
+
+/** The budgets of a tenant scoped to the exact scope or tenant-wide, and not expired at `now`. */
+export function matchingBudgetsSql(tenantId: string, scope: MeteringScope, now: Date): Sql {
+  return sql`
+    SELECT * FROM "ai_budgets"
+    WHERE "tenantId" = ${tenantId}
+      AND ("scopeType" = 'tenant' OR ("scopeType" = ${scope.type} AND "scopeId" = ${scope.id}))
+      AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
+  `
+}
+
+/** One window row of a budget. */
+export function windowSql(budgetId: string, windowStart: Date): Sql {
+  return sql`SELECT * FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart} LIMIT 1`
+}
+
+/** Start a window of a budget the tenant owns at zero, or reset it to zero. */
+export function resetWindowSql(budgetId: string, tenantId: string, windowStart: Date): Sql {
+  return sql`
+    INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
+    SELECT ${randomUUID()}, "id", ${windowStart}, 0, 0, 0, ${DB_NOW_SQL} FROM "ai_budgets" WHERE "id" = ${budgetId} AND "tenantId" = ${tenantId}
+    ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = ${DB_NOW_SQL}
   `
 }

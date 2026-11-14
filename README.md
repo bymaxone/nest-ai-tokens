@@ -309,6 +309,7 @@ export class AiController {
 | `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                   |
 | `settlement.enabled`        | `boolean`                             | `true`           | Run the settlement sweep with the reaper; inactive for a store without the marker |
 | `settlement.graceSeconds`   | `number`                              | `300`            | How long a row's effects may stay owed before the sweep runs them (1 to 2,147,483) |
+| `settlement.retentionSeconds` | `number`                            | `604800`         | How long the record of a budget movement is kept after it was given back or its row ended; must exceed `graceSeconds` and `holds.ttlSeconds` |
 | `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it  |
 | `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                     |
 
@@ -853,11 +854,35 @@ sweeping at once hold no lock between them. The sweep re-emits the event a write
 idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
 once at boot.
 
+The budget has a second sweep on the same tick. A keyed budget movement holds one reference per attempt, and an attempt that
+dies between taking the movement and writing its ledger row leaves its reference, so the window counts a call nobody
+owns. The sweep lists the references an attempt left that are older than the grace, looks at the ledger row under each key,
+and gives each one verdict: it gives the movement back when no row is the same call (the window loses it once), keeps it
+under the committed name when the row is the same call (a committed call is never under-counted), and leaves alone a
+reference that already belongs to a live row. A hold's committed reservation is given back only when its row was
+released, and only once it is older than the hold TTL plus the grace. A tick walks a bounded number of pages from a cursor
+that wraps, so the references of live calls cannot starve the ones that need a verdict. It also deletes what no longer
+protects anything: applications given back, and applications whose row ended and owes no effects, once they are older than
+`settlement.retentionSeconds`. A pending hold's reference is never deleted. A store without the optional
+`findStaleReferences`, `pruneApplication` and `pruneGivenBack` calls leaves that part inactive.
+
 Limits you can rely on:
 
 - The grace is a performance knob, not a correctness bound. A sweep that reaches a row while the inline path is still
   running its effects only repeats keyed legs that move nothing.
 - The effects are exact for the wallet and the budget and at-least-once for events and spans.
+- While one step of a call is stuck for longer than the grace (a wallet debit or an append that does not return), the
+  sweep gives its movement back and the window does not count the call, so another call can be admitted under the limit
+  and the window can end above it. The call is counted in the end: its commit takes the movement again, without limits.
+  Nothing is added to prevent it: a heartbeat would cost a write per running attempt, and a declared maximum duration would
+  turn a number you have to guess into a correctness bound.
+- The sweep corrects the budget window, not the live counter of a Redis counter store: a counter keeps what the fast path
+  added until the window rotates, and the database decides whenever the counter is stale-high.
+- A keyed `record()` row that won a race against a `hold()` on the same key is posted like a captured hold, and the sweep
+  cannot tell them apart: it keeps the hold's reservation counted until its window rotates. It needs that race on one key,
+  and the over-count fails closed.
+- The record of a movement is deleted after the retention. A key is replayed from its ledger row, which holds the
+  call, so a replay after the retention takes no budget movement.
 
 ---
 

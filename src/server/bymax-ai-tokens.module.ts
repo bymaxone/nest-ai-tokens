@@ -39,6 +39,7 @@ import {
 } from './events/event-hooks'
 import { BudgetGuard, MeteringInterceptor } from './enforcement'
 import { disabledService, liveService } from './disabled-service'
+import { BudgetReferenceSweeper } from './enforcement/budget-reference-sweeper'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type {
   BymaxAiTokensModuleAsyncOptions,
@@ -152,8 +153,17 @@ function buildServiceProviders(): Provider[] {
       // Registered unconditionally: hold() writes pending rows whenever it is used,
       // even without wallets/budgets, and a stranded hold must still be reclaimed.
       provide: HoldReaper,
-      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions): HoldReaper => new HoldReaper(ledger, metering, options),
-      inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS],
+      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions, budgetStore?: IBudgetStore | null): HoldReaper =>
+        new HoldReaper(
+          ledger,
+          metering,
+          options,
+          undefined,
+          options.budgets.enabled && budgetStore != null
+            ? new BudgetReferenceSweeper(budgetStore, ledger, { graceSeconds: options.settlement.graceSeconds, holdTtlSeconds: options.holds.ttlSeconds, retentionSeconds: options.settlement.retentionSeconds })
+            : undefined,
+        ),
+      inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS, { token: BYMAX_AI_TOKENS_BUDGET_STORE, optional: true }],
     },
     {
       provide: UsageReportService,

@@ -20,6 +20,19 @@ new optional `findEffectsOwed`, `findEffectsOwedFor` and `clearEffectsOwed` call
 that once at boot. The ledger table gains no column: the only change a posted row takes is still the annotation of its
 reversal.
 
+**Apply:** a budget reference an attempt left behind (it died between taking the movement and writing its ledger row) is now
+settled by the reaper's tick, once it is older than `settlement.graceSeconds`: the movement is given back when no ledger
+row is the same call, and kept under the committed name when one is, so the window no longer counts a call nobody owns. The
+reaper also deletes the record of a budget movement once it was given back, or its ledger row ended and owes nothing, and is
+older than the new `settlement.retentionSeconds` (default 604800, 7 days). The module refuses at boot, naming
+`settlement.retentionSeconds`, a retention that is not a whole number or that does not exceed both `settlement.graceSeconds`
+and `holds.ttlSeconds`, checked on the effective values: a `holds.ttlSeconds` above 604800, or a grace above it, now needs
+a `settlement.retentionSeconds` of its own. Migration `0002_budget_applications.sql` gains two indexes (the references by
+creation time and the applications by the instant they were given back); it is unreleased and still additive. A custom
+`IBudgetStore` gains the optional `findStaleReferences`, `pruneApplication` and `pruneGivenBack` calls and keeps working
+with that part inactive. While one step of a call is stuck for longer than the grace the window does not count the call and
+can end above the limit; the call is counted in the end. The sweep does not correct a live Redis counter.
+
 **Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
 application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then
 `disconnect()`, and nothing for a client that has already ended. A `closeTimeoutMs` that is not a whole number from 1 to

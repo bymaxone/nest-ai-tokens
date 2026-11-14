@@ -239,7 +239,8 @@ describe('validateOptions', () => {
   /** Each bound is inclusive: 1 is accepted everywhere, and so is the largest value whose milliseconds stay safe. */
   it('accepts the smallest and the largest bounded values', () => {
     expect(() => validateOptions(opts({ holds: { ttlSeconds: 1, reaperIntervalSeconds: 1 } }))).not.toThrow()
-    expect(() => validateOptions(opts({ holds: { ttlSeconds: 2_147_483_647 } }))).not.toThrow()
+    // The retention must exceed the hold TTL, so a TTL near its largest needs an explicit retention above it.
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 2_147_483_646 }, settlement: { retentionSeconds: 2_147_483_647 } }))).not.toThrow()
     expect(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 1 }, reporting: { maxExportRows: 1 } }))).not.toThrow()
     expect(() => validateOptions(opts({ reporting: { maxExportRows: Number.MAX_SAFE_INTEGER } }))).not.toThrow()
     expect(codeOf(caught(() => validateOptions(opts({ holds: { ttlSeconds: 2_147_483_648 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
@@ -276,18 +277,47 @@ describe('validateOptions', () => {
     expect(JSON.stringify(exception.getResponse())).toContain(option)
   })
 
+  /**
+   * The retention of the budget applications is a whole number of seconds that exceeds both the grace and the hold TTL:
+   * a key must stay replayable for as long as a sweep or a reaper may still judge its reference. Each relation is checked
+   * on the effective values, the defaults included, and each refusal names `settlement.retentionSeconds`.
+   */
+  it.each([
+    { name: 'NaN', over: { settlement: { retentionSeconds: Number.NaN } } },
+    { name: 'a fraction', over: { settlement: { retentionSeconds: 1000.5 } } },
+    { name: 'zero', over: { settlement: { retentionSeconds: 0 } } },
+    { name: 'negative', over: { settlement: { retentionSeconds: -1 } } },
+    { name: 'a string', over: { settlement: { retentionSeconds: '604800' as unknown as number } } },
+    { name: 'above the largest', over: { settlement: { retentionSeconds: 2_147_483_648 } } },
+    { name: 'equal to the grace', over: { settlement: { graceSeconds: 1_000, retentionSeconds: 1_000 } } },
+    { name: 'below the grace', over: { settlement: { graceSeconds: 1_000, retentionSeconds: 999 } } },
+    { name: 'equal to the hold TTL', over: { holds: { ttlSeconds: 7_200 }, settlement: { retentionSeconds: 7_200 } } },
+    { name: 'below the hold TTL', over: { holds: { ttlSeconds: 7_200 }, settlement: { retentionSeconds: 7_199 } } },
+    { name: 'the default, with a grace above it', over: { settlement: { graceSeconds: 604_800 } } },
+    { name: 'the default, with a hold TTL above it and no settlement section', over: { holds: { ttlSeconds: 700_000 } } },
+  ])('refuses a retention that is $name', ({ over }) => {
+    const exception = caught(() => validateOptions(opts(over)))
+    expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(JSON.stringify(exception.getResponse())).toContain('settlement.retentionSeconds')
+  })
+
+  it('accepts a retention one second above both the grace and the hold TTL', () => {
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 7_200 }, settlement: { graceSeconds: 7_200, retentionSeconds: 7_201 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 604_799 } }))).not.toThrow()
+  })
+
   /** The smallest and the largest grace, an omitted section and a disabled sweep are accepted. */
   it('accepts the bounds of the settlement grace and a disabled sweep', () => {
     expect(() => validateOptions(opts({ settlement: { graceSeconds: 1 } }))).not.toThrow()
-    expect(() => validateOptions(opts({ settlement: { graceSeconds: 2_147_483 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ settlement: { graceSeconds: 2_147_483, retentionSeconds: 2_147_484 } }))).not.toThrow()
     expect(() => validateOptions(opts({ settlement: { enabled: false } }))).not.toThrow()
     expect(() => validateOptions(opts({}))).not.toThrow()
   })
 
   /** The sweep is on by default with a grace of 300 seconds, and an explicit setting replaces each default. */
   it('resolves the settlement defaults and keeps an explicit setting', () => {
-    expect(applyDefaults(opts({})).settlement).toEqual({ enabled: true, graceSeconds: 300 })
-    expect(applyDefaults(opts({ settlement: { enabled: false, graceSeconds: 60 } })).settlement).toEqual({ enabled: false, graceSeconds: 60 })
+    expect(applyDefaults(opts({})).settlement).toEqual({ enabled: true, graceSeconds: 300, retentionSeconds: 604_800 })
+    expect(applyDefaults(opts({ settlement: { enabled: false, graceSeconds: 60, retentionSeconds: 3_600 } })).settlement).toEqual({ enabled: false, graceSeconds: 60, retentionSeconds: 3_600 })
   })
 
   /** A non-positive credit rate or negative overdraft is rejected. */

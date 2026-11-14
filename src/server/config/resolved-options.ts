@@ -36,6 +36,7 @@ export interface ResolvedHoldsOptions {
 export interface ResolvedSettlementOptions {
   enabled: boolean
   graceSeconds: number
+  retentionSeconds: number
 }
 
 /** Resolved ledger extras. */

@@ -102,6 +102,13 @@ export interface BymaxAiTokensModuleOptions {
      * correctness.
      */
     graceSeconds?: number
+    /**
+     * How long a budget application and its references are kept after they were given back, or after the ledger row they
+     * belong to ended, before the sweep deletes them, in whole seconds. It must exceed `graceSeconds` and `holds.ttlSeconds`.
+     * Default `604800` (7 days), a figure without a deployment measurement. A pending hold's committed reference is never
+     * deleted.
+     */
+    retentionSeconds?: number
   }
 
   /** Ledger extras. */

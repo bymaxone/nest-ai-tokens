@@ -213,6 +213,7 @@ model AiBudgetApplication {
 
   @@id([key, budgetId])
   @@index([budgetId])
+  @@index([unappliedAt])
   @@map("ai_budget_applications")
 }
 
@@ -225,6 +226,7 @@ model AiBudgetReference {
   application AiBudgetApplication @relation(fields: [key, budgetId], references: [key, budgetId], onDelete: Cascade)
 
   @@id([key, budgetId, attempt])
+  @@index([createdAt])
   @@map("ai_budget_references")
 }
 

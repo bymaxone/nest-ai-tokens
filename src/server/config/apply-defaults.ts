@@ -94,6 +94,7 @@ function resolveSettlement(settlement: BymaxAiTokensModuleOptions['settlement'])
   return {
     enabled: settlement?.enabled ?? D.settlement.enabled,
     graceSeconds: settlement?.graceSeconds ?? D.settlement.graceSeconds,
+    retentionSeconds: settlement?.retentionSeconds ?? D.settlement.retentionSeconds,
   }
 }
 
