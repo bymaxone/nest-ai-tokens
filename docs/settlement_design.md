@@ -6,7 +6,7 @@ This collects what the earlier notes ([`hold_same_key_design.md`](hold_same_key_
 
 ## The root: a transition commits, its effects are best-effort
 
-`capture`, `release` and `reverse` each do `ledger.transition(...)` or `ledger.reverse(...)` (one atomic statement) and then apply the effects one after the other.
+`capture` and `release` each do one atomic `ledger.transition(...)`, and `reverse` an append of the compensating record then a transition of the original, and then each applies the effects one after the other.
 
 What a crash, a store error or a lost connection between the two steps leaves:
 
@@ -14,7 +14,7 @@ What a crash, a store error or a lost connection between the two steps leaves:
 | --- | --- | --- |
 | `capture` | the row is `posted` with the actual cost | the budget still holds the estimate and the wallet still holds the reservation, never settled |
 | `release` | the row is `released` | the budget consumption and the wallet reservation are never given back; the reaper only reclaims `pending` rows, so nothing ever does |
-| `reverse` | the compensating row exists, the original is annotated | the refund and the budget release run under a `try`/`catch` that only logs, so a failed one is never retried |
+| `reverse` | the compensating row exists; a crash before the next step leaves the original `posted`, otherwise it is annotated | the refund and the budget release run under a `try`/`catch` that only logs, so a failed one is never retried |
 
 The wallet legs are safe to repeat: their keys (`capture:<id>`, `release:<id>`, `reverse:<id>`) make a second attempt a replay. The budget legs are not: `adjust` and `release` are signed `adjustWindow` calls with no key, so repeating one applies it twice. That asymmetry is why "just retry the effects" is not a fix today.
 
@@ -31,7 +31,7 @@ The wallet legs are safe to repeat: their keys (`capture:<id>`, `release:<id>`, 
 
 The shape is forward recovery, not rollback: make every effect safe to repeat, record that a transition's effects are still owed, and let the process that already sweeps (the hold reaper) finish them.
 
-1. **An effects-owed marker written by the transition itself.** One nullable column on `ai_usage_records`, set in the same statement as the transition (`pending → posted`, `pending → released`, the reversal), cleared once the effects have run. A row with the marker set and an old `updatedAt` is work. `ledger.transition` and `ledger.reverse` set it; the effects clear it through one new store call. No second table and no distributed transaction.
+1. **An effects-owed marker written by the transition itself.** One nullable column on `ai_usage_records`, set in the same statement as the transition (`pending → posted`, `pending → released`) and, for a reversal, on the compensating append, cleared once the effects have run. A row with the marker set and an old `updatedAt` is work. `ledger.transition` and `ledger.reverse` set it; the effects clear it through one new store call. No second table and no distributed transaction.
 2. **Keyed, once-only budget effects.** A small table `ai_budget_applications (budgetId, windowStart, key, kind)` with a unique key, and one store call that inserts the marker and moves the window in one transaction (`adjustWindowOnce`). `key` is the call key, or `<recordId>:capture|release|reverse`. A repeat inserts nothing and moves nothing. This is also the per-call marker item 1 needs: the loser of a cross-instance race finds the winner's marker and consumes nothing. It also removes the need for item 2's rollback on a throw, because a retry of the failed call finishes the windows that were not applied and skips the ones that were.
 3. **The reaper finishes owed effects.** Its sweep gains a second query: rows with the marker set older than a threshold are settled by running the effects (wallet legs by their keys, budget legs by `adjustWindowOnce`, then the event and the span), then clearing the marker. `capture`, `release` and `reverse` run the same code inline first, so the common path pays nothing extra.
 4. **Repair the counter from the window.** `reconcileWindow` resets each counter key of the budget and reseeds it with the recomputed spend, exactly as `resyncCounter` already does after an overflow. It is a cache repair, never a source of truth.
