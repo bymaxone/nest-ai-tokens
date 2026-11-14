@@ -125,6 +125,9 @@ function validateBudgetThresholds(options: BymaxAiTokensModuleOptions): void {
 /** The longest delay `setInterval` runs: 2^31-1 milliseconds, a longer one fires every millisecond. */
 const MAX_TIMER_SECONDS = 2_147_483
 
+/** The longest TTL accepted, 2^31-1 seconds (about 68 years): its milliseconds added to a date stay a valid `Date`. */
+const MAX_TTL_SECONDS = 2_147_483_647
+
 /** Throw unless `value`, when given, is a finite integer from 1 to `max`, naming the option. */
 function requireBoundedInteger(option: string, value: number | undefined, max: number): void {
   if (value === undefined) return
@@ -138,13 +141,13 @@ function requireBoundedInteger(option: string, value: number | undefined, max: n
 function validateHolds(options: BymaxAiTokensModuleOptions): void {
   const holds = options.holds
   if (holds === undefined) return
-  requireBoundedInteger('holds.ttlSeconds', holds.ttlSeconds, Number.MAX_SAFE_INTEGER / 1_000)
+  requireBoundedInteger('holds.ttlSeconds', holds.ttlSeconds, MAX_TTL_SECONDS)
   requireBoundedInteger('holds.reaperIntervalSeconds', holds.reaperIntervalSeconds, MAX_TIMER_SECONDS)
 }
 
 /** Validate the content-capture TTL and the report export cap: positive integers. */
 function validateCounts(options: BymaxAiTokensModuleOptions): void {
-  requireBoundedInteger('content.ttlSeconds', options.content?.ttlSeconds, Number.MAX_SAFE_INTEGER / 1_000)
+  requireBoundedInteger('content.ttlSeconds', options.content?.ttlSeconds, MAX_TTL_SECONDS)
   requireBoundedInteger('reporting.maxExportRows', options.reporting?.maxExportRows, Number.MAX_SAFE_INTEGER)
 }
 

@@ -15,8 +15,8 @@ call had been enforced. The ledger no longer holds a record of a refused call. T
 keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and carries no `usageRecordId`.
 
 **Apply:** the module now refuses at boot, naming the option, a `holds.reaperIntervalSeconds` that is not an integer
-from 1 to 2,147,483, a `holds.ttlSeconds` or `content.ttlSeconds` that is not a positive integer whose milliseconds stay
-a safe integer, and a `reporting.maxExportRows` that is not a positive integer. Before, `NaN` and any interval above
+from 1 to 2,147,483, a `holds.ttlSeconds` or `content.ttlSeconds` that is not an integer from 1 to 2,147,483,647 (the hold's
+expiry date must stay a valid date), and a `reporting.maxExportRows` that is not a positive integer. Before, `NaN` and any interval above
 2,147,483 seconds passed, and `setInterval` ran the hold reaper every millisecond, and a fractional value passed as well.
 Values such as `0.5` are now refused; use whole seconds.
 

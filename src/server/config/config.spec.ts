@@ -235,11 +235,11 @@ describe('validateOptions', () => {
   /** Each bound is inclusive: 1 is accepted everywhere, and so is the largest value whose milliseconds stay safe. */
   it('accepts the smallest and the largest bounded values', () => {
     expect(() => validateOptions(opts({ holds: { ttlSeconds: 1, reaperIntervalSeconds: 1 } }))).not.toThrow()
-    expect(() => validateOptions(opts({ holds: { ttlSeconds: 9_007_199_254_740 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 2_147_483_647 } }))).not.toThrow()
     expect(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 1 }, reporting: { maxExportRows: 1 } }))).not.toThrow()
     expect(() => validateOptions(opts({ reporting: { maxExportRows: Number.MAX_SAFE_INTEGER } }))).not.toThrow()
-    expect(codeOf(caught(() => validateOptions(opts({ holds: { ttlSeconds: 9_007_199_254_741 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(codeOf(caught(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 9_007_199_254_741 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(codeOf(caught(() => validateOptions(opts({ holds: { ttlSeconds: 2_147_483_648 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(codeOf(caught(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 2_147_483_648 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
     expect(codeOf(caught(() => validateOptions(opts({ reporting: { maxExportRows: Number.MAX_SAFE_INTEGER + 2 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
   })
 
