@@ -682,6 +682,7 @@ describe('MeteringEffects.reverseEffects', () => {
     const effects = new MeteringEffects(wallets, undefined)
     const error = await effects.reverseEffects(record(), 'reason').catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe('a leg of the reversal failed')
     expect((error as Error).cause).toBe('refund down')
     warn.mockRestore()
   })

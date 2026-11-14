@@ -54,7 +54,7 @@ describe('settleOwed', () => {
     const d = deps()
     await settleOwed(d.deps, { record: row({ status: 'released' }) })
     expect(d.effects.restoreHold).toHaveBeenCalledTimes(1)
-    expect(d.events.holdReleased).toHaveBeenCalledTimes(1)
+    expect(d.events.holdReleased).toHaveBeenCalledWith(expect.objectContaining({ id: 'r1' }), 'effects recovered by the settlement sweep', false)
     expect(d.effects.settleCapture).not.toHaveBeenCalled()
     expect(d.ledger.clearEffectsOwed).toHaveBeenCalledTimes(1)
   })

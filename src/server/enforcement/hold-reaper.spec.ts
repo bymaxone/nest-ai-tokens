@@ -287,7 +287,8 @@ describe('HoldReaper', () => {
         await built.reaper().sweep()
         const lines = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('settlement_sweep_failed'))
         expect(lines).toHaveLength(2)
-        expect(lines[0]).toContain('count=2')
+        const [oldest] = await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)
+        expect(lines[0]).toBe(`ai_tokens.hold_reaper.settlement_sweep_failed count=2 first=${oldest?.record.id ?? ''}`)
         expect(lines[0]).not.toContain('1000000000')
       } finally {
         warn.mockRestore()
@@ -333,6 +334,28 @@ describe('HoldReaper', () => {
         expect(log.mock.calls.filter(([line]) => String(line).includes('settlement_sweep_inactive'))).toHaveLength(1)
       } finally {
         reaper.onApplicationShutdown()
+        jest.useRealTimers()
+        log.mockRestore()
+      }
+    })
+
+    /** Nothing is said at boot when the store keeps the marker, or when the sweep is switched off. */
+    it('says nothing at boot when the store keeps the marker or the sweep is disabled', () => {
+      const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      jest.useFakeTimers()
+      try {
+        const kept = build()
+        const keptReaper = kept.reaper()
+        keptReaper.onApplicationBootstrap()
+        keptReaper.onApplicationShutdown()
+        const off = build()
+        ;(off.ledgerStore as { findEffectsOwed?: unknown }).findEffectsOwed = undefined
+        off.options.settlement = { enabled: false, graceSeconds: 300 }
+        const offReaper = off.reaper()
+        offReaper.onApplicationBootstrap()
+        offReaper.onApplicationShutdown()
+        expect(log.mock.calls.filter(([line]) => String(line).includes('settlement_sweep_inactive'))).toHaveLength(0)
+      } finally {
         jest.useRealTimers()
         log.mockRestore()
       }
