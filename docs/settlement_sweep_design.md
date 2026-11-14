@@ -61,7 +61,7 @@ PR 1 documented one over-count until the sweep: a reference that is not `row` an
 | --- | --- | --- |
 | named by an attempt, older than the grace | none | `dropReference`: the movement is given back when it was the last reference |
 | named by an attempt, older than the grace | `pending`, `posted` or `reversed`, the same call | **condition B:** `commitReference`: rename to `row`, so a committed call is never under-counted. A reversed row is renamed, not dropped: its reversal already gave the amounts back through the separate application `reverse:<id>`, and dropping the last reference would unapply the original movement a second time. |
-| named by an attempt, older than the grace | any status, not the same call | `dropReference`: the row is another payer's, another feature's or another amount's, and the inline failed-append path withdraws in the same case, so the sweep and the inline path cannot disagree. |
+| named by an attempt, older than the grace | any status, not the same call | `dropReference`: the row is another payer's, another feature's or another amount's. |
 | named by an attempt, older than the grace | `released` | `dropReference`, never a rename, so a released row does not keep a reservation. |
 | `row` | `released` | `dropReference` on `row`: the hold was released between the append and the commit and nothing released the reference afterwards. This is the interleaving two reviewers found on PR 1, and it is a required test here. |
 | `row` | `reversed` | keep, for the reason above: the reversal's own application cancels the amounts, and a drop would subtract them twice. |
