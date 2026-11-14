@@ -33,10 +33,10 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # A cold run measures about 97 min, and hosted runner speed varies about 1.5x on the same
-      # work across the fleet, so the ceiling sits well above the measurement. Nothing blocks on
-      # this job: an over-wide ceiling costs only the minutes it uses, while an under-tight one
-      # costs the whole run and leaves the week without a measured baseline.
+      # The ceiling is per shard job and sits well above what one shard needs, because hosted runner
+      # speed varies about 1.5x on the same work across the fleet. Nothing blocks on this job: an
+      # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the whole run
+      # and leaves the week without a measured baseline.
       timeout-minutes: 150
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
