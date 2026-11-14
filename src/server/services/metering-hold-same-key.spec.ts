@@ -348,4 +348,20 @@ describe('hold() with one idempotency key racing itself', () => {
     release()
     await blocked
   })
+
+  it('compensates a losing hold of another payer even when the winner carries the same instant', async () => {
+    const instant = new Date(Date.now() + 60_000)
+    const built = build({ wallets: true, budgets: true, clock: () => instant })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n, 'u1')
+    await grant(built, 10_000_000_000n, 'u2')
+    await built.service.hold(context({ idempotencyKey: 'h-12' }), ESTIMATE_A)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+
+    await expect(built.service.hold(context({ idempotencyKey: 'h-12', scope: { type: 'user', id: 'u2' } }), ESTIMATE_A)).rejects.toThrow('connection reset')
+
+    const u2 = await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u2' })
+    expect(u2.nanoUsd).toBe(10_000_000_000n)
+  })
 })

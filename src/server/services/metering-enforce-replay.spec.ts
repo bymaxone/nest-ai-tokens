@@ -371,6 +371,24 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n)
   })
 
+  it('compensates a losing enforced call of another payer even when the winner carries the same instant', async () => {
+    const instant = new Date(Date.now() + 60_000)
+    const built = build({ wallets: true, clock: () => instant })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n, 'u1')
+    await grant(built, 10_000_000_000n, 'u2')
+    await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-17' }), occurredAt: instant })
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+
+    await expect(
+      built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-17', scope: { type: 'user', id: 'u2' } }), occurredAt: instant }),
+    ).rejects.toThrow('connection reset')
+
+    const u2 = await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u2' })
+    expect(u2.nanoUsd).toBe(10_000_000_000n)
+  })
+
   it('moves nothing and rethrows the original error when the ledger cannot say whether the row was written', async () => {
     const built = build({ budgets: true })
     await seedGpt5(built.pricingStore)

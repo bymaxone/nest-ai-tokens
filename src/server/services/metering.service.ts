@@ -277,8 +277,8 @@ export class MeteringService {
     const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(appendInput.tenantId, callKey))
     if (row === undefined) throw error // the ledger cannot say whether the row exists: the charge stays, unguessed
     // A row after an error other than the key conflict is this attempt's own, written before the error reached it, when
-    // it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
-    const committed = row !== null && !conflict && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
+    // it is the same payer's and carries this attempt's instant: its charge stays, and a retry with the key replays the row.
+    const committed = row !== null && !conflict && sameScope(row.scope, appendInput.scope) && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
@@ -289,7 +289,7 @@ export class MeteringService {
 
   /**
    * Undo what a hold attempt reserved when its pending append threw, deciding from the row the ledger holds for the key:
-   * nothing when the ledger cannot say or the append committed (the row carries this attempt's instant), the budget
+   * nothing when the ledger cannot say or the append committed (the row is the same payer's and carries this attempt's instant), the budget
    * alone when the row shares the wallet debit or a keyed retry will replay it, and both otherwise.
    * @internal
    */
@@ -300,7 +300,7 @@ export class MeteringService {
     const { context, delta, ledgerKey, occurredAt } = held
     const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, ledgerKey))
     if (row === undefined) return
-    if (row !== null && !isIdempotencyConflict(error) && row.occurredAt.getTime() === occurredAt.getTime()) return
+    if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
     await this.effects.compensateHold(context, delta, ledgerKey, ownDebit)
   }

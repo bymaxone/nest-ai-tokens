@@ -38,10 +38,10 @@ Values such as `0.5` are now refused; use whole seconds.
   - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
     stays, which a retry with that key replays, so the retry is charged once;
   - another error and no row, without a key: both are given back;
-  - another error and a row that carries this attempt's instant (the append committed before the error reached the
+  - another error and a row of the same payer that carries this attempt's instant (the append committed before the error reached the
     caller): the charge stays, and a retry with the call's key replays the row; a call without a key is not replayed,
     so its retry is a new call;
-  - another error and a row that does not carry this attempt's instant (another attempt wrote it): the rule of the key
+  - another error and a row of another payer or that does not carry this attempt's instant (another attempt wrote it): the rule of the key
     conflict applies;
   - the ledger cannot say whether the row exists: nothing is undone, so the charge stays, and the error is rethrown.
 
