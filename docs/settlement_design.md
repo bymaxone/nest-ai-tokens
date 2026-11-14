@@ -42,8 +42,8 @@ The shape is forward recovery, not rollback: make every effect safe to repeat, r
 ## What changes for users
 
 - **A schema migration** (`0002`): the marker column and `ai_budget_applications`. A port addition: `IWalletStore.listEntries` takes the key-prefix filter, and `IBudgetStore` gains `adjustWindowOnce`. `ILedgerStore` gains the marker call.
-- That is a **minor release (1.2.0)**, not a patch, with an Apply note: custom stores implement the new calls, existing databases run the migration.
-- The `server` bundle budget needs a new number, measured after the work and set by the owner of the budget, not by the author.
+- That is a **patch release (1.1.x)**, with an Apply note: existing databases run migration 0002 (additive), and custom stores implement `adjustWindowOnce`, the `listEntries` key-prefix filter and the marker call.
+- The `server` bundle budget needs a new number, measured after the work; the PM sets the figure.
 
 ## Red tests, in this order
 
