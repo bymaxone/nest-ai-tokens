@@ -22,6 +22,8 @@ const PAGES_PER_TICK = 5
 const MS_PER_SECOND = 1_000
 /** Stable log key for a failed listing of references (the tick ends; the next one retries). */
 const SCAN_FAILED_LOG_KEY = 'ai_tokens.budget_reference_sweep.scan_failed'
+/** Stable log line, once per tick, while an owed marker older than the retention pauses the deletion of given-back applications. */
+const PRUNE_SKIPPED_LOG_KEY = 'ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped: an owed marker is older than the retention'
 /** Stable log key for the references a tick could not settle: one line with a count per tick. */
 const SETTLE_FAILED_LOG_KEY = 'ai_tokens.budget_reference_sweep.settle_failed'
 
@@ -117,7 +119,10 @@ export class BudgetReferenceSweeper {
   private async prune(list: ListStale, before: Date, failed: { count: number }): Promise<void> {
     if (this.store.pruneGivenBack !== undefined) {
       try {
-        await this.store.pruneGivenBack(before, this.pageSize)
+        // A given-back application names no row, so it stays while any row still owes effects past the retention: a retry of
+        // that row's release would otherwise find no application and give the movement back a second time.
+        if (await this.owesBefore(before)) this.logger.warn(PRUNE_SKIPPED_LOG_KEY)
+        else await this.store.pruneGivenBack(before, this.pageSize)
       } catch {
         failed.count += 1
       }
@@ -135,6 +140,11 @@ export class BudgetReferenceSweeper {
     // A reversal's marker is on the compensating row, which the original names, so both rows are read.
     if (this.ledger.supportsOwedEffects() && (await this.owesEffects(row))) return
     await this.store.pruneApplication?.(reference, before)
+  }
+
+  /** Whether any row has owed its effects since before `before`; a ledger that keeps no marker owes nothing. */
+  private async owesBefore(before: Date): Promise<boolean> {
+    return this.ledger.supportsOwedEffects() && (await this.ledger.findEffectsOwed(before, 1)).length > 0
   }
 
   /** Whether the row, or the compensating row that reversed it, still owes effects. */

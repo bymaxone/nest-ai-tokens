@@ -40,7 +40,7 @@ interface Rig {
 async function rig(over: { pageSize?: number; pages?: number } = {}): Promise<Rig> {
   const { now, advance } = clock()
   const budgets = new InMemoryBudgetStore({ now })
-  const ledgerStore = new InMemoryLedgerStore()
+  const ledgerStore = new InMemoryLedgerStore(now)
   const budget = await budgets.upsert({ id: 'b1', tenantId: 't1', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
   const sweeper = new BudgetReferenceSweeper(budgets, new LedgerService(ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, now, over)
   return { budgets, ledgerStore, sweeper, advance, now, budget }
@@ -386,6 +386,42 @@ describe('BudgetReferenceSweeper', () => {
       await r.ledgerStore.clearEffectsOwed(compensating.id)
       await r.sweeper.sweep()
       expect(await references(r.budgets)).toEqual([])
+    })
+
+    /**
+     * Invariant: while a released hold still owes its effects, the record of its given-back reservation stays, so a retry of the
+     * release finds the application and gives nothing back a second time. The given-back applications carry no key to the row, so
+     * the pruning waits for every marker older than the retention to be cleared.
+     */
+    it('keeps the given-back applications while a marker older than the retention remains, and deletes them once it is cleared', async () => {
+      const r = await rig()
+      const held = { key: 'reserve:rel', budgetId: 'b1', attempt: 'row' }
+      await r.budgets.consumeWindowOnce(held, WINDOW, DELTA, {})
+      await r.budgets.dropReference(held)
+      const row = await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: 'rel', occurredAt: OCCURRED }), 'hash', undefined, { reason: 'refund' })
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      // The tick says why nothing was pruned, once, so a stuck marker is visible.
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual(['ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped: an owed marker is older than the retention'])
+      // The application is still there: dropping the reference again finds it, with no reference left on it.
+      expect(await r.budgets.dropReference(held)).toBe('missing')
+      ;(Logger.prototype.warn as jest.Mock).mockClear()
+      await r.ledgerStore.clearEffectsOwed(row.id)
+      await r.sweeper.sweep()
+      expect(await r.budgets.dropReference(held)).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
+    it('counts a failed read of the markers with the rest of the tick and prunes nothing given back', async () => {
+      const r = await rig()
+      await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId: 'b1', attempt: 'a' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })
+      jest.spyOn(r.ledgerStore, 'findEffectsOwed').mockRejectedValue(new Error('down'))
+      const pruned = jest.spyOn(r.budgets, 'pruneGivenBack')
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect(pruned).not.toHaveBeenCalled()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual(['ai_tokens.budget_reference_sweep.settle_failed count=1'])
     })
 
     /** A committed reference with no row under its key, or under a key the table does not know, is left alone. */
