@@ -122,18 +122,30 @@ function validateBudgetThresholds(options: BymaxAiTokensModuleOptions): void {
   }
 }
 
-/** Validate hold TTL and reaper interval are positive. */
+/** The longest delay `setInterval` runs: 2^31-1 milliseconds, a longer one fires every millisecond. */
+const MAX_TIMER_SECONDS = 2_147_483
+
+/** Throw unless `value`, when given, is a finite integer from 1 to `max`, naming the option. */
+function requireBoundedInteger(option: string, value: number | undefined, max: number): void {
+  if (value === undefined) return
+  if (!Number.isInteger(value) || value < 1 || value > max) {
+    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+    throw invalidConfig(`${option} must be an integer from 1 to ${String(max)}, received ${String(value)}`)
+  }
+}
+
+/** Validate hold TTL and reaper interval: bounded positive integers, the interval one `setInterval` can run. */
 function validateHolds(options: BymaxAiTokensModuleOptions): void {
   const holds = options.holds
   if (holds === undefined) return
-  if (holds.ttlSeconds !== undefined && holds.ttlSeconds <= 0) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('holds.ttlSeconds must be greater than 0')
-  }
-  if (holds.reaperIntervalSeconds !== undefined && holds.reaperIntervalSeconds <= 0) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('holds.reaperIntervalSeconds must be greater than 0')
-  }
+  requireBoundedInteger('holds.ttlSeconds', holds.ttlSeconds, Number.MAX_SAFE_INTEGER / 1_000)
+  requireBoundedInteger('holds.reaperIntervalSeconds', holds.reaperIntervalSeconds, MAX_TIMER_SECONDS)
+}
+
+/** Validate the content-capture TTL and the report export cap: positive integers. */
+function validateCounts(options: BymaxAiTokensModuleOptions): void {
+  requireBoundedInteger('content.ttlSeconds', options.content?.ttlSeconds, Number.MAX_SAFE_INTEGER / 1_000)
+  requireBoundedInteger('reporting.maxExportRows', options.reporting?.maxExportRows, Number.MAX_SAFE_INTEGER)
 }
 
 /**
@@ -181,6 +193,7 @@ export function validateOptions(options: BymaxAiTokensModuleOptions): void {
   validateMarkup(options.markup)
   validateBudgetThresholds(options)
   validateHolds(options)
+  validateCounts(options)
   validateWallets(options)
   validatePricing(options)
 }

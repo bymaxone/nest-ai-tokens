@@ -209,6 +209,45 @@ describe('validateOptions', () => {
     )
   })
 
+  /**
+   * `setInterval` runs a delay above 2^31-1 ms, and NaN, every millisecond, so the reaper interval must be a finite
+   * positive integer of at most 2,147,483 seconds, and the hold TTL, the content TTL and the export row cap finite
+   * positive integers.
+   */
+  it.each([
+    { option: 'holds.reaperIntervalSeconds', over: { holds: { reaperIntervalSeconds: Number.NaN } } },
+    { option: 'holds.reaperIntervalSeconds', over: { holds: { reaperIntervalSeconds: Number.POSITIVE_INFINITY } } },
+    { option: 'holds.reaperIntervalSeconds', over: { holds: { reaperIntervalSeconds: 2_147_484 } } },
+    { option: 'holds.reaperIntervalSeconds', over: { holds: { reaperIntervalSeconds: 1.5 } } },
+    { option: 'holds.ttlSeconds', over: { holds: { ttlSeconds: Number.NaN } } },
+    { option: 'holds.ttlSeconds', over: { holds: { ttlSeconds: Number.POSITIVE_INFINITY } } },
+    { option: 'holds.ttlSeconds', over: { holds: { ttlSeconds: 1.5 } } },
+    { option: 'content.ttlSeconds', over: { content: { store: {} as never, ttlSeconds: Number.NaN } } },
+    { option: 'content.ttlSeconds', over: { content: { store: {} as never, ttlSeconds: 0 } } },
+    { option: 'reporting.maxExportRows', over: { reporting: { maxExportRows: Number.NaN } } },
+    { option: 'reporting.maxExportRows', over: { reporting: { maxExportRows: 0 } } },
+  ])('refuses $option when it is not a bounded positive integer', ({ option, over }) => {
+    const exception = caught(() => validateOptions(opts(over)))
+    expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(JSON.stringify((exception).getResponse())).toContain(option)
+  })
+
+  /** Each bound is inclusive: 1 is accepted everywhere, and so is the largest value whose milliseconds stay safe. */
+  it('accepts the smallest and the largest bounded values', () => {
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 1, reaperIntervalSeconds: 1 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ holds: { ttlSeconds: 9_007_199_254_740 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 1 }, reporting: { maxExportRows: 1 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ reporting: { maxExportRows: Number.MAX_SAFE_INTEGER } }))).not.toThrow()
+    expect(codeOf(caught(() => validateOptions(opts({ holds: { ttlSeconds: 9_007_199_254_741 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(codeOf(caught(() => validateOptions(opts({ content: { store: {} as never, ttlSeconds: 9_007_199_254_741 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(codeOf(caught(() => validateOptions(opts({ reporting: { maxExportRows: Number.MAX_SAFE_INTEGER + 2 } }))))).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** The largest interval `setInterval` can run is accepted. */
+  it('accepts a reaper interval of 2,147,483 seconds', () => {
+    expect(() => validateOptions(opts({ holds: { reaperIntervalSeconds: 2_147_483 } }))).not.toThrow()
+  })
+
   /** Positive hold timings are accepted. */
   it('accepts positive hold timings', () => {
     expect(() => validateOptions(opts({ holds: { ttlSeconds: 60, reaperIntervalSeconds: 30 } }))).not.toThrow()

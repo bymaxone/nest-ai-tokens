@@ -43,7 +43,7 @@ import { baseColumns, buildAppendInput, withBaseModel } from './record-columns'
 import type { RatingResult, RecordOutcome } from './record-replay'
 import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
-import type { Enforcement } from './metering-effects'
+import type { EffectDelta, Enforcement } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import type { TelemetryEmitter } from '../telemetry/otel-emitter'
@@ -288,6 +288,24 @@ export class MeteringService {
   }
 
   /**
+   * Undo what a hold attempt reserved when its pending append threw, deciding from the row the ledger holds for the key:
+   * nothing when the ledger cannot say or the append committed (the row carries this attempt's instant), the budget
+   * alone when the row shares the wallet debit or a keyed retry will replay it, and both otherwise.
+   * @internal
+   */
+  private async settleFailedHold(
+    error: unknown,
+    held: { context: MeteringContext; delta: EffectDelta; ledgerKey: string; occurredAt: Date },
+  ): Promise<void> {
+    const { context, delta, ledgerKey, occurredAt } = held
+    const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, ledgerKey))
+    if (row === undefined) return
+    if (row !== null && !isIdempotencyConflict(error) && row.occurredAt.getTime() === occurredAt.getTime()) return
+    const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
+    await this.effects.compensateHold(context, delta, ledgerKey, ownDebit)
+  }
+
+  /**
    * The record a call would append, shaped as the ledger stores it.
    * @internal
    */
@@ -352,6 +370,16 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated).
    */
   async hold(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
+    const key = context.idempotencyKey
+    if (key === undefined) return this.holdOnce(context, estimate)
+    return this.inflight.run(JSON.stringify([context.tenantId, key]), () => this.holdOnce(context, estimate))
+  }
+
+  /**
+   * The body of {@link hold}, for one call.
+   * @internal
+   */
+  private async holdOnce(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
     if (context.idempotencyKey !== undefined) {
       const existing = await this.ledger.findByIdempotencyKey(context.tenantId, context.idempotencyKey)
       if (existing !== null) return this.holdOf(existing)
@@ -561,7 +589,7 @@ export class MeteringService {
         ledgerKey,
       )
     } catch (error) {
-      if (!isSystemCost) await this.effects.compensateHold(context, delta, ledgerKey)
+      if (!isSystemCost) await this.settleFailedHold(error, { context, delta, ledgerKey, occurredAt })
       throw error
     }
   }
