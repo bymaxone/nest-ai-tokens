@@ -21,7 +21,7 @@ import type { MeteringContext } from '../../src/server/interfaces'
 import { AiTokensException } from '../../src/server/errors'
 import { LedgerService } from '../../src/server/services/ledger.service'
 import { BudgetService, type BudgetEventHooks, type BudgetServiceOptions, type UpsertBudgetInput } from '../../src/server/services/budget.service'
-import { InMemoryBudgetStore } from './in-memory-budget-store'
+import { InMemoryBudgetStore, type InMemoryBudgetStoreOptions } from './in-memory-budget-store'
 import { InMemoryLedgerStore } from './in-memory-ledger-store'
 
 /** The tenant every fixture belongs to. Budgets are per-tenant, so a spec asserting isolation needs a second one of its own. */
@@ -93,7 +93,7 @@ export function recordingHooks(): {
 }
 
 /** A fresh service over in-memory fakes with an injected clock. */
-export function makeService(over: { options?: Partial<BudgetServiceOptions>; now?: () => Date } = {}): {
+export function makeService(over: { options?: Partial<BudgetServiceOptions>; now?: () => Date; storeOptions?: InMemoryBudgetStoreOptions } = {}): {
   service: BudgetService
   store: InMemoryBudgetStore
   ledgerStore: InMemoryLedgerStore
@@ -103,7 +103,7 @@ export function makeService(over: { options?: Partial<BudgetServiceOptions>; now
   audits: string[]
 } {
   const now = over.now ?? ((): Date => NOW)
-  const store = new InMemoryBudgetStore({ now })
+  const store = new InMemoryBudgetStore({ now, ...over.storeOptions })
   const ledgerStore = new InMemoryLedgerStore()
   const ledger = new LedgerService(ledgerStore)
   const rec = recordingHooks()

@@ -18,6 +18,11 @@ import { AiTokensException } from '../../src/server/errors'
 export interface InMemoryBudgetStoreOptions {
   /** Injected clock for the expiry filter; defaults to the real wall clock. */
   now?: () => Date
+  /**
+   * When a budget arrives without a `createdAt`, the store stamps it this many milliseconds AFTER the clock, as a
+   * database that rounds a timestamp up does. Defaults to none.
+   */
+  unstampedCreatedAtOffsetMs?: number
 }
 
 /** A Map-backed budget store for unit/contract tests. */
@@ -27,9 +32,11 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Window spend keyed by `${budgetId}|${windowStartISO}`. */
   private readonly windows = new Map<string, BudgetWindowSpend>()
   private readonly now: () => Date
+  private readonly unstampedOffsetMs: number
 
   constructor(options: InMemoryBudgetStoreOptions = {}) {
     this.now = options.now ?? ((): Date => new Date())
+    this.unstampedOffsetMs = options.unstampedCreatedAtOffsetMs ?? 0
   }
 
   /** Compose the window map key. */
@@ -37,7 +44,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return `${budgetId}|${windowStart.toISOString()}`
   }
 
-  upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
+  upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string; createdAt?: Date }): Promise<Budget> {
     const existing = input.id === undefined ? undefined : this.budgets.get(input.id)
     if (existing !== undefined && existing.tenantId !== input.tenantId) {
       return Promise.reject(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'budget id is not available' }))
@@ -45,7 +52,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
     const budget: Budget = {
       ...input,
       id: input.id ?? randomUUID(),
-      createdAt: existing?.createdAt ?? this.now(),
+      createdAt: existing?.createdAt ?? input.createdAt ?? new Date(this.now().getTime() + this.unstampedOffsetMs),
     }
     this.budgets.set(budget.id, budget)
     return Promise.resolve({ ...budget })

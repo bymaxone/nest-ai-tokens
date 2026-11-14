@@ -483,7 +483,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     })
   }
 
-  async upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
+  async upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string; createdAt?: Date }): Promise<Budget> {
     const id = input.id ?? randomUUID()
     const rows = await this.prisma.query<BudgetRow[]>(sql`
       INSERT INTO "ai_budgets" (${BUDGET_COLUMNS_SQL}) VALUES (${join(budgetValues(id, input))})
