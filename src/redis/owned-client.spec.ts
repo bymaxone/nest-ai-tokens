@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Specs of the shutdown of the client a `RedisBudgetCounterStore` creates from a URL: the graceful quit, the
+ * bounded fall-back to a disconnect, the clients it must leave alone, and the refusal of calls after shutdown, against a
+ * mocked `ioredis` and fake timers.
+ * @layer redis
+ */
+
 import type { Redis } from 'ioredis'
 import { RedisBudgetCounterStore } from './index'
 
