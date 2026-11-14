@@ -180,9 +180,9 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
    * not listening.
    */
   it.each([
-    ['rejected password', (uri: URL) => uri],
-    ['closed port', (uri: URL) => { uri.port = '1'; return uri }],
-  ])('keeps the database password out of the cause chain on a %s', async (_name, break_) => {
+    ['rejected password', (uri: URL) => uri, 'AI_TOKENS_STORE_ERROR'],
+    ['closed port', (uri: URL) => { uri.port = '1'; return uri }, 'AI_TOKENS_STORE_UNAVAILABLE'],
+  ])('keeps the database password out of the cause chain on a %s', async (_name, break_, code) => {
     const password = 'S3cretPw-9f2c'
     const uri = new URL(container.getConnectionUri())
     uri.password = password
@@ -190,7 +190,7 @@ describe('PrismaAiTokensStore wallet + budget halves (real connections)', () => 
     try {
       const error = (await new PrismaAiTokensStore(bad).appendEntry(ref, grantEntry({ idempotencyKey: 'pw', amountNanoUsd: 1n })).catch((e: unknown) => e)) as AiTokensException
       expect(error).toBeInstanceOf(AiTokensException)
-      expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
+      expect(error.getResponse()).toMatchObject({ error: { code } })
       expect(JSON.stringify(error.getResponse())).not.toContain(password)
       let walked = ''
       let link: unknown = error.cause
