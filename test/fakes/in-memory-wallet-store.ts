@@ -163,6 +163,7 @@ export class InMemoryWalletStore implements IWalletStore {
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return Promise.reject(new WalletMissingError())
     this.activateDueGrants(wallet, at)
+    this.sweepExpiredGrants(wallet, at)
     wallet.balanceNanoUsd = this.spendableBalance(wallet, at)
     wallet.updatedAt = this.now()
     return Promise.resolve(wallet)

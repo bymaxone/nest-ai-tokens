@@ -56,6 +56,6 @@ export interface IWalletStore {
   openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo', now?: Date): Promise<OpenGrant[]>
   /** A page of entries for a ref. */
   listEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage>
-  /** Credit due grants as a debit does, then recompute the materialized balance from Σ entries. */
+  /** Credit due grants and expire lapsed ones as a debit does, then recompute the materialized balance from Σ entries. */
   reconcile(ref: WalletRef, now?: Date): Promise<Wallet>
 }
