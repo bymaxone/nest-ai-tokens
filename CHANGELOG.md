@@ -18,8 +18,7 @@ off, default true). A refund or a budget release that fails during a reversal is
 and the sweep retries it. The sweep re-emits the event a write owes, at least once. A custom `ILedgerStore` that omits the
 new optional `findEffectsOwed` and `clearEffectsOwed` calls keeps working with the sweep inactive for it, and the reaper logs
 that once at boot. The ledger table gains no column: the only change a posted row takes is still the annotation of its
-reversal. While one step of a call (a take, the wallet debit or the ledger append) is stuck, the budget window does not count
-the call and the limit can be exceeded for that interval; the call is counted in the end.
+reversal.
 
 **Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
 application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then

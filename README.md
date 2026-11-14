@@ -847,7 +847,7 @@ options block is set (with `forRoot`; `forRootAsync` always exports them).
 
 A capture, a release and a reversal commit to the ledger first and run their effects after: the wallet legs and the budget
 legs. A marker row in `ai_usage_effects_owed`, written by the same statement as the write, records that the effects are owed, so
-a crash between the two no longer strands them. The ledger table itself gains no column. The reaper's tick finishes the effects of every row whose marker is older than
+a crash between the two no longer strands them. The ledger table itself gains no column. The reaper's tick finishes the effects of rows whose marker is older than
 `settlement.graceSeconds`. Each leg is keyed by what causes it, so running it again moves nothing, and two replicas
 sweeping at once hold no lock between them. The sweep re-emits the event a write owes, at least once, so a consumer must be
 idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
@@ -855,13 +855,8 @@ once at boot.
 
 Limits you can rely on:
 
-- The grace is a performance knob, not a correctness bound. A sweep that judges an attempt whose step is still running is
-  made safe by the commit: it finds its reference gone and counts the call again, once and without limits, so a committed
-  call is always counted.
-- While one step of a call is stuck (a take, the wallet debit or the ledger append, for example a driver that never
-  returns), the budget window does not count the call, so another call can be admitted under the limit, and the window can
-  end above it. The interval is the length of the stuck step and the call is counted in the end. The metered call itself,
-  a streaming completion that runs for minutes, is not part of it.
+- The grace is a performance knob, not a correctness bound. A sweep that reaches a row while the inline path is still
+  running its effects only repeats keyed legs that move nothing.
 - The effects are exact for the wallet and the budget and at-least-once for events and spans.
 
 ---

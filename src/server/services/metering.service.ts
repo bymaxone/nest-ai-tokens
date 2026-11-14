@@ -523,8 +523,8 @@ export class MeteringService {
    * an enforced, non-system record — refund the wallet and release the budget
    * (cost, tokens, and count). ADMIN PLANE (§14.4): the host MUST restrict this to
    * privileged roles; it emits `ai_tokens.usage.reversed` and `ai_tokens.audit`.
-   * Cross-store effects are best-effort sequential with logged partial failures;
-   * deterministic keys make retries safe.
+   * Cross-store effects run in sequence; a leg that fails keeps the effects-owed marker
+   * and the settlement sweep retries it, and deterministic keys make retries safe.
    *
    * @param usageRecordId The posted record to reverse.
    * @param reason The caller's stated reason.
