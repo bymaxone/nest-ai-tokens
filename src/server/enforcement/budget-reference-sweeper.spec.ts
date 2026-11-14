@@ -479,8 +479,10 @@ describe('BudgetReferenceSweeper', () => {
       r.advance(RETENTION + 1)
       await give('record:new')
       await r.sweeper.sweep()
-      expect(await r.budgets.consumeWindowOnce({ key: 'record:old', budgetId: 'b1', attempt: 'b' }, WINDOW, DELTA, {})).toBe('applied')
-      expect(await r.budgets.consumeWindowOnce({ key: 'record:new', budgetId: 'b1', attempt: 'b' }, WINDOW, DELTA, {})).toBe('applied')
+      // Dropping a reference tells an application that is gone ('absent') from one that is given back and still recorded
+      // ('missing'); taking the key again would answer 'applied' either way.
+      expect(await r.budgets.dropReference({ key: 'record:old', budgetId: 'b1', attempt: 'a' })).toBe('absent')
+      expect(await r.budgets.dropReference({ key: 'record:new', budgetId: 'b1', attempt: 'a' })).toBe('missing')
     })
 
     it('counts a failed deletion of given-back applications with the rest of the tick', async () => {
