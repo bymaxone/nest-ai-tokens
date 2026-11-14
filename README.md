@@ -419,7 +419,7 @@ console.log(balance.nanoUsd) // current balance
 ```
 
 A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`, judged on your application's
-clock: the service passes the current instant to the store with every call, so a database whose clock differs does not
+clock: the service passes the current instant to the store, so a database whose clock differs does not
 move a grant, and the entry timestamps share that clock. Keep NTP running on the application hosts, since their clocks
 are the ones that decide and instances that disagree move a grant between them. One that is not
 yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
