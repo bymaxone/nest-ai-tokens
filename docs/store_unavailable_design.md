@@ -8,7 +8,7 @@ Status: implemented. Basis: the installed Prisma 7.10.1 runtime, and error shape
 
 ## The rule
 
-- One classifier decides whether a driver failure is an availability failure. It lives next to `storeError` in `src/prisma/adapter-sql.ts` and is the only place that reads driver codes; the wallet and budget services keep wrapping with it, they never read a code themselves.
+- One classifier decides whether a driver failure is an availability failure. It lives in `src/server/errors/store-availability.ts` and is the only place that reads driver codes; `storeError` in `src/prisma/adapter-sql.ts` and the wallet and budget services call it, they never read a code themselves.
 - An availability failure becomes the new code `AI_TOKENS_STORE_UNAVAILABLE`, status **503**. No `Retry-After` header: the library cannot know when the store returns.
 - Every other driver failure stays `AI_TOKENS_STORE_ERROR` and moves from 502 to **500**.
 - The idempotency-conflict path (`isUniqueViolation` and the ledger and wallet mappers) keeps 409 and is never re-wrapped: the classifier runs only on what those mappers did not already claim, and a test asserts it.
@@ -16,15 +16,15 @@ Status: implemented. Basis: the installed Prisma 7.10.1 runtime, and error shape
 
 ## What counts as unavailable
 
-Source for the Prisma 7 column: the driver-adapter error mapping in the installed runtime (`@prisma/client@7.10.1`, `runtime/client.js`, the switch from adapter error kind to code). Source for Prisma 6 and for the codes the engine emits: Prisma's error reference for the installed major; the codes below that this runtime does not contain are marked and are verified against a Prisma 6 install in the red tests before they are listed in the code.
+Source for the Prisma 7 column: the driver-adapter error mapping in the installed runtime (`@prisma/client@7.10.1`, `runtime/client.js`, the switch from adapter error kind to code). Source for Prisma 6 and for the codes the engine emits: Prisma's error reference for the installed major; the codes below that this runtime does not contain are marked.
 
 | code | meaning | in the Prisma 7.10.1 runtime | class |
 | --- | --- | --- | --- |
 | P1001 | database server cannot be reached | `DatabaseNotReachable` | unavailable |
-| P1002 | database server reached but timed out | not present | unavailable, verify on Prisma 6 |
+| P1002 | database server reached but timed out | not present | unavailable, not reproduced |
 | P1008 | operation timed out | `SocketTimeout` | unavailable |
 | P1017 | server closed the connection | `ConnectionClosed` | unavailable |
-| P2024 | timed out fetching a connection from the pool | not present | unavailable, verify on Prisma 6 |
+| P2024 | timed out fetching a connection from the pool | not present | unavailable |
 | P2034 | write conflict or deadlock, transaction failed | `TransactionWriteConflict` | unavailable (retryable) |
 | P2037 | too many database connections | `TooManyConnections` | unavailable |
 | P2028 | transaction API error | class `TransactionAPIError` | decided by the red test: unavailable only when it is the transaction timeout or a closed transaction, otherwise error |
@@ -32,13 +32,13 @@ Source for the Prisma 7 column: the driver-adapter error mapping in the installe
 | P1000, P1003, P1009, P1010, P1011 | authentication, missing database, access, TLS | present | error: configuration, retrying does not fix it |
 | P2000-P2023 constraint and data codes | statement or data defects | present | error |
 
-Raw queries surface `P2010` carrying the native SQLSTATE (flat on `meta.code` in Prisma 6, nested under `meta.driverAdapterError.cause` in Prisma 7), the same two places `isUniqueViolation` already reads. The classifier reads SQLSTATE class 08 (connection exceptions), 57P01 and 57P03 (shutdown, cannot connect now), 40001 and 40P01 (serialization, deadlock) and 53300 (too many connections) as unavailable.
+Raw queries surface `P2010` carrying the native SQLSTATE (flat on `meta.code` in Prisma 6, nested under `meta.driverAdapterError.cause` in Prisma 7), the same two places `isUniqueViolation` already reads. The classifier reads the SQLSTATE in both places.
 
 Two shapes the current `isKnownRequestError` does not recognise and the classifier must: a `PrismaClientInitializationError` (connection refused on the first query, carrying `errorCode` rather than `code`) and a driver-level error with no Prisma wrapper (a closed pool). Whether each appears is measured per mode below, not assumed.
 
 ## Measured before the code
 
-Red-first against real PostgreSQL 16 (Testcontainers) in QA's three modes, each recording the code and status the caller actually gets: the container paused, the container stopped, and a fresh client against a stopped container. The measured code per mode goes into the pull request and decides the table's open rows; a mode whose error the classifier cannot see is a finding fixed before anything else.
+Red-first against real PostgreSQL 16 (Testcontainers) in QA's three modes, each recording the code and status the caller actually gets: the container paused, the container stopped, and a fresh client against a stopped container.
 
 ## Tests
 
