@@ -6,13 +6,13 @@ This collects what the earlier notes ([`hold_same_key_design.md`](hold_same_key_
 
 ## The root: a transition commits, its effects are best-effort
 
-`capture`, `release` and `reverse` each do `ledger.transition(...)` or `ledger.reverse(...)` (one atomic statement) and then apply the effects one after the other: the event, the telemetry span, the content capture, the budget movement, the wallet movement.
+`capture`, `release` and `reverse` each do `ledger.transition(...)` or `ledger.reverse(...)` (one atomic statement) and then apply the effects one after the other.
 
 What a crash, a store error or a lost connection between the two steps leaves:
 
 | operation | after the transition commits | what is lost |
 | --- | --- | --- |
-| `capture` | the row is `posted` with the actual cost | the budget still holds the estimate and the wallet still holds the reservation, never settled; no `usageRecorded` event, no span |
+| `capture` | the row is `posted` with the actual cost | the budget still holds the estimate and the wallet still holds the reservation, never settled |
 | `release` | the row is `released` | the budget consumption and the wallet reservation are never given back; the reaper only reclaims `pending` rows, so nothing ever does |
 | `reverse` | the compensating row exists, the original is annotated | the refund and the budget release run under a `try`/`catch` that only logs, so a failed one is never retried |
 
@@ -64,9 +64,9 @@ The shape is forward recovery, not rollback: make every effect safe to repeat, r
 
 ## Whether the Prisma store's decision logic can be mutation-tested
 
-`src/prisma/index.ts` is outside the Stryker `mutate` set because it only runs against PostgreSQL, so the money fixes made in it (the activation, the sweep, the debit guard, `reconcile`) are held by the end-to-end suite alone. Two ways to change that:
+`src/prisma/index.ts` is outside the Stryker `mutate` set because it only runs against PostgreSQL, so the money fixes made in it are held by the end-to-end suite alone. Two ways to change that:
 
-1. **Move the decision logic into `adapter-sql.ts`, which is mutated.** `pendingGrantsSql` and `spendableBalanceSql` are already builders in `adapter-sql.ts`; the open-grants query and its ordering, the activation select, the sweep select and the reserve `UPDATE` are still inline in `index.ts`, and turning them into builders next to them puts their text under the unit specs and under Stryker. `index.ts` keeps what a unit test cannot hold, the order of the steps inside a transaction (lock, replay, activate, sweep, reserve, insert, allocate), and that order stays with the e2e suite. The cost is a mechanical extraction, a verbatim move per statement, in the style of the `budget-math.ts` and `record-columns.ts` moves, with a builder spec for each.
+1. **Move the decision logic into `adapter-sql.ts`, which is mutated.** Builders already live in `adapter-sql.ts`, and turning the statements still inline in `index.ts` into builders next to them puts their text under the unit specs and under Stryker. `index.ts` keeps what a unit test cannot hold, the order of the steps inside a transaction, and that order stays with the e2e suite. The cost is a mechanical extraction, a verbatim move per statement, with a builder spec for each.
 2. **Run Stryker on `index.ts` over Testcontainers.** Each surviving-or-killed verdict needs a real database round trip, and `index.ts` is large. Even with Stryker's per-test coverage selecting only the e2e suites that reach a mutant, one run per mutant costs a Postgres start plus the suite, so a whole-file run is hours, not minutes. It is not affordable per pull request. It could run nightly on the file or on a diff of its changed functions; that has not been measured here, only estimated from the length of one e2e run.
 
 Recommendation: (1), as a backlog item after this work, since it also shrinks what only the e2e suite guards; keep (2) as a possible nightly job once (1) has left `index.ts` with only the orchestration.
