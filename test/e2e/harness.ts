@@ -111,6 +111,8 @@ export interface BootOptions {
   overdraftNanoUsd?: bigint
   holdTtlSeconds?: number
   seedFromSnapshot?: boolean
+  /** Bind a wallet feature (default true); `false` boots with budgets only. */
+  wallets?: boolean
 }
 
 /** The booted module and its resolved services. */
@@ -133,7 +135,7 @@ export async function bootMeteringModule(options: BootOptions): Promise<Booted> 
         store: options.store,
         markup: options.markup ?? 1,
         pricing: { seedFromSnapshot: options.seedFromSnapshot ?? false, strict: false },
-        wallets: { overdraftNanoUsd: options.overdraftNanoUsd ?? 0n },
+        ...(options.wallets === false ? {} : { wallets: { overdraftNanoUsd: options.overdraftNanoUsd ?? 0n } }),
         budgets: options.counter !== undefined ? { counter: options.counter } : {},
         holds: { ttlSeconds: options.holdTtlSeconds ?? 3_600, reaperIntervalSeconds: 3_600 },
         scopeResolver: () => ({ tenantId: 'e2e', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }),
@@ -144,7 +146,8 @@ export async function bootMeteringModule(options: BootOptions): Promise<Booted> 
   return {
     moduleRef,
     metering: moduleRef.get(MeteringService),
-    wallets: moduleRef.get(WalletService),
+    // A module booted without wallets registers no WalletService; the suites that boot it never read this field.
+    wallets: options.wallets === false ? (undefined as unknown as WalletService) : moduleRef.get(WalletService),
     budgets: moduleRef.get(BudgetService),
     pricing: moduleRef.get(PricingService),
     ledger: moduleRef.get(LedgerService),

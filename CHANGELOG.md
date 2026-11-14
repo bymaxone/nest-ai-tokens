@@ -149,7 +149,7 @@ so releasing it subtracts its delta as before.
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
 - The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
-- The `server` bundle grows by 786 bytes brotli (to 44549) with the keyed budget movements; its budget moves from 43810 to 44590.
+- The `server` bundle grows by 881 bytes brotli (to 44644) with the keyed budget movements; its budget moves from 43810 to 44690.
 
 ## [1.1.14] - 2026-11-13
 

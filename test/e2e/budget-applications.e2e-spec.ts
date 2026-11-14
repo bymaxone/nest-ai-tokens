@@ -5,6 +5,7 @@
  * @layer test
  */
 
+import type { HoldEstimate } from '@bymax-one/nest-ai-tokens'
 import type { MeteringScope } from '@bymax-one/nest-ai-tokens/shared'
 import { bootMeteringModule, e2eContext, e2eUsage, grantWallet, seedPrice, startPostgres, upsertBudget, type Booted, type PostgresFixture } from './harness'
 
@@ -98,5 +99,33 @@ describe('a keyed record() retried on two instances consumes the budget once', (
     expect(results.filter((result) => result.status === 'fulfilled').length).toBeGreaterThanOrEqual(1)
     const [status] = await a.budgets.status('e2e', PAYER)
     expect(status?.spent.count).toBe(1)
+  })
+})
+
+describe('a keyed hold raced on two instances with budgets bound and no wallet', () => {
+  const ESTIMATE: HoldEstimate = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 }
+
+  /*
+   * Invariant: the reservation recorded under a hold's key belongs to the stored row, with or without a wallet. A loser
+   * of the append meets the winner's row, so its compensation leaves the winner's reservation alone: the window
+   * counts the hold once and one pending row stands.
+   */
+  it('counts the hold once in the window and keeps one pending row', async () => {
+    await pg.prisma.$executeRawUnsafe('TRUNCATE TABLE "ai_budget_applications", "ai_budget_windows", "ai_budgets", "ai_usage_records" CASCADE')
+    const c = await bootMeteringModule({ store: pg.store, wallets: false })
+    const d = await bootMeteringModule({ store: pg.storeB, wallets: false })
+    try {
+      await upsertBudget(c.budgets, { scope: PAYER, window: 'total', limitNanoUsd: 1_000_000_000_000n })
+      const context = e2eContext({ idempotencyKey: 'budgets-only-race' })
+      const results = await Promise.allSettled(Array.from({ length: 10 }, (_, i) => (i % 2 === 0 ? c : d).metering.hold(context, ESTIMATE)))
+      expect(results.filter((result) => result.status === 'fulfilled').length).toBeGreaterThanOrEqual(1)
+      const rows = await pg.prisma.$queryRawUnsafe<{ n: bigint }[]>('SELECT count(*) AS n FROM "ai_usage_records" WHERE "status" = \'pending\'')
+      expect(Number(rows[0]?.n)).toBe(1)
+      const [status] = await c.budgets.status('e2e', PAYER)
+      expect(status?.spent.count).toBe(1)
+    } finally {
+      await c.close()
+      await d.close()
+    }
   })
 })
