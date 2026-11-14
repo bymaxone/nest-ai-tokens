@@ -76,6 +76,47 @@ export type CommitOutcome = 'committed' | 'already' | 'gone' | 'absent'
  */
 export type DropOutcome = 'kept' | 'unapplied' | 'missing' | 'absent'
 
+/**
+ * A reference that is older than a bound, with what its application moved, for the sweep that settles references an
+ * attempt left behind. `createdAt` is the reference's own.
+ */
+export interface StaleReference extends BudgetReference {
+  /** The tenant that owns the budget the reference names. */
+  tenantId: string
+  /** The window the application moved. */
+  windowStart: Date
+  /** What the application moved. */
+  delta: BudgetDelta
+  /** When the attempt took the reference, on the store's clock. */
+  createdAt: Date
+}
+
+/**
+ * Which references {@link IBudgetStore.findStaleReferences} lists: those an attempt named (not `row`) and never settled; the
+ * `row` references of holds (key `reserve:`), which a released or lost hold can leave behind; or every `row` reference, of
+ * any key, whose application may be old enough to delete.
+ */
+export type StaleSelection = 'attempt' | 'held' | 'retained'
+
+/** Where a page of {@link IBudgetStore.findStaleReferences} stops: the last reference it returned. */
+export interface StaleCursor {
+  createdAt: Date
+  key: string
+  budgetId: string
+  attempt: string
+}
+
+/** A page of stale references. */
+export interface StaleReferenceQuery {
+  selection: StaleSelection
+  /** Only references taken strictly before this instant. */
+  olderThan: Date
+  /** The most references to return. */
+  limit: number
+  /** Continue after this reference of the same ordering; the first page when absent. */
+  after?: StaleCursor
+}
+
 /** The budget port. */
 export interface IBudgetStore {
   /**
@@ -130,6 +171,23 @@ export interface IBudgetStore {
    * the application given back, so that the same key can be applied again.
    */
   dropReference(reference: BudgetReference): Promise<DropOutcome>
+  /**
+   * Optional. References that are older than `olderThan`, ordered by `(createdAt, key, budgetId, attempt)` ascending and
+   * paged by `after`, each with the window and delta of its application. A store without it leaves the budget-reference
+   * sweep inactive.
+   */
+  findStaleReferences?(query: StaleReferenceQuery): Promise<StaleReference[]>
+  /**
+   * Optional. Delete an application and its references when every reference left on it is `row` and the application is
+   * older than `before`; `false` when it does not exist, is younger, or an attempt still holds a reference on it. It moves
+   * no window: the movement stays counted, and only the record that made it replayable goes.
+   */
+  pruneApplication?(application: BudgetApplication, before: Date): Promise<boolean>
+  /**
+   * Optional. Delete up to `limit` applications that were given back before `before`, with their references, and return how
+   * many. A given-back application no longer holds a movement; only the record of it is left.
+   */
+  pruneGivenBack?(before: Date, limit: number): Promise<number>
   /** A window's current spend, or `null` when it has no row yet. */
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null>
   /** Move a budget's active window start (rotateWindow support). */

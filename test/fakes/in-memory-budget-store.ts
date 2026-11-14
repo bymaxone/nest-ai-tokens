@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Budget, MeteringScope } from '@bymax-one/nest-ai-tokens/shared'
-import type { ApplicationOutcome, BudgetDelta, BudgetKey, BudgetLimits, BudgetReference, BudgetWindowSpend, CommitOutcome, DropOutcome, IBudgetStore } from '@bymax-one/nest-ai-tokens'
+import type { ApplicationOutcome, BudgetDelta, BudgetKey, BudgetLimits, BudgetReference, BudgetWindowSpend, CommitOutcome, DropOutcome, IBudgetStore, StaleReference, StaleReferenceQuery } from '@bymax-one/nest-ai-tokens'
 import { COMMITTED_REFERENCE } from '../../src/server/utils/budget-references'
 import { AiTokensException } from '../../src/server/errors'
 
@@ -33,7 +33,7 @@ export class InMemoryBudgetStore implements IBudgetStore {
   /** Window spend keyed by `${budgetId}|${windowStartISO}`. */
   private readonly windows = new Map<string, BudgetWindowSpend>()
   /** What each application moved, keyed by application and budget. */
-  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean; references: Set<string> }>()
+  private readonly applications = new Map<string, { windowStart: Date; delta: BudgetDelta; active: boolean; references: Map<string, Date>; createdAt: Date; unappliedAt?: Date }>()
   private readonly now: () => Date
   private readonly unstampedOffsetMs: number
 
@@ -118,8 +118,10 @@ export class InMemoryBudgetStore implements IBudgetStore {
       if (reference.attempt !== COMMITTED_REFERENCE) found.references.delete(reference.attempt)
       return Promise.resolve('already')
     }
-    if (!found.references.delete(reference.attempt)) return Promise.resolve('gone')
-    found.references.add(COMMITTED_REFERENCE)
+    const takenAt = found.references.get(reference.attempt)
+    if (takenAt === undefined) return Promise.resolve('gone')
+    found.references.delete(reference.attempt)
+    found.references.set(COMMITTED_REFERENCE, takenAt)
     return Promise.resolve('committed')
   }
 
@@ -130,7 +132,47 @@ export class InMemoryBudgetStore implements IBudgetStore {
     if (!found.active || found.references.size > 0) return Promise.resolve('kept')
     this.moveWindow(reference.budgetId, found.windowStart, { nanoUsd: -found.delta.nanoUsd, tokens: -found.delta.tokens, count: -found.delta.count })
     found.active = false
+    found.unappliedAt = this.now()
     return Promise.resolve('unapplied')
+  }
+
+  findStaleReferences(query: StaleReferenceQuery): Promise<StaleReference[]> {
+    const listed: StaleReference[] = []
+    for (const [applicationKey, application] of this.applications) {
+      const [key, budgetId] = JSON.parse(applicationKey) as [string, string]
+      const tenantId = this.budgets.get(budgetId)?.tenantId
+      if (tenantId === undefined) continue
+      for (const [attempt, createdAt] of application.references) {
+        if (createdAt >= query.olderThan) continue
+        const wanted = query.selection === 'attempt' ? attempt !== COMMITTED_REFERENCE : attempt === COMMITTED_REFERENCE && (query.selection === 'retained' || key.startsWith('reserve:'))
+        if (wanted) listed.push({ key, budgetId, tenantId, attempt, createdAt, windowStart: application.windowStart, delta: { ...application.delta } })
+      }
+    }
+    listed.sort(compareStale)
+    const after = query.after
+    const rest = after === undefined ? listed : listed.filter((found) => compareStale(found, after) > 0)
+    return Promise.resolve(rest.slice(0, query.limit))
+  }
+
+  pruneApplication(application: { key: string; budgetId: string }, before: Date): Promise<boolean> {
+    const name = InMemoryBudgetStore.applicationKey(application)
+    const found = this.applications.get(name)
+    if (found === undefined || found.createdAt >= before) return Promise.resolve(false)
+    if ([...found.references.keys()].some((attempt) => attempt !== COMMITTED_REFERENCE)) return Promise.resolve(false)
+    this.applications.delete(name)
+    return Promise.resolve(true)
+  }
+
+  pruneGivenBack(before: Date, limit: number): Promise<number> {
+    let removed = 0
+    for (const [name, application] of this.applications) {
+      if (removed >= limit) break
+      if (application.unappliedAt !== undefined && application.unappliedAt < before) {
+        this.applications.delete(name)
+        removed += 1
+      }
+    }
+    return Promise.resolve(removed)
   }
 
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
@@ -169,6 +211,16 @@ export class InMemoryBudgetStore implements IBudgetStore {
     )
   }
 
+  /** Test helper — every reference held on an active application, as `key/attempt`, sorted. */
+  heldReferences(): string[] {
+    const held: string[] = []
+    for (const [applicationKey, application] of this.applications) {
+      const [key] = JSON.parse(applicationKey) as [string, string]
+      for (const attempt of application.references.keys()) held.push(`${key}/${attempt}`)
+    }
+    return held.sort()
+  }
+
   /** Test helper — force a window's spend counters (drift injection for reconcile). */
   forceWindow(budgetId: string, windowStart: Date, spend: BudgetWindowSpend): void {
     this.windows.set(InMemoryBudgetStore.windowKey(budgetId, windowStart), { ...spend })
@@ -176,13 +228,13 @@ export class InMemoryBudgetStore implements IBudgetStore {
 
   /** Record an application as active and held by the attempt. */
   private record(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): void {
-    this.applications.set(InMemoryBudgetStore.applicationKey(reference), { windowStart, delta, active: true, references: new Set([reference.attempt]) })
+    this.applications.set(InMemoryBudgetStore.applicationKey(reference), { windowStart, delta, active: true, references: new Map([[reference.attempt, this.now()]]), createdAt: this.now() })
   }
 
   /** An active application met again: a replay (the attempt takes a reference) when it moved this window by this delta, else a mismatch. */
-  private replayOrMismatch(found: { windowStart: Date; delta: BudgetDelta; references: Set<string> }, reference: BudgetReference, windowStart: Date, delta: BudgetDelta): 'replayed' | 'mismatch' {
+  private replayOrMismatch(found: { windowStart: Date; delta: BudgetDelta; references: Map<string, Date> }, reference: BudgetReference, windowStart: Date, delta: BudgetDelta): 'replayed' | 'mismatch' {
     if (found.windowStart.getTime() !== windowStart.getTime() || !sameDelta(found.delta, delta)) return 'mismatch'
-    found.references.add(reference.attempt)
+    found.references.set(reference.attempt, this.now())
     return 'replayed'
   }
 
@@ -236,4 +288,14 @@ function isExactScope(a: MeteringScope, b: MeteringScope): boolean {
 /** Floor a bigint at zero. */
 function max0(value: bigint): bigint {
   return value < 0n ? 0n : value
+}
+
+/** The order the sweep pages in: `(createdAt, key, budgetId, attempt)`, ascending. */
+function compareStale(a: { createdAt: Date; key: string; budgetId: string; attempt: string }, b: { createdAt: Date; key: string; budgetId: string; attempt: string }): number {
+  return a.createdAt.getTime() - b.createdAt.getTime() || compareText(a.key, b.key) || compareText(a.budgetId, b.budgetId) || compareText(a.attempt, b.attempt)
+}
+
+/** Code-unit order of two strings. */
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
 }

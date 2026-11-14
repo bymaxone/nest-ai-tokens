@@ -255,10 +255,10 @@ describe('HoldReaper', () => {
     it('settles an owed row older than the grace and leaves a younger one', async () => {
       const built = build()
       await owedRelease(built, walletsOf(built))
-      built.options.settlement = { enabled: true, graceSeconds: 7_200 }
+      built.options.settlement = { enabled: true, graceSeconds: 7_200, retentionSeconds: 604_800 }
       await built.reaper().sweep()
       expect(await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)).toHaveLength(1)
-      built.options.settlement = { enabled: true, graceSeconds: 300 }
+      built.options.settlement = { enabled: true, graceSeconds: 300, retentionSeconds: 604_800 }
       await built.reaper().sweep()
       expect(await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)).toHaveLength(0)
       const wallet = await walletsOf(built).reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })
@@ -268,7 +268,7 @@ describe('HoldReaper', () => {
     /** A disabled sweep never scans. */
     it('does not scan when the sweep is disabled', async () => {
       const built = build()
-      built.options.settlement = { enabled: false, graceSeconds: 300 }
+      built.options.settlement = { enabled: false, graceSeconds: 300, retentionSeconds: 604_800 }
       const scan = jest.spyOn(built.ledger, 'findEffectsOwed')
       await built.reaper().sweep()
       expect(scan).not.toHaveBeenCalled()
@@ -350,7 +350,7 @@ describe('HoldReaper', () => {
         keptReaper.onApplicationShutdown()
         const off = build()
         ;(off.ledgerStore as { findEffectsOwed?: unknown }).findEffectsOwed = undefined
-        off.options.settlement = { enabled: false, graceSeconds: 300 }
+        off.options.settlement = { enabled: false, graceSeconds: 300, retentionSeconds: 604_800 }
         const offReaper = off.reaper()
         offReaper.onApplicationBootstrap()
         offReaper.onApplicationShutdown()
@@ -370,15 +370,43 @@ describe('HoldReaper', () => {
       jest.spyOn(wallets, 'refund').mockRejectedValueOnce(new Error('wallet down'))
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
       try {
-        built.options.settlement = { enabled: true, graceSeconds: 7_200 }
+        built.options.settlement = { enabled: true, graceSeconds: 7_200, retentionSeconds: 604_800 }
         await built.reaper().sweep()
         expect((await wallets.reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).not.toBe(10_000_000_000n)
-        built.options.settlement = { enabled: true, graceSeconds: 300 }
+        built.options.settlement = { enabled: true, graceSeconds: 300, retentionSeconds: 604_800 }
         await built.reaper().sweep()
         expect((await wallets.reconcile({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(10_000_000_000n)
       } finally {
         warn.mockRestore()
       }
+    })
+  })
+
+  /** The budget-reference sweep rides on the same tick, after the owed effects, and the settlement switch turns it off with them. */
+  describe('the budget-reference sweep', () => {
+    function withSweeper(enabled: boolean): { sweep: jest.Mock; run: () => Promise<void> } {
+      const built = build()
+      const sweep = jest.fn().mockResolvedValue(undefined)
+      built.options.settlement = { enabled, graceSeconds: 300, retentionSeconds: 604_800 }
+      const reaper = new HoldReaper(built.ledger, built.service, built.options, built.now, { sweep } as never)
+      return { sweep, run: (): Promise<void> => reaper.sweep() }
+    }
+
+    it('runs once per tick when the settlement sweep is enabled', async () => {
+      const { sweep, run } = withSweeper(true)
+      await run()
+      await run()
+      expect(sweep).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not run when the settlement sweep is disabled', async () => {
+      const { sweep, run } = withSweeper(false)
+      await run()
+      expect(sweep).not.toHaveBeenCalled()
+    })
+
+    it('is optional: a reaper built without one sweeps as before', async () => {
+      await expect(build().reaper().sweep()).resolves.toBeUndefined()
     })
   })
 })

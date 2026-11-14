@@ -20,6 +20,7 @@ import type { UsageRecord } from '../../shared'
 import type { OwedEffects } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
 import type { MeteringService } from '../services/metering.service'
+import type { BudgetReferenceSweeper } from './budget-reference-sweeper'
 
 /** The maximum number of expired holds reclaimed per sweep. */
 const REAP_BATCH_SIZE = 100
@@ -70,12 +71,14 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
    * @param metering The metering facade (shared hold-restoration path).
    * @param options The resolved options carrying the hold TTL + sweep interval.
    * @param now The injected clock (testability).
+   * @param references The sweep of budget references an attempt left behind, when budgets are enabled.
    */
   constructor(
     private readonly ledger: LedgerService,
     private readonly metering: MeteringService,
     private readonly options: HoldReaperOptions,
     private readonly now: () => Date = (): Date => new Date(),
+    private readonly references?: BudgetReferenceSweeper,
   ) {}
 
   /** Start the periodic sweep on module boot (interval `unref()`'d so it never blocks exit). */
@@ -126,6 +129,12 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
       }
     }
     await this.settleOwed()
+    await this.sweepReferences()
+  }
+
+  /** Give the references an attempt left behind their verdict, when the sweep is on and the store can list them. */
+  private async sweepReferences(): Promise<void> {
+    if (this.settlementEnabled()) await this.references?.sweep()
   }
 
   /** Whether the settlement sweep runs: on unless the options switch it off. */

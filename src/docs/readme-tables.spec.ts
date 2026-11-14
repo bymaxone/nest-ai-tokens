@@ -82,6 +82,7 @@ const DOCUMENTED_DEFAULTS = [
   'holds.ttlSeconds',
   'settlement.enabled',
   'settlement.graceSeconds',
+  'settlement.retentionSeconds',
   'telemetry.metrics',
 ]
 

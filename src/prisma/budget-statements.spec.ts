@@ -16,10 +16,20 @@ import {
   ensureWindowSql,
   recordApplicationSql,
   unapplySql,
+  findBudgetSql,
+  matchingBudgetsSql,
+  pruneApplicationSql,
+  pruneGivenBackSql,
+  removeBudgetSql,
+  removeBudgetWindowsSql,
+  resetWindowSql,
+  staleReferencesSql,
+  windowSql,
 } from './budget-statements'
 import { DB_NOW_SQL } from './adapter-sql'
 
 const WINDOW = new Date('2026-06-01T00:00:00.000Z')
+const BEFORE = new Date('2026-06-02T00:00:00.000Z')
 const DELTA = { nanoUsd: 10n, tokens: 4, count: 1 }
 const APPLICATION = { key: 'k1', budgetId: 'b1' }
 const REFERENCE = { ...APPLICATION, attempt: 'attempt-1' }
@@ -114,5 +124,72 @@ describe('application statements', () => {
     expect(statement.text).toContain('"unappliedAt" IS NULL')
     expect(statement.text).toContain('RETURNING "windowStart", "spentNanoUsd", "spentTokens", "spentCount"')
     expect(statement.values).toEqual(['k1', 'b1'])
+  })
+})
+
+describe('stale references and pruning statements', () => {
+  /** The selection decides which references are listed; the keyset and the sort compare text in byte order. */
+  it.each([
+    ['attempt', 'r."attempt" <> $2', ['row']],
+    ['retained', 'r."attempt" = $2', ['row']],
+    // The length is cast: Prisma 6 binds a JavaScript number as a bigint, and `left(text, bigint)` does not exist.
+    ['held', 'r."attempt" = $2 AND left(r."key", $3::int) = $4', ['row', 8, 'reserve:']],
+  ] as const)('lists the %s references older than a bound, oldest first', (selection, condition, bound) => {
+    const statement = staleReferencesSql({ selection, olderThan: BEFORE, limit: 25 })
+    expect(statement.text).toContain(`r."createdAt" < ($1::timestamptz AT TIME ZONE 'UTC')`)
+    expect(statement.text).toContain(condition)
+    expect(statement.text).toContain('JOIN "ai_budgets" b ON b."id" = r."budgetId"')
+    expect(statement.text).toContain('ORDER BY r."createdAt" ASC, r."key" COLLATE "C" ASC, r."budgetId" COLLATE "C" ASC, r."attempt" COLLATE "C" ASC')
+    expect(statement.text).toContain('AND TRUE')
+    expect(statement.values).toEqual([BEFORE, ...bound, 25])
+  })
+
+  it('continues after the last reference of the previous page, comparing the whole ordering key in byte order', () => {
+    const statement = staleReferencesSql({ selection: 'attempt', olderThan: BEFORE, limit: 5, after: { createdAt: WINDOW, key: 'k', budgetId: 'b', attempt: 'a' } })
+    expect(statement.text).toContain(`(r."createdAt", r."key" COLLATE "C", r."budgetId" COLLATE "C", r."attempt" COLLATE "C") > (($3::timestamptz AT TIME ZONE 'UTC'), $4::text COLLATE "C", $5::text COLLATE "C", $6::text COLLATE "C")`)
+    expect(statement.text).not.toContain('AND TRUE')
+    expect(statement.values).toEqual([BEFORE, 'row', WINDOW, 'k', 'b', 'a', 5])
+  })
+
+  /** Only an application that committed references alone hold, older than the bound, is deleted. */
+  it('deletes an application only when every reference left on it is the committed one', () => {
+    const statement = pruneApplicationSql(APPLICATION, BEFORE)
+    expect(statement.text).toContain('DELETE FROM "ai_budget_applications" a')
+    expect(statement.text).toContain(`a."createdAt" < ($3::timestamptz AT TIME ZONE 'UTC')`)
+    expect(statement.text).toContain('r."attempt" <> $4')
+    expect(statement.text).toContain('RETURNING a."key"')
+    expect(statement.values).toEqual(['k1', 'b1', BEFORE, 'row'])
+  })
+
+  /** The outer condition repeats the test, so an application that a retry re-activated meanwhile is not deleted. */
+  it('deletes the oldest given-back applications, testing again the ones it picked', () => {
+    const statement = pruneGivenBackSql(BEFORE, 7)
+    expect(statement.text).toContain('ORDER BY "unappliedAt" ASC LIMIT $2')
+    expect(statement.text).toContain(`AND "unappliedAt" < ($3::timestamptz AT TIME ZONE 'UTC')`)
+    expect(statement.values).toEqual([BEFORE, 7, BEFORE])
+  })
+})
+
+describe('budget row statements', () => {
+  it('removes the windows and the budget of the tenant that owns it', () => {
+    expect(removeBudgetWindowsSql('b1', 't1')).toMatchObject({ values: ['b1', 't1'] })
+    expect(removeBudgetWindowsSql('b1', 't1').text).toContain('DELETE FROM "ai_budget_windows"')
+    expect(removeBudgetSql('b1', 't1')).toMatchObject({ values: ['b1', 't1'] })
+    expect(removeBudgetSql('b1', 't1').text).toContain('DELETE FROM "ai_budgets"')
+  })
+
+  it('finds one budget of a tenant, the budgets that match a scope, and one window', () => {
+    expect(findBudgetSql('b1', 't1').text).toContain('"tenantId" = $2 LIMIT 1')
+    const matching = matchingBudgetsSql('t1', { type: 'user', id: 'u1' }, BEFORE)
+    expect(matching.text).toContain(`"scopeType" = 'tenant' OR ("scopeType" = $2 AND "scopeId" = $3)`)
+    expect(matching.values).toEqual(['t1', 'user', 'u1', BEFORE])
+    expect(windowSql('b1', WINDOW).values).toEqual(['b1', WINDOW])
+  })
+
+  it('starts a window at zero or resets it, only for a budget the tenant owns', () => {
+    const statement = resetWindowSql('b1', 't1', WINDOW)
+    expect(statement.text).toContain('FROM "ai_budgets" WHERE "id" = $3 AND "tenantId" = $4')
+    expect(statement.text).toContain('DO UPDATE SET "spentNanoUsd" = 0')
+    expect(statement.values.slice(1)).toEqual([WINDOW, 'b1', 't1'])
   })
 })

@@ -13,7 +13,7 @@
 -- the reference of the call whose ledger row stands is renamed "row". An attempt that fails
 -- drops only its own reference, and the movement is given back when its last reference goes.
 --
--- Additive: it creates two tables, one index and two foreign keys and touches no existing table.
+-- Additive: it creates two tables, three indexes and two foreign keys and touches no existing table.
 -- ---------------------------------------------------------------------------
 CREATE TABLE "ai_budget_applications" (
   "key"          TEXT NOT NULL,
@@ -37,6 +37,10 @@ CREATE TABLE "ai_budget_references" (
 
 -- The foreign key's column leads an index, so that deleting a budget finds its applications without scanning the table.
 CREATE INDEX "ai_budget_applications_budgetId_idx" ON "ai_budget_applications" ("budgetId");
+
+-- The sweep of references an attempt left behind reads them oldest first, and the pruning of given-back applications by when they were given back.
+CREATE INDEX "ai_budget_references_createdAt_idx" ON "ai_budget_references" ("createdAt");
+CREATE INDEX "ai_budget_applications_unappliedAt_idx" ON "ai_budget_applications" ("unappliedAt");
 
 ALTER TABLE "ai_budget_applications" ADD CONSTRAINT "ai_budget_applications_budgetId_fkey" FOREIGN KEY ("budgetId") REFERENCES "ai_budgets" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "ai_budget_references" ADD CONSTRAINT "ai_budget_references_key_budgetId_fkey" FOREIGN KEY ("key", "budgetId") REFERENCES "ai_budget_applications" ("key", "budgetId") ON DELETE CASCADE ON UPDATE CASCADE;

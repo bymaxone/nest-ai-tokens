@@ -222,4 +222,38 @@ describe('BudgetApplications.drop', () => {
     expect(await scripted([[LOCK, [[ACTIVE]]]]).applications.drop(REFERENCE)).toBe('missing')
     expect(await scripted([]).applications.drop(REFERENCE)).toBe('absent')
   })
+
+  /** The sweep reads a page of references with what each application moved, and the driver's bigint tokens become a number. */
+  describe('stale references and pruning', () => {
+    const CREATED = new Date('2026-06-02T00:00:00.000Z')
+
+    it('maps a stale reference with the tenant of its budget and the delta of its application', async () => {
+      const { applications, ran } = scripted([['FROM "ai_budget_references" r', [[{ key: 'record:k', budgetId: 'b1', attempt: 'a', createdAt: CREATED, tenantId: 't1', windowStart: WINDOW, spentNanoUsd: 10n, spentTokens: 4n, spentCount: 1 }]]]])
+      expect(await applications.stale({ selection: 'attempt', olderThan: CREATED, limit: 10 })).toEqual([
+        { key: 'record:k', budgetId: 'b1', attempt: 'a', createdAt: CREATED, tenantId: 't1', windowStart: WINDOW, delta: { nanoUsd: 10n, tokens: 4, count: 1 } },
+      ])
+      expect(ran).toHaveLength(1)
+    })
+
+    /** The row lock is taken first, so no attempt takes a reference between the check and the delete. */
+    it('prunes under the application row lock, and reports whether a row went', async () => {
+      const gone = scripted([['FOR UPDATE', [[ACTIVE]]], ['DELETE FROM "ai_budget_applications"', [[{ key: 'k1' }]]]])
+      expect(await gone.applications.prune({ key: 'k1', budgetId: 'b1' }, CREATED)).toBe(true)
+      expect(gone.ran[0]).toContain('FOR UPDATE')
+      expect(gone.ran[1]).toContain('DELETE FROM "ai_budget_applications"')
+      const kept = scripted([['FOR UPDATE', [[ACTIVE]]], ['DELETE FROM "ai_budget_applications"', [[]]]])
+      expect(await kept.applications.prune({ key: 'k1', budgetId: 'b1' }, CREATED)).toBe(false)
+    })
+
+    it('does not delete an application that does not exist', async () => {
+      const { applications, ran } = scripted([['FOR UPDATE', [[]]]])
+      expect(await applications.prune({ key: 'k1', budgetId: 'b1' }, CREATED)).toBe(false)
+      expect(ran).toHaveLength(1)
+    })
+
+    it('counts the applications it deleted when pruning the ones given back', async () => {
+      const { applications } = scripted([['DELETE FROM "ai_budget_applications"', [[{ key: 'a' }, { key: 'b' }]]]])
+      expect(await applications.pruneGivenBack(CREATED, 10)).toBe(2)
+    })
+  })
 })

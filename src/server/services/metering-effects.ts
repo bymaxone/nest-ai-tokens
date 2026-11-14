@@ -17,6 +17,7 @@ import type { MeteringScope, UsageRecord, WalletRef } from '../../shared'
 import type { LedgerAppendInput } from './ledger.service'
 import { sumTokens } from './ledger.service'
 import type { BudgetDelta, MeteringContext } from '../interfaces'
+import { recordKey, reserveKey } from '../utils/budget-references'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { BudgetService } from './budget.service'
 import type { WalletService } from './wallet.service'
@@ -35,16 +36,6 @@ interface WalletLeg {
 }
 
 /** Build a budget delta from an effect delta. */
-/** The application key of a hold's budget reservation: one per hold key, so every attempt at the hold shares it. */
-function reserveKey(ledgerKey: string): string {
-  return `reserve:${ledgerKey}`
-}
-
-/** The application key of a `record({ enforce: true })` call's budget consumption: one per call key. */
-function recordKey(callKey: string): string {
-  return `record:${callKey}`
-}
-
 function budgetDelta(delta: EffectDelta): BudgetDelta {
   return { nanoUsd: delta.billedNanoUsd, tokens: delta.tokens, count: delta.count }
 }

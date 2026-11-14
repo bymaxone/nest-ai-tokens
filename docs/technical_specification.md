@@ -1673,6 +1673,14 @@ export interface IBudgetStore {
   commitReference(reference: { key: string; budgetId: string; attempt: string }): Promise<'committed' | 'already' | 'gone' | 'absent'>
   /** Drop the attempt's reference; when it was the last, subtract what the application moved from the window it moved. */
   dropReference(reference: { key: string; budgetId: string; attempt: string }): Promise<'kept' | 'unapplied' | 'missing' | 'absent'>
+  /** Optional: references older than `olderThan` with the window and delta of their application, ordered by (createdAt, key, budgetId, attempt) and paged by `after` — the budget-reference sweep. `selection`: 'attempt' (not `row`), 'held' (`row` of `reserve:` keys), 'retained' (every `row`). */
+  findStaleReferences?(query: { selection: 'attempt' | 'held' | 'retained'; olderThan: Date; limit: number
+    after?: { createdAt: Date; key: string; budgetId: string; attempt: string } }): Promise<{ key: string; budgetId: string; tenantId: string
+    attempt: string; createdAt: Date; windowStart: Date; delta: { nanoUsd: bigint; tokens: number; count: number } }[]>
+  /** Optional: delete an application whose references are all `row` and that is older than `before`; moves no window. */
+  pruneApplication?(application: { key: string; budgetId: string }, before: Date): Promise<boolean>
+  /** Optional: delete up to `limit` applications given back before `before`. */
+  pruneGivenBack?(before: Date, limit: number): Promise<number>
   getWindow(budgetId: string, windowStart: Date): Promise<{ spentNanoUsd: bigint; spentTokens: number; spentCount: number } | null>
   setWindowStart(budgetId: string, windowStart: Date): Promise<void>   // rotateWindow support
 }
