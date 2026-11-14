@@ -47,7 +47,7 @@ The hold reaper's sweep gains a second query next to the expired-hold scan: rows
 | reverse | `refund` under `reverse:<id>`, after finishing the annotation of the original (`posted → reversed`, a no-op when it already happened) | `adjust` under `reverse:<id>` |
 
 - The inline path (`capture`, `release`, `reverse`) is unchanged and runs first, and clears the marker after the effects, so the common path pays one extra statement.
-- **Grace.** A new option `settlement.graceSeconds` (default 300, approved), whole seconds. A sweep that starts earlier races an inline call that is still running, which the keys make harmless but wasteful. **Validated at boot, not only documented:** it must be a whole number of seconds and must exceed every request or append timeout the library itself knows (the hold TTL does not count, the transaction and pool timeouts the options carry do), and `retentionSeconds` must be a whole number that exceeds both `graceSeconds` and `holds.ttlSeconds`. Each invalid relation is refused with `AI_TOKENS_INVALID_CONFIG` naming the option, and each has a red refusal test.
+- **Grace.** A new option `settlement.graceSeconds` (default 300, approved), whole seconds. A sweep that starts earlier races an inline call that is still running, which the keys make harmless but wasteful. **Validated at boot, not only documented:** it must be a whole number of seconds from 1 to 2,147,483, and `retentionSeconds` must be a whole number that exceeds both `graceSeconds` and `holds.ttlSeconds`. The module options carry no request, append, pool or transaction timeout (the only durations are `holds.ttlSeconds` and `holds.reaperIntervalSeconds`), so there is no timeout for the grace to be compared with, and the note does not invent one; whether the host should declare its longest request time is a question for the PM. Each invalid value or relation is refused with `AI_TOKENS_INVALID_CONFIG` naming the option, and each has a red refusal test.
 - **Claim: no lock is held.** The sweep selects owed rows **without a row lock**. Several replicas, or one replica's two overlapping ticks, may run one row: every leg is idempotent by key (the wallet entry keys, the budget application keys), so a duplicate run moves nothing and clearing the marker is idempotent. `FOR UPDATE SKIP LOCKED` is rejected because the wallet and budget calls go through other ports, possibly other connections, and a lock held across them is a long transaction and a lock wait. A test runs two sweepers at once over the same owed rows and asserts the wallet, the window and the references against a run with one sweeper.
 - **Tenant.** Every effect the sweep runs carries the row's own `tenantId` (the context is built from the row, never from the sweeper). A red test with two tenants asserts that sweeping one tenant's owed row never moves the other tenant's wallet, budget or references.
 - **Failure.** A row whose effects fail again keeps its marker; the next tick retries. The log does not flood: the sweep logs **one summary per tick** under a stable key with the count of failed rows and the first record id, never amounts text, and a tick with no failure logs nothing. No retry counter and no dead-letter table in this PR: a persistent failure is an operator signal, and adding state for it is a separate decision.
@@ -60,9 +60,10 @@ PR 1 documented one over-count until the sweep: a reference that is not `row` an
 | the reference | the ledger row for its key | verdict |
 | --- | --- | --- |
 | named by an attempt, older than the grace | none | `dropReference`: the movement is given back when it was the last reference |
-| named by an attempt, older than the grace | `pending` or `posted` | **condition B:** `commitReference`: rename to `row`, so a committed call is never under-counted. |
-| named by an attempt, older than the grace | `released` or `reversed` | `dropReference`, never a rename, so a terminal row does not keep a reservation. |
-| `row` | `released` or `reversed` | `dropReference` on `row`: the hold was released between the append and the commit and nothing released the reference afterwards. This is the interleaving two reviewers found on PR 1, and it is a required test here. |
+| named by an attempt, older than the grace | `pending`, `posted` or `reversed` | **condition B:** `commitReference`: rename to `row`, so a committed call is never under-counted. A reversed row is renamed, not dropped: its reversal already gave the amounts back through the separate application `reverse:<id>`, and dropping the last reference would unapply the original movement a second time. |
+| named by an attempt, older than the grace | `released` | `dropReference`, never a rename, so a released row does not keep a reservation. |
+| `row` | `released` | `dropReference` on `row`: the hold was released between the append and the commit and nothing released the reference afterwards. This is the interleaving two reviewers found on PR 1, and it is a required test here. |
+| `row` | `reversed` | keep, for the reason above: the reversal's own application cancels the amounts, and a drop would subtract them twice. |
 | `row` | `pending`, `posted` | keep. |
 | `row` | none | keep: a `capture:<id>` or `reverse:<id>` adjust takes `row` directly and has no row of its own under that key. |
 
@@ -74,7 +75,7 @@ Two limits of the lookup, stated so the verdict is not over-read. The ledger key
 
 `ai_budget_applications` and `ai_budget_references` grow by one row per keyed movement and are never deleted today. The sweep prunes them, never earlier than a key can still be replayed.
 
-- A key can be replayed as long as its ledger row exists, but a replay of a ledger row returns the row and takes no budget movement (the lookup precedes the effects). What the application row still protects is a **concurrent** attempt, which lives for one request timeout, and a **sweep re-run** of an owed effect, which lives until the marker is cleared.
+- A key can be replayed as long as its ledger row exists, but a replay of a ledger row returns the row and takes no budget movement (the lookup precedes the effects). What the application row still protects is a **concurrent** attempt, which lives for less than the grace, and a **sweep re-run** of an owed effect, which lives until the marker is cleared.
 - **Rule:** delete an application (its references go with it, `ON DELETE CASCADE`) when it was given back (`unappliedAt` set) or when its ledger row is terminal with no marker, and in both cases it is older than the retention.
 - **Retention:** `settlement.retentionSeconds`, default 7 days (approved), validated at boot as in section 2. The figure is a default without a deployment measurement, and the Apply note says so.
 - A pending hold's `row` reference is never pruned: only release or reversal ends it.
@@ -98,10 +99,10 @@ A keyed call whose append failed with no row keeps its wallet debit for the retr
 
 - Unit, in-memory stores: a `capture` whose effects throw after the transition leaves the marker and the reserved values; the sweep finishes the wallet and budget legs exactly once, a second pass changes nothing, and a `capture` retried inline meanwhile does not double them.
 - The same for `release`, the reaper, and `reverse`, including the crash between the compensating append and the annotation of the original, and a refund that throws (today it is logged and lost).
-- Boot validation: each relation between `graceSeconds`, `retentionSeconds`, the hold TTL and the known timeouts, and each non-whole value, is refused naming the option.
+- Boot validation: each relation between `graceSeconds`, `retentionSeconds` and the hold TTL, and each non-whole value, is refused naming the option.
 - Two tenants, and two sweepers at once (sections 2).
 - The failure log: a row that fails every tick produces one summary line per tick, not one per row.
-- The reference table: one test per row, including the released-between-append-and-commit interleaving and the price-change retry.
+- The reference table: one test per row, with a reversed row for each reference kind (an attempt-named reference of a reversed record is renamed and the window ends equal to a run that never failed; a `row` reference of a reversed row is kept and the window is not subtracted twice), including the released-between-append-and-commit interleaving and the price-change retry.
 - Pruning: an application inside the retention survives, one past it is deleted with its references, a pending hold's `row` survives, an unmarked terminal row's application is deleted.
 - Real PostgreSQL, two instances: kill the effects between the transition and the budget call (a store double that throws once), run the sweep on both, and assert the wallet, the window and the references against a run that never failed.
 - Contract tests for each new store call, so a custom store is held to the same rule.
