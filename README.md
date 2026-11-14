@@ -583,7 +583,18 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | `AI_TOKENS_HOLD_ALREADY_SETTLED` | 409  | `capture()` after `release()`                                                    |
 | `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed record |
 | `AI_TOKENS_STREAM_USAGE_MISSING` | 422  | Stream ended without provider usage and no tokenizer fallback available          |
-| `AI_TOKENS_STORE_ERROR`          | 502  | Persistence adapter raised an unmapped error                                     |
+| `AI_TOKENS_STORE_ERROR`          | 500  | Persistence adapter raised an error that retrying does not fix                   |
+| `AI_TOKENS_STORE_UNAVAILABLE`    | 503  | Persistence adapter cannot serve the call now; retry it (no `Retry-After` is set) |
+
+### Set a connect timeout on the database client
+
+`AI_TOKENS_STORE_UNAVAILABLE` is raised only when the driver reports a failure. A database that is paused or whose
+network drops without closing the socket makes some drivers wait forever instead, and the library cannot classify a
+call that never fails. Measured on PostgreSQL 16: with Prisma 6's engine, a plain query against a paused server never
+returns, while an interactive transaction fails after `maxWait` with `P2028`. With Prisma 7's `pg` adapter the pool
+gives up after its `connectionTimeoutMillis`. Set the bound on the client you pass to the store: `connect_timeout`
+and `pool_timeout` in the Prisma 6 connection URL, and `connectionTimeoutMillis` (plus a `statement_timeout`) on the
+`pg` pool for Prisma 7.
 
 ### Logging the cause of a store error
 
