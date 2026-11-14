@@ -885,7 +885,7 @@ Limits you can rely on:
   call, so a replay after the retention takes no budget movement.
 - While any row has owed its effects for longer than the retention, the records of given-back movements are kept, because a
   retry of that row's release or reversal needs them to give nothing back twice; the deletion resumes when the marker clears. A marker
-  that never clears pauses this deletion for every record until it is settled or an operator clears it, and the tick says so in
+  that never clears pauses this deletion for every record until it is settled, and the tick says so in
   one line, `given-back pruning skipped: an owed marker is older than the retention`, so the tables do not grow unseen.
 - A step of a call that stays stuck for longer than the grace plus the retention is outside what the sweep repairs: its
   movement was given back and its record deleted, so its commit finds no record, counts nothing, and a later
