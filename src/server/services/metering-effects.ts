@@ -112,17 +112,18 @@ export class MeteringEffects {
   }
 
   /**
-   * Compensate a hold whose pending ledger insert failed: refund the wallet debit
-   * and release the budget consumption. Best-effort — failures are logged so the
-   * original insert error surfaces unmasked.
+   * Compensate a hold whose pending ledger insert failed: release the budget consumption and, when `refundWallet`
+   * is set, refund the wallet debit. A keyed hold whose retry replays its debit leaves `refundWallet` unset.
+   * Best-effort — failures are logged so the original insert error surfaces unmasked.
    *
    * @param context The metering context.
    * @param delta The reservation to unwind.
    * @param ledgerKey The stable key deriving the wallet rollback idempotency key.
+   * @param refundWallet Whether the wallet debit is this attempt's own to refund.
    */
-  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string): Promise<void> {
+  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, refundWallet = true): Promise<void> {
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
-    const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
+    const leg = refundWallet ? this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false) : null
     if (leg !== null) {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: delta.billedNanoUsd, idempotencyKey: `hold-rollback:${ledgerKey}`, reason: 'hold rollback' })
@@ -138,6 +139,21 @@ export class MeteringEffects {
       // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget reservation during rollback')
     }
+  }
+
+  /**
+   * Whether the ledger row found for a hold's key stands for the wallet debit this hold attempt shares: a row of the
+   * same payer, enforced, not a system cost, whose payer owns a wallet and owed an amount, in any status. A pending or
+   * released row is a hold; a posted or reversed row is a captured hold or a `record()` row, which nothing on the row
+   * tells apart, so it counts too: the loser keeps its debit, which can overcharge one reservation but never refunds a
+   * settled one.
+   *
+   * @param row The record stored under the key.
+   * @param scope The payer of the attempt that is asking.
+   */
+  sharesHoldDebit(row: UsageRecord, scope: MeteringScope): boolean {
+    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
+    return row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
   /**

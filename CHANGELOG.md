@@ -14,6 +14,12 @@ a retry of a refused call with the same idempotency key is decided afresh, where
 call had been enforced. The ledger no longer holds a record of a refused call. The wallet debit of an enforced call is now
 keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and carries no `usageRecordId`.
 
+**Apply:** the module now refuses at boot, naming the option, a `holds.reaperIntervalSeconds` that is not an integer
+from 1 to 2,147,483, a `holds.ttlSeconds` or `content.ttlSeconds` that is not an integer from 1 to 2,147,483,647 (the hold's
+expiry date must stay a valid date), and a `reporting.maxExportRows` that is not a positive integer. Before, `NaN` and any interval above
+2,147,483 seconds passed, and `setInterval` ran the hold reaper every millisecond, and a fractional value passed as well.
+Values such as `0.5` are now refused; use whole seconds.
+
 ### Fixed
 
 - **A retry of a refused `record({ enforce: true })` call succeeded without charging anyone.** The record was written
@@ -32,10 +38,10 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   - another error and no row, with an idempotency key: the budget consumption is given back and the wallet debit
     stays, which a retry with that key replays, so the retry is charged once;
   - another error and no row, without a key: both are given back;
-  - another error and a row that carries this attempt's instant (the append committed before the error reached the
+  - another error and a row of the same payer that carries this attempt's instant (the append committed before the error reached the
     caller): the charge stays, and a retry with the call's key replays the row; a call without a key is not replayed,
     so its retry is a new call;
-  - another error and a row that does not carry this attempt's instant (another attempt wrote it): the rule of the key
+  - another error and a row of another payer or that does not carry this attempt's instant (another attempt wrote it): the rule of the key
     conflict applies;
   - the ledger cannot say whether the row exists: nothing is undone, so the charge stays, and the error is rethrown.
 
@@ -43,11 +49,23 @@ keyed `record:<idempotencyKey>`, or a fresh id when the call has no key, and car
   the wallet is debited once. A keyed call whose append failed keeps its wallet debit for the retry to replay, so if the
   price or the markup changes before the retry, the retry's amount differs and it fails with the key conflict while the
   debit stays without a record.
+- **Two `hold()` calls with one idempotency key could erase the winner's wallet reservation, or credit the wallet above
+  its balance.** The loser of the key conflict refunded its wallet debit under a key nobody replays, although that debit
+  was the winner's entry (the wallet key is per wallet and the same for both). Measured on PostgreSQL with two
+  instances: one key, two or ten calls, one pending hold and a wallet that had not moved; and a winner that released
+  before the loser recovered left the wallet 6,250,000 nano-USD above its start. `hold()` is now serialized per tenant
+  and key inside an instance, and a hold whose pending append fails settles by what the ledger holds for the key, with
+  the same cases as `record()`: the loser of a conflict keeps the winner's debit when the row is the same payer's
+  enforced hold or record in any status (a posted row may be a captured hold or a record, so it counts, which can
+  overcharge one reservation but never refunds a settled one) and refunds its own debit otherwise; a keyed hold whose
+  append failed keeps its debit for the retry to replay; a hold without a key refunds; an append that committed before
+  its error reached the caller keeps its reservation; an append the ledger cannot confirm moves nothing. A keyed hold
+  whose append failed and is never retried leaves its wallet debit without a row until the settlement design lands.
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 42589 bytes brotli, with the enforcement that now runs before the record is
-  written; its budget moves from 42000 to 42700.
+- The `server` bundle grows from 41597 to 43137 bytes brotli, with the enforcement that now runs before the record is
+  written, the settlement of a failed hold append and the option validation; its budget moves from 42000 to 43300.
 
 ## [1.1.14] - 2026-11-13
 

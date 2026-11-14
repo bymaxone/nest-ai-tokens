@@ -292,3 +292,46 @@ describe('MeteringEffects.sharesDebit', () => {
     expect(new MeteringEffects(undefined, undefined).sharesDebit(record({ enforced: true, status: 'posted' }), PAYER)).toBe(false)
   })
 })
+
+describe('MeteringEffects.sharesHoldDebit', () => {
+  const PAYER = { type: 'user', id: 'u1' } as const
+
+  /** A hold loser keeps its debit against a row of the same payer in any status, and refunds it against any other row. */
+  it.each([
+    { name: 'a pending hold of the same payer', over: { status: 'pending' as const }, expected: true },
+    { name: 'a released hold', over: { status: 'released' as const }, expected: true },
+    { name: 'a captured hold or a record, which are both posted', over: { status: 'posted' as const }, expected: true },
+    { name: 'a reversed row', over: { status: 'reversed' as const }, expected: true },
+    { name: 'a row that was not enforced', over: { enforced: false }, expected: false },
+    { name: 'a system cost', over: { isSystemCost: true }, expected: false },
+    { name: 'a row that cost nothing', over: { billedCostNanoUsd: 0n }, expected: false },
+    { name: 'a row of another payer', over: { scope: { type: 'user', id: 'u2' } as const }, expected: false },
+    { name: 'a row of another scope type', over: { scope: { type: 'tenant', id: 'u1' } as const }, expected: false },
+  ])('is $expected for $name', ({ over, expected }) => {
+    const { service: wallets } = buildWalletService()
+    const effects = new MeteringEffects(wallets, undefined)
+
+    expect(effects.sharesHoldDebit(record({ enforced: true, status: 'pending', ...over }), PAYER)).toBe(expected)
+  })
+
+  /** Without the wallet feature no row stands for a wallet debit. */
+  it('is false when wallets are disabled', () => {
+    expect(new MeteringEffects(undefined, undefined).sharesHoldDebit(record({ enforced: true, status: 'pending' }), PAYER)).toBe(false)
+  })
+})
+
+describe('MeteringEffects.compensateHold', () => {
+  /** A keyed hold whose retry replays its debit gives its budget back and leaves the wallet alone. */
+  it('releases the budget alone when told the wallet debit is not its own', async () => {
+    const { service: wallets } = buildWalletService()
+    const { service: budgets } = buildBudgetService()
+    const refund = jest.spyOn(wallets, 'refund')
+    const release = jest.spyOn(budgets, 'release')
+    const effects = new MeteringEffects(wallets, budgets)
+
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', false)
+
+    expect(refund).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+})

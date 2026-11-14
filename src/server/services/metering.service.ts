@@ -43,7 +43,7 @@ import { baseColumns, buildAppendInput, withBaseModel } from './record-columns'
 import type { RatingResult, RecordOutcome } from './record-replay'
 import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
-import type { Enforcement } from './metering-effects'
+import type { EffectDelta, Enforcement } from './metering-effects'
 import type { PricingService } from './pricing.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import type { TelemetryEmitter } from '../telemetry/otel-emitter'
@@ -277,14 +277,32 @@ export class MeteringService {
     const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(appendInput.tenantId, callKey))
     if (row === undefined) throw error // the ledger cannot say whether the row exists: the charge stays, unguessed
     // A row after an error other than the key conflict is this attempt's own, written before the error reached it, when
-    // it carries this attempt's instant: its charge stays, and a retry with the key replays the row.
-    const committed = row !== null && !conflict && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
+    // it is the same payer's and carries this attempt's instant: its charge stays, and a retry with the key replays the row.
+    const committed = row !== null && !conflict && sameScope(row.scope, appendInput.scope) && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
     if (enforcement !== null && !committed) await this.effects.withdraw(enforcement, ownDebit)
     if (row === null || !conflict) throw error
     return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
+  }
+
+  /**
+   * Undo what a hold attempt reserved when its pending append threw, deciding from the row the ledger holds for the key:
+   * nothing when the ledger cannot say or the append committed (the row is the same payer's and carries this attempt's instant), the budget
+   * alone when the row shares the wallet debit or a keyed retry will replay it, and both otherwise.
+   * @internal
+   */
+  private async settleFailedHold(
+    error: unknown,
+    held: { context: MeteringContext; delta: EffectDelta; ledgerKey: string; occurredAt: Date },
+  ): Promise<void> {
+    const { context, delta, ledgerKey, occurredAt } = held
+    const row = await rowAfterFailure(() => this.ledger.findByIdempotencyKey(context.tenantId, ledgerKey))
+    if (row === undefined) return
+    if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
+    const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
+    await this.effects.compensateHold(context, delta, ledgerKey, ownDebit)
   }
 
   /**
@@ -342,9 +360,10 @@ export class MeteringService {
    * double-consuming budget/wallet over parameter-conflict detection, so a replay
    * with a CHANGED estimate silently keeps the original reservation (unlike
    * `record()`, whose payload hash rejects a changed payload with 409); settlement
-   * still corrects to actuals at capture. Concurrent holds sharing one key can both
-   * pass the pre-check and reserve; the losing ledger insert compensates its
-   * reservation (a brief over-reserve window under high contention).
+   * still corrects to actuals at capture. Holds sharing one key are serialized
+   * inside an instance; across instances they can both pass the pre-check and
+   * reserve, and the loser of the ledger insert settles by the row the ledger holds
+   * for the key (a brief over-reserve window under high contention).
    *
    * @param context The metering context (payer scope, feature).
    * @param estimate One of the three {@link HoldEstimate} variants.
@@ -352,6 +371,16 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated).
    */
   async hold(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
+    const key = context.idempotencyKey
+    if (key === undefined) return this.holdOnce(context, estimate)
+    return this.inflight.run(JSON.stringify([context.tenantId, key]), () => this.holdOnce(context, estimate))
+  }
+
+  /**
+   * The body of {@link hold}, for one call.
+   * @internal
+   */
+  private async holdOnce(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
     if (context.idempotencyKey !== undefined) {
       const existing = await this.ledger.findByIdempotencyKey(context.tenantId, context.idempotencyKey)
       if (existing !== null) return this.holdOf(existing)
@@ -561,7 +590,7 @@ export class MeteringService {
         ledgerKey,
       )
     } catch (error) {
-      if (!isSystemCost) await this.effects.compensateHold(context, delta, ledgerKey)
+      if (!isSystemCost) await this.settleFailedHold(error, { context, delta, ledgerKey, occurredAt })
       throw error
     }
   }
