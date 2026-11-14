@@ -329,5 +329,27 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
     expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
     expect(await sweep(built)).toBe(0)
   })
+
+  /**
+   * Invariant: the sweep completes a reversal with the payload the inline path already sent, so a refund that succeeded
+   * inline is replayed and not refused as a conflict. The refund of a reversal carries the caller's reason, and a wallet
+   * replay matches on it; a reversal whose refund succeeded and whose budget release failed is finished by the sweep.
+   */
+  it('completes a reversal whose refund already succeeded, with the reason the caller gave', async () => {
+    const control = await build()
+    const recordedControl = await control.service.record({ usage: usage(), context: context({ enforce: true, idempotencyKey: 'k' }) })
+    await control.service.reverse(recordedControl.id, 'customer-dispute')
+
+    const built = await build()
+    const recorded = await built.service.record({ usage: usage(), context: context({ enforce: true, idempotencyKey: 'k' }) })
+    jest.spyOn(built.budgets, 'adjust').mockRejectedValueOnce(new Error('budget down'))
+    const compensating = await built.service.reverse(recorded.id, 'customer-dispute')
+    const [owed] = await built.ledger.findEffectsOwed(new Date(Date.now() + 60_000), 10)
+    expect(owed?.record.id).toBe(compensating.id)
+
+    expect(await sweep(built)).toBe(1)
+    expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+    expect(await sweep(built)).toBe(0)
+  })
 })
 

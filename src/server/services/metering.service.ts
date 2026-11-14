@@ -532,7 +532,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
-    const compensating = await this.ledger.reverse(usageRecordId, reason, {})
+    const compensating = await this.ledger.reverse(usageRecordId, reason, { reason })
     const original = await this.ledger.findById(usageRecordId)
     if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed({ ledger: this.ledger, effects: this.effects, events: this.events }, this.logger, original, reason, compensating.id)
     else await clearOwed(this.ledger, this.logger, compensating.id)

@@ -236,6 +236,7 @@ model AiUsageEffectsOwed {
   owedAt                DateTime
   reservedBilledNanoUsd BigInt?
   reservedTokens        Int?
+  reason                String?
   record                AiUsageRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
 
   @@index([owedAt])

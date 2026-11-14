@@ -73,6 +73,7 @@ describe('the effects-owed marker in PostgreSQL', () => {
     const owed = (await pg.store.findEffectsOwed?.(FUTURE(), 100))?.find((item) => item.record.id === compensating.id)
     expect(owed?.record.reversesRecordId).toBe('orig')
     expect(owed?.reservedBilledNanoUsd).toBeUndefined()
+    expect(owed?.reason).toBeUndefined()
   })
 
   /** The sweep's query reads only markers older than the cutoff, oldest first, up to the limit; clearing is idempotent. */
@@ -104,6 +105,13 @@ describe('the effects-owed marker in PostgreSQL', () => {
     expect(await pg.store.findEffectsOwedFor?.('missing')).toBeNull()
     await pg.store.clearEffectsOwed?.(hold.id)
     expect(await pg.store.findEffectsOwedFor?.(hold.id)).toBeNull()
+  })
+
+  /** The caller's reason for a reversal rides in the marker and reads back with it, for the sweep to refund with the same payload. */
+  it('keeps the reason of a reversal in the marker', async () => {
+    const compensating = await pg.store.append(record({ idempotencyKey: 'reverse:reason', status: 'posted', reversesRecordId: 'orig-2' }), 'h', false, { reason: 'customer-dispute' })
+    expect((await pg.store.findEffectsOwedFor?.(compensating.id))?.reason).toBe('customer-dispute')
+    expect((await pg.store.findEffectsOwed?.(FUTURE(), 100))?.find((item) => item.record.id === compensating.id)?.reason).toBe('customer-dispute')
   })
 
   /** A write that matches no row leaves no marker: the transition from the wrong state returns null and writes nothing. */

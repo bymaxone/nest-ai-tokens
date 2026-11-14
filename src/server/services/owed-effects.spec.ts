@@ -80,6 +80,17 @@ describe('settleOwed', () => {
     expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('comp')
   })
 
+  /** The reason the caller gave a reversal rides in the marker and is the one the refund, the budget leg and the event carry. */
+  it('reverses with the reason the marker kept, and with a stated one when it kept none', async () => {
+    const kept = deps(row({ id: 'orig', status: 'reversed' }))
+    await settleOwed(kept.deps, { record: row({ id: 'comp', reversesRecordId: 'orig' }), reason: 'customer-dispute' })
+    expect(kept.effects.reverseEffects).toHaveBeenCalledWith(expect.objectContaining({ id: 'orig' }), 'customer-dispute')
+    expect(kept.events.usageReversed).toHaveBeenCalledWith(expect.objectContaining({ id: 'orig' }), 'comp', 'customer-dispute')
+    const none = deps(row({ id: 'orig', status: 'reversed' }))
+    await settleOwed(none.deps, { record: row({ id: 'comp', reversesRecordId: 'orig' }) })
+    expect(none.effects.reverseEffects).toHaveBeenCalledWith(expect.anything(), 'effects recovered by the settlement sweep')
+  })
+
   /** An original that was already annotated is not annotated again. */
   it('does not annotate an original that is already reversed', async () => {
     const d = deps(row({ id: 'orig', status: 'reversed' }))

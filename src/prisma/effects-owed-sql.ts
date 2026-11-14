@@ -25,8 +25,8 @@ export function withMarkerSql(write: Sql, owed?: OwedEffectsMarker): Sql {
   return sql`
     WITH written AS (${write}),
     marked AS (
-      INSERT INTO "ai_usage_effects_owed" ("recordId", "tenantId", "owedAt", "reservedBilledNanoUsd", "reservedTokens")
-      SELECT "id", "tenantId", ${DB_NOW_SQL}, ${owed.reservedBilledNanoUsd ?? null}, ${owed.reservedTokens ?? null} FROM written
+      INSERT INTO "ai_usage_effects_owed" ("recordId", "tenantId", "owedAt", "reservedBilledNanoUsd", "reservedTokens", "reason")
+      SELECT "id", "tenantId", ${DB_NOW_SQL}, ${owed.reservedBilledNanoUsd ?? null}, ${owed.reservedTokens ?? null}, ${owed.reason ?? null} FROM written
     )
     SELECT * FROM written
   `
@@ -35,7 +35,7 @@ export function withMarkerSql(write: Sql, owed?: OwedEffectsMarker): Sql {
 /** The rows whose marker is older than a cutoff, oldest first, with what the marker kept (the sweep's query). */
 export function effectsOwedSql(olderThan: Date, limit: number): Sql {
   return sql`
-    SELECT r.*, o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens"
+    SELECT r.*, o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens", o."reason" AS "owedReason"
     FROM "ai_usage_effects_owed" o JOIN "ai_usage_records" r ON r."id" = o."recordId"
     WHERE o."owedAt" < ${olderThan}
     ORDER BY o."owedAt" ASC, o."recordId" ASC LIMIT ${limit}
@@ -45,7 +45,7 @@ export function effectsOwedSql(olderThan: Date, limit: number): Sql {
 /** The marker of one row with what it kept, joined to its row (a reversal reads it to settle the original first). */
 export function effectsOwedForSql(id: string): Sql {
   return sql`
-    SELECT r.*, o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens"
+    SELECT r.*, o."reservedBilledNanoUsd" AS "owedReservedBilledNanoUsd", o."reservedTokens" AS "owedReservedTokens", o."reason" AS "owedReason"
     FROM "ai_usage_effects_owed" o JOIN "ai_usage_records" r ON r."id" = o."recordId"
     WHERE o."recordId" = ${id}
   `
@@ -62,5 +62,6 @@ export function mapOwedRow(row: UsageRow): OwedEffects {
     record: mapUsageRow(row),
     ...(row.owedReservedBilledNanoUsd === null || row.owedReservedBilledNanoUsd === undefined ? {} : { reservedBilledNanoUsd: row.owedReservedBilledNanoUsd }),
     ...(row.owedReservedTokens === null || row.owedReservedTokens === undefined ? {} : { reservedTokens: row.owedReservedTokens }),
+    ...(row.owedReason === null || row.owedReason === undefined ? {} : { reason: row.owedReason }),
   }
 }

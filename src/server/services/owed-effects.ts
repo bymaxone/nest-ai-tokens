@@ -39,7 +39,7 @@ export interface OwedEffectsDeps {
  */
 export async function settleOwed(deps: OwedEffectsDeps, owed: OwedEffects): Promise<void> {
   const { record } = owed
-  if (record.reversesRecordId !== undefined) await settleReversal(deps, record, record.reversesRecordId)
+  if (record.reversesRecordId !== undefined) await settleReversal(deps, record, record.reversesRecordId, owed.reason ?? recoveredReason())
   else if (record.status === 'released') {
     await deps.effects.restoreHold(record)
     await deps.events.holdReleased(record, recoveredReason(), false)
@@ -53,12 +53,12 @@ export async function settleOwed(deps: OwedEffectsDeps, owed: OwedEffects): Prom
 }
 
 /** Finish a reversal: the annotation of the original when the crash came before it, then the refund and the release. */
-async function settleReversal(deps: OwedEffectsDeps, compensating: UsageRecord, originalId: string): Promise<void> {
+async function settleReversal(deps: OwedEffectsDeps, compensating: UsageRecord, originalId: string, reason: string): Promise<void> {
   const original = await deps.ledger.findById(originalId)
   if (original === null) return
   if (original.status === 'posted') await deps.ledger.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
-  if (original.enforced && !original.isSystemCost) await reverseAfterCapture(deps, original, recoveredReason())
-  await deps.events.usageReversed(original, compensating.id, recoveredReason())
+  if (original.enforced && !original.isSystemCost) await reverseAfterCapture(deps, original, reason)
+  await deps.events.usageReversed(original, compensating.id, reason)
 }
 
 /**

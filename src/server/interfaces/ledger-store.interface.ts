@@ -41,6 +41,8 @@ export interface OwedEffectsMarker {
   reservedBilledNanoUsd?: bigint
   /** The tokens the hold reserved, kept by a capture for the same reason. */
   reservedTokens?: number
+  /** The caller's reason for a reversal, kept so that the sweep refunds with the payload the inline refund sent. */
+  reason?: string
 }
 
 /** A row whose effects are still owed, with the values its marker kept. */
@@ -51,6 +53,8 @@ export interface OwedEffects {
   reservedBilledNanoUsd?: bigint
   /** The reserved token count, present for a capture. */
   reservedTokens?: number
+  /** The caller's reason, present for a reversal. */
+  reason?: string
 }
 
 /** The append-only usage ledger port. */

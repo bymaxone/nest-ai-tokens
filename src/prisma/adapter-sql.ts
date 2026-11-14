@@ -83,6 +83,7 @@ export interface UsageRow {
   /** What the effects-owed marker kept, joined in by the sweep's query (migration 0003); absent from every other read. */
   owedReservedBilledNanoUsd?: bigint | null
   owedReservedTokens?: number | null
+  owedReason?: string | null
   idempotencyKey: string
   payloadHash: string
   correlationId: string | null

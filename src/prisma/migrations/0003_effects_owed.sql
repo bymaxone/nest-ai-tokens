@@ -12,6 +12,8 @@
 --   "reservedBilledNanoUsd" the billed amount a hold reserved, kept by a capture because the settled row carries the
 --                           actuals and the outstanding deltas are the difference; NULL for any other write
 --   "reservedTokens"        the reserved token count, kept for the same reason
+--   "reason"                the caller's reason for a reversal, kept so that the sweep refunds with the payload the
+--                           inline refund sent (a wallet replay matches on it); NULL for any other write
 --
 -- The marker lives beside the ledger and not in it, so the ledger table gains no column and no mutable value: the
 -- only change a posted row ever takes is still the annotation of its reversal. Additive: it creates one table, one
@@ -26,6 +28,7 @@ CREATE TABLE "ai_usage_effects_owed" (
   "owedAt"                TIMESTAMP(3) NOT NULL,
   "reservedBilledNanoUsd" BIGINT,
   "reservedTokens"        INTEGER,
+  "reason"                TEXT,
   CONSTRAINT "ai_usage_effects_owed_pkey" PRIMARY KEY ("recordId"),
   CONSTRAINT "ai_usage_effects_owed_recordId_fkey" FOREIGN KEY ("recordId") REFERENCES "ai_usage_records" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
