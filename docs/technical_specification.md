@@ -1603,6 +1603,8 @@ export interface ILedgerStore {
   ): Promise<UsageRecord | null>
   /** Optional: rows whose effects have been owed since before `olderThan`, oldest first (the settlement sweep). */
   findEffectsOwed?(olderThan: Date, limit: number): Promise<OwedEffects[]>
+  /** Optional: the marker of one row, read by a reversal before it reverses; `null` when the row owes nothing. */
+  findEffectsOwedFor?(id: string): Promise<OwedEffects | null>
   /** Optional: clear the marker of a row whose effects have run; idempotent. */
   clearEffectsOwed?(id: string): Promise<boolean>
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>

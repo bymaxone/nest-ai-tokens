@@ -15,8 +15,8 @@ reversal, so an installation that updates without the migration fails those writ
 rollback. A capture, a release and a reversal whose wallet and budget legs did not run are now finished by the reaper's
 ticks, once the marker is older than the new `settlement.graceSeconds` option (default 300; `settlement.enabled` switches it
 off, default true). A refund or a budget release that fails during a reversal is no longer logged and lost: the marker stays
-and the sweep retries it. The sweep re-emits the event a write owes, at least once. A custom `ILedgerStore` that omits the
-new optional `findEffectsOwed` and `clearEffectsOwed` calls keeps working with the sweep inactive for it, and the reaper logs
+and the sweep retries it, and a reversal settles the capture legs its original still owes before it reverses, so the clamp of a budget window at zero cannot absorb part of the reversal. The sweep re-emits the event a write owes, at least once. A custom `ILedgerStore` that omits the
+new optional `findEffectsOwed`, `findEffectsOwedFor` and `clearEffectsOwed` calls keeps working with the sweep inactive for it, and the reaper logs
 that once at boot. The ledger table gains no column: the only change a posted row takes is still the annotation of its
 reversal.
 
