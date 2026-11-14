@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 **Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
 application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then
-`disconnect()`, and nothing for a client that has already ended. Before, that connection stayed open after
+`disconnect()`, and nothing for a client that has already ended. A `closeTimeoutMs` that is not a whole number from 1 to
+2,147,483,647 is refused at construction with `AI_TOKENS_INVALID_CONFIG`. Before, that connection stayed open after
 `app.close()` and the process did not exit on its own. A client you pass to the store is still never closed by it. After
 shutdown a URL store refuses further calls.
 

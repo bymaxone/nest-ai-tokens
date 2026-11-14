@@ -16,6 +16,9 @@
 
 import type { Redis } from 'ioredis'
 import type { IBudgetCounterStore } from '../server'
+// By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
+// class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 
 /** Construction options for {@link RedisBudgetCounterStore}. */
 export interface RedisBudgetCounterStoreOptions {
@@ -23,13 +26,27 @@ export interface RedisBudgetCounterStoreOptions {
   keyPrefix?: string
   /**
    * How long `onModuleDestroy` waits for a graceful `quit()` of a client this store created before it drops the
-   * connection with `disconnect()`. Default 2000. A client passed in by the host is never closed.
+   * connection with `disconnect()`. A whole number of milliseconds from 1 to 2,147,483,647, default 2000; anything else is
+   * refused with `AI_TOKENS_INVALID_CONFIG`. A client passed in by the host is never closed.
    */
   closeTimeoutMs?: number
 }
 
 /** The default bound on a graceful `quit()` of an owned client, in milliseconds. */
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000
+
+/** The longest delay `setTimeout` runs: 2^31-1 milliseconds, a longer one fires after a millisecond. */
+const MAX_CLOSE_TIMEOUT_MS = 2_147_483_647
+
+/** Throw unless `value`, when given, is a whole number of milliseconds a timer honours, naming the option. */
+function requireCloseTimeout(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_CLOSE_TIMEOUT_MS
+  if (!Number.isInteger(value) || value < 1 || value > MAX_CLOSE_TIMEOUT_MS) {
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error reason template is internal diagnostics; tests check the code and the option name
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `closeTimeoutMs must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}, received ${String(value)}` })
+  }
+  return value
+}
 
 /** The largest integer Redis Lua's IEEE-754 doubles represent exactly (`2^53 − 1`), as a Lua literal. */
 const SAFE_INTEGER_MAX = '9007199254740991'
@@ -117,7 +134,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   constructor(redis: Redis | string, options: RedisBudgetCounterStoreOptions = {}) {
     this.keyPrefix = options.keyPrefix ?? ''
-    this.closeTimeoutMs = options.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS
+    this.closeTimeoutMs = requireCloseTimeout(options.closeTimeoutMs)
     this.#source = redis
   }
 

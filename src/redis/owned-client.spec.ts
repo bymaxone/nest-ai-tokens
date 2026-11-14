@@ -6,6 +6,7 @@
  */
 
 import type { Redis } from 'ioredis'
+import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { RedisBudgetCounterStore } from './index'
 
 /** A client with the surface the store uses at shutdown; `quitMode` decides how `quit()` behaves. */
@@ -192,5 +193,27 @@ describe('RedisBudgetCounterStore shutdown of the client it created', () => {
     await expect(store.reset('k')).rejects.toThrow('import failed')
     await expect(store.onModuleDestroy()).resolves.toBeUndefined()
     failing.mockRestore()
+  })
+})
+
+describe('RedisBudgetCounterStore closeTimeoutMs', () => {
+  /** A bound a timer cannot honour (not a whole number, below 1, or above 2^31-1) is refused at construction, naming the option. */
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 1.5, 0, -1, 2 ** 31, '2000' as unknown as number])('refuses %p', (value) => {
+    const build = (): RedisBudgetCounterStore => new RedisBudgetCounterStore('redis://localhost:6379', { closeTimeoutMs: value })
+    expect(build).toThrow(AiTokensException)
+    let thrown: unknown
+    try {
+      build()
+    } catch (error) {
+      thrown = error
+    }
+    const body = (thrown as AiTokensException).getResponse() as { error: { code: string; details: { reason: string } } }
+    expect(body.error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(body.error.details.reason).toContain('closeTimeoutMs')
+  })
+
+  /** The smallest, a usual and the largest bound a timer honours are accepted, and so is leaving it out. */
+  it.each([1, 2_000, 2 ** 31 - 1, undefined])('accepts %p', (value) => {
+    expect(() => new RedisBudgetCounterStore('redis://localhost:6379', value === undefined ? {} : { closeTimeoutMs: value })).not.toThrow()
   })
 })
