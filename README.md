@@ -689,6 +689,13 @@ specific to security is below.
   library ships no implementation.
 - **Budget checks are atomic.** The Redis counter runs check-and-increment as one Lua script, so two
   concurrent requests cannot both fit under a cap that holds one.
+- **Who closes the Redis client.** The library closes what it creates and the host closes what it passes in.
+  A `RedisBudgetCounterStore` built from a connection URL opens its own client and quits it when the Nest
+  application closes (a graceful `quit()` bounded by `closeTimeoutMs`, default 2000 ms, then `disconnect()`),
+  so the process can exit. A client you pass in is never touched; close it yourself, and call `disconnect()`
+  only while its `status` is not `'end'`: `ioredis` arms a 2000 ms teardown timer on `disconnect()` that only
+  a `'close'` event clears, and a client that has already ended never emits one, which keeps the process
+  alive about two seconds longer.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.

@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
+application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then
+`disconnect()`, and nothing for a client that has already ended. Before, that connection stayed open after
+`app.close()` and the process did not exit on its own. A client you pass to the store is still never closed by it. After
+shutdown the store refuses further calls (the budget service then treats the counter as unavailable and the database
+decides) instead of opening a new connection.
+
 **Apply:** `record({ enforce: true })` now charges the budget and the wallet before it writes the usage record. A call
 the budget or the wallet refuses leaves no record, where it used to leave a posted record that had charged nothing, and
 a retry of a refused call with the same idempotency key is decided afresh, where it used to return that record as if the
