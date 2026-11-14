@@ -139,7 +139,7 @@ export function staleReferencesSql(query: StaleReferenceQuery): Sql {
       ? sql`r."attempt" <> ${COMMITTED_REFERENCE}`
       : query.selection === 'retained'
         ? sql`r."attempt" = ${COMMITTED_REFERENCE}`
-        : sql`r."attempt" = ${COMMITTED_REFERENCE} AND left(r."key", ${RESERVE_KEY_PREFIX.length}) = ${RESERVE_KEY_PREFIX}`
+        : sql`r."attempt" = ${COMMITTED_REFERENCE} AND left(r."key", ${RESERVE_KEY_PREFIX.length}::int) = ${RESERVE_KEY_PREFIX}`
   const after =
     query.after === undefined
       ? sql`TRUE`

@@ -132,7 +132,8 @@ describe('stale references and pruning statements', () => {
   it.each([
     ['attempt', 'r."attempt" <> $2', ['row']],
     ['retained', 'r."attempt" = $2', ['row']],
-    ['held', 'r."attempt" = $2 AND left(r."key", $3) = $4', ['row', 8, 'reserve:']],
+    // The length is cast: Prisma 6 binds a JavaScript number as a bigint, and `left(text, bigint)` does not exist.
+    ['held', 'r."attempt" = $2 AND left(r."key", $3::int) = $4', ['row', 8, 'reserve:']],
   ] as const)('lists the %s references older than a bound, oldest first', (selection, condition, bound) => {
     const statement = staleReferencesSql({ selection, olderThan: BEFORE, limit: 25 })
     expect(statement.text).toContain(`r."createdAt" < ($1::timestamptz AT TIME ZONE 'UTC')`)
