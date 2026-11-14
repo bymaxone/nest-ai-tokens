@@ -210,9 +210,9 @@ describe('BudgetService.release and adjust under a key', () => {
   it('subtracts the delta when no application was recorded under the key', async () => {
     const { service, store } = makeService()
     const budget = await service.upsertBudget(budgetInput({ limitNanoUsd: 100n }))
-    await service.consume(context(), delta(40n))
-    await service.release(context(), delta(15n), undefined, 'older-hold')
-    expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(25n)
+    await service.consume(context(), delta(40n, 10, 2))
+    await service.release(context(), delta(15n, 4, 1), undefined, 'older-hold')
+    expect(await store.getWindow(budget.id, MONTH)).toEqual({ spentNanoUsd: 25n, spentTokens: 6, spentCount: 1 })
   })
 
   /** The key can be consumed again after it was given back, which is what a retry after a withdrawn attempt needs. */
