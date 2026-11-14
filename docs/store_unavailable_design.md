@@ -8,7 +8,7 @@ Status: implemented. Basis: the installed Prisma 7.10.1 runtime, and error shape
 
 ## The rule
 
-- One classifier decides whether a driver failure is an availability failure. It lives in `src/server/errors/store-availability.ts` and is the only place that reads driver codes; `storeError` in `src/prisma/adapter-sql.ts` and the wallet and budget services call it, they never read a code themselves.
+- One classifier decides whether a driver failure is an availability failure. It lives in `src/server/errors/store-availability.ts` and is the only place that classifies them; `storeError` in `src/prisma/adapter-sql.ts` and the wallet and budget services call it, they never classify one themselves.
 - An availability failure becomes the new code `AI_TOKENS_STORE_UNAVAILABLE`, status **503**. No `Retry-After` header: the library cannot know when the store returns.
 - Every other driver failure stays `AI_TOKENS_STORE_ERROR` and moves from 502 to **500**.
 - The idempotency-conflict path (`isUniqueViolation` and the ledger and wallet mappers) keeps 409 and is never re-wrapped: the classifier runs only on what those mappers did not already claim, and a test asserts it.

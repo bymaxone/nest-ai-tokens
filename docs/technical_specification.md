@@ -1686,8 +1686,8 @@ export interface IBudgetCounterStore {
 | Unique violation on wallet entry idempotency key | Same replay-or-conflict rule |
 | Conditional debit/consume affected 0 rows | `AI_TOKENS_INSUFFICIENT_CREDITS` / `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` (never a store error) |
 | `transition()` from-state mismatch | Returns null → caller resolves (idempotent capture returns the posted record; reaper skips) |
-| Connection refused or closed, pool or transaction timeout, statement or lock timeout, serialization failure or deadlock, shutdown (the retryable failures; the codes are listed in `store_unavailable_design.md`) | `AI_TOKENS_STORE_UNAVAILABLE` (503) with the driver code in `details` |
-| Any other unknown Prisma error | `AI_TOKENS_STORE_ERROR` (500) with the driver code in `details` |
+| Connection refused or closed, pool or transaction timeout, statement or lock timeout, serialization failure or deadlock, shutdown (the retryable failures; the codes are listed in `store_unavailable_design.md`) | `AI_TOKENS_STORE_UNAVAILABLE` (503) |
+| Any other unknown Prisma error | `AI_TOKENS_STORE_ERROR` (500) |
 | `Prisma.Decimal` ↔ `number` (markupMultiplier) | Converted at the adapter boundary; exact by construction (4-dp rule, §7.2) |
 
 ### 15.3 Prisma schema (the seven tables)
