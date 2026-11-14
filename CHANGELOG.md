@@ -46,6 +46,21 @@ against a server-side clock must use the `now` it is given; an entry's `createdA
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
+**Apply:** run migration `0002_budget_applications.sql` (additive: two new tables, an index and two foreign keys; an
+existing database needs only this file) before you deploy, or the budget feature fails on its first movement. If you
+implement `IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce`, `commitReference` and `dropReference`. A
+movement is applied once per application (a key and a budget id); every attempt that applies or replays it takes one
+reference on it, named by the attempt. `consumeWindowOnce` and `adjustWindowOnce` take the reference and answer
+`'applied'`, `'replayed'` when the application already moved the same window by the same delta, or `'mismatch'` when it
+moved another window or another delta (nothing moves and no reference is taken; the service refuses the key as an
+idempotency conflict); `consumeWindowOnce` also answers `'refused'` when a limit stops it, recording nothing. `commitReference` renames the attempt's reference to `row`, the call whose ledger row stands, or
+drops it when `row` is already held. `dropReference` drops one reference and subtracts the movement, from the window it
+moved, when it was the last. The module refuses a store that lacks them at boot. The uniqueness of the application,
+never a read followed by a write, must decide which of several concurrent attempts moves the window, and a take and a
+drop of one application must not interleave. A hold that is pending when you upgrade has no application, so releasing it
+subtracts its delta as before. The tables hold one row per keyed budget movement and one per reference, and grow with the
+ledger; a later patch prunes rows older than a key can still be replayed.
+
 ### Security
 
 - **High severity: a tenant could delete, rotate, reconcile or overwrite another tenant's budget by its id.** `removeBudget`,
@@ -128,11 +143,21 @@ optional injected clock as its fourth constructor argument; the module keeps the
   remainder. `reconcile` now expires lapsed grants through the same sweep a debit uses, so the entry is written once
   and a later debit finds nothing left to expire; a second `reconcile` writes no second entry.
 
+- **A budget movement was not safe to repeat.** `consume`, `adjust` and `release` moved a window every time they ran,
+  so a keyed call attempted on two instances at once consumed each budget twice when the loser's append returned the
+  stored row, and a retry after a failure part-way through several budgets consumed the earlier ones again. Each
+  movement is now recorded under what caused it (the call's key, or an operation and a record id) and held by named
+  references: a hold's reservation, a `record({ enforce: true })` consumption, a capture settlement and a reversal each
+  apply once, an attempt whose append fails gives back only its own reference, and the movement goes back, from the window
+  it moved, when the last reference goes. A key met again in another window or with another amount is refused as an
+  idempotency conflict instead of being replayed.
+
 ### Changed
 
 - The `server` bundle grows from 41597 to 43712 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
 - The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
+- The `server` bundle grows by 1891 bytes brotli (to 45654) with the keyed budget movements; its budget moves from 43810 to 45700.
 
 ## [1.1.14] - 2026-11-13
 

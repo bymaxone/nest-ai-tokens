@@ -19,7 +19,7 @@ const BUDGETS = [
   // the same settlement of a failed append for a hold, the tenant check of the budget admin paths, and the caller check of capture and
   // release. The budget keeps headroom so a correct fix is not squeezed to fit. A change that grows this bundle past the budget states why in its
   // commit and its CHANGELOG entry.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 43_810 },
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 45_700 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_000 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },

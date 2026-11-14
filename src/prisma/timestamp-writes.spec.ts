@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { BUDGET_COLUMNS, PRICE_COLUMNS, USAGE_COLUMNS } from './adapter-sql'
 
 const SRC = join(__dirname)
-const sources = ['index.ts', 'adapter-sql.ts'].map((file) => ({
+const sources = ['index.ts', 'adapter-sql.ts', 'budget-statements.ts'].map((file) => ({
   file,
   text: readFileSync(join(SRC, file), 'utf8'),
 }))
@@ -68,8 +68,14 @@ describe('timestamp writes', () => {
     }
     // The pin must have looked at the tables that matter, not at nothing.
     expect(new Set(seen)).toEqual(
-      new Set(['ai_usage_records', 'ai_model_prices', 'ai_wallets', 'ai_wallet_entries', 'ai_wallet_debit_allocations', 'ai_budgets', 'ai_budget_windows']),
+      new Set(['ai_usage_records', 'ai_model_prices', 'ai_wallets', 'ai_wallet_entries', 'ai_wallet_debit_allocations', 'ai_budgets', 'ai_budget_windows', 'ai_budget_applications', 'ai_budget_references']),
     )
+  })
+
+  it('leaves every timestamp of the budget applications and references to be written, never defaulted', () => {
+    // Why: the application row is written through the UTC expression only, so a column that took a default would be written in the session zone.
+    const applications = readFileSync(join(SRC, 'migrations/0002_budget_applications.sql'), 'utf8').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n')
+    expect(applications).not.toContain('CURRENT_TIMESTAMP')
   })
 
   it('stamps updatedAt on every update of a table that has it', () => {

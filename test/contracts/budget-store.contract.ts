@@ -116,5 +116,142 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       await store.remove(owner)
       expect(await store.findBudgetById(owner)).toBeNull()
     })
+
+    /*
+     * Invariant: one application moves a window once, whoever takes it. The same key consumed or adjusted twice moves it
+     * once; the second answer is 'replayed' and the attempt holds a reference on it.
+     */
+    it('moves a window once for one application, whether consumed or adjusted', async () => {
+      const store = await make()
+      await seedBudget(store, 'once')
+      const consumed = { key: 'consume-key', budgetId: 'once', attempt: 'a' }
+      expect(await store.consumeWindowOnce(consumed, windowStart, delta(10n, 4, 1), { nanoUsd: 100n })).toBe('applied')
+      expect(await store.consumeWindowOnce({ ...consumed, attempt: 'b' }, windowStart, delta(10n, 4, 1), { nanoUsd: 100n })).toBe('replayed')
+      const adjusted = { key: 'adjust-key', budgetId: 'once', attempt: 'row' }
+      expect(await store.adjustWindowOnce(adjusted, windowStart, delta(5n, 1, 0))).toBe('applied')
+      expect(await store.adjustWindowOnce(adjusted, windowStart, delta(5n, 1, 0))).toBe('replayed')
+      expect(await store.getWindow('once', windowStart)).toEqual({ spentNanoUsd: 15n, spentTokens: 5, spentCount: 1 })
+    })
+
+    /*
+     * Invariant: concurrent attempts with one application move the window once, whichever instance wins: exactly one
+     * 'applied', the others 'replayed', and the window holds one consumption.
+     */
+    it('lets exactly one of many concurrent attempts with one application move the window', async () => {
+      const store = await make()
+      await seedBudget(store, 'race')
+      const outcomes = await Promise.all(
+        Array.from({ length: 8 }, (_, i) => store.consumeWindowOnce({ key: 'race-key', budgetId: 'race', attempt: `attempt-${i.toString()}` }, windowStart, delta(10n), { nanoUsd: 1_000n })),
+      )
+      expect(outcomes.filter((outcome) => outcome === 'applied')).toHaveLength(1)
+      expect(outcomes.filter((outcome) => outcome === 'replayed')).toHaveLength(7)
+      expect(await store.getWindow('race', windowStart)).toEqual({ spentNanoUsd: 10n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /*
+     * Invariant: a refused consume records no application and takes no reference, so the same key can be tried again once
+     * there is headroom, and then moves the window once.
+     */
+    it('records nothing for a refused consume, so the key can be applied later', async () => {
+      const store = await make()
+      await seedBudget(store, 'refused')
+      await store.adjustWindow('refused', windowStart, delta(95n))
+      const reference = { key: 'later', budgetId: 'refused', attempt: 'a' }
+      expect(await store.consumeWindowOnce(reference, windowStart, delta(10n), { nanoUsd: 100n })).toBe('refused')
+      expect(await store.dropReference(reference)).toBe('absent')
+      await store.adjustWindow('refused', windowStart, delta(-50n))
+      expect(await store.consumeWindowOnce(reference, windowStart, delta(10n), { nanoUsd: 100n })).toBe('applied')
+      expect(await store.getWindow('refused', windowStart)).toEqual({ spentNanoUsd: 55n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /*
+     * Invariant: an application met again in another window or with another delta is a mismatch, not a replay: the key names
+     * another call, and nothing moves and no reference is taken.
+     */
+    it('answers a mismatch for an active application met with another delta or window, and moves nothing', async () => {
+      const store = await make()
+      await seedBudget(store, 'mismatch')
+      const other = new Date('2026-07-01T00:00:00.000Z')
+      const reference = { key: 'mismatch-key', budgetId: 'mismatch', attempt: 'a' }
+      expect(await store.consumeWindowOnce(reference, windowStart, delta(30n, 1, 1), {})).toBe('applied')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(80n, 1, 1), {})).toBe('mismatch')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(30n, 2, 1), {})).toBe('mismatch')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(30n, 1, 2), {})).toBe('mismatch')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, other, delta(30n, 1, 1), {})).toBe('mismatch')
+      expect(await store.adjustWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(80n, 1, 1))).toBe('mismatch')
+      expect(await store.adjustWindowOnce({ ...reference, attempt: 'b' }, other, delta(30n, 1, 1))).toBe('mismatch')
+      expect(await store.dropReference({ ...reference, attempt: 'b' })).toBe('missing')
+      expect(await store.getWindow('mismatch', windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 1, spentCount: 1 })
+      expect(await store.getWindow('mismatch', other)).toBeNull()
+    })
+
+    /*
+     * Invariant: the movement goes back, from the window it moved, when the last reference on it is dropped, and not before:
+     * a drop with other references left keeps it. Dropping a reference the attempt does not hold is 'missing', and an
+     * application never recorded is 'absent'.
+     */
+    it('gives a movement back when its last reference is dropped, from the window it moved', async () => {
+      const store = await make()
+      await seedBudget(store, 'back')
+      const reference = { key: 'back-key', budgetId: 'back', attempt: 'a' }
+      expect(await store.consumeWindowOnce(reference, windowStart, delta(30n, 2, 1), {})).toBe('applied')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(30n, 2, 1), {})).toBe('replayed')
+      expect(await store.dropReference({ key: 'nobody', budgetId: 'back', attempt: 'a' })).toBe('absent')
+      expect(await store.dropReference({ ...reference, attempt: 'c' })).toBe('missing')
+      expect(await store.dropReference(reference)).toBe('kept')
+      expect(await store.getWindow('back', windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 2, spentCount: 1 })
+      expect(await store.dropReference({ ...reference, attempt: 'b' })).toBe('unapplied')
+      expect(await store.dropReference({ ...reference, attempt: 'b' })).toBe('missing')
+      expect(await store.getWindow('back', windowStart)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /** A key given back is applied again, in any window: the new application takes the place of the old. */
+    it('lets a given-back key be applied again, in another window', async () => {
+      const store = await make()
+      await seedBudget(store, 'again')
+      const other = new Date('2026-07-01T00:00:00.000Z')
+      const reference = { key: 'again-key', budgetId: 'again', attempt: 'a' }
+      expect(await store.consumeWindowOnce(reference, windowStart, delta(30n), {})).toBe('applied')
+      expect(await store.dropReference(reference)).toBe('unapplied')
+      expect(await store.adjustWindowOnce({ ...reference, attempt: 'b' }, other, delta(7n))).toBe('applied')
+      expect(await store.getWindow('again', other)).toEqual({ spentNanoUsd: 7n, spentTokens: 0, spentCount: 0 })
+      expect(await store.dropReference({ ...reference, attempt: 'b' })).toBe('unapplied')
+      expect(await store.getWindow('again', other)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
+      expect(await store.getWindow('again', windowStart)).toEqual({ spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 })
+    })
+
+    /*
+     * Invariant: committing names the reference of the call whose row stands. Whichever of two attempts commits first holds
+     * `row`, and the other, committing second, drops its own: in either order exactly one `row` remains, and the movement
+     * goes back only when `row` itself is dropped.
+     */
+    it.each([
+      { name: 'the winner first', order: ['a', 'b'] },
+      { name: 'the other attempt first', order: ['b', 'a'] },
+    ])('ends with exactly one committed reference when both attempts commit, $name', async ({ order }) => {
+      const store = await make()
+      await seedBudget(store, 'commit-' + order.join(''))
+      const base = { key: 'commit-key', budgetId: 'commit-' + order.join('') }
+      expect(await store.consumeWindowOnce({ ...base, attempt: 'a' }, windowStart, delta(30n), {})).toBe('applied')
+      expect(await store.consumeWindowOnce({ ...base, attempt: 'b' }, windowStart, delta(30n), {})).toBe('replayed')
+      expect(await store.commitReference({ ...base, attempt: order[0]! })).toBe('committed')
+      expect(await store.commitReference({ ...base, attempt: order[1]! })).toBe('already')
+      expect(await store.dropReference({ ...base, attempt: 'a' })).toBe('missing')
+      expect(await store.dropReference({ ...base, attempt: 'b' })).toBe('missing')
+      expect(await store.getWindow(base.budgetId, windowStart)).toEqual({ spentNanoUsd: 30n, spentTokens: 0, spentCount: 0 })
+      expect(await store.dropReference({ ...base, attempt: 'row' })).toBe('unapplied')
+    })
+
+    /** A reclaimed reference is 'gone' to the attempt that commits late; committing the committed reference, or an unknown application, is harmless. */
+    it("answers 'gone' for a reclaimed reference and 'absent' for no application when committing", async () => {
+      const store = await make()
+      await seedBudget(store, 'late')
+      const reference = { key: 'late-key', budgetId: 'late', attempt: 'a' }
+      expect(await store.commitReference(reference)).toBe('absent')
+      expect(await store.consumeWindowOnce({ ...reference, attempt: 'b' }, windowStart, delta(30n), {})).toBe('applied')
+      expect(await store.commitReference(reference)).toBe('gone')
+      expect(await store.commitReference({ ...reference, attempt: 'b' })).toBe('committed')
+      expect(await store.commitReference({ ...reference, attempt: 'row' })).toBe('already')
+    })
   })
 }

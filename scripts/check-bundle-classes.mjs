@@ -30,7 +30,9 @@ const distDir = process.argv[2] ?? join(rootDir, 'dist')
 const OWNED = {
   // `Sql`, `SqlClient` and `SqlExecutor` are the adapter's own statement type and executors: nothing outside
   // this bundle receives one, so nothing checks `instanceof` against it, and the bundle must carry them.
-  prisma: ['LedgerIdempotencyConflict', 'PrismaAiTokensStore', 'Sql', 'SqlClient', 'SqlExecutor', 'WalletMissingError'],
+  // `BudgetApplications` and `RefusedByLimit` are the keyed budget movements and the signal that rolls a refused
+  // consume back inside its transaction: both stay inside this bundle, so nothing checks `instanceof` against them.
+  prisma: ['BudgetApplications', 'LedgerIdempotencyConflict', 'PrismaAiTokensStore', 'RefusedByLimit', 'Sql', 'SqlClient', 'SqlExecutor', 'WalletMissingError'],
   redis: ['CounterValueOutOfRangeError', 'RedisBudgetCounterStore'],
   shared: [],
   prices: [],

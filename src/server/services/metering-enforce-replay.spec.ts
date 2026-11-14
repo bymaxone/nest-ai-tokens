@@ -278,6 +278,197 @@ describe('record({ enforce: true }) retries', () => {
     expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
   })
 
+  /*
+   * Invariant: the consumption recorded under a call's key belongs to the stored row, with or without a wallet bound. A
+   * call whose append committed before the error keeps it, and a loser that meets the winner's row does not give
+   * the winner's consumption back.
+   */
+  it('keeps the budget consumption of a committed call when no wallet is bound', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw new Error('timed out after commit')
+    })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-b1' }) }
+
+    await expect(built.service.record(input)).rejects.toThrow('timed out after commit')
+    const retried = await built.service.record(input)
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(retried.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /** A row of the same payer that carries another instant is not this attempt's own: a call without a key gives its own wallet debit back. */
+  it('refunds a call without a key when the row found after the error carries another instant', async () => {
+    const clock = (): Date => new Date('2026-06-15T00:00:00.000Z')
+    const built = build({ wallets: true, budgets: true, clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-other' }) })
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, occurredAt: new Date(clock().getTime() + 1) })
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('connection reset')
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.billedCostNanoUsd)
+  })
+
+  /** A row of another payer that carries this attempt's instant is not this attempt's own either. */
+  it('refunds a call without a key when the row found after the error belongs to another payer', async () => {
+    const clock = (): Date => new Date('2026-06-15T00:00:00.000Z')
+    const built = build({ wallets: true, budgets: true, clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 10_000_000_000n)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const other = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-other' }) })
+    const stored = await built.ledgerStore.findById(other.id)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce({ ...stored!, scope: { type: 'user', id: 'u2' } })
+
+    await expect(built.service.record({ usage: normalized(), context: context({ enforce: true }) })).rejects.toThrow('connection reset')
+
+    expect(await balance(built)).toBe(10_000_000_000n - other.billedCostNanoUsd)
+  })
+
+  /*
+   * Invariant: a loser gives back only the budget movement it applied. Two payers that reuse one key under a tenant-wide
+   * budget share the application of that budget, and the loser that only replayed the winner's leaves it alone.
+   */
+  it('leaves the tenant-wide budget consumption of another payer alone when the loser only replayed it', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { scope: { type: 'tenant', id: 'tenant-1' }, limitNanoUsd: 1_000_000_000n })
+    const winner = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-shared' }) })
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(
+      built.service.record({ usage: normalized(), context: context({ scope: { type: 'user', id: 'u2' }, enforce: true, idempotencyKey: 'k-shared' }) }),
+    ).rejects.toThrow('connection reset')
+
+    const statuses = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(statuses.find((status) => status.spent.nanoUsd > 0n)?.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+  })
+
+  /*
+   * Invariant: when the attempt that applied the key is not the one whose row won it, the row owns the movement: the
+   * applying loser leaves it in place, and the budget counts the winner's call once.
+   */
+  it('leaves a consumption the loser applied in place when the winner row of the same shape stands', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-owned' }) }
+    const winner = await built.service.record(input)
+    await built.budgets!.release(context(), { nanoUsd: winner.billedCostNanoUsd, tokens: winner.totalTokens, count: 1 }, winner.occurredAt, 'record:k-owned')
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(built.service.record(input)).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /*
+   * Invariant: a loser gives back the movement of every budget it applied that the winner's call does not match. Two calls of
+   * one payer that reuse a key with different features share the tenant-wide budget, but a budget restricted to the loser's
+   * feature is the loser's alone.
+   */
+  it('gives back a feature-restricted budget the winner of another feature never consumed', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { scope: { type: 'tenant', id: 'tenant-1' }, limitNanoUsd: 1_000_000_000n })
+    await upsertBudget(built, { features: ['foo'], limitNanoUsd: 1_000_000_000n })
+    const winner = await built.service.record({ usage: normalized(), context: context({ feature: 'bar', enforce: true, idempotencyKey: 'k-features' }) })
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(
+      built.service.record({ usage: normalized(), context: context({ feature: 'foo', enforce: true, idempotencyKey: 'k-features' }) }),
+    ).rejects.toThrow('connection reset')
+
+    const spent = (await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })).map((status) => status.spent.nanoUsd).sort()
+    expect(spent).toEqual([0n, winner.billedCostNanoUsd].sort())
+  })
+
+  /*
+   * Invariant: a committed call is always counted. When the sweep reclaims the reference of a slow attempt while its append is
+   * in flight, the attempt's commit takes the movement again after the row is written, and the call succeeds.
+   */
+  it('counts a call whose budget reference was reclaimed while its append was in flight', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const taken: { key: string; budgetId: string; attempt: string }[] = []
+    const consume = built.budgetStore.consumeWindowOnce.bind(built.budgetStore)
+    jest.spyOn(built.budgetStore, 'consumeWindowOnce').mockImplementation((reference, ...rest) => {
+      taken.push(reference)
+      return consume(reference, ...rest)
+    })
+    const append = built.ledgerStore.append.bind(built.ledgerStore)
+    jest.spyOn(built.ledgerStore, 'append').mockImplementationOnce(async (...args) => {
+      for (const reference of taken) await built.budgetStore.dropReference(reference)
+      return append(...args)
+    })
+
+    const record = await built.service.record({ usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-slow' }) })
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(record.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
+  /*
+   * Invariant: two calls with one key that name no occurredAt, of the same payer, feature and amount, are one call: whichever
+   * appends first, the loser's references end in the winner's and the window counts exactly one.
+   */
+  it('counts the window once for two identical keyed calls that name no instant, whichever of them wins', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-twin' }) }
+    const winner = await built.service.record(input)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const loser = await built.service.record(input)
+
+    expect(loser.id).toBe(winner.id)
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+    await built.budgets!.release(context(), { nanoUsd: winner.billedCostNanoUsd, tokens: winner.totalTokens, count: 1 }, winner.occurredAt, 'record:k-twin')
+    expect((await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' }))[0]!.spent.count).toBe(0)
+  })
+
+  it('leaves the winner budget consumption alone when the loser meets its row and no wallet is bound', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const input = { usage: normalized(), context: context({ enforce: true, idempotencyKey: 'k-b2' }) }
+    const winner = await built.service.record(input)
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    await expect(built.service.record(input)).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.nanoUsd).toBe(winner.billedCostNanoUsd)
+    expect(status!.spent.count).toBe(1)
+  })
+
   it('gives its budget consumption back when the row found after a generic append error belongs to another attempt', async () => {
     const built = build({ wallets: true, budgets: true })
     await seedGpt5(built.pricingStore)

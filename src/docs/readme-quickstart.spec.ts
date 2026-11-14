@@ -50,6 +50,10 @@ function makeStore(): IAiTokensStore {
     findMatching: reject,
     conditionalConsume: reject,
     adjustWindow: reject,
+    consumeWindowOnce: reject,
+    adjustWindowOnce: reject,
+    commitReference: reject,
+    dropReference: reject,
     getWindow: reject,
     setWindowStart: reject,
   }

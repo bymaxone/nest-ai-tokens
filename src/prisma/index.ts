@@ -37,10 +37,14 @@ import type {
   WalletRef,
 } from '../shared'
 import type {
+  ApplicationOutcome,
   BudgetDelta,
   BudgetKey,
   BudgetLimits,
+  BudgetReference,
   BudgetWindowSpend,
+  CommitOutcome,
+  DropOutcome,
   IAiTokensStore,
   LedgerCostSummary,
   OpenGrant,
@@ -54,6 +58,8 @@ import type {
 // what this store throws — silently, since the copy has the same name.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
+import { BudgetApplications } from './budget-applications'
+import { adjustWindowSql, consumeWindowSql, ensureWindowSql } from './budget-statements'
 import { empty, join, sql, type Sql } from './sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
@@ -130,6 +136,7 @@ function reservedKeyHeld(walletId: string, key: string, grantId: string): AiToke
  */
 export class PrismaAiTokensStore implements IAiTokensStore {
   private readonly prisma: SqlClient
+  private readonly applications: BudgetApplications
   private readonly burnOrder: 'expiry' | 'priority' | 'fifo'
 
   /**
@@ -138,6 +145,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
    */
   constructor(client: PrismaRawClient, options: { burnOrder?: 'expiry' | 'priority' | 'fifo' } = {}) {
     this.prisma = new SqlClient(client)
+    this.applications = new BudgetApplications(this.prisma)
     this.burnOrder = options.burnOrder ?? 'expiry'
   }
 
@@ -523,35 +531,32 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   async conditionalConsume(budgetId: string, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<boolean> {
     return this.prisma.transaction(async (tx) => {
-      await this.ensureWindow(tx, budgetId, windowStart)
-      const rows = await tx.query<{ id: string }[]>(sql`
-        UPDATE "ai_budget_windows"
-        SET "spentNanoUsd" = "spentNanoUsd" + ${delta.nanoUsd},
-            "spentTokens" = "spentTokens" + ${BigInt(delta.tokens)},
-            "spentCount" = "spentCount" + ${delta.count},
-            "updatedAt" = ${DB_NOW_SQL}
-        WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
-          AND (${limits.nanoUsd ?? null}::bigint IS NULL OR "spentNanoUsd" + ${delta.nanoUsd} <= ${limits.nanoUsd ?? null})
-          AND (${limits.tokens === undefined ? null : BigInt(limits.tokens)}::bigint IS NULL OR "spentTokens" + ${BigInt(delta.tokens)} <= ${limits.tokens === undefined ? null : BigInt(limits.tokens)})
-          AND (${limits.count ?? null}::int IS NULL OR "spentCount" + ${delta.count} <= ${limits.count ?? null})
-        RETURNING "id"
-      `)
-      return rows[0] !== undefined
+      await tx.execute(ensureWindowSql(budgetId, windowStart))
+      return (await tx.query<{ id: string }[]>(consumeWindowSql(budgetId, windowStart, delta, limits)))[0] !== undefined
     })
   }
 
   async adjustWindow(budgetId: string, windowStart: Date, delta: BudgetDelta): Promise<void> {
     await this.prisma.transaction(async (tx) => {
-      await this.ensureWindow(tx, budgetId, windowStart)
-      await tx.execute(sql`
-        UPDATE "ai_budget_windows"
-        SET "spentNanoUsd" = GREATEST(0, "spentNanoUsd" + ${delta.nanoUsd}),
-            "spentTokens" = GREATEST(0, "spentTokens" + ${BigInt(delta.tokens)}),
-            "spentCount" = GREATEST(0, "spentCount" + ${delta.count}),
-            "updatedAt" = ${DB_NOW_SQL}
-        WHERE "budgetId" = ${budgetId} AND "windowStart" = ${windowStart}
-      `)
+      await tx.execute(ensureWindowSql(budgetId, windowStart))
+      await tx.execute(adjustWindowSql(budgetId, windowStart, delta))
     })
+  }
+
+  consumeWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta, limits: BudgetLimits): Promise<ApplicationOutcome> {
+    return this.applications.consume(reference, windowStart, delta, limits)
+  }
+
+  adjustWindowOnce(reference: BudgetReference, windowStart: Date, delta: BudgetDelta): Promise<'applied' | 'replayed' | 'mismatch'> {
+    return this.applications.adjust(reference, windowStart, delta)
+  }
+
+  commitReference(reference: BudgetReference): Promise<CommitOutcome> {
+    return this.applications.commit(reference)
+  }
+
+  dropReference(reference: BudgetReference): Promise<DropOutcome> {
+    return this.applications.drop(reference)
   }
 
   async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
@@ -752,15 +757,6 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     if (rows[0] === undefined) return undefined
     if (walletEntryMatches(rows[0], entry)) return mapWalletEntryRow(rows[0])
     throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
-  }
-
-  /** Ensure a (zeroed) window row exists for first-touch consumption. */
-  private async ensureWindow(tx: SqlExecutor, budgetId: string, windowStart: Date): Promise<void> {
-    await tx.execute(sql`
-      INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
-      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
-      ON CONFLICT ("budgetId", "windowStart") DO NOTHING
-    `)
   }
 
   /** Map the P2002 replay-or-conflict path for a wallet entry (§15.2). */

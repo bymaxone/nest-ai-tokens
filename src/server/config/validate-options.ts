@@ -37,6 +37,10 @@ const BUDGET_METHODS = [
   'findMatching',
   'conditionalConsume',
   'adjustWindow',
+  'consumeWindowOnce',
+  'adjustWindowOnce',
+  'commitReference',
+  'dropReference',
   'getWindow',
   'setWindowStart',
 ] as const

@@ -36,6 +36,10 @@ function tenantBlindStore(inner: InMemoryBudgetStore): IBudgetStore {
     findMatching: (_tenantId, scope) => inner.findMatchingAnyTenant(scope),
     conditionalConsume: (...args) => inner.conditionalConsume(...args),
     adjustWindow: (...args) => inner.adjustWindow(...args),
+    consumeWindowOnce: (...args) => inner.consumeWindowOnce(...args),
+    adjustWindowOnce: (...args) => inner.adjustWindowOnce(...args),
+    commitReference: (...args) => inner.commitReference(...args),
+    dropReference: (...args) => inner.dropReference(...args),
     getWindow: (...args) => inner.getWindow(...args),
     setWindowStart: (key, windowStart) => inner.setWindowStart(anyTenant(key), windowStart),
   }

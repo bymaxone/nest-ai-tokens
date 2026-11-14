@@ -28,6 +28,8 @@
     "src/prices/model-prices.seed.ts",
     "src/redis/index.ts",
     "src/prisma/adapter-sql.ts",
+    "src/prisma/budget-applications.ts",
+    "src/prisma/budget-statements.ts",
     "src/prisma/sql.ts",
     "src/prisma/raw-client.ts",
     "!src/**/*.spec.ts",

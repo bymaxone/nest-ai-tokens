@@ -8,8 +8,6 @@
  * @layer test
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { Test } from '@nestjs/testing'
 import type { TestingModule } from '@nestjs/testing'
 import { PrismaPg } from '@prisma/adapter-pg'
@@ -32,8 +30,8 @@ import type { IAiTokensStore, IBudgetCounterStore, MeteringContext, UpsertBudget
 import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import { RedisBudgetCounterStore } from '@bymax-one/nest-ai-tokens/redis'
 import { POSTGRES_IMAGE, REDIS_IMAGE } from './images'
+import { shippedMigrationSql } from './migration-files'
 
-const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 
 /**
  * Build a client for a Testcontainers database.
@@ -50,7 +48,7 @@ function clientFor(url: string): PrismaClient {
 
 /** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
-  return readFileSync(MIGRATION, 'utf8')
+  return shippedMigrationSql()
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')
@@ -113,6 +111,8 @@ export interface BootOptions {
   overdraftNanoUsd?: bigint
   holdTtlSeconds?: number
   seedFromSnapshot?: boolean
+  /** Bind a wallet feature (default true); `false` boots with budgets only. */
+  wallets?: boolean
 }
 
 /** The booted module and its resolved services. */
@@ -135,7 +135,7 @@ export async function bootMeteringModule(options: BootOptions): Promise<Booted> 
         store: options.store,
         markup: options.markup ?? 1,
         pricing: { seedFromSnapshot: options.seedFromSnapshot ?? false, strict: false },
-        wallets: { overdraftNanoUsd: options.overdraftNanoUsd ?? 0n },
+        ...(options.wallets === false ? {} : { wallets: { overdraftNanoUsd: options.overdraftNanoUsd ?? 0n } }),
         budgets: options.counter !== undefined ? { counter: options.counter } : {},
         holds: { ttlSeconds: options.holdTtlSeconds ?? 3_600, reaperIntervalSeconds: 3_600 },
         scopeResolver: () => ({ tenantId: 'e2e', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }),
@@ -146,7 +146,8 @@ export async function bootMeteringModule(options: BootOptions): Promise<Booted> 
   return {
     moduleRef,
     metering: moduleRef.get(MeteringService),
-    wallets: moduleRef.get(WalletService),
+    // A module booted without wallets registers no WalletService; the suites that boot it never read this field.
+    wallets: options.wallets === false ? (undefined as unknown as WalletService) : moduleRef.get(WalletService),
     budgets: moduleRef.get(BudgetService),
     pricing: moduleRef.get(PricingService),
     ledger: moduleRef.get(LedgerService),

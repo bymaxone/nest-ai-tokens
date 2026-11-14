@@ -177,6 +177,7 @@ model AiBudget {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   windows        AiBudgetWindow[]
+  applications   AiBudgetApplication[]
 
   @@index([tenantId, scopeType, scopeId])
   @@map("ai_budgets")
@@ -194,4 +195,34 @@ model AiBudgetWindow {
 
   @@unique([budgetId, windowStart])
   @@map("ai_budget_windows")
+}
+
+// One row per budget movement that must happen once, keyed by what caused it (0002_budget_applications.sql).
+model AiBudgetApplication {
+  key          String
+  budgetId     String
+  windowStart  DateTime
+  spentNanoUsd BigInt
+  spentTokens  BigInt
+  spentCount   Int
+  unappliedAt  DateTime?
+  createdAt    DateTime
+  budget       AiBudget            @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  holders      AiBudgetReference[]
+
+  @@id([key, budgetId])
+  @@index([budgetId])
+  @@map("ai_budget_applications")
+}
+
+// One row per attempt that holds a movement; the attempt whose ledger row stands is named "row".
+model AiBudgetReference {
+  key         String
+  budgetId    String
+  attempt     String
+  createdAt   DateTime
+  application AiBudgetApplication @relation(fields: [key, budgetId], references: [key, budgetId], onDelete: Cascade)
+
+  @@id([key, budgetId, attempt])
+  @@map("ai_budget_references")
 }

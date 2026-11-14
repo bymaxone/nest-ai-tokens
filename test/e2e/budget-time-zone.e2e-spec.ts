@@ -15,8 +15,8 @@ import { PrismaAiTokensStore } from '@bymax-one/nest-ai-tokens/prisma'
 import type { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { AiTokensErrorResponse } from '@bymax-one/nest-ai-tokens/shared'
 import { bootMeteringModule, e2eContext, e2eUsage, grantWallet, seedPrice, startPostgres, upsertBudget, type Booted, type PostgresFixture } from './harness'
+import { shippedMigrationSql } from './migration-files'
 
-const MIGRATION = join(__dirname, '../../src/prisma/migrations/0001_init.sql')
 const QUERY = readFileSync(join(__dirname, 'sql/detect-shifted-budget-timestamps.sql'), 'utf8')
 const ZONES = ['UTC', 'America/Sao_Paulo', 'Asia/Tokyo'] as const
 const MINUTE_MS = 60_000
@@ -37,7 +37,7 @@ afterAll(async () => {
 
 /** Split the shipped migration into individual statements. */
 function migrationStatements(): string[] {
-  return readFileSync(MIGRATION, 'utf8')
+  return shippedMigrationSql()
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')

@@ -54,6 +54,10 @@ function makeStore(): IAiTokensStore {
     findMatching: noop,
     conditionalConsume: noop,
     adjustWindow: noop,
+    consumeWindowOnce: noop,
+    adjustWindowOnce: noop,
+    commitReference: noop,
+    dropReference: noop,
     getWindow: noop,
     setWindowStart: noop,
   })
@@ -89,6 +93,10 @@ function makeLiveStore(): IAiTokensStore {
     findMatching: reject,
     conditionalConsume: reject,
     adjustWindow: reject,
+    consumeWindowOnce: reject,
+    adjustWindowOnce: reject,
+    commitReference: reject,
+    dropReference: reject,
     getWindow: reject,
     setWindowStart: reject,
   }
