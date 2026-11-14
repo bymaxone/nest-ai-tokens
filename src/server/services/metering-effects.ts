@@ -263,23 +263,28 @@ export class MeteringEffects {
    * @param reason The caller's stated reason (echoed on the wallet refund).
    */
   async reverseEffects(record: UsageRecord, reason: string): Promise<void> {
+    let failure: unknown
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg !== null) {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `reverse:${record.id}`, reason })
-      } catch {
+      } catch (error) {
+        failure = error
         // Stryker disable next-line StringLiteral: logger.warn text is internal observability
         this.logger.warn('failed to refund a wallet debit during reversal')
       }
     }
-    if (this.budgets === undefined) return
-    try {
-      await this.budgets.adjust(contextOf(record), { nanoUsd: -record.billedCostNanoUsd, tokens: -record.totalTokens, count: -1 }, record.occurredAt, `reverse:${record.id}`)
-    } catch {
-      // Stryker disable next-line StringLiteral: logger.warn text is internal observability
-      this.logger.warn('failed to release a budget consumption during reversal')
+    if (this.budgets !== undefined) {
+      try {
+        await this.budgets.adjust(contextOf(record), { nanoUsd: -record.billedCostNanoUsd, tokens: -record.totalTokens, count: -1 }, record.occurredAt, `reverse:${record.id}`)
+      } catch (error) {
+        failure ??= error
+        // Stryker disable next-line StringLiteral: logger.warn text is internal observability
+        this.logger.warn('failed to release a budget consumption during reversal')
+      }
     }
+    if (failure !== undefined) throw failure instanceof Error ? failure : new Error('a leg of the reversal failed', { cause: failure })
   }
 
   /**

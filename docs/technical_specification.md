@@ -961,7 +961,7 @@ The idempotency key should be **derived from request content** (`deriveIdempoten
 2. Annotates the original: `status: 'posted' → 'reversed'` + `reversedByRecordId` — **the only permitted post-posting mutation**, an annotation that never alters amounts (`ILedgerStore.transition()` enforces this).
 3. If the original was `enforced`: refunds the linked wallet debit (a `refund` entry) and releases the budget-window consumption — cost, tokens, **and count** — plus the live counter.
 
-`LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`; reversing a `pending`/`released` record is invalid (use `release()`).
+`LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. The effects a transition or a reversal owes are recorded in a separate table, `ai_usage_effects_owed` (migration `0003`), written by the same statement and deleted once they ran, so the ledger table gains no column and step 2 stays the only post-posting mutation. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`; reversing a `pending`/`released` record is invalid (use `release()`).
 
 This is the prior implementation's refund-on-failure made first-class: a refunded user immediately regains quota headroom, including the operation-count headroom.
 
@@ -1599,7 +1599,12 @@ export interface ILedgerStore {
     to: UsageStatus,
     patch?: Partial<UsageRecord>,
     hashChain?: boolean,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord | null>
+  /** Optional: rows whose effects have been owed since before `olderThan`, oldest first (the settlement sweep). */
+  findEffectsOwed?(olderThan: Date, limit: number): Promise<OwedEffects[]>
+  /** Optional: clear the marker of a row whose effects have run; idempotent. */
+  clearEffectsOwed?(id: string): Promise<boolean>
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
   /** Load one record by its global id — the reversal path loads the original to negate it (§8.5). */
   findById(id: string): Promise<UsageRecord | null>

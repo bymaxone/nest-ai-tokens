@@ -13,6 +13,7 @@ export const DEFAULT_AI_TOKENS_OPTIONS = {
   wallets: { creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
   budgets: { defaultPolicy: 'block', alertThresholds: [0.8, 1.0], failClosed: true },
   holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 },
+  settlement: { enabled: true, graceSeconds: 300 },
   ledger: { hashChain: false },
   events: { emitter: true },
   telemetry: { metrics: true },

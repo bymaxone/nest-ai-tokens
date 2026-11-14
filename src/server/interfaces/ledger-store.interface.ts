@@ -31,6 +31,28 @@ export type ReportGroupBy =
   | 'tag'
   | 'systemCostCategory'
 
+/**
+ * What a transition or an append owes the settlement sweep: the effects of the write have not run yet. A store that
+ * supports it records the time of the write and, for a capture, the reserved amount and token count, which the
+ * transition overwrites and the outstanding deltas need. The marker is cleared once the effects have run.
+ */
+export interface OwedEffectsMarker {
+  /** The billed amount the hold reserved, kept by a capture because the settled row carries the actuals. */
+  reservedBilledNanoUsd?: bigint
+  /** The tokens the hold reserved, kept by a capture for the same reason. */
+  reservedTokens?: number
+}
+
+/** A row whose effects are still owed, with the values its marker kept. */
+export interface OwedEffects {
+  /** The row the effects belong to: a settled hold, a released hold or the compensating record of a reversal. */
+  record: UsageRecord
+  /** The reserved billed amount, present for a capture. */
+  reservedBilledNanoUsd?: bigint
+  /** The reserved token count, present for a capture. */
+  reservedTokens?: number
+}
+
 /** The append-only usage ledger port. */
 export interface ILedgerStore {
   /**
@@ -42,7 +64,7 @@ export interface ILedgerStore {
    * serialized operation so concurrent appends never fork the chain. When false
    * (the default), no chain lookup or hashing occurs.
    */
-  append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean): Promise<UsageRecord>
+  append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean, owed?: OwedEffectsMarker): Promise<UsageRecord>
   /**
    * State transitions only (§8.3): `pending→posted` (settle, amounts patched),
    * `pending→released`, `posted→reversed` (annotation only — amount fields
@@ -57,6 +79,7 @@ export interface ILedgerStore {
     to: UsageStatus,
     patch?: Partial<UsageRecord>,
     hashChain?: boolean,
+    owed?: OwedEffectsMarker,
   ): Promise<UsageRecord | null>
   /** Look up a record by its per-tenant idempotency key. */
   findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null>
@@ -65,6 +88,15 @@ export interface ILedgerStore {
    * negate it into a compensating record (§8.5). Returns `null` when absent.
    */
   findById(id: string): Promise<UsageRecord | null>
+  /**
+   * OPTIONAL: rows whose marker was written before `olderThan` and not yet cleared, oldest first. A store that omits
+   * it, or {@link ILedgerStore.clearEffectsOwed}, leaves the owed-effects sweep inactive.
+   */
+  findEffectsOwed?(olderThan: Date, limit: number): Promise<OwedEffects[]>
+  /**
+   * OPTIONAL: clear the marker of a row once its effects have run. Idempotent; `false` when the row has none.
+   */
+  clearEffectsOwed?(id: string): Promise<boolean>
   /** Find pending holds older than `olderThan` for the reaper sweep. */
   findExpiredHolds(olderThan: Date, limit: number): Promise<UsageRecord[]>
   /** Query records by filter. */

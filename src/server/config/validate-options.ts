@@ -149,6 +149,17 @@ function validateHolds(options: BymaxAiTokensModuleOptions): void {
   requireBoundedInteger('holds.reaperIntervalSeconds', holds.reaperIntervalSeconds, MAX_TIMER_SECONDS)
 }
 
+/** Validate the settlement sweep: a boolean switch and a grace of whole seconds that a timer unit can hold. */
+function validateSettlement(options: BymaxAiTokensModuleOptions): void {
+  const settlement = options.settlement
+  if (settlement === undefined) return
+  if (settlement.enabled !== undefined && typeof settlement.enabled !== 'boolean') {
+    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+    throw invalidConfig(`settlement.enabled must be a boolean, received ${String(settlement.enabled)}`)
+  }
+  requireBoundedInteger('settlement.graceSeconds', settlement.graceSeconds, MAX_TIMER_SECONDS)
+}
+
 /** Validate the content-capture TTL and the report export cap: positive integers. */
 function validateCounts(options: BymaxAiTokensModuleOptions): void {
   requireBoundedInteger('content.ttlSeconds', options.content?.ttlSeconds, MAX_TTL_SECONDS)
@@ -200,6 +211,7 @@ export function validateOptions(options: BymaxAiTokensModuleOptions): void {
   validateMarkup(options.markup)
   validateBudgetThresholds(options)
   validateHolds(options)
+  validateSettlement(options)
   validateCounts(options)
   validateWallets(options)
   validatePricing(options)

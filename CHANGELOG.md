@@ -8,6 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** run migration `0003_effects_owed.sql` before you update the package. It creates one table,
+`ai_usage_effects_owed`, beside the ledger and touches no existing table, so it is additive: rows written before it owe
+nothing. The new code writes a marker row in the same statement as a capture, a release and the compensating record of a
+reversal, so an installation that updates without the migration fails those writes. The migration's header documents its
+rollback. A capture, a release and a reversal whose wallet and budget legs did not run are now finished by the reaper's
+tick, once the marker is older than the new `settlement.graceSeconds` option (default 300; `settlement.enabled` switches it
+off, default true). A refund or a budget release that fails during a reversal is no longer logged and lost: the marker stays
+and the sweep retries it. The sweep re-emits the event a write owes, at least once. A custom `ILedgerStore` that omits the
+new optional `findEffectsOwed` and `clearEffectsOwed` calls keeps working with the sweep inactive for it, and the reaper logs
+that once at boot. The ledger table gains no column: the only change a posted row takes is still the annotation of its
+reversal. While one step of a call (a take, the wallet debit or the ledger append) is stuck, the budget window does not count
+the call and the limit can be exceeded for that interval; the call is counted in the end.
+
 **Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
 application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then
 `disconnect()`, and nothing for a client that has already ended. A `closeTimeoutMs` that is not a whole number from 1 to

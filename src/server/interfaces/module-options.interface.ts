@@ -92,6 +92,18 @@ export interface BymaxAiTokensModuleOptions {
     reaperIntervalSeconds?: number
   }
 
+  /** The settlement sweep: finishes the effects a committed transition left owed (a capture, a release or a reversal). */
+  settlement?: {
+    /** Run the sweep with the hold reaper. Default `true`; a store that keeps no effects-owed marker leaves it inactive. */
+    enabled?: boolean
+    /**
+     * How long a row's effects may stay owed before the sweep runs them, in whole seconds from 1 to 2,147,483.
+     * Default `300`. A performance knob: running an effect again moves nothing, so a short grace costs work and no
+     * correctness.
+     */
+    graceSeconds?: number
+  }
+
   /** Ledger extras. */
   ledger?: {
     /** Per-tenant tamper-evident hash chain over posted records (§8.6). Default `false`. */

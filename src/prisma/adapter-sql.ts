@@ -80,6 +80,9 @@ export interface UsageRow {
   status: string
   reversedByRecordId: string | null
   reversesRecordId: string | null
+  /** What the effects-owed marker kept, joined in by the sweep's query (migration 0003); absent from every other read. */
+  owedReservedBilledNanoUsd?: bigint | null
+  owedReservedTokens?: number | null
   idempotencyKey: string
   payloadHash: string
   correlationId: string | null
@@ -406,6 +409,7 @@ export function statusAssignments(
   }
   return join(parts, ', ')
 }
+
 
 /** Build the parameterized `WHERE` clause for a ledger filter (identifiers are constants). */
 export function buildWhere(filter: LedgerFilter): Sql {

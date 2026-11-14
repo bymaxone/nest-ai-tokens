@@ -31,13 +31,14 @@ import type {
 import { computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, MeteringContext } from '../interfaces'
+import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, MeteringContext, OwedEffects } from '../interfaces'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
+import { clearOwed, reverseOrLeaveOwed, settleOwed } from './owed-effects'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import { baseColumns, buildAppendInput, withBaseModel } from './record-columns'
 import type { RatingResult, RecordOutcome } from './record-replay'
@@ -443,12 +444,13 @@ export class MeteringService {
     const patch = this.settlementPatch(counts, rating, markup)
     const reservedBilled = record.billedCostNanoUsd
     const reservedTokens = record.totalTokens
-    const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch)
+    const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch, { reservedBilledNanoUsd: reservedBilled, reservedTokens })
     if (settled === null) return this.settledOrConflict(await this.reload(record.id))
     await this.events.usageRecorded(settled)
     this.telemetry.recordUsage(settled)
     await this.captureContent(settled.id, settled.tenantId, content)
     await this.effects.settleCapture(settled, reservedBilled, reservedTokens, settled.billedCostNanoUsd, settled.totalTokens)
+    await clearOwed(this.ledger, this.logger, settled.id)
     return settled
   }
 
@@ -471,7 +473,7 @@ export class MeteringService {
       return
     }
     if (record.status !== 'pending') return
-    const claimed = await this.ledger.transition(record.id, 'pending', 'released')
+    const claimed = await this.ledger.transition(record.id, 'pending', 'released', undefined, {})
     if (claimed === null) return
     await this.restoreReleasedHold(claimed, reason, false)
   }
@@ -530,11 +532,10 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
-    const compensating = await this.ledger.reverse(usageRecordId, reason)
+    const compensating = await this.ledger.reverse(usageRecordId, reason, {})
     const original = await this.ledger.findById(usageRecordId)
-    if (original !== null && original.enforced && !original.isSystemCost) {
-      await this.effects.reverseEffects(original, reason)
-    }
+    if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed(this.ledger, this.effects, this.logger, original, reason, compensating.id)
+    else await clearOwed(this.ledger, this.logger, compensating.id)
     await this.events.usageReversed(original ?? compensating, compensating.id, reason)
     await this.events.audit('ai_tokens.usage.reversed', { tenantId: compensating.tenantId, usageRecordId, reversalRecordId: compensating.id, reason })
     return compensating
@@ -571,6 +572,16 @@ export class MeteringService {
   async restoreReleasedHold(record: UsageRecord, reason: string, expired: boolean): Promise<void> {
     await this.effects.restoreHold(record)
     await this.events.holdReleased(record, reason, expired)
+    await clearOwed(this.ledger, this.logger, record.id)
+  }
+
+  /**
+   * Finish the effects of a row whose marker the sweep found: the same keyed legs as the inline path, then the marker is cleared.
+   *
+   * @param owed The owed row with the values its marker kept.
+   */
+  settleOwedEffects(owed: OwedEffects): Promise<void> {
+    return settleOwed({ ledger: this.ledger, effects: this.effects, events: this.events }, owed)
   }
 
   /** Reserve the pending ledger row, compensating the reservation if the insert fails. */

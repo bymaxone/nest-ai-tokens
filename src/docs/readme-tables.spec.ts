@@ -80,6 +80,8 @@ const DOCUMENTED_DEFAULTS = [
   'budgets.alertThresholds',
   'budgets.failClosed',
   'holds.ttlSeconds',
+  'settlement.enabled',
+  'settlement.graceSeconds',
   'telemetry.metrics',
 ]
 

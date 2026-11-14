@@ -257,6 +257,39 @@ describe('validateOptions', () => {
     expect(() => validateOptions(opts({ holds: { ttlSeconds: 60, reaperIntervalSeconds: 30 } }))).not.toThrow()
   })
 
+  /**
+   * The settlement sweep's grace is a whole number of seconds from 1 to 2,147,483, and `enabled` a boolean: anything
+   * else is refused at boot naming the option. The grace is a performance knob, so no relation to a timeout is checked.
+   */
+  it.each([
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: Number.NaN } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: Number.POSITIVE_INFINITY } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: 1.5 } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: 0 } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: -1 } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: 2_147_484 } } },
+    { option: 'settlement.graceSeconds', over: { settlement: { graceSeconds: '300' as unknown as number } } },
+    { option: 'settlement.enabled', over: { settlement: { enabled: 'yes' as unknown as boolean } } },
+  ])('refuses $option when it is not a valid setting', ({ option, over }) => {
+    const exception = caught(() => validateOptions(opts(over)))
+    expect(codeOf(exception)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(JSON.stringify(exception.getResponse())).toContain(option)
+  })
+
+  /** The smallest and the largest grace, an omitted section and a disabled sweep are accepted. */
+  it('accepts the bounds of the settlement grace and a disabled sweep', () => {
+    expect(() => validateOptions(opts({ settlement: { graceSeconds: 1 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ settlement: { graceSeconds: 2_147_483 } }))).not.toThrow()
+    expect(() => validateOptions(opts({ settlement: { enabled: false } }))).not.toThrow()
+    expect(() => validateOptions(opts({}))).not.toThrow()
+  })
+
+  /** The sweep is on by default with a grace of 300 seconds, and an explicit setting replaces each default. */
+  it('resolves the settlement defaults and keeps an explicit setting', () => {
+    expect(applyDefaults(opts({})).settlement).toEqual({ enabled: true, graceSeconds: 300 })
+    expect(applyDefaults(opts({ settlement: { enabled: false, graceSeconds: 60 } })).settlement).toEqual({ enabled: false, graceSeconds: 60 })
+  })
+
   /** A non-positive credit rate or negative overdraft is rejected. */
   it('rejects invalid wallet amounts', () => {
     expect(codeOf(caught(() => validateOptions(opts({ wallets: { creditRateNanoUsd: 0n } }))))).toBe(

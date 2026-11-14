@@ -67,6 +67,7 @@ model AiUsageRecord {
   occurredAt          DateTime
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  effectsOwed         AiUsageEffectsOwed?
 
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, occurredAt])
@@ -225,4 +226,18 @@ model AiBudgetReference {
 
   @@id([key, budgetId, attempt])
   @@map("ai_budget_references")
+}
+
+// One row per ledger row whose effects have not run yet, written with the write that owes them and deleted once they
+// ran (0003_effects_owed.sql). It lives beside the ledger so the ledger table keeps no mutable column.
+model AiUsageEffectsOwed {
+  recordId              String       @id
+  tenantId              String
+  owedAt                DateTime
+  reservedBilledNanoUsd BigInt?
+  reservedTokens        Int?
+  record                AiUsageRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([owedAt])
+  @@map("ai_usage_effects_owed")
 }

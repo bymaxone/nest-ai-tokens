@@ -17,16 +17,25 @@ import { Injectable, Logger } from '@nestjs/common'
 import type { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common'
 import type { ResolvedAiTokensOptions } from '../config'
 import type { UsageRecord } from '../../shared'
+import type { OwedEffects } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
 import type { MeteringService } from '../services/metering.service'
 
 /** The maximum number of expired holds reclaimed per sweep. */
 const REAP_BATCH_SIZE = 100
+/** The maximum number of owed rows the settlement sweep finishes per tick. */
+const OWED_BATCH_SIZE = 100
 /** Milliseconds per second (interval/TTL are configured in seconds). */
 const MS_PER_SECOND = 1_000
 
 /** Stable log key for a failed expired-hold scan (the sweep ends; the next tick retries). */
 const SCAN_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.scan_failed'
+/** Stable log key for the rows the settlement sweep could not finish in a tick: one line with a count per tick. */
+const SETTLEMENT_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.settlement_sweep_failed'
+/** Stable log key, written once at boot, for a store that keeps no effects-owed marker. */
+const SETTLEMENT_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.settlement_sweep_inactive'
+/** The grace used when the options carry no settlement section. */
+const DEFAULT_GRACE_SECONDS = 300
 /** Stable log key for any other rejection out of a timer-driven sweep. */
 const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
 
@@ -44,7 +53,7 @@ function describeError(error: unknown): string {
 }
 
 /** The resolved-options subset the reaper consumes. */
-export type HoldReaperOptions = Pick<ResolvedAiTokensOptions, 'holds'>
+export type HoldReaperOptions = Pick<ResolvedAiTokensOptions, 'holds'> & Partial<Pick<ResolvedAiTokensOptions, 'settlement'>>
 
 /**
  * Periodic sweep that reclaims expired spend-holds, restoring wallet balance
@@ -71,6 +80,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
 
   /** Start the periodic sweep on module boot (interval `unref()`'d so it never blocks exit). */
   onApplicationBootstrap(): void {
+    if (this.settlementEnabled() && !this.ledger.supportsOwedEffects()) this.logger.warn(`${SETTLEMENT_INACTIVE_LOG_KEY} the ledger store keeps no effects-owed marker`)
     const intervalMs = this.options.holds.reaperIntervalSeconds * MS_PER_SECOND
     this.timer = setInterval(() => {
       void this.sweep().catch((error: unknown) => {
@@ -105,7 +115,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     }
     for (const record of expired) {
       try {
-        const claimed = await this.ledger.transition(record.id, 'pending', 'released')
+        const claimed = await this.ledger.transition(record.id, 'pending', 'released', undefined, {})
         if (claimed === null) continue
         // Stryker disable next-line StringLiteral: 'expired' reason string is internal audit text; tests check that holds are released, not the reason string
         await this.metering.restoreReleasedHold(claimed, 'expired', true)
@@ -115,5 +125,37 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         this.logger.warn(`failed to reap expired hold ${record.id}`)
       }
     }
+    await this.settleOwed()
+  }
+
+  /** Whether the settlement sweep runs: on unless the options switch it off. */
+  private settlementEnabled(): boolean {
+    return this.options.settlement?.enabled ?? true
+  }
+
+  /**
+   * Finish the effects of rows whose marker is older than the grace. Rows are selected without a lock, because every
+   * leg is keyed and a second sweeper only repeats legs that move nothing. A row that fails stays marked for the next
+   * tick; the tick logs one line with the count of failures, never one per row and never an amount.
+   */
+  private async settleOwed(): Promise<void> {
+    if (!this.settlementEnabled() || !this.ledger.supportsOwedEffects()) return
+    const graceSeconds = this.options.settlement?.graceSeconds ?? DEFAULT_GRACE_SECONDS
+    let owed: OwedEffects[]
+    try {
+      owed = await this.ledger.findEffectsOwed(new Date(this.now().getTime() - graceSeconds * MS_PER_SECOND), OWED_BATCH_SIZE)
+    } catch (error) {
+      this.logger.warn(`${SCAN_FAILED_LOG_KEY} ${describeError(error)}`)
+      return
+    }
+    const failed: string[] = []
+    for (const item of owed) {
+      try {
+        await this.metering.settleOwedEffects(item)
+      } catch {
+        failed.push(item.record.id)
+      }
+    }
+    if (failed.length > 0) this.logger.warn(`${SETTLEMENT_FAILED_LOG_KEY} count=${String(failed.length)} first=${failed.slice(0, 1).join('')}`)
   }
 }

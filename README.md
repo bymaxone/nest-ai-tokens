@@ -143,6 +143,10 @@ installed package:
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0002_budget_applications.sql` — the
   last two tables, which record each budget movement under what caused it and the attempts that hold it, so that a retry
   moves nothing a second time. Apply it after `0001_init.sql`; an existing database needs only this one.
+- `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0003_effects_owed.sql` — one table, `ai_usage_effects_owed`,
+  beside the ledger: the effects-owed marker that lets the settlement sweep find a capture, a release or a reversal whose
+  wallet and budget legs never ran. Apply it before you update the package: the new code writes a marker row in the same
+  statement as a transition. It is additive, touches no existing table, and its header documents the rollback.
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/schema.prisma.fragment` — the same models
   for merging into your own Prisma schema if you manage migrations with `prisma migrate`.
 
@@ -303,6 +307,8 @@ export class AiController {
 | `budgets.defaultPolicy`     | `'block' \| 'throttle' \| 'allow'`    | `'block'`        | Default enforcement when a budget is exhausted                                   |
 | `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                         |
 | `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                   |
+| `settlement.enabled`        | `boolean`                             | `true`           | Run the settlement sweep with the reaper; inactive for a store without the marker |
+| `settlement.graceSeconds`   | `number`                              | `300`            | How long a row's effects may stay owed before the sweep runs them (1 to 2,147,483) |
 | `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it  |
 | `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                     |
 
@@ -834,6 +840,29 @@ known date shift, not tampering; see the 1.1.12 entry of the [changelog](./CHANG
 `_PRICING_STORE`, `_WALLET_STORE`, `_BUDGET_STORE`, `_BUDGET_COUNTER`, `_TOKENIZER`, `_TELEMETRY`,
 `_EVENT_SINK`, `_CONTENT_STORE` and `_LOGGER`. The wallet and budget tokens exist only when their
 options block is set (with `forRoot`; `forRootAsync` always exports them).
+
+---
+
+## 🧯 Settlement and its limits
+
+A capture, a release and a reversal commit to the ledger first and run their effects after: the wallet legs and the budget
+legs. A marker row in `ai_usage_effects_owed`, written by the same statement as the write, records that the effects are owed, so
+a crash between the two no longer strands them. The ledger table itself gains no column. The reaper's tick finishes the effects of every row whose marker is older than
+`settlement.graceSeconds`. Each leg is keyed by what causes it, so running it again moves nothing, and two replicas
+sweeping at once hold no lock between them. The sweep re-emits the event a write owes, at least once, so a consumer must be
+idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
+once at boot.
+
+Limits you can rely on:
+
+- The grace is a performance knob, not a correctness bound. A sweep that judges an attempt whose step is still running is
+  made safe by the commit: it finds its reference gone and counts the call again, once and without limits, so a committed
+  call is always counted.
+- While one step of a call is stuck (a take, the wallet debit or the ledger append, for example a driver that never
+  returns), the budget window does not count the call, so another call can be admitted under the limit, and the window can
+  end above it. The interval is the length of the stuck step and the call is counted in the end. The metered call itself,
+  a streaming completion that runs for minutes, is not part of it.
+- The effects are exact for the wallet and the budget and at-least-once for events and spans.
 
 ---
 
