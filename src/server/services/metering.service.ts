@@ -360,9 +360,10 @@ export class MeteringService {
    * double-consuming budget/wallet over parameter-conflict detection, so a replay
    * with a CHANGED estimate silently keeps the original reservation (unlike
    * `record()`, whose payload hash rejects a changed payload with 409); settlement
-   * still corrects to actuals at capture. Concurrent holds sharing one key can both
-   * pass the pre-check and reserve; the losing ledger insert compensates its
-   * reservation (a brief over-reserve window under high contention).
+   * still corrects to actuals at capture. Holds sharing one key are serialized
+   * inside an instance; across instances they can both pass the pre-check and
+   * reserve, and the loser of the ledger insert settles by the row the ledger holds
+   * for the key (a brief over-reserve window under high contention).
    *
    * @param context The metering context (payer scope, feature).
    * @param estimate One of the three {@link HoldEstimate} variants.

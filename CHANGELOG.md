@@ -65,7 +65,7 @@ Values such as `0.5` are now refused; use whole seconds.
 ### Changed
 
 - The `server` bundle grows from 41597 to 43137 bytes brotli, with the enforcement that now runs before the record is
-  written; its budget moves from 42000 to 43300.
+  written, the settlement of a failed hold append and the option validation; its budget moves from 42000 to 43300.
 
 ## [1.1.14] - 2026-11-13
 
