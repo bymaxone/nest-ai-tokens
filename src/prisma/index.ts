@@ -38,6 +38,7 @@ import type {
 } from '../shared'
 import type {
   BudgetDelta,
+  BudgetKey,
   BudgetLimits,
   BudgetWindowSpend,
   IAiTokensStore,
@@ -486,20 +487,22 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const id = input.id ?? randomUUID()
     const rows = await this.prisma.query<BudgetRow[]>(sql`
       INSERT INTO "ai_budgets" (${BUDGET_COLUMNS_SQL}) VALUES (${join(budgetValues(id, input))})
-      ON CONFLICT ("id") DO UPDATE SET ${budgetUpdateAssignments(input)} RETURNING *
+      ON CONFLICT ("id") DO UPDATE SET ${budgetUpdateAssignments(input)} WHERE "ai_budgets"."tenantId" = EXCLUDED."tenantId" RETURNING *
     `)
-    return mapBudgetRow(firstOrThrow(rows))
+    // A foreign tenant's id updates nothing: refuse it without saying whose it is.
+    if (rows[0] === undefined) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'budget id is not available' })
+    return mapBudgetRow(rows[0])
   }
 
-  async remove(budgetId: string): Promise<void> {
+  async remove(key: BudgetKey): Promise<void> {
     await this.prisma.transaction(async (tx) => {
-      await tx.execute(sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" = ${budgetId}`)
-      await tx.execute(sql`DELETE FROM "ai_budgets" WHERE "id" = ${budgetId}`)
+      await tx.execute(sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" IN (SELECT "id" FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId})`)
+      await tx.execute(sql`DELETE FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId}`)
     })
   }
 
-  async findBudgetById(budgetId: string): Promise<Budget | null> {
-    const rows = await this.prisma.query<BudgetRow[]>(sql`SELECT * FROM "ai_budgets" WHERE "id" = ${budgetId} LIMIT 1`)
+  async findBudgetById(key: BudgetKey): Promise<Budget | null> {
+    const rows = await this.prisma.query<BudgetRow[]>(sql`SELECT * FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId} LIMIT 1`)
     return rows[0] === undefined ? null : mapBudgetRow(rows[0])
   }
 
@@ -554,10 +557,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return rows[0] === undefined ? null : mapBudgetWindowRow(rows[0])
   }
 
-  async setWindowStart(budgetId: string, windowStart: Date): Promise<void> {
+  async setWindowStart(key: BudgetKey, windowStart: Date): Promise<void> {
     await this.prisma.execute(sql`
       INSERT INTO "ai_budget_windows" ("id", "budgetId", "windowStart", "spentNanoUsd", "spentTokens", "spentCount", "updatedAt")
-      VALUES (${randomUUID()}, ${budgetId}, ${windowStart}, 0, 0, 0, ${DB_NOW_SQL})
+      SELECT ${randomUUID()}, "id", ${windowStart}, 0, 0, 0, ${DB_NOW_SQL} FROM "ai_budgets" WHERE "id" = ${key.id} AND "tenantId" = ${key.tenantId}
       ON CONFLICT ("budgetId", "windowStart") DO UPDATE SET "spentNanoUsd" = 0, "spentTokens" = 0, "spentCount" = 0, "updatedAt" = ${DB_NOW_SQL}
     `)
   }

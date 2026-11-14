@@ -68,7 +68,7 @@ describe('BudgetService — CRUD (§10.5)', () => {
     const { service, store, audits } = makeService()
     const budget = await service.upsertBudget(budgetInput())
     await service.removeBudget(budget.id, TENANT)
-    expect(await store.findBudgetById(budget.id)).toBeNull()
+    expect(await store.findBudgetById({ tenantId: TENANT, id: budget.id })).toBeNull()
     expect(audits).toContain('ai_tokens.budget.removed')
   })
 
@@ -86,8 +86,8 @@ describe('BudgetService — CRUD (§10.5)', () => {
     const { service, store, audits } = makeService()
     const budget = await service.upsertBudget(budgetInput())
     await service.consume(context(), delta(40n))
-    await service.rotateWindow(budget.id, new Date('2026-06-20T00:00:00.000Z'))
-    const rotated = await store.findBudgetById(budget.id)
+    await service.rotateWindow(budget.id, TENANT, new Date('2026-06-20T00:00:00.000Z'))
+    const rotated = await store.findBudgetById({ tenantId: TENANT, id: budget.id })
     expect(rotated?.anchorAt).toEqual(new Date('2026-06-20T00:00:00.000Z'))
     expect((await store.getWindow(budget.id, new Date('2026-06-20T00:00:00.000Z')))?.spentNanoUsd).toBe(0n)
     expect(audits).toContain('ai_tokens.budget.rotated')
@@ -97,14 +97,14 @@ describe('BudgetService — CRUD (§10.5)', () => {
   it('rotates to now by default', async () => {
     const { service, store } = makeService()
     const budget = await service.upsertBudget(budgetInput())
-    await service.rotateWindow(budget.id)
-    expect((await store.findBudgetById(budget.id))?.anchorAt).toEqual(NOW)
+    await service.rotateWindow(budget.id, TENANT)
+    expect((await store.findBudgetById({ tenantId: TENANT, id: budget.id }))?.anchorAt).toEqual(NOW)
   })
 
   /** rotateWindow on a missing budget throws. */
   it('rejects rotate on a missing budget', async () => {
     const { service } = makeService()
-    await expectRejectCode(service.rotateWindow('nope'), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.rotateWindow('nope', TENANT), 'AI_TOKENS_INVALID_CONFIG')
   })
 })
 
@@ -361,7 +361,7 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     await ledgerStore.append(usageRecord({ idempotencyKey: 'b', billedCostNanoUsd: 30n }), 'hb')
     await ledgerStore.append(usageRecord({ idempotencyKey: 'sys', billedCostNanoUsd: 99n, isSystemCost: true }), 'hs')
     const windowStart = new Date('2026-06-01T00:00:00.000Z')
-    await service.reconcileWindow(budget.id, windowStart)
+    await service.reconcileWindow(budget.id, TENANT, windowStart)
     const window = await store.getWindow(budget.id, windowStart)
     expect(window?.spentNanoUsd).toBe(55n) // 25 + 30; system cost excluded
     expect(window?.spentCount).toBe(2)
@@ -381,7 +381,7 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
       'hc',
     )
 
-    await service.reconcileWindow(budget.id, windowStart)
+    await service.reconcileWindow(budget.id, TENANT, windowStart)
 
     const window = await store.getWindow(budget.id, windowStart)
     expect(window).toEqual({ spentNanoUsd: 25n, spentTokens: 100, spentCount: 1 })
@@ -397,14 +397,14 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
 
     // First reconcile: one record → window should reflect just that record.
     await ledgerStore.append(usageRecord({ idempotencyKey: 'a', billedCostNanoUsd: 25n, totalTokens: 100 }), 'ha')
-    await service.reconcileWindow(budget.id, windowStart)
+    await service.reconcileWindow(budget.id, TENANT, windowStart)
     expect((await store.getWindow(budget.id, windowStart))?.spentNanoUsd).toBe(25n)
 
     // Second reconcile: same + one more record → window should reflect both, NOT be inflated.
     // With the + mutation (computed + current instead of computed - current), the delta would be
     // 55 + 25 = 80 added to the existing 25 → 105, not the correct 55.
     await ledgerStore.append(usageRecord({ idempotencyKey: 'b', billedCostNanoUsd: 30n, totalTokens: 200 }), 'hb')
-    await service.reconcileWindow(budget.id, windowStart)
+    await service.reconcileWindow(budget.id, TENANT, windowStart)
     const window = await store.getWindow(budget.id, windowStart)
     expect(window?.spentNanoUsd).toBe(55n)   // 25 + 30 total, not 25 + 80
     expect(window?.spentTokens).toBe(300)     // 100 + 200 total
@@ -417,14 +417,14 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     const budget = await service.upsertBudget(budgetInput({ window: 'total', limitNanoUsd: 1_000n }))
     await ledgerStore.append(usageRecord({ idempotencyKey: 'a', billedCostNanoUsd: 25n }), 'ha')
     const windowStart = new Date('2026-06-01T00:00:00.000Z')
-    await service.reconcileWindow(budget.id, windowStart)
+    await service.reconcileWindow(budget.id, TENANT, windowStart)
     expect((await store.getWindow(budget.id, windowStart))?.spentNanoUsd).toBe(25n)
   })
 
   /** reconcileWindow on a missing budget throws. */
   it('rejects reconcile on a missing budget', async () => {
     const { service } = makeService()
-    await expectRejectCode(service.reconcileWindow('nope', NOW), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.reconcileWindow('nope', TENANT, NOW), 'AI_TOKENS_INVALID_CONFIG')
   })
 
   /** remaining is floored at 0n when an allow-policy budget is over-consumed — kills CE→false on max0. */

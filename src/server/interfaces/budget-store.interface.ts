@@ -21,6 +21,16 @@ export interface BudgetLimits {
   count?: number
 }
 
+/**
+ * The identity of a budget on the admin paths: its id AND its owning tenant, passed as one object so that a store
+ * still declaring a bare `budgetId: string` no longer type-checks and cannot silently ignore the tenant. A store
+ * answers a key whose tenant does not own the id exactly as it answers an id that does not exist.
+ */
+export interface BudgetKey {
+  tenantId: string
+  id: string
+}
+
 /** A window's materialized spend counters. */
 export interface BudgetWindowSpend {
   spentNanoUsd: bigint
@@ -30,12 +40,15 @@ export interface BudgetWindowSpend {
 
 /** The budget port. */
 export interface IBudgetStore {
-  /** Create or replace a budget. */
+  /**
+   * Create or replace a budget. An `id` that belongs to another tenant MUST NOT be overwritten: the store throws
+   * instead, without naming the other tenant.
+   */
   upsert(budget: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget>
-  /** Delete a budget. */
-  remove(budgetId: string): Promise<void>
-  /** Load one budget by id — the rotateWindow/reconcileWindow paths read it by id (§10.5). */
-  findBudgetById(budgetId: string): Promise<Budget | null>
+  /** Delete a budget of the tenant; a no-op when the tenant owns no such id. */
+  remove(key: BudgetKey): Promise<void>
+  /** Load one budget of the tenant by id — the rotateWindow/reconcileWindow paths read it (§10.5); `null` when the tenant owns no such id. */
+  findBudgetById(key: BudgetKey): Promise<Budget | null>
   /**
    * Every budget for the tenant scoped to the EXACT scope or tenant-wide (§10.3). A
    * single {@link MeteringScope} carries no team/user lineage, so the tenant is the
@@ -58,5 +71,5 @@ export interface IBudgetStore {
   /** A window's current spend, or `null` when it has no row yet. */
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null>
   /** Move a budget's active window start (rotateWindow support). */
-  setWindowStart(budgetId: string, windowStart: Date): Promise<void>
+  setWindowStart(key: BudgetKey, windowStart: Date): Promise<void>
 }

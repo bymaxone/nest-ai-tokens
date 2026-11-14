@@ -12,13 +12,14 @@ import { brotliCompressSync, constants as zlibConstants } from 'node:zlib'
  * Measured at maximum brotli quality.
  */
 const BUDGETS = [
-  // 43_300: the services, the idempotent replay path in `record()` (per-key serialization,
+  // 43_450: the services, the idempotent replay path in `record()` (per-key serialization,
   // request-field matching, the shared field-role table), the instant that locates a budget window
   // on every charge, rollback and reversal, and the enforcement that runs before the record is written
   // (its charge, its rollback, the replay of its wallet debit and the test of whether a losing attempt shares it), and
-  // the same settlement of a failed append for a hold. The budget keeps headroom so a correct fix is not squeezed to fit. A change that grows this bundle past the budget states why in its commit
-  // and its CHANGELOG entry.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 43_300 },
+  // the same settlement of a failed append for a hold, and the tenant check of the budget admin paths. The budget keeps
+  // headroom so a correct fix is not squeezed to fit. A change that grows this bundle past the budget states why in its
+  // commit and its CHANGELOG entry.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 43_450 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_000 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },

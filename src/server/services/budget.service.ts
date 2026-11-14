@@ -28,15 +28,18 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
-import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey, type CounterDimensionName } from './budget.keys'
+import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey } from './budget.keys'
 import type {
   BudgetDelta,
+  BudgetKey,
   BudgetLimits,
   BudgetWindowSpend,
   IBudgetCounterStore,
   IBudgetStore,
   MeteringContext,
 } from '../interfaces'
+import { addSpend, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
+import type { FailingDimension } from './budget-math'
 import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
@@ -91,12 +94,6 @@ interface Consumed {
   windowStart: Date
   delta: BudgetDelta
   increments: CounterIncrement[]
-}
-
-/** A budget dimension over its limit, carrying the typed §16 block code (spend → 402, tokens/count → 429). */
-interface FailingDimension {
-  dimension: CounterDimensionName
-  code: 'AI_TOKENS_BUDGET_EXCEEDED' | 'AI_TOKENS_QUOTA_EXCEEDED'
 }
 
 /** The counter fast-path outcome: a hard reject (with its failing dimension) or a pass to the DB. */
@@ -156,6 +153,7 @@ export class BudgetService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
   async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
+    assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
@@ -163,7 +161,12 @@ export class BudgetService {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics; tests check error code only
       if (!(threshold > 0 && threshold <= 1)) throw invalid(`softThresholds must be within (0, 1], received ${String(threshold)}`)
     }
+    if (input.id !== undefined) {
+      const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
+      if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
+    }
     const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy })
+    if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
     return budget
@@ -176,7 +179,10 @@ export class BudgetService {
    * @param tenantId The owning tenant (audit context).
    */
   async removeBudget(budgetId: string, tenantId: string): Promise<void> {
-    await this.store.remove(budgetId)
+    assertTenant(tenantId)
+    // A budget of another tenant answers as an unknown id does: nothing is removed and nothing is audited.
+    if ((await this.findOwned({ tenantId, id: budgetId })) === null) return
+    await this.store.remove({ tenantId, id: budgetId })
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the method completes, not the event payload shape
     await this.events.audit('ai_tokens.budget.removed', { tenantId, budgetId })
   }
@@ -190,7 +196,7 @@ export class BudgetService {
    * @returns The applicable budgets.
    */
   list(tenantId: string, scope?: MeteringScope): Promise<Budget[]> {
-    return this.store.findMatching(tenantId, scope ?? { type: 'tenant', id: tenantId })
+    return this.matching(tenantId, scope ?? { type: 'tenant', id: tenantId })
   }
 
   /**
@@ -199,15 +205,17 @@ export class BudgetService {
    * `ai_tokens.audit`.
    *
    * @param budgetId The budget id.
+   * @param tenantId The owning tenant; a budget of another tenant answers as an unknown id.
    * @param newWindowStart The new window start; defaults to now.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the budget does not exist.
    */
-  async rotateWindow(budgetId: string, newWindowStart?: Date): Promise<void> {
-    const budget = await this.requireBudget(budgetId)
+  async rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void> {
+    assertTenant(tenantId)
+    const budget = await this.requireBudget({ tenantId, id: budgetId })
     const start = newWindowStart ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
     await this.store.upsert({ ...budget, anchorAt: start })
-    await this.store.setWindowStart(budgetId, windowStart)
+    await this.store.setWindowStart({ tenantId, id: budgetId }, windowStart)
     const counter = this.options.counter
     if (counter !== undefined) {
       for (const dimension of counterDimensions({ nanoUsd: 1n, tokens: 1, count: 1 }, limitsOf(budget))) {
@@ -334,10 +342,12 @@ export class BudgetService {
    * ledger is the reconcilable source of truth; the window row is a cache.
    *
    * @param budgetId The budget id.
+   * @param tenantId The owning tenant; a budget of another tenant answers as an unknown id.
    * @param windowStart A window start for the budget.
    */
-  async reconcileWindow(budgetId: string, windowStart: Date): Promise<void> {
-    const budget = await this.requireBudget(budgetId)
+  async reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void> {
+    assertTenant(tenantId)
+    const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
     // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
     const filter = { tenantId: budget.tenantId, from: windowStart, ...(windowEnd !== null ? { to: windowEnd } : {}) }
@@ -371,7 +381,7 @@ export class BudgetService {
    * res.json(toJsonSafe(budgets)) // bigint fields become decimal strings (§15.5)
    */
   async status(tenantId: string, scope: MeteringScope): Promise<BudgetStatus[]> {
-    const budgets = await this.store.findMatching(tenantId, scope)
+    const budgets = await this.matching(tenantId, scope)
     const statuses: BudgetStatus[] = []
     for (const budget of budgets) {
       const windowStart = windowStartFor(budget, this.now())
@@ -622,7 +632,7 @@ export class BudgetService {
 
   /** The matching, feature-relevant budgets located in the current window. */
   private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string, at?: Date): Promise<LocatedWindow[]> {
-    const budgets = await this.store.findMatching(tenantId, scope)
+    const budgets = await this.matching(tenantId, scope)
     const now = at ?? this.now()
     return budgets
       .filter((budget) => featureMatches(budget.features, feature))
@@ -642,11 +652,22 @@ export class BudgetService {
   }
 
   /** Load a budget by id or throw an invalid-config error. */
-  private async requireBudget(budgetId: string): Promise<Budget> {
-    const budget = await this.store.findBudgetById(budgetId)
+  private async requireBudget(key: BudgetKey): Promise<Budget> {
+    const budget = await this.findOwned(key)
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    if (budget === null) throw invalid(`budget ${budgetId} does not exist`)
+    if (budget === null) throw invalid(`budget ${key.id} does not exist`)
     return budget
+  }
+
+  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. */
+  private async findOwned(key: BudgetKey): Promise<Budget | null> {
+    const budget = await this.store.findBudgetById(key)
+    return budget !== null && budget.tenantId === key.tenantId ? budget : null
+  }
+
+  /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
+  private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
+    return (await this.store.findMatching(tenantId, scope)).filter((budget) => budget.tenantId === tenantId)
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
@@ -666,135 +687,20 @@ export class BudgetService {
   }
 }
 
+/** Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key. */
+function assertTenant(tenantId: unknown): asserts tenantId is string {
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  if (typeof tenantId !== 'string' || tenantId === '') throw invalid('tenantId must be a non-empty string')
+}
+
+/** The refusal of a budget id another tenant owns: a config error that does not say whose it is. */
+function unavailableBudgetId(): AiTokensException {
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  return invalid('budget id is not available')
+}
+
 /** Build the invalid-config exception with an actionable reason. */
 function invalid(reason: string): AiTokensException {
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
-}
-
-/** Whether a record's feature matches a budget's features filter (empty/absent = all). */
-function featureMatches(features: string[] | undefined, feature: string): boolean {
-  return features === undefined || features.length === 0 || features.includes(feature)
-}
-
-/** The limits object for a budget (only defined dimensions). */
-function limitsOf(budget: Budget): BudgetLimits {
-  return {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} because all consumers check limits.nanoUsd !== undefined
-    ...(budget.limitNanoUsd !== undefined ? { nanoUsd: budget.limitNanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} because all consumers check limits.tokens !== undefined
-    ...(budget.limitTokens !== undefined ? { tokens: budget.limitTokens } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} because all consumers check limits.count !== undefined
-    ...(budget.limitCount !== undefined ? { count: budget.limitCount } : {}),
-  }
-}
-
-/** Negate a delta across all three dimensions. */
-function negate(delta: BudgetDelta): BudgetDelta {
-  return { nanoUsd: -delta.nanoUsd, tokens: -delta.tokens, count: -delta.count }
-}
-
-/** Add a delta to a window's spend (non-mutating). */
-function addSpend(spend: BudgetWindowSpend, delta: BudgetDelta): BudgetWindowSpend {
-  return {
-    spentNanoUsd: spend.spentNanoUsd + delta.nanoUsd,
-    spentTokens: spend.spentTokens + delta.tokens,
-    spentCount: spend.spentCount + delta.count,
-  }
-}
-
-/** Map a limited budget/counter dimension to its typed §16 block code: spend → 402, tokens/count → 429. */
-function dimensionCode(name: CounterDimensionName): FailingDimension {
-  return name === 'cost' ? { dimension: 'cost', code: 'AI_TOKENS_BUDGET_EXCEEDED' } : { dimension: name, code: 'AI_TOKENS_QUOTA_EXCEEDED' }
-}
-
-/** The first dimension whose spend exceeds its limit, with the typed error code (spend fallback). */
-function failingDimension(spend: BudgetWindowSpend, limits: BudgetLimits): FailingDimension {
-  return failingDimensionOrNull(spend, limits) ?? dimensionCode('cost')
-}
-
-/** The first over-limit dimension, or `null` when every dimension is within its limit. */
-function failingDimensionOrNull(spend: BudgetWindowSpend, limits: BudgetLimits): FailingDimension | null {
-  if (limits.nanoUsd !== undefined && spend.spentNanoUsd > limits.nanoUsd) return dimensionCode('cost')
-  if (limits.tokens !== undefined && spend.spentTokens > limits.tokens) return dimensionCode('tokens')
-  if (limits.count !== undefined && spend.spentCount > limits.count) return dimensionCode('count')
-  return null
-}
-
-/** Fixed-point scale for the used fraction (six decimal digits) — see {@link ratio}. */
-const USED_FRACTION_SCALE = 1_000_000n
-
-/** The maximum used fraction across the limited dimensions (bounded float; 0 when unlimited). */
-function usedFraction(spend: BudgetWindowSpend, limits: BudgetLimits): number {
-  const fractions: number[] = []
-  if (limits.nanoUsd !== undefined) fractions.push(ratio(spend.spentNanoUsd, limits.nanoUsd))
-  if (limits.tokens !== undefined) fractions.push(ratio(BigInt(spend.spentTokens), BigInt(limits.tokens)))
-  if (limits.count !== undefined) fractions.push(ratio(BigInt(spend.spentCount), BigInt(limits.count)))
-  return fractions.length === 0 ? 0 : Math.max(...fractions)
-}
-
-/**
- * The used fraction of one dimension, computed with bigint math so nano-USD spend/limits
- * above `Number.MAX_SAFE_INTEGER` never lose precision — a raw `Number()` on either
- * operand would round and could report a full or over-limit budget as under (or vice
- * versa), corrupting thresholds, projection, and `status.usedFraction`. Scales by a fixed
- * factor, divides as bigint, then converts the small scaled quotient to a float. A zero
- * limit is a hard block (§10.2) — fully used at zero spend, over beyond it.
- */
-function ratio(spent: bigint, limit: bigint): number {
-  if (limit === 0n) return spent > 0n ? Number.POSITIVE_INFINITY : 1
-  return Number((spent * USED_FRACTION_SCALE) / limit) / Number(USED_FRACTION_SCALE)
-}
-
-/** The limit snapshot (present dimensions only) for an event payload. */
-function limitSnapshot(limits: BudgetLimits): { nanoUsd?: bigint; tokens?: number; count?: number } {
-  return {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.nanoUsd !== undefined ? { nanoUsd: limits.nanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.tokens !== undefined ? { tokens: limits.tokens } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.count !== undefined ? { count: limits.count } : {}),
-  }
-}
-
-/** The spend snapshot (all three dimensions) for an event payload. */
-function spendSnapshot(spend: BudgetWindowSpend): { nanoUsd: bigint; tokens: number; count: number } {
-  return { nanoUsd: spend.spentNanoUsd, tokens: spend.spentTokens, count: spend.spentCount }
-}
-
-/** The remaining snapshot (limited dimensions only, floored at zero) for an event payload. */
-function remainingSnapshot(limits: BudgetLimits, spend: BudgetWindowSpend): { nanoUsd?: bigint; tokens?: number; count?: number } {
-  return {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.nanoUsd !== undefined ? { nanoUsd: max0(limits.nanoUsd - spend.spentNanoUsd) } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.tokens !== undefined ? { tokens: Math.max(0, limits.tokens - spend.spentTokens) } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
-    ...(limits.count !== undefined ? { count: Math.max(0, limits.count - spend.spentCount) } : {}),
-  }
-}
-
-/** Assemble a {@link BudgetStatus} from a budget and its located window (§10.6). */
-function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | null, spend: BudgetWindowSpend): BudgetStatus {
-  const limits = limitsOf(budget)
-  return {
-    budgetId: budget.id,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { features: undefined } is equivalent to {} because status consumers check features !== undefined
-    ...(budget.features !== undefined ? { features: budget.features } : {}),
-    window: budget.window,
-    windowStart,
-    resetsAt,
-    policy: budget.policy,
-    limit: limitSnapshot(limits),
-    spent: spendSnapshot(spend),
-    remaining: remainingSnapshot(limits, spend),
-    usedFraction: usedFraction(spend, limits),
-  }
-}
-
-/** Floor a bigint at zero. */
-function max0(value: bigint): bigint {
-  // Stryker disable next-line EqualityOperator: value <= 0n: when value = 0n, both branches yield 0n (equivalent); distinguishable only for value = 0n case which produces the same output
-  return value < 0n ? 0n : value
 }

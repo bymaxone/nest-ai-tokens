@@ -11,7 +11,8 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Budget, MeteringScope } from '@bymax-one/nest-ai-tokens/shared'
-import type { BudgetDelta, BudgetLimits, BudgetWindowSpend, IBudgetStore } from '@bymax-one/nest-ai-tokens'
+import type { BudgetDelta, BudgetKey, BudgetLimits, BudgetWindowSpend, IBudgetStore } from '@bymax-one/nest-ai-tokens'
+import { AiTokensException } from '../../src/server/errors'
 
 /** Construction options for the in-memory budget store. */
 export interface InMemoryBudgetStoreOptions {
@@ -38,6 +39,9 @@ export class InMemoryBudgetStore implements IBudgetStore {
 
   upsert(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
     const existing = input.id === undefined ? undefined : this.budgets.get(input.id)
+    if (existing !== undefined && existing.tenantId !== input.tenantId) {
+      return Promise.reject(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'budget id is not available' }))
+    }
     const budget: Budget = {
       ...input,
       id: input.id ?? randomUUID(),
@@ -47,14 +51,14 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve({ ...budget })
   }
 
-  remove(budgetId: string): Promise<void> {
-    this.budgets.delete(budgetId)
+  remove(key: BudgetKey): Promise<void> {
+    if (this.budgets.get(key.id)?.tenantId === key.tenantId) this.budgets.delete(key.id)
     return Promise.resolve()
   }
 
-  findBudgetById(budgetId: string): Promise<Budget | null> {
-    const budget = this.budgets.get(budgetId)
-    return Promise.resolve(budget === undefined ? null : { ...budget })
+  findBudgetById(key: BudgetKey): Promise<Budget | null> {
+    const budget = this.budgets.get(key.id)
+    return Promise.resolve(budget === undefined || budget.tenantId !== key.tenantId ? null : { ...budget })
   }
 
   findMatching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
@@ -99,13 +103,35 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve(window === undefined ? null : { ...window })
   }
 
-  setWindowStart(budgetId: string, windowStart: Date): Promise<void> {
-    this.windows.set(InMemoryBudgetStore.windowKey(budgetId, windowStart), {
+  setWindowStart(key: BudgetKey, windowStart: Date): Promise<void> {
+    if (this.budgets.get(key.id)?.tenantId !== key.tenantId) return Promise.resolve()
+    this.windows.set(InMemoryBudgetStore.windowKey(key.id, windowStart), {
       spentNanoUsd: 0n,
       spentTokens: 0,
       spentCount: 0,
     })
     return Promise.resolve()
+  }
+
+  /** Test helper — create or replace a budget WITHOUT the tenant check, as a tenant-blind store would. */
+  upsertAnyTenant(input: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget> {
+    const existing = input.id === undefined ? undefined : this.budgets.get(input.id)
+    const budget: Budget = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? this.now() }
+    this.budgets.set(budget.id, budget)
+    return Promise.resolve({ ...budget })
+  }
+
+  /** Test helper — the tenants that own `budgetId` (zero or one), for a store double that ignores the tenant. */
+  tenantsOf(budgetId: string): string[] {
+    const budget = this.budgets.get(budgetId)
+    return budget === undefined ? [] : [budget.tenantId]
+  }
+
+  /** Test helper — every budget matching the scope across ALL tenants, as a tenant-blind store would answer. */
+  findMatchingAnyTenant(scope: MeteringScope): Promise<Budget[]> {
+    return Promise.resolve(
+      [...this.budgets.values()].filter((budget) => isTenantWide(budget.scope) || isExactScope(budget.scope, scope)).map((budget) => ({ ...budget })),
+    )
   }
 
   /** Test helper — force a window's spend counters (drift injection for reconcile). */

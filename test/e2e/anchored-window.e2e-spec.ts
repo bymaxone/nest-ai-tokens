@@ -35,7 +35,7 @@ describe('E2E — renewal-anchored window (§10.1)', () => {
     expect(consumed?.spent.nanoUsd).toBe(6_250_000n)
 
     // rotateWindow forces a fresh window: spend resets to zero.
-    await app.budgets.rotateWindow(budget.id)
+    await app.budgets.rotateWindow(budget.id, 'e2e')
     const rotated = (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]
     expect(rotated?.spent.nanoUsd).toBe(0n)
   })

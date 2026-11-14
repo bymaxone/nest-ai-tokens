@@ -458,6 +458,13 @@ const status = await metering.getStatus(tenantId, { type: 'user', id: userId })
 
 **Unlimited semantics:** no budget row = unlimited. `limit = 0` = hard block. Never use `null` or `0` to mean unlimited.
 
+**Administering budgets is tenant-scoped.** `removeBudget(budgetId, tenantId)`, `rotateWindow(budgetId, tenantId, newWindowStart?)`
+and `reconcileWindow(budgetId, tenantId, windowStart)` act only on a budget the tenant owns: for another tenant's id they
+answer exactly as they do for an id that does not exist (`removeBudget` does nothing, the other two reject with the same
+`AI_TOKENS_INVALID_CONFIG`), and `upsertBudget` refuses an `id` that belongs to another tenant. Because that refusal is a
+different answer from creating a new budget, let the library generate budget ids, or use a UUID: an id a caller can guess
+tells them whether it exists. Pass the tenant from your verified auth context, never from the request.
+
 ---
 
 ## 🌊 Streaming
