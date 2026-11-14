@@ -270,6 +270,9 @@ describe('hold() with one idempotency key racing itself', () => {
     const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
     expect(status!.spent.nanoUsd).toBe(retried.estimatedCostNanoUsd)
     expect(status!.spent.count).toBe(1)
+    // The reservation is the committed hold's: its release gives it back.
+    await built.service.release(retried, context(), 'done')
+    expect((await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' }))[0]!.spent.count).toBe(0)
   })
 
   it('gives back the budget reservation of a keyed hold whose append failed with no row, so a retry reserves again', async () => {
@@ -401,6 +404,18 @@ describe('hold() with one idempotency key racing itself', () => {
 
     const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
     expect(status!.spent.count).toBe(count)
+  })
+
+  /** A system-cost hold reserves nothing, so there is no budget reference to commit. */
+  it('commits no budget references for a system-cost hold', async () => {
+    const built = build({ budgets: true, clock: advancing() })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const commit = jest.spyOn(built.budgets!, 'commit')
+
+    await built.service.hold(context({ isSystemCost: true, systemCostCategory: 'retry' }), ESTIMATE_A)
+
+    expect(commit).not.toHaveBeenCalled()
   })
 
   it('moves nothing and rethrows when the ledger cannot say whether the row was written', async () => {

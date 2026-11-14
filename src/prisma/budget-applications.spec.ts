@@ -105,8 +105,9 @@ describe('BudgetApplications.consume', () => {
 
   /** An application that is not found after the insert is retried, and fails loudly after the attempts are spent. */
   it('fails after the attempts to take an application that keeps changing', async () => {
-    const { applications } = scripted([[LOCK, [[]]]])
+    const { applications, ran } = scripted([[LOCK, [[]]]])
     await expect(applications.consume(REFERENCE, WINDOW, DELTA, {})).rejects.toThrow('kept changing while it was taken')
+    expect(ran.filter((text) => text.includes(RECORD))).toHaveLength(3)
   })
 
   /** A limit that refuses the consume rolls the whole transaction back, the application and the reference with it. */

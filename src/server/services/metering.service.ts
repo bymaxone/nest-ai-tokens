@@ -285,6 +285,7 @@ export class MeteringService {
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
     // The budget references this attempt took are committed when the row found is this same call, and dropped otherwise.
+    // Stryker disable next-line ObjectLiteral: the instant narrows only which attempts commit and which drop; either verdict ends with exactly one `row`, which the store contract pins for both orders of commit, so omitting it is equivalent
     const sameCall = row !== null && this.effects.sameCall(row, { kind: 'record', scope: appendInput.scope, feature: appendInput.feature, billedCostNanoUsd: appendInput.billedCostNanoUsd, ...(basis.occurredAtSupplied ? { occurredAt: appendInput.occurredAt } : {}) })
     if (enforcement !== null) {
       if (sameCall) await this.effects.commitBudget(enforcement)

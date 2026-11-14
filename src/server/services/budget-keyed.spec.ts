@@ -388,6 +388,35 @@ describe('BudgetService keyed movements shared by several attempts', () => {
     expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(0n)
   })
 
+  /** A budget the attempt never held a reference on is left alone by a commit: no application means no movement to count. */
+  it('counts nothing for a budget that held no reference of the committing attempt', async () => {
+    const { service, store } = makeService()
+    await service.consume(context(), delta(30n), undefined, 'call-1', 'attempt-a')
+    const late = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n }))
+    await service.commit(context(), delta(30n), NOW, 'call-1', 'attempt-a')
+    expect(await store.getWindow(late.id, MONTH)).toBeNull()
+  })
+
+  /*
+   * Invariant: a rollback drops this attempt's references, and a counter follows the movement: it goes back when the
+   * movement does, and stays while another attempt still holds the movement.
+   */
+  it('gives back the counter of a rolled-back consume only when no other attempt holds the movement', async () => {
+    const counter = new MapCounter()
+    const { service } = makeService({ options: { counter } })
+    const tenantWide = await service.upsertBudget(budgetInput({ limitNanoUsd: 1_000n, scope: { type: 'tenant', id: TENANT } }))
+    await service.upsertBudget(budgetInput({ limitNanoUsd: 0n, features: ['restricted.feature'] }))
+    const free = context({ feature: 'free.feature' })
+    const restricted = context({ feature: 'restricted.feature' })
+
+    await expectRejectCode(service.consume(restricted, delta(30n), undefined, 'call-1', 'alone'), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(counter.values.get(costKey(tenantWide.id)) ?? 0n).toBe(0n)
+
+    await service.consume(free, delta(30n), undefined, 'call-2', 'holder')
+    await expectRejectCode(service.consume(restricted, delta(30n), undefined, 'call-2', 'second'), 'AI_TOKENS_BUDGET_EXCEEDED')
+    expect(counter.values.get(costKey(tenantWide.id))).toBe(30n)
+  })
+
   /** A counter follows the movement, not the attempts: it stays while a reference remains and goes with the last one. */
   it('keeps the counter while another attempt holds the movement and drops it with the last reference', async () => {
     const counter = new MapCounter()

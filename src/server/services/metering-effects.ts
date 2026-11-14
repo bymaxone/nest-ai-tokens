@@ -307,8 +307,8 @@ export class MeteringEffects {
    * @param scope The payer of the attempt that is asking.
    */
   sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const record = row.status === 'posted' || row.status === 'reversed'
+    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
