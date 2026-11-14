@@ -284,9 +284,9 @@ export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown
 
 /**
  * Throw unless `caller` is a tenant and a payer scope: `{ non-empty string tenantId, scope object with string type and id }`.
- * A call written against the earlier `capture(hold, usage, ...)` and `release(hold, reason)` shapes puts something else
- * in this position, and a plain-JavaScript or `any` caller is not caught by the compiler, so it is refused here,
- * before the store is read, with a message that says what to change.
+ * The compiler cannot vouch for an `any` or plain-JavaScript caller, and a wrong value in this position, such as a usage
+ * object, would otherwise be read as a caller, so it is refused here, before the store is read, with a message that says
+ * what to pass.
  *
  * @param caller The value passed as the caller.
  * @param signature The call to show in the message, e.g. `capture(hold, caller, usage)`.

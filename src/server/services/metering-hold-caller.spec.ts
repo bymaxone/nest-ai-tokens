@@ -199,7 +199,7 @@ describe('capture() and release() act only for the caller of the hold', () => {
     expect(record.inputTokens).toBeLessThan(5_000_000)
   })
 
-  /** A call written against the earlier shapes, or from plain JavaScript, is a configuration error before any read. */
+  /** A second argument that is not a tenant and a scope is a configuration error, refused before the store is read. */
   it.each([
     { name: 'a usage object in the caller position', caller: normalized() },
     { name: 'undefined', caller: undefined },
@@ -208,7 +208,7 @@ describe('capture() and release() act only for the caller of the hold', () => {
     { name: 'a caller without a scope', caller: { tenantId: 'tenant-1' } },
     { name: 'a caller with a null scope', caller: { tenantId: 'tenant-1', scope: null } },
     { name: 'a caller with a scope without an id', caller: { tenantId: 'tenant-1', scope: { type: 'user' } } },
-    { name: 'a string (the reason of the earlier release shape)', caller: 'handler threw' },
+    { name: 'a string', caller: 'handler threw' },
   ])('refuses $name as the caller before the store is read', async ({ caller }) => {
     const { built, hold } = await pendingHold()
     const read = jest.spyOn(built.ledgerStore, 'findById')
