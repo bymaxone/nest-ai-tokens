@@ -53,7 +53,7 @@ database needs only this file) before you deploy, or the budget feature fails on
 moved it, and `unapplyWindow` subtracts what an application moved, from the window it moved, once. The module refuses
 a store that lacks them at boot. The uniqueness of the application, never a read followed by a write, must decide
 which of several concurrent attempts moves the window. A hold that is pending when you upgrade has no application,
-so releasing it subtracts its delta as before.
+so releasing it subtracts its delta as before. The table holds one row per keyed budget movement and grows with the ledger; a later patch prunes rows older than a key can still be replayed.
 
 ### Security
 
