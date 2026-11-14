@@ -92,8 +92,7 @@ against a server-side clock must use the `now` it is given; an entry's `createdA
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
-**Apply:** run migration `0002_budget_applications.sql` (additive; an
-existing database needs only this file) before you deploy, or the budget feature fails on its first movement. If you
+**Apply:** run migration `0002_budget_applications.sql` (additive) before you deploy, or the budget feature fails on its first movement. If you
 implement `IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce`, `commitReference` and `dropReference`. A
 movement is applied once per application (a key and a budget id); every attempt that applies or replays it takes one
 reference on it, named by the attempt. `consumeWindowOnce` and `adjustWindowOnce` take the reference and answer
