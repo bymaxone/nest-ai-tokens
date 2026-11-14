@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-11-14
+
+**Apply:** run both migrations, `0002_budget_applications.sql` and `0003_effects_owed.sql`, before you update the package.
+Both are additive: they create tables, indexes and foreign keys and touch no existing table. The notes below say what each one is for.
+
 **Apply:** run migration `0003_effects_owed.sql` before you update the package. It creates one table,
 `ai_usage_effects_owed`, beside the ledger and touches no existing table, so it is additive: rows written before it owe
 nothing. The new code writes a marker row in the same statement as a capture, a release and the compensating record of a
@@ -27,8 +32,7 @@ reaper also deletes the record of a budget movement once it was given back, or i
 older than the new `settlement.retentionSeconds` (default 604800, 7 days). The module refuses at boot, naming
 `settlement.retentionSeconds`, a retention that is not a whole number or that does not exceed both `settlement.graceSeconds`
 and `holds.ttlSeconds`, checked on the effective values: a `holds.ttlSeconds` above 604800, or a grace above it, now needs
-a `settlement.retentionSeconds` of its own. Migration `0002_budget_applications.sql` gains two indexes (the references by
-creation time and the applications by the instant they were given back); it is unreleased and still additive. A custom
+a `settlement.retentionSeconds` of its own. A custom
 `IBudgetStore` gains the optional `findStaleReferences`, `pruneApplication` and `pruneGivenBack` calls and keeps working
 with that part inactive. While one step of a call is stuck for longer than the grace the window does not count the call and
 can end above the limit; the call is counted in the end. The sweep does not correct a live Redis counter.
@@ -88,8 +92,7 @@ against a server-side clock must use the `now` it is given; an entry's `createdA
 ignores `now` and uses its own process clock keeps working, because that is the application's. `WalletService` takes an
 optional injected clock as its fourth constructor argument; the module keeps the wall clock.
 
-**Apply:** run migration `0002_budget_applications.sql` (additive: two new tables, an index and two foreign keys; an
-existing database needs only this file) before you deploy, or the budget feature fails on its first movement. If you
+**Apply:** run migration `0002_budget_applications.sql` (additive) before you deploy, or the budget feature fails on its first movement. If you
 implement `IBudgetStore` yourself, add `consumeWindowOnce`, `adjustWindowOnce`, `commitReference` and `dropReference`. A
 movement is applied once per application (a key and a budget id); every attempt that applies or replays it takes one
 reference on it, named by the attempt. `consumeWindowOnce` and `adjustWindowOnce` take the reference and answer
@@ -101,7 +104,7 @@ moved, when it was the last. The module refuses a store that lacks them at boot.
 never a read followed by a write, must decide which of several concurrent attempts moves the window, and a take and a
 drop of one application must not interleave. A hold that is pending when you upgrade has no application, so releasing it
 subtracts its delta as before. The tables hold one row per keyed budget movement and one per reference, and grow with the
-ledger; a later patch prunes rows older than a key can still be replayed.
+ledger until the reaper's budget-reference sweep deletes a row that was given back, or whose ledger row ended, once it is older than `settlement.retentionSeconds`.
 
 ### Security
 
@@ -200,6 +203,8 @@ ledger; a later patch prunes rows older than a key can still be replayed.
   written, the settlement of a failed hold append, the option validation, the tenant check of the budget admin paths and the caller check of `capture` and `release`; its budget moves from 42000 to 43740.
 - The `server` bundle grows by 55 bytes brotli (to 43777) with the clock `WalletService` passes to the wallet store; its budget moves from 43740 to 43810.
 - The `server` bundle grows by 1891 bytes brotli (to 45654) with the keyed budget movements; its budget moves from 43810 to 45700.
+- The `server` bundle grows to 49760 bytes brotli with the settlement sweeps (the effects-owed marker and the budget-reference sweep); its budget moves from 45700 to 49790. The `prisma` bundle is 15387 bytes (budget 15411).
+- The release workflow now builds, runs its gates and packs in a job that holds no credential, and a second job publishes only the tarball whose sha256 matches the one the build reported, from a commit on `main`. The package you install is the file the gates saw.
 
 ## [1.1.14] - 2026-11-13
 
@@ -1165,4 +1170,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.0.3]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.0.2...v1.0.3
 [1.1.13]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...v1.1.13
 [1.1.14]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...v1.1.14
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...HEAD
+[1.1.15]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...v1.1.15
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...HEAD
