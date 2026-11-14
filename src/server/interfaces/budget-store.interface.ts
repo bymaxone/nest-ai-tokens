@@ -41,10 +41,12 @@ export interface BudgetWindowSpend {
 /** The budget port. */
 export interface IBudgetStore {
   /**
-   * Create or replace a budget. An `id` that belongs to another tenant MUST NOT be overwritten: the store throws
+   * Create or replace a budget. `createdAt` is the creation instant on the caller's clock, the one the records the
+   * budget counts are stamped by: a store writes it as given, never from a clock of its own, and keeps the stored value
+   * when the budget already exists. An `id` that belongs to another tenant MUST NOT be overwritten: the store throws
    * instead, without naming the other tenant.
    */
-  upsert(budget: Omit<Budget, 'id' | 'createdAt'> & { id?: string }): Promise<Budget>
+  upsert(budget: Omit<Budget, 'id' | 'createdAt'> & { id?: string; createdAt?: Date }): Promise<Budget>
   /** Delete a budget of the tenant; a no-op when the tenant owns no such id. */
   remove(key: BudgetKey): Promise<void>
   /** Load one budget of the tenant by id — the rotateWindow/reconcileWindow paths read it (§10.5); `null` when the tenant owns no such id. */

@@ -97,6 +97,14 @@ already hold the context and are unchanged for you.
   append failed keeps its debit for the retry to replay; a hold without a key refunds; an append that committed before
   its error reached the caller keeps its reservation; an append the ledger cannot confirm moves nothing. A keyed hold
   whose append failed and is never retried leaves its wallet debit without a row until the settlement design lands.
+- **A record written in the same millisecond as a budget could be left out of a recompute.** A budget's `createdAt`
+  anchors its `'total'` and custom windows, and it was stamped by the database (`CURRENT_TIMESTAMP` into a
+  millisecond column, which rounds, up to half a millisecond ahead) while the records the window counts carry the
+  application clock (a `Date`, which floors); `reconcileWindow` counts records with `occurredAt >= windowStart`, so a
+  record from that millisecond fell before the window and the recompute under-counted, the direction that lets
+  spend through. The service now stamps a new budget's `createdAt` from its own clock, the one `occurredAt` uses, and
+  the store writes it as given (`IBudgetStore.upsert` accepts an optional `createdAt`, kept when the budget already
+  exists); a store that does not take it falls back to its own clock, as before.
 
 ### Changed
 

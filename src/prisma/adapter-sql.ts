@@ -700,14 +700,14 @@ export function tokenLimitSql(limit: number | undefined): bigint | null {
 }
 
 /** Build the ordered value fragments for a budget insert (aligned with {@link BUDGET_COLUMNS}). */
-export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>): Sql[] {
+export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'> & { createdAt?: Date }): Sql[] {
   return [
     sql`${id}`, sql`${input.tenantId}`, sql`${input.scope.type}`, sql`${input.scope.id}`,
     sql`${input.features ?? []}::text[]`, sql`${input.limitNanoUsd ?? null}`,
     sql`${tokenLimitSql(input.limitTokens)}`, sql`${input.limitCount ?? null}`,
     sql`${serializeWindow(input.window)}`, sql`${input.anchorAt ?? null}`, sql`${input.expiresAt ?? null}`,
     sql`${JSON.stringify(input.softThresholds)}::jsonb`, sql`${input.policy}`,
-    DB_NOW_SQL, DB_NOW_SQL,
+    input.createdAt === undefined ? DB_NOW_SQL : sql`${input.createdAt}`, DB_NOW_SQL,
   ]
 }
 

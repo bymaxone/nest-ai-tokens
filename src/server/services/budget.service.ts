@@ -165,7 +165,7 @@ export class BudgetService {
       const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
       if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
     }
-    const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy })
+    const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() })
     if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })

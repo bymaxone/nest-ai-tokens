@@ -366,6 +366,16 @@ describe('budget values', () => {
     expect(fragments[11]!.text).toBe('$1::jsonb')
   })
 
+  /** A createdAt the caller gives is written as that instant, never from the database clock; updatedAt stays on the database clock. */
+  it('writes a given createdAt as a UTC parameter and keeps updatedAt on the database clock', () => {
+    const fragments = budgetValues('b1', { ...input, createdAt: T1 })
+
+    expect(fragments).toHaveLength(BUDGET_COLUMNS.length)
+    expect(fragments[fragments.length - 2]!.text).toBe(UTC_PARAMETER(1))
+    expect(fragments[fragments.length - 2]!.values).toEqual([T1])
+    expect(fragments[fragments.length - 1]!.text).toBe(DB_NOW_SQL.text)
+  })
+
   /** Absent optional fields bind as null, and absent features as an empty list. */
   it('binds absent optional fields as null and absent features as an empty list', () => {
     const { features: _f, limitNanoUsd: _n, limitTokens: _t, limitCount: _c, anchorAt: _a, expiresAt: _e, ...rest } = input

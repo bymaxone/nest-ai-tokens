@@ -665,7 +665,7 @@ export class MeteringService {
       // Clamp the collector's own final just as the non-stream path is clamped: a provider-final
       // stream can carry negative counts or cost, and returning it raw let those reach the signed
       // settlement. It is already normalized, so `normalizeCaptureUsage` only floors the negatives.
-      // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on storedTokens: the override runs only when finalized.inputTokens === 0, and storedTokens is a non-negative token total; at estimatedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `hold.estimatedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at estimatedTokens === 0 the override sets inputTokens back to 0, unchanged)
+      // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on storedTokens: the override runs only when finalized.inputTokens === 0, and storedTokens is a non-negative token total; at storedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `storedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at storedTokens === 0 the override sets inputTokens back to 0, unchanged)
       if (usage.usedFallback && finalized.inputTokens === 0 && storedTokens > 0) {
         return normalizeCaptureUsage({ ...finalized, inputTokens: storedTokens })
       }
