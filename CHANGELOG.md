@@ -8,13 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+**Apply:** a `RedisBudgetCounterStore` built from a connection URL now closes the client it opened when the Nest
+application closes: a graceful `quit()` bounded by the new `closeTimeoutMs` option (default 2000 ms), then
+`disconnect()`, and nothing for a client that has already ended. A `closeTimeoutMs` that is not a whole number from 1 to
+2,147,483,647 is refused at construction with `AI_TOKENS_INVALID_CONFIG`. Before, that connection stayed open after
+`app.close()` and the process did not exit on its own. A client you pass to the store is still never closed by it. After
+shutdown a URL store refuses further calls.
+
 **Apply:** a store that cannot serve a call now answers `AI_TOKENS_STORE_UNAVAILABLE` (503), where it answered
 `AI_TOKENS_STORE_ERROR` (502). The cases are a server that cannot be reached or closed the connection, a connection
 pool or a transaction that ran out of time, a statement or lock timeout, a shutdown, and a serialization failure or
 deadlock (retryable by design: run the call again). Every other store failure stays `AI_TOKENS_STORE_ERROR` and now
 answers 500 instead of 502, because retrying it does not help. A client, a load balancer rule or an alert that matches
 502 for the store must match 503 for an outage and 500 for the rest. No `Retry-After` header is set. A unique violation
-is still replayed or refused as the 409 conflict. Nothing changes for a custom store. A server that is paused (its
+is still replayed or refused as the 409 conflict. A custom store's errors are classified by the same rules, so a plain `Error` whose message names a closed or terminated connection answers 503. A server that is paused (its
 socket stays open and nothing answers) fails after the driver's own connection or transaction wait, so set one: the
 `connectionTimeoutMillis` of the pool, or Prisma's `connect_timeout` and `pool_timeout`.
 

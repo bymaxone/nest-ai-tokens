@@ -319,6 +319,14 @@ describe('WalletService', () => {
     expect((error as AiTokensException).cause).toBe(original)
   })
 
+  /** A custom store is classified by the same shape rules: a plain error naming a closed connection is unavailable, 503. */
+  it('classifies a custom store error by its message', async () => {
+    const service = new WalletService(throwingStore('appendEntry', new Error('Connection closed')), OPTIONS)
+    const error = await service.grant(REF, { amountNanoUsd: 10n, idempotencyKey: 'g1', reason: 'x' }).catch((e: unknown) => e)
+    expect((error as AiTokensException).getStatus()).toBe(503)
+    expect(((error as AiTokensException).getResponse() as { error: { code: string } }).error.code).toBe('AI_TOKENS_STORE_UNAVAILABLE')
+  })
+
   /** An idempotency conflict is decided before availability and keeps its 409, even when the same error carries an availability code. */
   it('keeps a conflict as a conflict', async () => {
     const conflict = Object.assign(new LedgerIdempotencyConflict('t1', 'd1'), { code: 'ECONNRESET' })
