@@ -84,7 +84,7 @@ is not a non-empty string is refused before the store is touched.
 
 ### Changed
 
-- The `server` bundle grows from 41597 to 43353 bytes brotli, with the enforcement that now runs before the record is
+- The `server` bundle grows from 41597 to 43391 bytes brotli, with the enforcement that now runs before the record is
   written, the settlement of a failed hold append, the option validation and the tenant check of the budget admin paths; its budget moves from 42000 to 43400.
 
 ## [1.1.14] - 2026-11-13
