@@ -15,12 +15,18 @@
  *
  * Usage: `node scripts/check-bundle-classes.mjs [distDir]` (run after `pnpm build`).
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const distDir = process.argv[2] ?? join(rootDir, 'dist')
+const tarball = process.env['PACKAGE_TARBALL']
+// `PACKAGE_TARBALL` names the tarball a release gate has already packed: its bundles are read, not `dist/`.
+const unpacked = process.argv[2] === undefined && tarball !== undefined && tarball !== '' ? mkdtempSync(join(tmpdir(), 'bundle-classes-')) : undefined
+if (unpacked !== undefined) execFileSync('tar', ['-xzf', tarball, '-C', unpacked, '--strip-components=1', 'package/dist'])
+const distDir = process.argv[2] ?? (unpacked === undefined ? join(rootDir, 'dist') : join(unpacked, 'dist'))
 
 /**
  * The classes each secondary bundle owns. `LedgerIdempotencyConflict` and `WalletMissingError` are signals
@@ -78,5 +84,6 @@ for (const [entry, owned] of Object.entries(OWNED)) {
       )
   }
 }
+if (unpacked !== undefined) rmSync(unpacked, { recursive: true, force: true })
 if (failed) process.exit(1)
 console.log('✓ Every bundle defines only the classes it owns.')
