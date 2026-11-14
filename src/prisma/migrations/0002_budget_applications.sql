@@ -9,7 +9,7 @@
 -- and the attempt that applied it ("owner"), so that an attempt only gives back what it applied;
 -- "unappliedAt" marks it given back and lets the same key be applied again.
 --
--- Additive: it creates one table and one foreign key and touches no existing table.
+-- Additive: it creates one table, one index and one foreign key and touches no existing table.
 -- ---------------------------------------------------------------------------
 CREATE TABLE "ai_budget_applications" (
   "key"          TEXT NOT NULL,
@@ -23,5 +23,8 @@ CREATE TABLE "ai_budget_applications" (
   "createdAt"    TIMESTAMP(3) NOT NULL,
   CONSTRAINT "ai_budget_applications_pkey" PRIMARY KEY ("key", "budgetId")
 );
+
+-- The foreign key's column leads an index, so that deleting a budget finds its applications without scanning the table.
+CREATE INDEX "ai_budget_applications_budgetId_idx" ON "ai_budget_applications" ("budgetId");
 
 ALTER TABLE "ai_budget_applications" ADD CONSTRAINT "ai_budget_applications_budgetId_fkey" FOREIGN KEY ("budgetId") REFERENCES "ai_budgets" ("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -114,6 +114,26 @@ describe('PrismaAiTokensStore (Testcontainers PostgreSQL)', () => {
     ])
   })
 
+  /*
+   * Invariant: every foreign key of the migrated schema is served by an index whose leading columns are the key's columns.
+   * A foreign key without one makes the delete or update of its parent scan the whole child table, under the parent's row
+   * lock; the rule is read from the catalog so that a foreign key a later migration adds is held to it as well.
+   */
+  it('has an index led by the columns of every foreign key', async () => {
+    const rows = await prisma.$queryRaw<{ table: string; fk: string }[]>`
+      SELECT c.conrelid::regclass::text AS "table", c.conname AS "fk"
+      FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i
+          WHERE i.indrelid = c.conrelid
+            AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] = c.conkey
+        )
+      ORDER BY 1, 2
+    `
+    expect(rows).toEqual([])
+  })
+
   /** Append persists; a matching replay returns the same row; a mismatch conflicts. */
   it('appends, replays, and conflicts on the idempotency key', async () => {
     const first = await store.append(makeRecord({ idempotencyKey: 'append-1' }), 'hash-A')
