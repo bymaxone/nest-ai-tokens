@@ -297,35 +297,25 @@ async function checkLinks() {
       const unroutable = await unroutableReason(url)
       if (unroutable) return `${url} → ${unroutable}`
 
-      // npmjs.com serves 403 to any datacenter IP, browser User-Agent included,
-      // so asking it whether a package page exists measures Cloudflare rather
-      // than the package. The registry is the authoritative source for the same
-      // question and answers honestly — this redirects the check, it does not
-      // suppress it: a package that truly does not exist still fails here.
+      // npmjs.com serves 403 to any datacenter IP, browser User-Agent included, so asking it whether a package
+      // page exists measures Cloudflare, not the package. The registry answers the same question honestly, so the
+      // check is redirected, not dropped; a 404 from it is only a note, expected until the first publish (below).
       const probe = url.replace(
         /^https:\/\/www\.npmjs\.com\/package\/(.+)$/,
         (_, name) => `https://registry.npmjs.org/${encodeURIComponent(name)}`,
       )
-      // The rewrite above changes what is actually requested, so the invariant —
-      // nothing is requested before it is validated — has to be re-established
-      // for the rewritten target too. Today it is a fixed registry host, but the
-      // guard must not depend on that staying true.
+      // The rewrite changes what is requested, so the invariant (nothing is requested before it is validated)
+      // is re-established for the rewritten target; today it is a fixed registry host, but the guard must not depend on that.
       if (probe !== url) {
         const rewritten = await unroutableReason(probe)
         if (rewritten) return `${url} → rewritten to ${probe}, which ${rewritten}`
       }
       const headers = { 'user-agent': 'Mozilla/5.0 (compatible; bymax-docs-gate)' }
       try {
-        // HEAD first; some hosts answer it with 405, so fall back to GET.
-        // Bounded per LINK, not per request: one signal covers the HEAD, the GET
-        // fallback and every redirect hop together. That is the useful bound —
-        // what must not stall a publish is the check of one link, however many
-        // requests it takes.
-        //
-        // It covers the REQUESTS only. Each hop's `unroutableReason` runs a DNS
-        // lookup with its own 5s bound, outside this signal, so a chain's worst
-        // case is this timeout plus one lookup per hop. Both are bounded, which
-        // is what matters here; they are not one budget.
+        // HEAD first; some hosts answer it with 405, so fall back to GET. One signal bounds the check of a
+        // link, HEAD, GET and every redirect hop together: what must not stall a publish is one link, however
+        // many requests it takes. It covers the requests only; each hop's `unroutableReason` runs a DNS lookup
+        // with its own 5s bound outside it, so a chain's worst case is this timeout plus one lookup per hop.
         const opts = { headers, signal: AbortSignal.timeout(10_000) }
         let res = await fetchChecked(probe, { method: 'HEAD', ...opts })
         if (res.status === 405 || res.status === 403 || res.status === 429) {
@@ -340,6 +330,16 @@ async function checkLinks() {
         // failing here would block the very release that makes the link true.
         if (res.status === 404 && probe !== url) {
           console.log(`  note: ${url} is not live yet — expected until the first publish`)
+          return null
+        }
+        // A host that answers 5xx, or 429 again after the GET above, is in trouble of its own, and a link
+        // check cannot tell that from a dead link. Reported like a transport error, never fatal: this gate
+        // also guards `prepublishOnly`, and someone else's outage must not block a release. 404, 410 and the
+        // other client errors still fail.
+        if (res.status >= 500 || res.status === 429) {
+          console.log(
+            `  note: ${url} answered HTTP ${res.status}, the host's trouble and not proof that the link is dead`,
+          )
           return null
         }
         return `${url} → HTTP ${res.status}`
