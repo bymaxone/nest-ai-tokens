@@ -44,15 +44,16 @@ function makeService(store: InMemoryLedgerStore, hashChain: boolean, audit?: Led
   return new LedgerService(store, { ledger: { hashChain } }, audit)
 }
 
-/** The shortest of `runs` timings of `fn`, in milliseconds: the run that met the fewest interruptions. */
-function fastestOf(runs: number, fn: () => void): number {
-  let fastest = Number.POSITIVE_INFINITY
+/** The least CPU time, in microseconds, that one of `runs` runs of `fn` used: the run that met the fewest interruptions. */
+function leastCpuOf(runs: number, fn: () => void): number {
+  let least = Number.POSITIVE_INFINITY
   for (let run = 0; run < runs; run++) {
-    const started = performance.now()
+    const before = process.cpuUsage()
     fn()
-    fastest = Math.min(fastest, performance.now() - started)
+    const used = process.cpuUsage(before)
+    least = Math.min(least, used.user + used.system)
   }
-  return fastest
+  return least
 }
 
 describe('LedgerService hash chain', () => {
@@ -332,10 +333,11 @@ describe('verifyChainRecords structure', () => {
   /**
    * Grouping the siblings of one parent is linear in the records: a tenant with many records on one
    * predecessor must not stall the event loop. The test compares one grouping of eight times as many records
-   * with eight groupings of the smaller set, each at its fastest of several runs, so the cost per record is
-   * compared and the machine's speed cancels out. Work that grows with the records costs about the same per
-   * record, which measures 1.2 to 2.4 here, and a copy of the group per record costs eight times as much per
-   * record at this size, which measures 17 or more. The bound sits between the two.
+   * with eight groupings of the smaller set, each at its least CPU time of several runs, so the cost per record
+   * is compared and neither the machine's speed nor its load decides: a busy machine delays a run on the clock
+   * but not the CPU time it uses. Work that grows with the records costs about the same per record, which
+   * measured 1.1 to 2.0 on a loaded machine, and a copy of the group per record costs far more per record at
+   * this size, which measured 17 or more. The bound sits between the two.
    */
   it('groups a large fork in linear time', async () => {
     const [a, first] = await chained()
@@ -347,10 +349,10 @@ describe('verifyChainRecords structure', () => {
     const small = fork(10_000)
     const large = fork(80_000)
     expect(groupForks(large)[0]?.records).toHaveLength(80_001)
-    const eightSmall = fastestOf(5, () => {
+    const eightSmall = leastCpuOf(5, () => {
       for (let round = 0; round < 8; round++) groupForks(small)
     })
-    const oneLarge = fastestOf(5, () => groupForks(large))
+    const oneLarge = leastCpuOf(5, () => groupForks(large))
     expect(oneLarge / eightSmall).toBeLessThan(6)
   }, 120_000)
 
