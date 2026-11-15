@@ -298,8 +298,8 @@ async function checkLinks() {
       if (unroutable) return `${url} → ${unroutable}`
 
       // npmjs.com serves 403 to any datacenter IP, browser User-Agent included, so asking it whether a package
-      // page exists measures Cloudflare, not the package. The registry answers the same question honestly: this
-      // redirects the check, it does not suppress it, and a package that truly does not exist still fails here.
+      // page exists measures Cloudflare, not the package. The registry answers the same question honestly, so the
+      // check is redirected, not dropped; a 404 from it is only a note, expected until the first publish (below).
       const probe = url.replace(
         /^https:\/\/www\.npmjs\.com\/package\/(.+)$/,
         (_, name) => `https://registry.npmjs.org/${encodeURIComponent(name)}`,
