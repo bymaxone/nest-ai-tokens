@@ -26,6 +26,8 @@ import { deriveIdempotencyKey } from '@bymax-one/nest-ai-tokens/shared'
 import type {
   IWalletStore,
   OpenGrant,
+  WalletDebit,
+  WalletDebitQuery,
   WalletEntryFilter,
   WalletEntryPage,
 } from '@bymax-one/nest-ai-tokens'
@@ -156,6 +158,21 @@ export class InMemoryWalletStore implements IWalletStore {
     const offset = filter.offset ?? 0
     const end = filter.limit === undefined ? undefined : offset + filter.limit
     return Promise.resolve({ entries: matched.slice(offset, end), total: matched.length })
+  }
+
+  findDebitsBefore(query: WalletDebitQuery): Promise<WalletDebit[]> {
+    const found: WalletDebit[] = []
+    for (const wallet of this.wallets.values()) {
+      for (const entry of this.entries.get(wallet.id) ?? []) {
+        if (entry.type !== 'debit' || !query.keyPrefixes.some((prefix) => entry.idempotencyKey.startsWith(prefix))) continue
+        if (entry.createdAt >= query.olderThan || (query.newerThan !== undefined && entry.createdAt < query.newerThan)) continue
+        found.push({ ref: { tenantId: wallet.tenantId, ownerType: wallet.ownerType, ownerId: wallet.ownerId }, entry: { ...entry } })
+      }
+    }
+    found.sort((a, b) => compareDebits(a.entry, b.entry))
+    const after = query.after
+    const rest = after === undefined ? found : found.filter(({ entry }) => compareDebits(entry, after) > 0)
+    return Promise.resolve(rest.slice(0, query.limit))
   }
 
   reconcile(ref: WalletRef, now?: Date): Promise<Wallet> {
@@ -412,4 +429,9 @@ function matchesFilter(entry: WalletEntry, filter: WalletEntryFilter): boolean {
   if (filter.from !== undefined && entry.createdAt < filter.from) return false
   if (filter.to !== undefined && entry.createdAt > filter.to) return false
   return true
+}
+
+/** The order the sweep pages in: `(createdAt, id)`, ascending, ids in code-unit order. */
+function compareDebits(a: { createdAt: Date; id: string }, b: { createdAt: Date; id: string }): number {
+  return a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }

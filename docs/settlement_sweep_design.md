@@ -110,13 +110,15 @@ The ledger key of a `reserve:<key>` reference is `<key>`; a `record:<call key>` 
 - Three new options under `settlement`: `graceSeconds`, `retentionSeconds`, and `enabled` (default true, accepted in a patch), validated at boot. A custom store without the optional calls leaves the sweep inactive: the Apply note says so, and the module logs that once at boot.
 - Patch release with an Apply note (DEC-063). The server bundle budget needs a new number, measured after the work; the PM sets the figure.
 
-## 6. The orphan debit give-back (2b, if split)
+## 6. The orphan debit give-back (2b)
 
 A keyed call whose append failed with no row keeps its wallet debit for the retry to replay; a call that is never retried leaves the debit with no record.
 
-- A new `idempotencyKeyPrefix` filter on `IWalletStore.listEntries`, optional.
-- The sweep lists `record:` and `hold:` debits older than the grace, looks each key up in the ledger, and for those with no row **claims the key first** by appending a released row under it, so the unique index on `(tenantId, idempotencyKey)` makes the give-back and the retry's append mutually exclusive: whichever writes the key first wins. Then it refunds under `orphan:<debit id>`, so a second run is a replay.
-- A retry that starts after the claim is refused at its ledger lookup with the idempotency conflict and needs a new key. A retry that passes the lookup first hits the same unique index, and its own withdraw and the sweep's refund must be mutually idempotent, so exactly one refund is written.
+- A new optional `IWalletStore.findDebitsBefore`, a listing across wallets: a per-wallet listing cannot find an orphan, because the wallet is not known until the debit is read. It filters on the key prefixes `hold:` and `record:` and on `createdAt` between the retention and the grace, pages by `(createdAt, id)` in byte order, and returns each debit with its wallet's owner.
+- The sweep looks each key up in the ledger, and for those with no row **claims the key first** by appending a released row under it, with the effects-owed marker (`reason: 'orphan-debit'`) written by the same statement. The unique index on `(tenantId, idempotencyKey)` makes the give-back and the retry's append mutually exclusive: whichever writes the key first wins. The claim carries the wallet's tenant, the fixed value `orphan-claim` as provider, model and feature, status `released` (so no usage read counts it), the debit amount as its billed cost, and the debit key in `requestId`.
+- The refund is the wallet's alone, finished by the owed-effects settlement: it repeats the key and reason of the inline rollback (`hold-rollback:<key>` / `record-rollback:<key>`), so a debit that rollback already returned is not returned twice, and `restoreHold` and its budget release are not run (a `record:` orphan holds no `reserve:` reservation; the budget half is the budget-reference sweep's). The sweeper finishes the refund inline; if that fails the marker stays and the next owed sweep repeats it.
+- A retry that starts after the claim is refused with the idempotency conflict and one `ai_tokens.orphan_claim.late_append claim=<id>` warn line. A retry that passes the lookup first hits the same unique index and conflicts too; the claim row counts as sharing the debit, so that retry's own rollback refunds nothing and the sweep's refund is the only one.
+- The lookback is `settlement.retentionSeconds`; a debit older than that is outside the sweep. The grace is a correctness bound for a keyed call, not a performance knob.
 - **Red tests:** refund then retry; a retry that completes between the sweep's lookup and its claim; two sweeps at once; each asserts exactly one refund and the wallet balance of a run that never failed.
 
 ## Red tests for 2a, in this order

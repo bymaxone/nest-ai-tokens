@@ -32,6 +32,7 @@ import { computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, MeteringContext, OwedEffects } from '../interfaces'
+import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
 import type { ReplayBasis } from '../utils/replay-match'
@@ -293,6 +294,7 @@ export class MeteringService {
       if (!committed) await this.effects.withdraw(enforcement, ownDebit, !sameCall)
     }
     if (row === null || !conflict) throw error
+    if (isOrphanClaim(row)) throw lateAppend(this.logger, row)
     return { record: replayOf(row, this.requestRecord(appendInput, row.idempotencyKey), basis), replayed: true }
   }
 
@@ -313,6 +315,7 @@ export class MeteringService {
     // The budget references this attempt took are committed when the row found is this same call, and dropped otherwise.
     const sameCall = row !== null && this.effects.sameCall(row, { kind: 'hold', scope: context.scope, feature: context.feature, billedCostNanoUsd: delta.billedNanoUsd })
     if (sameCall) await this.effects.commitHoldBudget(context, delta, ledgerKey, attempt, occurredAt)
+    if (row !== null && isOrphanClaim(row) && isIdempotencyConflict(error)) lateAppend(this.logger, row)
     if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
     await this.effects.compensateHold(context, delta, ledgerKey, attempt, ownDebit, !sameCall)
@@ -396,6 +399,7 @@ export class MeteringService {
   private async holdOnce(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
     if (context.idempotencyKey !== undefined) {
       const existing = await this.ledger.findByIdempotencyKey(context.tenantId, context.idempotencyKey)
+      if (existing !== null && isOrphanClaim(existing)) throw lateAppend(this.logger, existing)
       if (existing !== null) return this.holdOf(existing)
     }
     const occurredAt = this.now()

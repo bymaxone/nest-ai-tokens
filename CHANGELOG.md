@@ -10,6 +10,17 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+**Apply:** no migration. A wallet debit that no ledger row stands behind is now given back by the reaper. A keyed `hold()` or
+enforced `record()` whose ledger append failed keeps its wallet debit for a retry to replay; one that is never retried used to
+leave the debit for good. The reaper now finds such debits once they are older than `settlement.graceSeconds` and younger than
+`settlement.retentionSeconds`, appends a released claim row under the call's key that owes the refund, and refunds the wallet
+once, under the key and reason of the inline rollback, so a debit that rollback already returned is not returned twice. The
+claim row is never counted by a usage report, a cost summary or a budget; a later call on that key is refused with
+`AI_TOKENS_IDEMPOTENCY_CONFLICT` and one `ai_tokens.orphan_claim.late_append` warn line, so the grace is a correctness bound for
+a keyed call: keep it longer than any wallet debit or ledger append can take. `IWalletStore` gains the optional
+`findDebitsBefore`; a custom wallet store that omits it keeps working with this part inactive, and the reaper logs that once at
+boot. The Prisma store implements it with no schema change.
+
 ## [1.1.15] - 2026-11-14
 
 **Apply:** run both migrations, `0002_budget_applications.sql` and `0003_effects_owed.sql`, before you update the package.

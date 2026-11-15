@@ -41,6 +41,7 @@ import { BudgetGuard, MeteringInterceptor } from './enforcement'
 import { disabledService, liveService } from './disabled-service'
 import { BudgetReferenceSweeper } from './enforcement/budget-reference-sweeper'
 import { HoldReaper } from './enforcement/hold-reaper'
+import { OrphanDebitSweeper } from './enforcement/orphan-debit-sweeper'
 import type {
   BymaxAiTokensModuleAsyncOptions,
   BymaxAiTokensModuleOptions,
@@ -153,7 +154,7 @@ function buildServiceProviders(): Provider[] {
       // Registered unconditionally: hold() writes pending rows whenever it is used,
       // even without wallets/budgets, and a stranded hold must still be reclaimed.
       provide: HoldReaper,
-      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions, budgetStore?: IBudgetStore | null): HoldReaper =>
+      useFactory: (ledger: LedgerService, metering: MeteringService, options: ResolvedAiTokensOptions, budgetStore?: IBudgetStore | null, walletStore?: IWalletStore | null): HoldReaper =>
         new HoldReaper(
           ledger,
           metering,
@@ -162,8 +163,11 @@ function buildServiceProviders(): Provider[] {
           options.budgets.enabled && budgetStore != null
             ? new BudgetReferenceSweeper(budgetStore, ledger, { graceSeconds: options.settlement.graceSeconds, holdTtlSeconds: options.holds.ttlSeconds, retentionSeconds: options.settlement.retentionSeconds })
             : undefined,
+          options.wallets.enabled && walletStore != null
+            ? new OrphanDebitSweeper(walletStore, ledger, { graceSeconds: options.settlement.graceSeconds, retentionSeconds: options.settlement.retentionSeconds }, () => new Date(), (owed) => metering.settleOwedEffects(owed))
+            : undefined,
         ),
-      inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS, { token: BYMAX_AI_TOKENS_BUDGET_STORE, optional: true }],
+      inject: [LedgerService, MeteringService, BYMAX_AI_TOKENS_OPTIONS, { token: BYMAX_AI_TOKENS_BUDGET_STORE, optional: true }, { token: BYMAX_AI_TOKENS_WALLET_STORE, optional: true }],
     },
     {
       provide: UsageReportService,

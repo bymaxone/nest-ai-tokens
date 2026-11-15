@@ -11,8 +11,11 @@ import { InMemoryLedgerStore } from './in-memory-ledger-store'
 import { InMemoryPricingStore } from './in-memory-pricing-store'
 import { InMemoryWalletStore } from './in-memory-wallet-store'
 
-/** A store whose four halves are all live. */
-export function makeFullStore(): IAiTokensStore {
+/**
+ * A store whose four halves are all live. With `settlement`, the ledger also keeps the effects-owed marker and the wallet
+ * half lists debits across wallets, which is what the settlement sweeps need.
+ */
+export function makeFullStore(settlement = false): IAiTokensStore {
   const ledger = new InMemoryLedgerStore()
   const pricing = new InMemoryPricingStore()
   const wallet = new InMemoryWalletStore()
@@ -49,5 +52,13 @@ export function makeFullStore(): IAiTokensStore {
     dropReference: budget.dropReference.bind(budget),
     getWindow: budget.getWindow.bind(budget),
     setWindowStart: budget.setWindowStart.bind(budget),
+    ...(settlement
+      ? {
+          findEffectsOwed: ledger.findEffectsOwed.bind(ledger),
+          findEffectsOwedFor: ledger.findEffectsOwedFor.bind(ledger),
+          clearEffectsOwed: ledger.clearEffectsOwed.bind(ledger),
+          findDebitsBefore: wallet.findDebitsBefore.bind(wallet),
+        }
+      : {}),
   }
 }

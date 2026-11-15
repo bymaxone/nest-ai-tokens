@@ -574,6 +574,81 @@ describe('MeteringEffects.restoreHold', () => {
 })
 
 // ---------------------------------------------------------------------------
+// restoreOrphanDebit — the wallet half only, under the key of the inline rollback
+// ---------------------------------------------------------------------------
+
+describe('MeteringEffects.restoreOrphanDebit', () => {
+  const WALLET = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
+  const claim = (over: Partial<UsageRecord> = {}): UsageRecord =>
+    record({
+      status: 'released',
+      enforced: true,
+      provider: 'orphan-claim',
+      feature: 'orphan-claim',
+      requestId: 'record:call-1',
+      idempotencyKey: 'call-1',
+      ...over,
+    })
+
+  /**
+   * Invariant: the refund of a `record:` orphan goes under the key the inline rollback of that debit uses and touches no
+   * budget: the budget half of a call that never wrote its row belongs to the budget-reference sweep, and a release here
+   * would give back a reservation a `record()` never made under the hold's key.
+   */
+  it.each([
+    ['record:call-1', 'record-rollback:call-1'],
+    ['hold:hold-1', 'hold-rollback:hold-1'],
+  ])('refunds the debit %s under %s and releases no budget', async (debitKey, refundKey) => {
+    const { service: wallets, store } = buildWalletService()
+    await grantToUser(wallets, 100_000_000_000n)
+    await wallets.debit(WALLET, {
+      amountNanoUsd: 10_000_000n,
+      idempotencyKey: debitKey,
+      reason: 'pre-debit',
+    })
+    const { service: budgets } = buildBudgetService()
+    const release = jest.spyOn(budgets, 'release')
+    const effects = new MeteringEffects(wallets, budgets)
+    await effects.restoreOrphanDebit(claim({ requestId: debitKey }))
+    await effects.restoreOrphanDebit(claim({ requestId: debitKey }))
+    expect(release).not.toHaveBeenCalled()
+    const refunds = (await store.listEntries(WALLET, { type: 'refund' })).entries
+    expect(refunds.map((entry) => entry.idempotencyKey)).toEqual([refundKey])
+    expect((await wallets.getBalance(WALLET)).nanoUsd).toBe(100_000_000_000n)
+  })
+
+  /** Invariant: a debit the inline rollback already returned is not returned a second time by the claim. */
+  it('does not refund a debit the inline rollback already refunded', async () => {
+    const { service: wallets, store } = buildWalletService()
+    await grantToUser(wallets, 100_000_000_000n)
+    await wallets.debit(WALLET, {
+      amountNanoUsd: 10_000_000n,
+      idempotencyKey: 'hold:k',
+      reason: 'pre-debit',
+    })
+    const effects = new MeteringEffects(wallets, undefined)
+    await effects.compensateHold(ctx(), delta(), 'k', 'attempt-1')
+    await effects.restoreOrphanDebit(claim({ requestId: 'hold:k' }))
+    expect((await store.listEntries(WALLET, { type: 'refund' })).entries).toHaveLength(1)
+    expect((await wallets.getBalance(WALLET)).nanoUsd).toBe(100_000_000_000n)
+  })
+
+  /** A claim without wallets, without a debit key to derive from, or without an amount moves nothing. */
+  it('moves nothing without wallets, a recognised debit key or an amount', async () => {
+    const { service: wallets, store } = buildWalletService()
+    await grantToUser(wallets, 100_000_000_000n)
+    await new MeteringEffects(undefined, undefined).restoreOrphanDebit(claim())
+    const effects = new MeteringEffects(wallets, undefined)
+    await effects.restoreOrphanDebit(claim({ requestId: 'capture:x' }))
+    const keyless = claim()
+    delete keyless.requestId
+    await effects.restoreOrphanDebit(keyless)
+    await effects.restoreOrphanDebit(claim({ billedCostNanoUsd: 0n }))
+    expect((await store.listEntries(WALLET, { type: 'refund' })).entries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // reverseEffects — idempotency key, best-effort, caller reason forwarded
 // ---------------------------------------------------------------------------
 
