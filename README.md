@@ -875,8 +875,7 @@ provider, model and feature, is never counted by a usage report, a cost summary 
 same key with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. The budget half of such a call is the budget-reference sweep's. A wallet store
 without the optional `findDebitsBefore` leaves this part inactive, and the reaper says so once at boot.
 
-The Prisma store's listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, a page at a time, at most five
-pages per reaper tick. No shipped index leads with `createdAt`, so on a large table each page is a scan of the whole table. A
+The Prisma store's listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, a bounded number of pages per reaper tick. No shipped index leads with `createdAt`, so on a large table each page is a scan of the whole table. A
 host with a large wallet table should add this partial index, created with `CONCURRENTLY` so that it does not block wallet
 writes, which means outside a transaction and so outside a migration tool that wraps its files in one. The listing is correct
 without the index and slower on a large installation:
@@ -887,8 +886,9 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "ai_wallet_entries_debit_createdAt_idx" 
 
 Limits you can rely on:
 
-- The grace is a performance knob, not a correctness bound. A sweep that reaches a row while the inline path is still
-  running its effects only repeats keyed legs that move nothing.
+- For the owed effects and the budget references, the grace is a performance knob, not a correctness bound: a sweep that
+  reaches a row while the inline path is still running its effects only repeats keyed legs that move nothing. The give-back of
+  orphan debits is the exception, below.
 - The effects are exact for the wallet and the budget and at-least-once for events and spans.
 - While one step of a call is stuck for longer than the grace (a wallet debit or an append that does not return), the
   sweep gives its movement back and the window does not count the call, so another call can be admitted under the limit

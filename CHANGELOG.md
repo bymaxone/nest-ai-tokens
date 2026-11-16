@@ -19,7 +19,7 @@ claim row is never counted by a usage report, a cost summary or a budget; a late
 `AI_TOKENS_IDEMPOTENCY_CONFLICT` and one `ai_tokens.orphan_claim.late_append` warn line, so the grace is a correctness bound for
 a keyed call: keep it longer than any wallet debit or ledger append can take. `IWalletStore` gains the optional
 `findDebitsBefore`; a custom wallet store that omits it keeps working with this part inactive, and the reaper logs that once at
-boot. The Prisma store implements it with no schema change. Its listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, at most five pages per tick, which no shipped
+boot. The Prisma store implements it with no schema change. Its listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, which no shipped
 index serves, so an installation with a large wallet table should add the partial index the README gives. Create it
 `CONCURRENTLY`, outside a transaction, so that it does not block wallet writes. The sweep is correct without it and slower.
 The statement is `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ai_wallet_entries_debit_createdAt_idx" ON "ai_wallet_entries" ("createdAt", "id" COLLATE "C") WHERE "type" = 'debit';`.
