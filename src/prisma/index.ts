@@ -52,6 +52,8 @@ import type {
   OwedEffects,
   OwedEffectsMarker,
   PricedModel,
+  WalletDebit,
+  WalletDebitQuery,
   WalletEntryFilter,
   WalletEntryPage,
 } from '../server'
@@ -63,7 +65,7 @@ import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
 import { adjustWindowSql, consumeWindowSql, ensureWindowSql, findBudgetSql, matchingBudgetsSql, removeBudgetSql, removeBudgetWindowsSql, resetWindowSql, windowSql } from './budget-statements'
-import { empty, join, sql, type Sql } from './sql'
+import { empty, join, sql } from './sql'
 import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
@@ -91,14 +93,12 @@ import {
   priceLockKey,
   priceValues,
   spendableBalanceSql,
-  GRANT_REMAINING_JOIN_SQL,
   ACTIVATED_SQL,
   CREDITED_SQL,
   DB_NOW_SQL,
   DUE_AT_APPEND_SQL,
   clockSql,
   pendingGrantsSql,
-  GRANT_REMAINING_JOINED_SQL,
   GRANT_REMAINING_SQL,
   SIGNED_BALANCE_SQL,
   statusAssignments,
@@ -110,6 +110,7 @@ import {
   walletEntryMatches,
   walletEntryWhere,
 } from './adapter-sql'
+import { mapWalletDebitRow, openGrantsSql, walletDebitsSql, type WalletDebitRow } from './wallet-statements'
 import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, WalletEntryRow, WalletRow } from './adapter-sql'
 
 /**
@@ -478,7 +479,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo', now?: Date): Promise<OpenGrant[]> {
     const wallet = await this.getWallet(ref)
     if (wallet === null) return []
-    const rows = await this.prisma.query<OpenGrantRow[]>(this.openGrantsSql(wallet.id, order, now))
+    const rows = await this.prisma.query<OpenGrantRow[]>(openGrantsSql(wallet.id, order, now))
     return rows.map(mapOpenGrantRow)
   }
 
@@ -495,6 +496,11 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
     ]).catch(rethrowAsStoreError)
     return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
+  }
+
+  async findDebitsBefore(query: WalletDebitQuery): Promise<WalletDebit[]> {
+    const rows = await this.prisma.query<WalletDebitRow[]>(walletDebitsSql(query)).catch(rethrowAsStoreError)
+    return rows.map(mapWalletDebitRow)
   }
 
   async reconcile(ref: WalletRef, now?: Date): Promise<Wallet> {
@@ -735,7 +741,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
 
   /** Greedily allocate a debit of `cost` across the open grants in burn order. */
   private async burnDown(tx: SqlExecutor, walletId: string, cost: bigint, now?: Date): Promise<{ grantEntryId: string; amountNanoUsd: bigint }[]> {
-    const grants = await tx.query<OpenGrantRow[]>(this.openGrantsSql(walletId, this.burnOrder, now))
+    const grants = await tx.query<OpenGrantRow[]>(openGrantsSql(walletId, this.burnOrder, now))
     const trail: { grantEntryId: string; amountNanoUsd: bigint }[] = []
     let remaining = cost
     for (const grant of grants) {
@@ -745,24 +751,6 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       remaining -= take
     }
     return trail
-  }
-
-  /** The open-grants query (credited, remaining > 0, effective and not expired at `now`) ordered per burn order. */
-  private openGrantsSql(walletId: string, order: 'expiry' | 'priority' | 'fifo', now?: Date): Sql {
-    const orderBy =
-      order === 'priority'
-        ? sql`g."priority" ASC, g."createdAt" ASC, g."id" ASC`
-        : order === 'fifo'
-          ? sql`g."createdAt" ASC, g."id" ASC`
-          : sql`g."expiresAt" ASC NULLS LAST, g."createdAt" ASC, g."id" ASC`
-    return sql`
-      SELECT g.*, ${GRANT_REMAINING_JOINED_SQL}::bigint AS "remaining"
-      FROM "ai_wallet_entries" g ${GRANT_REMAINING_JOIN_SQL}
-      WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
-        AND g."effectiveAt" <= ${clockSql(now)} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${clockSql(now)})
-        AND ${GRANT_REMAINING_JOINED_SQL} > 0
-      ORDER BY ${orderBy}
-    `
   }
 
   /** Return the existing entry on a matching replay, throw the conflict, or `undefined` when new. */

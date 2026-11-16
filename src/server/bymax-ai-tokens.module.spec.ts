@@ -9,6 +9,7 @@ import {
 import type { AiTokensEvent, AiTokensErrorResponse } from '../shared'
 import { AiTokensException as AiTokensExceptionClass } from './errors'
 import type { AiTokensException } from './errors'
+import { makeFullStore } from '../../test/fakes/full-store'
 import { InMemoryLedgerStore } from '../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../test/fakes/in-memory-pricing-store'
 import {
@@ -157,6 +158,71 @@ describe('BymaxAiTokensModule', () => {
       imports: [BymaxAiTokensModule.forRoot({ store: makeStore(), pricing: { seedFromSnapshot: false } })],
     }).compile()
     expect(moduleRef.get(HoldReaper)).toBeInstanceOf(HoldReaper)
+  })
+
+  /**
+   * The reaper the module builds sweeps orphan debits with the module's own metering and the wall clock: a keyed hold whose
+   * append failed keeps its debit, and once the grace has passed the tick gives it back.
+   */
+  it('wires the orphan-debit sweep into the hold reaper with the wall clock and the metering refund', async () => {
+    const store = makeFullStore(true)
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRoot({
+          store,
+          wallets: {},
+          pricing: { seedFromSnapshot: false },
+          holds: { ttlSeconds: 60, reaperIntervalSeconds: 3_600 },
+        }),
+      ],
+    }).compile()
+    const wallet = { tenantId: 't1', ownerType: 'user', ownerId: 'u1' } as const
+    await moduleRef
+      .get(PricingService)
+      .upsertPrice({
+        provider: 'openai',
+        model: 'gpt-5',
+        operation: 'chat',
+        inputNanoUsdPerMillion: 1_250_000_000n,
+        outputNanoUsdPerMillion: 10_000_000_000n,
+        effectiveFrom: new Date(0),
+      })
+    await moduleRef
+      .get(WalletService)
+      .grant(wallet, { amountNanoUsd: 10_000_000_000n, idempotencyKey: 'g', reason: 'seed' })
+    jest.spyOn(store, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await expect(
+      moduleRef
+        .get(MeteringService)
+        .hold(
+          {
+            tenantId: 't1',
+            scope: { type: 'user', id: 'u1' },
+            feature: 'f',
+            idempotencyKey: 'orphan',
+          },
+          {
+            provider: 'openai',
+            model: 'gpt-5',
+            operation: 'chat',
+            inputTokens: 1000,
+            maxOutputTokens: 500,
+          },
+        ),
+    ).rejects.toThrow('connection reset')
+    expect((await moduleRef.get(WalletService).getBalance(wallet)).nanoUsd < 10_000_000_000n).toBe(
+      true,
+    )
+    jest.useFakeTimers({
+      now: Date.now() + 400_000,
+      doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'],
+    })
+    try {
+      await moduleRef.get(HoldReaper).sweep()
+    } finally {
+      jest.useRealTimers()
+    }
+    expect((await moduleRef.get(WalletService).getBalance(wallet)).nanoUsd).toBe(10_000_000_000n)
   })
 
   /**

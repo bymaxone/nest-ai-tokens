@@ -21,6 +21,7 @@ import type { OwedEffects } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
 import type { MeteringService } from '../services/metering.service'
 import type { BudgetReferenceSweeper } from './budget-reference-sweeper'
+import type { OrphanDebitSweeper } from './orphan-debit-sweeper'
 
 /** The maximum number of expired holds reclaimed per sweep. */
 const REAP_BATCH_SIZE = 100
@@ -35,6 +36,8 @@ const SCAN_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.scan_failed'
 const SETTLEMENT_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.settlement_sweep_failed'
 /** Stable log key, written once at boot, for a store that keeps no effects-owed marker. */
 const SETTLEMENT_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.settlement_sweep_inactive'
+/** Stable log key, written once at boot, for a wallet store that cannot list debits across wallets. */
+const ORPHAN_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.orphan_debit_sweep_inactive'
 /** The grace used when the options carry no settlement section. */
 const DEFAULT_GRACE_SECONDS = 300
 /** Stable log key for any other rejection out of a timer-driven sweep. */
@@ -72,6 +75,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
    * @param options The resolved options carrying the hold TTL + sweep interval.
    * @param now The injected clock (testability).
    * @param references The sweep of budget references an attempt left behind, when budgets are enabled.
+   * @param orphans The sweep of wallet debits no row stands behind, when wallets are enabled.
    */
   constructor(
     private readonly ledger: LedgerService,
@@ -79,11 +83,13 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     private readonly options: HoldReaperOptions,
     private readonly now: () => Date = (): Date => new Date(),
     private readonly references?: BudgetReferenceSweeper,
+    private readonly orphans?: OrphanDebitSweeper,
   ) {}
 
   /** Start the periodic sweep on module boot (interval `unref()`'d so it never blocks exit). */
   onApplicationBootstrap(): void {
     if (this.settlementEnabled() && !this.ledger.supportsOwedEffects()) this.logger.warn(`${SETTLEMENT_INACTIVE_LOG_KEY} the ledger store keeps no effects-owed marker`)
+    if (this.settlementEnabled() && this.orphans !== undefined && this.ledger.supportsOwedEffects() && !this.orphans.supported) this.logger.warn(`${ORPHAN_INACTIVE_LOG_KEY} the wallet store lists no debits across wallets`)
     const intervalMs = this.options.holds.reaperIntervalSeconds * MS_PER_SECOND
     this.timer = setInterval(() => {
       void this.sweep().catch((error: unknown) => {
@@ -130,6 +136,12 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     }
     await this.settleOwed()
     await this.sweepReferences()
+    await this.sweepOrphans()
+  }
+
+  /** Give the wallet debits no row stands behind their verdict, when the sweep is on and the stores can list them. */
+  private async sweepOrphans(): Promise<void> {
+    if (this.settlementEnabled()) await this.orphans?.sweep()
   }
 
   /** Give the references an attempt left behind their verdict, when the sweep is on and the store can list them. */

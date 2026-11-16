@@ -12,6 +12,7 @@ import type { UsageRecord } from '../../shared'
 import type { LedgerService } from './ledger.service'
 import type { MeteringEffects } from './metering-effects'
 import type { OwedEffects } from '../interfaces'
+import { ORPHAN_DEBIT_REASON } from '../utils/orphan-claim'
 
 /** The reason stated on the effects and events a sweep produces. */
 const recoveredReason = (): string => 'effects recovered by the settlement sweep'
@@ -40,6 +41,7 @@ export interface OwedEffectsDeps {
 export async function settleOwed(deps: OwedEffectsDeps, owed: OwedEffects): Promise<void> {
   const { record } = owed
   if (record.reversesRecordId !== undefined) await settleReversal(deps, record, record.reversesRecordId, owed.reason ?? recoveredReason())
+  else if (record.status === 'released' && owed.reason === ORPHAN_DEBIT_REASON) await deps.effects.restoreOrphanDebit(record)
   else if (record.status === 'released') {
     await deps.effects.restoreHold(record)
     await deps.events.holdReleased(record, recoveredReason(), false)

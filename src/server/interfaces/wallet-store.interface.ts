@@ -16,6 +16,32 @@ export interface WalletEntryPage {
   total: number
 }
 
+/** A debit with the wallet it was written to. */
+export interface WalletDebit {
+  ref: WalletRef
+  entry: WalletEntry
+}
+
+/** Where a page of {@link IWalletStore.findDebitsBefore} stops: the last debit it returned. */
+export interface WalletDebitCursor {
+  createdAt: Date
+  id: string
+}
+
+/** A page of {@link IWalletStore.findDebitsBefore}. */
+export interface WalletDebitQuery {
+  /** Only debits whose idempotency key starts with one of these. */
+  keyPrefixes: string[]
+  /** Only debits created strictly before this instant. */
+  olderThan: Date
+  /** Only debits created at or after this instant, when given. */
+  newerThan?: Date
+  /** The most debits to return. */
+  limit: number
+  /** Continue after this debit of the same ordering; the first page when absent. */
+  after?: WalletDebitCursor
+}
+
 /** Filter for {@link IWalletStore.listEntries}. */
 export interface WalletEntryFilter {
   from?: Date
@@ -56,6 +82,12 @@ export interface IWalletStore {
   openGrants(ref: WalletRef, order: 'expiry' | 'priority' | 'fifo', now?: Date): Promise<OpenGrant[]>
   /** A page of entries for a ref. */
   listEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage>
+  /**
+   * Optional. Debits of any wallet of any tenant whose key starts with one of the prefixes, created inside the bounds, ordered
+   * by `(createdAt, id)` ascending and paged by `after`, each with the wallet it belongs to. A store without it leaves the sweep
+   * of debits that no ledger row stands behind inactive.
+   */
+  findDebitsBefore?(query: WalletDebitQuery): Promise<WalletDebit[]>
   /** Credit due grants and expire lapsed ones as a debit does, then recompute the materialized balance from Σ entries. */
   reconcile(ref: WalletRef, now?: Date): Promise<Wallet>
 }

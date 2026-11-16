@@ -20,14 +20,14 @@ function row(over: Partial<UsageRecord> = {}): UsageRecord {
 interface Mocks {
   deps: OwedEffectsDeps
   ledger: { findById: jest.Mock; transition: jest.Mock; findEffectsOwedFor: jest.Mock; clearEffectsOwed: jest.Mock }
-  effects: { settleCapture: jest.Mock; restoreHold: jest.Mock; reverseEffects: jest.Mock }
+  effects: { settleCapture: jest.Mock; restoreHold: jest.Mock; restoreOrphanDebit: jest.Mock; reverseEffects: jest.Mock }
   events: { usageRecorded: jest.Mock; holdReleased: jest.Mock; usageReversed: jest.Mock }
 }
 
 /** Build the mocks; `original` is what the lookup of a reversal's original returns. */
 function deps(original: UsageRecord | null = null): Mocks {
   const ledger = { findById: jest.fn(() => Promise.resolve(original)), transition: jest.fn(() => Promise.resolve(null)), findEffectsOwedFor: jest.fn(() => Promise.resolve(null)), clearEffectsOwed: jest.fn(() => Promise.resolve(true)) }
-  const effects = { settleCapture: jest.fn(() => Promise.resolve()), restoreHold: jest.fn(() => Promise.resolve()), reverseEffects: jest.fn(() => Promise.resolve()) }
+  const effects = { settleCapture: jest.fn(() => Promise.resolve()), restoreHold: jest.fn(() => Promise.resolve()), restoreOrphanDebit: jest.fn(() => Promise.resolve()), reverseEffects: jest.fn(() => Promise.resolve()) }
   const events = { usageRecorded: jest.fn(() => Promise.resolve()), holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()) }
   return { deps: { ledger, effects, events } as unknown as OwedEffectsDeps, ledger, effects, events }
 }
@@ -70,6 +70,24 @@ describe('settleOwed', () => {
   })
 
   /** A reversal whose original is still posted is annotated, refunded, announced and cleared. */
+  /** A claim row gives back the wallet debit alone, and the release event is not emitted: no hold ever existed. */
+  it('gives back the debit of a claim row and nothing else', async () => {
+    const d = deps()
+    await settleOwed(d.deps, { record: row({ status: 'released' }), reason: 'orphan-debit' })
+    expect(d.effects.restoreOrphanDebit).toHaveBeenCalledTimes(1)
+    expect(d.effects.restoreHold).not.toHaveBeenCalled()
+    expect(d.events.holdReleased).not.toHaveBeenCalled()
+    expect(d.ledger.clearEffectsOwed).toHaveBeenCalledWith('r1')
+  })
+
+  /** The reason alone does not select the refund: a settled row that carries it is still settled as a capture. */
+  it('settles a posted row as a capture whatever reason its marker carries', async () => {
+    const d = deps()
+    await settleOwed(d.deps, { record: row(), reason: 'orphan-debit' })
+    expect(d.effects.restoreOrphanDebit).not.toHaveBeenCalled()
+    expect(d.effects.settleCapture).toHaveBeenCalledTimes(1)
+  })
+
   it('finishes the annotation of a posted original, then the effects', async () => {
     const original = row({ id: 'orig', status: 'posted' })
     const d = deps(original)

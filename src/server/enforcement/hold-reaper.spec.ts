@@ -409,4 +409,55 @@ describe('HoldReaper', () => {
       await expect(build().reaper().sweep()).resolves.toBeUndefined()
     })
   })
+
+  /** The orphan-debit sweep is the last step of the tick, switched off with the rest of the settlement sweep. */
+  describe('the orphan-debit sweep', () => {
+    function withOrphans(
+      enabled: boolean,
+      supported = true,
+    ): { sweep: jest.Mock; boot: () => void; run: () => Promise<void> } {
+      const built = build()
+      const sweep = jest.fn().mockResolvedValue(undefined)
+      built.options.settlement = { enabled, graceSeconds: 300, retentionSeconds: 604_800 }
+      const reaper = new HoldReaper(
+        built.ledger,
+        built.service,
+        built.options,
+        built.now,
+        undefined,
+        { sweep, supported } as never,
+      )
+      return {
+        sweep,
+        boot: (): void => reaper.onApplicationBootstrap(),
+        run: (): Promise<void> => reaper.sweep(),
+      }
+    }
+
+    it('runs once per tick when the settlement sweep is enabled, and not when it is disabled', async () => {
+      const on = withOrphans(true)
+      await on.run()
+      await on.run()
+      expect(on.sweep).toHaveBeenCalledTimes(2)
+      const off = withOrphans(false)
+      await off.run()
+      expect(off.sweep).not.toHaveBeenCalled()
+    })
+
+    it('says once at boot that the sweep is inactive for a wallet store that cannot list debits, and nothing when it can', () => {
+      jest.useFakeTimers()
+      const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const lines = (): string[] => log.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('orphan_debit_sweep_inactive'))
+      try {
+        withOrphans(true, true).boot()
+        expect(lines()).toEqual([])
+        withOrphans(true, false).boot()
+        expect(lines()).toEqual(['ai_tokens.hold_reaper.orphan_debit_sweep_inactive the wallet store lists no debits across wallets'])
+      } finally {
+        jest.clearAllTimers()
+        jest.useRealTimers()
+        log.mockRestore()
+      }
+    })
+  })
 })

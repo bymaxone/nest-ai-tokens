@@ -866,10 +866,29 @@ protects anything: applications given back, and applications whose row ended and
 `settlement.retentionSeconds`. A pending hold's reference is never deleted. A store without the optional
 `findStaleReferences`, `pruneApplication` and `pruneGivenBack` calls leaves that part inactive.
 
+The reaper also gives back **orphan wallet debits**. A keyed `hold()` or enforced `record()` whose ledger append failed keeps
+its wallet debit so that a retry replays it; a call that is never retried leaves the debit with no ledger row. A tick lists
+the debits whose key belongs to a hold or a record, older than `settlement.graceSeconds` and younger than
+`settlement.retentionSeconds`, looks at the row under each key, and for a key with none appends a released claim row that owes
+the refund, then refunds the wallet once. The claim row carries the wallet's tenant and the fixed value `orphan-claim` as its
+provider, model and feature, is never counted by a usage report, a cost summary or a budget, and refuses a later call on the
+same key with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. The budget half of such a call is the budget-reference sweep's. A wallet store
+without the optional `findDebitsBefore` leaves this part inactive, and the reaper says so once at boot.
+
+The Prisma store's listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, a bounded number of pages per reaper tick. No shipped index leads with `createdAt`, so on a large table each page is a scan of the whole table. A
+host with a large wallet table should add this partial index, created with `CONCURRENTLY` so that it does not block wallet
+writes, which means outside a transaction and so outside a migration tool that wraps its files in one. The listing is correct
+without the index and slower on a large installation:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ai_wallet_entries_debit_createdAt_idx" ON "ai_wallet_entries" ("createdAt", "id" COLLATE "C") WHERE "type" = 'debit';
+```
+
 Limits you can rely on:
 
-- The grace is a performance knob, not a correctness bound. A sweep that reaches a row while the inline path is still
-  running its effects only repeats keyed legs that move nothing.
+- For the owed effects and the budget references, the grace is a performance knob, not a correctness bound: a sweep that
+  reaches a row while the inline path is still running its effects only repeats keyed legs that move nothing. The give-back of
+  orphan debits is the exception, below.
 - The effects are exact for the wallet and the budget and at-least-once for events and spans.
 - While one step of a call is stuck for longer than the grace (a wallet debit or an append that does not return), the
   sweep gives its movement back and the window does not count the call, so another call can be admitted under the limit
@@ -887,6 +906,12 @@ Limits you can rely on:
   retry of that row's release or reversal needs them to give nothing back twice; the deletion resumes when the marker clears. A marker
   that never clears pauses this deletion for every record until it is settled, and the tick says so in
   one line, `given-back pruning skipped: an owed marker is older than the retention`, so the tables do not grow unseen.
+- For `record({ enforce: true })` and `hold()` with a key, the grace is a correctness bound: it must exceed the longest wallet
+  debit or ledger append of a call. A call whose append lands after the sweep claimed its key is refused with the idempotency
+  conflict, and the reaper logs `ai_tokens.orphan_claim.late_append claim=<row id>`; the debit was already given back. No
+  multiplier is applied to the grace.
+- A wallet debit older than `settlement.retentionSeconds` with no ledger row is outside what the sweep repairs, like a stuck
+  step older than the retention.
 - A step of a call that stays stuck for longer than the grace plus the retention is outside what the sweep repairs: its
   movement was given back and its record deleted, so its commit finds no record, counts nothing, and a later
   `reconcileWindow` counts the call from its ledger row. Keep the retention longer than any call can run.

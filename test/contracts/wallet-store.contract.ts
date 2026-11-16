@@ -366,5 +366,70 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       const reconciled = await store.reconcile(ref)
       expect(reconciled.balanceNanoUsd).toBe(70n)
     })
+
+    /*
+     * Invariant: the cross-wallet listing of debits names every debit whose key starts with one of the prefixes, in every
+     * wallet of every tenant, with the wallet it belongs to, and nothing else: a credit, a refund and a debit under another
+     * key are left out. It is the sweep's only way to find a debit no ledger row stands behind.
+     */
+    it('lists the debits of every wallet whose key has one of the prefixes, with their wallets', async () => {
+      const { store, now } = await make()
+      const other: WalletRef = { tenantId: 'wallet-contract', ownerType: 'user', ownerId: 'u2' }
+      const foreign: WalletRef = { tenantId: 'wallet-contract-2', ownerType: 'user', ownerId: 'u1' }
+      for (const wallet of [ref, other, foreign]) await store.appendEntry(wallet, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 1_000n }))
+      await store.conditionalDebit(ref, debitEntry(10n, { idempotencyKey: 'hold:call-1' }), 0n)
+      await store.conditionalDebit(other, debitEntry(20n, { idempotencyKey: 'record:call-2' }), 0n)
+      await store.conditionalDebit(foreign, debitEntry(30n, { idempotencyKey: 'hold:call-3' }), 0n)
+      await store.conditionalDebit(ref, debitEntry(40n, { idempotencyKey: 'capture:call-4' }), 0n)
+      await store.appendEntry(ref, { ...grantEntry({ idempotencyKey: 'record:not-a-debit', amountNanoUsd: 5n }), type: 'refund' })
+      const future = new Date((await now()).getTime() + 3_600_000)
+      const listed = await store.findDebitsBefore!({ keyPrefixes: ['hold:', 'record:'], olderThan: future, limit: 50 })
+      expect(listed.map(({ ref: wallet, entry }) => [wallet.tenantId, wallet.ownerId, entry.idempotencyKey, entry.amountNanoUsd]).sort()).toEqual([
+        ['wallet-contract', 'u1', 'hold:call-1', -10n],
+        ['wallet-contract', 'u2', 'record:call-2', -20n],
+        ['wallet-contract-2', 'u1', 'hold:call-3', -30n],
+      ])
+      expect(listed.every(({ entry }) => entry.type === 'debit')).toBe(true)
+      expect((await store.findDebitsBefore!({ keyPrefixes: ['hold:'], olderThan: future, limit: 50 })).map(({ entry }) => entry.idempotencyKey).sort()).toEqual(['hold:call-1', 'hold:call-3'])
+      expect(await store.findDebitsBefore!({ keyPrefixes: [], olderThan: future, limit: 50 })).toEqual([])
+    })
+
+    /** The listing is bounded by the instants, strictly below the upper one and from the lower one on, on the store's own clock. */
+    it('lists only the debits created inside the bounds', async () => {
+      const c = await make()
+      await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 1_000n }))
+      await c.store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: 'hold:early' }), 0n)
+      await c.advance(50)
+      const between = await c.now()
+      await c.advance(50)
+      await c.store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: 'hold:late' }), 0n)
+      const future = new Date((await c.now()).getTime() + 3_600_000)
+      const keys = async (query: { olderThan: Date; newerThan?: Date }): Promise<string[]> =>
+        (await c.store.findDebitsBefore!({ keyPrefixes: ['hold:'], limit: 50, ...query })).map(({ entry }) => entry.idempotencyKey)
+      expect(await keys({ olderThan: between })).toEqual(['hold:early'])
+      expect(await keys({ olderThan: future, newerThan: between })).toEqual(['hold:late'])
+      expect((await keys({ olderThan: future })).sort()).toEqual(['hold:early', 'hold:late'])
+      expect(await keys({ olderThan: new Date(0) })).toEqual([])
+    })
+
+    /** Pages follow one total order and every debit appears once whatever the page size, which is what the sweep's cursor relies on. */
+    it.each([1, 2, 5])('pages the debits in order, every one once, with a page of %i', async (limit) => {
+      const { store, now } = await make()
+      await store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 10_000n }))
+      for (const key of ['hold:c', 'record:a', 'hold:b', 'record:e', 'hold:d']) await store.conditionalDebit(ref, debitEntry(1n, { idempotencyKey: key }), 0n)
+      const future = new Date((await now()).getTime() + 3_600_000)
+      const seen: string[] = []
+      let after: { createdAt: Date; id: string } | undefined
+      for (let round = 0; round < 10; round++) {
+        const page = await store.findDebitsBefore!({ keyPrefixes: ['hold:', 'record:'], olderThan: future, limit, ...(after === undefined ? {} : { after }) })
+        if (page.length === 0) break
+        expect(page.length).toBeLessThanOrEqual(limit)
+        seen.push(...page.map(({ entry }) => entry.idempotencyKey))
+        const last = page[page.length - 1]!.entry
+        after = { createdAt: last.createdAt, id: last.id }
+      }
+      expect([...seen].sort()).toEqual(['hold:b', 'hold:c', 'hold:d', 'record:a', 'record:e'])
+      expect(new Set(seen).size).toBe(5)
+    })
   })
 }
