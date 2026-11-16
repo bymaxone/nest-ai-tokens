@@ -58,5 +58,22 @@ export function isOrphanClaim(row: Pick<UsageRecord, 'provider' | 'feature'>): b
 export function lateAppend(logger: Logger, claim: UsageRecord): AiTokensException {
   logger.warn(`${LATE_APPEND_LOG_KEY} claim=${claim.id}`)
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-  return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: claim.tenantId, idempotencyKey: claim.idempotencyKey })
+  return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
+    tenantId: claim.tenantId,
+    idempotencyKey: claim.idempotencyKey,
+  })
+}
+
+/**
+ * Whether a row can share the wallet debit of a call of one kind. A claim stands for the single debit its `requestId` names,
+ * and a hold and a record on one key debit under different keys, so a claim shares only the debit of its own kind.
+ *
+ * @param row The row found under the key.
+ * @param kind The debit key prefix of the call that is asking.
+ */
+export function claimShares(
+  row: Pick<UsageRecord, 'provider' | 'feature' | 'requestId'>,
+  kind: (typeof DEBIT_PREFIXES)[number],
+): boolean {
+  return isOrphanClaim(row) && row.requestId?.startsWith(kind) === true
 }

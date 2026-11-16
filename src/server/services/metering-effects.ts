@@ -11,7 +11,7 @@
  * @layer server
  */
 
-import { isOrphanClaim, rollbackOfDebit } from '../utils/orphan-claim'
+import { claimShares, isOrphanClaim, rollbackOfDebit } from '../utils/orphan-claim'
 import { randomUUID } from 'node:crypto'
 import { Logger } from '@nestjs/common'
 import type { MeteringScope, UsageRecord, WalletRef } from '../../shared'
@@ -161,7 +161,8 @@ export class MeteringEffects {
    */
   sharesHoldDebit(row: UsageRecord, scope: MeteringScope): boolean {
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
-    return row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    const shared = row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
+    return shared && (!isOrphanClaim(row) || claimShares(row, 'hold:'))
   }
 
   /**
@@ -320,7 +321,7 @@ export class MeteringEffects {
    * @param scope The payer of the attempt that is asking.
    */
   sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
-    const record = row.status === 'posted' || row.status === 'reversed' || isOrphanClaim(row)
+    const record = row.status === 'posted' || row.status === 'reversed' || claimShares(row, 'record:')
     // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }

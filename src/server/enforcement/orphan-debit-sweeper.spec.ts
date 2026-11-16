@@ -13,7 +13,8 @@ import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { applyDefaults } from '../config'
-import type { HoldEstimate, MeteringContext } from '../interfaces'
+import type { ResolvedAiTokensOptions } from '../config'
+import type { HoldEstimate, ILedgerStore, MeteringContext } from '../interfaces'
 import { LedgerService } from '../services/ledger.service'
 import { MarkupResolver } from '../services/markup.resolver'
 import { MeteringService } from '../services/metering.service'
@@ -79,35 +80,8 @@ interface Rig {
   now: () => Date
 }
 
-async function rig(): Promise<Rig> {
-  const { now, advance } = clock()
-  const ledgerStore = new InMemoryLedgerStore(now)
-  const pricingStore = new InMemoryPricingStore()
-  const walletStore = new InMemoryWalletStore({ now })
-  const options = applyDefaults({
-    store: makeFullStore(),
-    markup: 1,
-    pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
-    holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 },
-    wallets: { creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
-    settlement: { graceSeconds: GRACE },
-  })
-  const { wallets: walletOptions } = options
-  if (!walletOptions.enabled) throw new Error('the fixture enables wallets')
-  const ledger = new LedgerService(ledgerStore, options)
-  const wallets = new WalletService(walletStore, walletOptions)
-  const instance = (): MeteringService =>
-    new MeteringService(
-      ledger,
-      new PricingService(options, pricingStore),
-      new MarkupResolver(options),
-      options,
-      undefined,
-      wallets,
-      undefined,
-      now,
-    )
-  const metering = instance()
+/** The price and the grants every rig starts from. */
+async function seedRig(pricingStore: InMemoryPricingStore, wallets: WalletService): Promise<void> {
   await pricingStore.upsertPrice({
     provider: 'openai',
     model: 'gpt-5',
@@ -123,6 +97,52 @@ async function rig(): Promise<Rig> {
       idempotencyKey: `grant-${ref.tenantId}`,
       reason: 'seed',
     })
+}
+
+/** The resolved options of the rig: wallets on, the settlement grace of the spec. */
+function rigOptions(): ResolvedAiTokensOptions {
+  return applyDefaults({
+    store: makeFullStore(),
+    markup: 1,
+    pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
+    holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 },
+    wallets: { creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
+    settlement: { graceSeconds: GRACE },
+  })
+}
+
+/** A ledger store that keeps no effects-owed marker: the three optional calls are absent. */
+function withoutMarker(store: InMemoryLedgerStore): ILedgerStore {
+  const absent = { value: undefined }
+  return Object.create(store, {
+    findEffectsOwed: absent,
+    findEffectsOwedFor: absent,
+    clearEffectsOwed: absent,
+  }) as ILedgerStore
+}
+
+async function rig(markerless = false): Promise<Rig> {
+  const { now, advance } = clock()
+  const ledgerStore = new InMemoryLedgerStore(now)
+  const pricingStore = new InMemoryPricingStore()
+  const walletStore = new InMemoryWalletStore({ now })
+  const options = rigOptions()
+  if (!options.wallets.enabled) throw new Error('the fixture enables wallets')
+  const ledger = new LedgerService(markerless ? withoutMarker(ledgerStore) : ledgerStore, options)
+  const wallets = new WalletService(walletStore, options.wallets)
+  const instance = (): MeteringService =>
+    new MeteringService(
+      ledger,
+      new PricingService(options, pricingStore),
+      new MarkupResolver(options),
+      options,
+      undefined,
+      wallets,
+      undefined,
+      now,
+    )
+  const metering = instance()
+  await seedRig(pricingStore, wallets)
   const settings = {
     graceSeconds: options.settlement.graceSeconds,
     retentionSeconds: options.settlement.retentionSeconds,
@@ -210,11 +230,27 @@ describe('OrphanDebitSweeper', () => {
     const claim = await r.ledgerStore.findByIdempotencyKey('tenant-1', 'k1')
     expect(claim?.status).toBe('released')
     expect(claim).toMatchObject({
-      tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, provider: 'orphan-claim', model: 'orphan-claim', feature: 'orphan-claim', operation: 'chat',
-      tags: [], currency: 'USD', priceMissing: false, isSystemCost: false, enforced: true, requestId: 'hold:k1', totalTokens: 0, rawCostNanoUsd: 0n,
+      tenantId: 'tenant-1',
+      scope: { type: 'user', id: 'u1' },
+      provider: 'orphan-claim',
+      model: 'orphan-claim',
+      feature: 'orphan-claim',
+      operation: 'chat',
+      tags: [],
+      currency: 'USD',
+      priceMissing: false,
+      isSystemCost: false,
+      enforced: true,
+      requestId: 'hold:k1',
+      totalTokens: 0,
+      rawCostNanoUsd: 0n,
     })
     expect(claim?.billedCostNanoUsd).toBe(debited)
-    expect((await r.walletStore.listEntries(PAYER, { type: 'refund' })).entries.map((entry) => entry.idempotencyKey)).toEqual(['hold-rollback:k1'])
+    expect(
+      (await r.walletStore.listEntries(PAYER, { type: 'refund' })).entries.map(
+        (entry) => entry.idempotencyKey,
+      ),
+    ).toEqual(['hold-rollback:k1'])
     expect(await conflictOf(r.metering.hold(context({ idempotencyKey: 'k1' }), ESTIMATE))).toBe(
       true,
     )
@@ -297,6 +333,47 @@ describe('OrphanDebitSweeper', () => {
     expect(warned()).toEqual([`ai_tokens.orphan_claim.late_append claim=${claim?.id ?? ''}`])
     expect(await balance(r)).toBe(GRANT)
     expect(await refunds(r)).toBe(1)
+  })
+
+  /**
+   * Invariant: a claim stands only for the debit it names. A hold and a record that share one key debit under different wallet
+   * keys, so a late call of the other kind finds a claim that does not share its debit and refunds its own.
+   */
+  it('refunds the own debit of a late record whose key claimed an orphan hold', async () => {
+    const r = await rig()
+    await orphanHold(r, 'mix-1')
+    r.advance(GRACE + 1)
+    await r.sweeper.sweep()
+    jest.spyOn(r.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    expect(
+      await conflictOf(
+        r.other.record({
+          usage: USAGE,
+          context: context({ enforce: true, idempotencyKey: 'mix-1' }),
+        }),
+      ),
+    ).toBe(true)
+    expect(await balance(r)).toBe(GRANT)
+    expect(await refunds(r)).toBe(2)
+  })
+
+  it('refunds the own debit of a late hold whose key claimed an orphan record', async () => {
+    const r = await rig()
+    jest.spyOn(r.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await expect(
+      r.metering.record({
+        usage: USAGE,
+        context: context({ enforce: true, idempotencyKey: 'mix-2' }),
+      }),
+    ).rejects.toThrow('connection reset')
+    r.advance(GRACE + 1)
+    await r.sweeper.sweep()
+    jest.spyOn(r.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    expect(await conflictOf(r.other.hold(context({ idempotencyKey: 'mix-2' }), ESTIMATE))).toBe(
+      true,
+    )
+    expect(await balance(r)).toBe(GRANT)
+    expect(await refunds(r)).toBe(2)
   })
 
   /** Invariant: two sweeps at once claim the key once and refund once, whichever instance runs them. */
@@ -519,8 +596,8 @@ describe('OrphanDebitSweeper', () => {
     expect(warned()).toEqual([])
   })
 
-  /** A store without the listing, or a ledger without the marker, leaves the sweep inactive. */
-  it('does nothing for a wallet store without the listing or a ledger without the marker', async () => {
+  /** A wallet store without the listing leaves the sweep inactive, and it gives nothing back. */
+  it('does nothing for a wallet store without the listing', async () => {
     const r = await rig()
     await orphanHold(r, 'k7')
     r.advance(GRACE + 1)
@@ -538,5 +615,18 @@ describe('OrphanDebitSweeper', () => {
     await noListing.sweep()
     expect(await refunds(r)).toBe(0)
     expect(r.sweeper.supported).toBe(true)
+  })
+
+  /** A ledger without the effects-owed marker leaves the sweep inactive even when the listing is there: a claim could not owe its refund. */
+  it('does nothing for a ledger without the marker', async () => {
+    const r = await rig(true)
+    await orphanHold(r, 'k11')
+    r.advance(GRACE + 1)
+    expect(r.sweeper.supported).toBe(false)
+    const append = jest.spyOn(r.ledgerStore, 'append')
+    append.mockClear()
+    await r.sweeper.sweep()
+    expect(append).not.toHaveBeenCalled()
+    expect(await refunds(r)).toBe(0)
   })
 })

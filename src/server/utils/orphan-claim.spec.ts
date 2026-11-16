@@ -4,7 +4,15 @@
  * @layer server
  */
 
-import { DEBIT_PREFIXES, ORPHAN_CLAIM, ORPHAN_DEBIT_REASON, isOrphanClaim, ledgerKeyOfDebit, rollbackOfDebit } from './orphan-claim'
+import {
+  DEBIT_PREFIXES,
+  ORPHAN_CLAIM,
+  ORPHAN_DEBIT_REASON,
+  claimShares,
+  isOrphanClaim,
+  ledgerKeyOfDebit,
+  rollbackOfDebit,
+} from './orphan-claim'
 
 describe('the claim helpers', () => {
   /** The fixed values are part of what an operator greps for and what the owed sweep dispatches on. */
@@ -36,5 +44,22 @@ describe('the claim helpers', () => {
     expect(isOrphanClaim({ provider: 'orphan-claim', feature: 'orphan-claim' })).toBe(true)
     expect(isOrphanClaim({ provider: 'orphan-claim', feature: 'chat' })).toBe(false)
     expect(isOrphanClaim({ provider: 'openai', feature: 'orphan-claim' })).toBe(false)
+  })
+
+  /** A claim shares only the debit of its own kind: the key prefix of the debit it names decides. */
+  it('shares the debit of its own kind only', () => {
+    const claim = (requestId?: string): Parameters<typeof claimShares>[0] => ({
+      provider: 'orphan-claim',
+      feature: 'orphan-claim',
+      ...(requestId === undefined ? {} : { requestId }),
+    })
+    expect(claimShares(claim('hold:k'), 'hold:')).toBe(true)
+    expect(claimShares(claim('hold:k'), 'record:')).toBe(false)
+    expect(claimShares(claim('record:k'), 'record:')).toBe(true)
+    expect(claimShares(claim('record:k'), 'hold:')).toBe(false)
+    expect(claimShares(claim(), 'hold:')).toBe(false)
+    expect(claimShares({ provider: 'openai', feature: 'chat', requestId: 'hold:k' }, 'hold:')).toBe(
+      false,
+    )
   })
 })
