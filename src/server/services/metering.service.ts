@@ -244,6 +244,7 @@ export class MeteringService {
     if (key !== undefined) {
       const request = this.requestRecord(buildAppendInput({ normalized, context, serviceTier, occurredAt, rating: unratedFor(normalized, basis), markup: NEUTRAL_MARKUP, ratedUnits, enforced: enforcing }), key)
       const stored = await this.ledger.findByIdempotencyKey(context.tenantId, key)
+      if (stored !== null && isOrphanClaim(stored)) throw lateAppend(this.logger, stored)
       if (stored !== null) return { record: replayOf(stored, request, basis), replayed: true }
     }
 

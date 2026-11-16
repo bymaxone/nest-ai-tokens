@@ -875,6 +875,16 @@ provider, model and feature, is never counted by a usage report, a cost summary 
 same key with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. The budget half of such a call is the budget-reference sweep's. A wallet store
 without the optional `findDebitsBefore` leaves this part inactive, and the reaper says so once at boot.
 
+The Prisma store's listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, a page at a time, at most five
+pages per reaper tick. No shipped index leads with `createdAt`, so on a large table each page is a scan of the whole table. A
+host with a large wallet table should add this partial index, created with `CONCURRENTLY` so that it does not block wallet
+writes, which means outside a transaction and so outside a migration tool that wraps its files in one. The listing is correct
+without the index and slower on a large installation:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ai_wallet_entries_debit_createdAt_idx" ON "ai_wallet_entries" ("createdAt", "id" COLLATE "C") WHERE "type" = 'debit';
+```
+
 Limits you can rely on:
 
 - The grace is a performance knob, not a correctness bound. A sweep that reaches a row while the inline path is still
