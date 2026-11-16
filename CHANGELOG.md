@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-11-16
+
 **Apply:** no migration. A wallet debit that no ledger row stands behind is now given back by the reaper. A keyed `hold()` or
 enforced `record()` whose ledger append failed keeps its wallet debit for a retry to replay; one that is never retried used to
 leave the debit for good. The reaper now finds such debits once they are older than `settlement.graceSeconds` and younger than
@@ -23,6 +25,12 @@ boot. The Prisma store implements it with no schema change. Its listing reads `a
 index serves, so an installation with a large wallet table should add the partial index the README gives. Create it
 `CONCURRENTLY`, outside a transaction, so that it does not block wallet writes. The sweep is correct without it and slower.
 The statement is `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ai_wallet_entries_debit_createdAt_idx" ON "ai_wallet_entries" ("createdAt", "id" COLLATE "C") WHERE "type" = 'debit';`.
+
+Do not use the same idempotency key for a `hold()` and a `record()`. They debit the wallet under different keys, and when a call of one kind posts its row first, the sweep finds a row under the key and leaves the orphan debit of the other kind, because a posted row cannot be told apart from a captured hold that shares its debit.
+
+### Changed
+
+- The `server` bundle grows to 51159 bytes brotli with the give-back of orphan wallet debits (the sweeper, the claim and rollback-key helpers, the refund branch and the reaper step); its budget moves from 49790 to 51190. The `prisma` bundle grows to 15594 bytes with the cross-wallet debit listing; its budget moves from 15411 to 15624.
 
 ## [1.1.15] - 2026-11-14
 
@@ -1187,4 +1195,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.13]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.12...v1.1.13
 [1.1.14]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...v1.1.14
 [1.1.15]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...v1.1.15
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...HEAD
+[1.1.16]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...v1.1.16
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.16...HEAD

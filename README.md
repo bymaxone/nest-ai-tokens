@@ -900,6 +900,9 @@ Limits you can rely on:
 - A keyed `record()` row that won a race against a `hold()` on the same key is posted like a captured hold, and the sweep
   cannot tell them apart: it keeps the hold's reservation counted until its window rotates. It needs that race on one key,
   and the over-count fails closed.
+- Do not use the same idempotency key for a `hold()` and a `record()`. They debit the wallet under different keys, and when a
+  call of one kind posts its row first, the sweep finds a row under the key and leaves the orphan debit of the other kind,
+  for the same reason: a posted row cannot be told apart from a captured hold that shares its debit.
 - The record of a movement is deleted after the retention. A key is replayed from its ledger row, which holds the
   call, so a replay after the retention takes no budget movement.
 - While any row has owed its effects for longer than the retention, the records of given-back movements are kept, because a
