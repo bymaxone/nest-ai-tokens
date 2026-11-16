@@ -376,6 +376,42 @@ describe('OrphanDebitSweeper', () => {
     expect(await refunds(r)).toBe(2)
   })
 
+  /**
+   * Invariant: a keyed call that completes before the sweep keeps its one debit whatever the kind: the sweep finds the row,
+   * claims nothing, and the wallet is where a run that failed once and was retried would leave it.
+   */
+  it.each([
+    ['hold', 'hold:'],
+    ['record', 'record:'],
+  ])('leaves the one debit of a %s retried to completion before the sweep', async (kind) => {
+    const control = await rig()
+    const done =
+      kind === 'hold'
+        ? () => control.metering.hold(context({ idempotencyKey: 'done-1' }), ESTIMATE)
+        : () =>
+            control.metering.record({
+              usage: USAGE,
+              context: context({ enforce: true, idempotencyKey: 'done-1' }),
+            })
+    await done()
+    const expected = await balance(control)
+    const r = await rig()
+    const call = (service: MeteringService): Promise<unknown> =>
+      kind === 'hold'
+        ? service.hold(context({ idempotencyKey: 'done-1' }), ESTIMATE)
+        : service.record({
+            usage: USAGE,
+            context: context({ enforce: true, idempotencyKey: 'done-1' }),
+          })
+    jest.spyOn(r.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+    await expect(call(r.metering)).rejects.toThrow('connection reset')
+    await call(r.other)
+    r.advance(GRACE + 1)
+    await r.sweeper.sweep()
+    expect(await balance(r)).toBe(expected)
+    expect(await refunds(r)).toBe(0)
+  })
+
   /** Invariant: two sweeps at once claim the key once and refund once, whichever instance runs them. */
   it('refunds once when two sweeps run at the same time', async () => {
     const r = await rig()
