@@ -624,6 +624,13 @@ standard `cause`, never part of the body, and Nest's default exception filter do
 `HttpException`. Log `exception.cause` yourself from an exception filter for statuses of 500 and above,
 and keep it out of the response: it can name the host, a statement or a row.
 
+The `reason` of a refused option or input names what was refused and the bound it broke, and never repeats the value, so a string
+read from an environment variable cannot reach a response body or a log through it. Match on the option name in the reason, not on
+the value. A runtime error may carry, in its `details`, an identifier the caller already holds (`holdId`, `idempotencyKey`,
+`budgetId`, `tenantId`, `provider`, `model`, `operation`, `serviceTier`, `recordId`) so the caller can correlate it, but only when the value is a string of at most 256
+characters; otherwise the field is left out. A refusal at startup never carries a supplied value: `AI_TOKENS_FX_REQUIRED` has no
+`details`.
+
 ---
 
 ## 🔢 BigInt & JSON

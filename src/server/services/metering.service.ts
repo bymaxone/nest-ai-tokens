@@ -31,6 +31,7 @@ import type {
 import { computeCostNanoUsd } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, MeteringContext, OwedEffects } from '../interfaces'
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
@@ -659,7 +660,7 @@ export class MeteringService {
     const record = await this.ledger.findById(hold.id)
     if (record !== null && record.tenantId === caller.tenantId && sameScope(record.scope, caller.scope)) return record
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-    throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, { holdId: hold.id })
+    throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: hold.id }))
   }
 
   /** Dispatch a non-pending hold record: posted → idempotent return; released → expired/settled. */
@@ -671,18 +672,18 @@ export class MeteringService {
       // Stryker disable next-line EqualityOperator: >= vs >: InMemoryLedgerStore uses real-clock createdAt (not injected), making now === expiredAt at millisecond precision impossible to construct in unit tests; only observable in integration
       if (this.now().getTime() >= expiredAt) {
         // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-        throw new AiTokensException('AI_TOKENS_HOLD_EXPIRED', undefined, { holdId: record.id })
+        throw new AiTokensException('AI_TOKENS_HOLD_EXPIRED', undefined, suppliedDetails({ holdId: record.id }))
       }
     }
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
-    throw new AiTokensException('AI_TOKENS_HOLD_ALREADY_SETTLED', undefined, { holdId: record.id })
+    throw new AiTokensException('AI_TOKENS_HOLD_ALREADY_SETTLED', undefined, suppliedDetails({ holdId: record.id }))
   }
 
   /** Reload a record by id, or fail HOLD_NOT_FOUND when it vanished mid-capture. */
   private async reload(id: string): Promise<UsageRecord> {
     const record = await this.ledger.findById(id)
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-    if (record === null) throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, { holdId: id })
+    if (record === null) throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: id }))
     return record
   }
 

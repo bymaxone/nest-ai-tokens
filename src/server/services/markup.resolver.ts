@@ -82,7 +82,7 @@ export class MarkupResolver {
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
         // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'markup policy returned an invalid multiplier',
-        value: raw,
+        valueType: typeof raw,
       })
     }
   }

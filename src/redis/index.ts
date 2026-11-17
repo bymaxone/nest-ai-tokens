@@ -52,7 +52,7 @@ function requireMillis(name: string, value: number | undefined, fallback: number
   if (value === undefined) return fallback
   if (!Number.isInteger(value) || value < 1 || value > MAX_CLOSE_TIMEOUT_MS) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error reason template is internal diagnostics; tests check the code and the option name
-    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}, received ${String(value)}` })
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}` })
   }
   return value
 }

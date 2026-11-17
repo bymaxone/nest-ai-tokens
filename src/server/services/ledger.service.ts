@@ -18,6 +18,7 @@ import { isLegalLedgerTransition, isLegalTransitionPatchKey } from '../../shared
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { assertOptionalDate } from '../utils/date-guards'
@@ -126,10 +127,7 @@ export class LedgerService {
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) {
         // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          tenantId: error.tenantId,
-          idempotencyKey: error.idempotencyKey,
-        })
+        throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: error.tenantId, idempotencyKey: error.idempotencyKey }))
       }
       throw error
     }
@@ -328,20 +326,19 @@ export class LedgerService {
    * surfaces `reason` on the `ai_tokens.usage.reversed` event.
    *
    * @param recordId The id of the posted record to reverse.
-   * @param reason The caller's stated reason (echoed in the conflict details when the record cannot be reversed).
+   * @param _reason The caller's stated reason: not persisted here, and never echoed in the conflict details.
    * @param owed When given, the compensating record carries the effects-owed marker from its own insert.
    * @returns The compensating record.
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
-  async reverse(recordId: string, reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
+  async reverse(recordId: string, _reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const original = await this.store.findById(recordId)
     if (original?.status !== 'posted') {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
         // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: original === null ? 'record not found' : `cannot reverse a ${original.status} record`,
-        recordId,
-        requestedReason: reason,
+        ...suppliedDetails({ recordId }),
       })
     }
     const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`, owed)

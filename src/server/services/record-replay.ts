@@ -8,6 +8,7 @@
 
 import type { AiTokensErrorResponse, NewUsageRecord, NormalizedUsage, UsageRecord, UsageStatus } from '../../shared'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameRequest } from '../utils/replay-match'
 import type { ResolvedMarkup } from './markup.resolver'
@@ -69,7 +70,7 @@ const RECORDED: ReadonlySet<UsageStatus> = new Set<UsageStatus>(['posted', 'reve
 export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: ReplayBasis): UsageRecord {
   if (RECORDED.has(stored.status) && sameRequest(stored, request, basis)) return stored
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-  throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey })
+  throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 
 /**

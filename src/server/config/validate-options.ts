@@ -95,8 +95,7 @@ function validateFeaturePorts(options: BymaxAiTokensModuleOptions): void {
 /** Require an fx resolver when the presentation currency is not USD. */
 function validateCurrency(options: BymaxAiTokensModuleOptions): void {
   if (options.currency !== undefined && options.currency !== 'USD' && options.fx === undefined) {
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-    throw new AiTokensException('AI_TOKENS_FX_REQUIRED', undefined, { currency: options.currency })
+    throw new AiTokensException('AI_TOKENS_FX_REQUIRED')
   }
 }
 
@@ -108,7 +107,7 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
       resolveMultiplier4dp(markup)
     } catch {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      throw invalidConfig(`markup must be a finite number greater than 0, received ${String(markup)}`)
+      throw invalidConfig('markup must be a finite number greater than 0')
     }
     return
   }
@@ -178,7 +177,7 @@ function requireBoundedInteger(option: string, value: number | undefined, max: n
   if (value === undefined) return
   if (!Number.isInteger(value) || value < 1 || value > max) {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    throw invalidConfig(`${option} must be an integer from 1 to ${String(max)}, received ${String(value)}`)
+    throw invalidConfig(`${option} must be an integer from 1 to ${String(max)}`)
   }
 }
 
@@ -200,7 +199,7 @@ function validateSettlement(options: BymaxAiTokensModuleOptions): void {
   const settlement = options.settlement
   if (settlement?.enabled !== undefined && typeof settlement.enabled !== 'boolean') {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    throw invalidConfig(`settlement.enabled must be a boolean, received ${String(settlement.enabled)}`)
+    throw invalidConfig('settlement.enabled must be a boolean')
   }
   requireBoundedInteger('settlement.graceSeconds', settlement?.graceSeconds, MAX_TIMER_SECONDS)
   requireBoundedInteger('settlement.retentionSeconds', settlement?.retentionSeconds, MAX_TTL_SECONDS)
@@ -209,7 +208,7 @@ function validateSettlement(options: BymaxAiTokensModuleOptions): void {
   const ttl = options.holds?.ttlSeconds ?? D.holds.ttlSeconds
   if (retention <= grace || retention <= ttl) {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    throw invalidConfig(`settlement.retentionSeconds must exceed settlement.graceSeconds and holds.ttlSeconds, received ${String(retention)} with ${String(grace)} and ${String(ttl)}`)
+    throw invalidConfig('settlement.retentionSeconds must exceed settlement.graceSeconds and holds.ttlSeconds')
   }
 }
 
@@ -231,7 +230,7 @@ function validatePricing(options: BymaxAiTokensModuleOptions): void {
   if (!Number.isInteger(cacheTtlMs) || cacheTtlMs <= 0) {
     throw invalidConfig(
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      `pricing.cacheTtlMs must be a positive integer number of milliseconds, received ${String(cacheTtlMs)}`,
+      'pricing.cacheTtlMs must be a positive integer number of milliseconds',
     )
   }
 }

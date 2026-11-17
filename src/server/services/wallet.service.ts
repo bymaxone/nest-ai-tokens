@@ -23,6 +23,7 @@ import type {
 } from '../../shared'
 import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertOptionalDate } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint, isValidDate } from '../utils/numeric-guards'
@@ -381,10 +382,7 @@ export class WalletService {
   private mapStoreError(error: unknown, ref: WalletRef, idempotencyKey: string): AiTokensException {
     if (isLedgerIdempotencyConflict(error)) {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-      return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-        tenantId: ref.tenantId,
-        idempotencyKey,
-      })
+      return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: ref.tenantId, idempotencyKey }))
     }
     if (isWalletMissing(error)) {
       // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics

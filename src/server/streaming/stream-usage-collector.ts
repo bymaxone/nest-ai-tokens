@@ -15,6 +15,7 @@
 import type { AiOperation, NormalizedUsage, ProviderId, ProviderPreset, UsageNormalizer } from '../../shared'
 import { normalizeAnthropicUsage, normalizeOpenAiChatUsage } from '../../shared'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import type { ITokenizer } from '../interfaces'
 
 /** Construction options for {@link StreamUsageCollector}. */
@@ -142,7 +143,7 @@ export class StreamUsageCollector {
     const tokenizer = this.opts.tokenizer
     if (tokenizer !== undefined) return this.fallbackUsage(provider, tokenizer)
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
-    throw new AiTokensException('AI_TOKENS_STREAM_USAGE_MISSING', undefined, { provider, model: this.opts.model })
+    throw new AiTokensException('AI_TOKENS_STREAM_USAGE_MISSING', undefined, suppliedDetails({ provider, model: this.opts.model }))
   }
 
   /** Accumulate an OpenAI-shaped chunk and capture its trailing usage. */

@@ -215,6 +215,21 @@ describe('RedisBudgetCounterStore closeTimeoutMs', () => {
     expect(body.error.details.reason).toContain('closeTimeoutMs')
   })
 
+  /** The reason names the option and the bound, and never repeats the value the host gave. */
+  it.each(['closeTimeoutMs', 'commandTimeoutMs'] as const)('keeps the value of %s out of the reason', (option) => {
+    const marker = 'private-host-10.0.0.5-s3cr3t'
+    let thrown: unknown
+    try {
+      new RedisBudgetCounterStore('redis://localhost:6379', { [option]: marker })
+    } catch (error) {
+      thrown = error
+    }
+    const body = JSON.stringify((thrown as AiTokensException).getResponse())
+    expect(body).toContain(option)
+    expect(body).not.toContain(marker)
+    expect(body).not.toMatch(/received/i)
+  })
+
   /** The smallest, a usual and the largest bound a timer honours are accepted, and so is leaving it out. */
   it.each([1, 2_000, 2 ** 31 - 1, undefined])('accepts %p', (value) => {
     expect(() => new RedisBudgetCounterStore('redis://localhost:6379', value === undefined ? {} : { closeTimeoutMs: value })).not.toThrow()

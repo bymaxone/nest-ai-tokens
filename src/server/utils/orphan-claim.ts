@@ -9,6 +9,7 @@
 import type { Logger } from '@nestjs/common'
 import type { UsageRecord } from '../../shared'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from './detail-text'
 
 /** The reason on the effects-owed marker of a claim row: the owed effect is the wallet refund and nothing else. */
 export const ORPHAN_DEBIT_REASON = 'orphan-debit'
@@ -58,10 +59,7 @@ export function isOrphanClaim(row: Pick<UsageRecord, 'provider' | 'feature'>): b
 export function lateAppend(logger: Logger, claim: UsageRecord): AiTokensException {
   logger.warn(`${LATE_APPEND_LOG_KEY} claim=${claim.id}`)
   // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
-  return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-    tenantId: claim.tenantId,
-    idempotencyKey: claim.idempotencyKey,
-  })
+  return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: claim.tenantId, idempotencyKey: claim.idempotencyKey }))
 }
 
 /**
