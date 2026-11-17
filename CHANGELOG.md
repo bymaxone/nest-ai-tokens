@@ -12,6 +12,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Fixed
 
+- **Apply:** no migration and no option change is needed. The hold reaper's timer no longer starts a sweep while the previous one is still running: with a scan that hangs on a degraded store, a sweep used to start on every tick and hold one more pooled connection each time. A skipped run of ticks logs `ai_tokens.hold_reaper.tick_skipped` once. The client a `RedisBudgetCounterStore` creates from a URL is now built with `maxRetriesPerRequest: 1`, the offline queue on and a `commandTimeout` taken from the new `commandTimeoutMs` option (default 500 ms), so a stopped Redis fails a command in about that time instead of 73 to 107 s and the budget service falls back to the database at once. A client the host passes in is the host's, unchanged.
 - The PostgreSQL store's typed error repeats the code of the driver error in its `details` only when the code has the shape of one (`P2010`, `ECONNREFUSED`); a code that is a sentence or carries a value is left out, so no text a driver wrote reaches the HTTP body. The original error stays on `cause`.
 - The pruning of given-back budget applications now runs for a custom budget store that implements `pruneGivenBackExcept` but not `pruneGivenBack`, when the ledger keeps no markers or none is owed; before, it pruned nothing.
 

@@ -40,6 +40,8 @@ const SETTLEMENT_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.settlement_sweep_inac
 const ORPHAN_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.orphan_debit_sweep_inactive'
 /** The grace used when the options carry no settlement section. */
 const DEFAULT_GRACE_SECONDS = 300
+/** Stable log key, written once per run of skipped ticks, for a tick that found the previous sweep still running. */
+const TICK_SKIPPED_LOG_KEY = 'ai_tokens.hold_reaper.tick_skipped'
 /** Stable log key for any other rejection out of a timer-driven sweep. */
 const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
 
@@ -68,6 +70,10 @@ export type HoldReaperOptions = Pick<ResolvedAiTokensOptions, 'holds'> & Partial
 export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(HoldReaper.name)
   private timer: ReturnType<typeof setInterval> | undefined
+  /** Whether a timer-driven sweep is running: a tick that finds one running does nothing, so a slow store is never swept twice at once. */
+  private running = false
+  /** Whether the current run of skipped ticks has been logged. */
+  private skipLogged = false
 
   /**
    * @param ledger The ledger service (expired-hold scan + atomic void claim).
@@ -92,11 +98,27 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     if (this.settlementEnabled() && this.orphans !== undefined && this.ledger.supportsOwedEffects() && !this.orphans.supported) this.logger.warn(`${ORPHAN_INACTIVE_LOG_KEY} the wallet store lists no debits across wallets`)
     const intervalMs = this.options.holds.reaperIntervalSeconds * MS_PER_SECOND
     this.timer = setInterval(() => {
-      void this.sweep().catch((error: unknown) => {
-        this.logger.warn(`${SWEEP_FAILED_LOG_KEY} ${describeError(error)}`)
-      })
+      this.tick()
     }, intervalMs)
     this.timer.unref()
+  }
+
+  /** One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. */
+  private tick(): void {
+    if (this.running) {
+      if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
+      this.skipLogged = true
+      return
+    }
+    this.running = true
+    this.skipLogged = false
+    void this.sweep()
+      .catch((error: unknown) => {
+        this.logger.warn(`${SWEEP_FAILED_LOG_KEY} ${describeError(error)}`)
+      })
+      .finally(() => {
+        this.running = false
+      })
   }
 
   /** Stop the sweep on shutdown (no open handles left for Jest). */

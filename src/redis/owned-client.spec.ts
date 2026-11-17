@@ -15,7 +15,10 @@ class MockClient {
   quits = 0
   disconnects = 0
   quitMode: 'ok' | 'hang' | 'fail' = 'ok'
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly options?: Record<string, unknown>,
+  ) {
     mockCreated.push(this)
   }
   eval(): Promise<number> {
@@ -40,7 +43,7 @@ class MockClient {
 /** The clients the mocked ioredis constructor created, in order. */
 const mockCreated: MockClient[] = []
 
-jest.mock('ioredis', () => ({ __esModule: true, default: class Owned { constructor(url: string) { return new MockClient(url) } } }))
+jest.mock('ioredis', () => ({ __esModule: true, default: class Owned { constructor(url: string, options?: Record<string, unknown>) { return new MockClient(url, options) } } }))
 
 beforeEach(() => {
   mockCreated.length = 0
@@ -215,5 +218,34 @@ describe('RedisBudgetCounterStore closeTimeoutMs', () => {
   /** The smallest, a usual and the largest bound a timer honours are accepted, and so is leaving it out. */
   it.each([1, 2_000, 2 ** 31 - 1, undefined])('accepts %p', (value) => {
     expect(() => new RedisBudgetCounterStore('redis://localhost:6379', value === undefined ? {} : { closeTimeoutMs: value })).not.toThrow()
+  })
+})
+
+describe('RedisBudgetCounterStore client it creates', () => {
+  /** The client is built with one retry per command, the offline queue on, and the default command timeout, so a stopped Redis answers in about the timeout. */
+  it('creates the client with one retry, the offline queue and the default command timeout', async () => {
+    await new RedisBudgetCounterStore('redis://localhost:6379').incrIfBelow('k', 1n, 10n, 60)
+    expect(mockCreated[0]?.options).toEqual({ maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: 500 })
+  })
+
+  /** The command timeout is the one the host chose. */
+  it('creates the client with the command timeout of the options', async () => {
+    await new RedisBudgetCounterStore('redis://localhost:6379', { commandTimeoutMs: 1_234 }).incrIfBelow('k', 1n, 10n, 60)
+    expect(mockCreated[0]?.options).toMatchObject({ commandTimeout: 1_234 })
+  })
+})
+
+describe('RedisBudgetCounterStore commandTimeoutMs', () => {
+  /** A bound a timer cannot honour is refused at construction, naming the option. */
+  it.each([Number.NaN, 1.5, 0, -1, 2 ** 31, '500' as unknown as number])('refuses %p', (value) => {
+    let thrown: unknown
+    try {
+      new RedisBudgetCounterStore('redis://localhost:6379', { commandTimeoutMs: value })
+    } catch (error) {
+      thrown = error
+    }
+    const body = (thrown as AiTokensException).getResponse() as { error: { code: string; details: { reason: string } } }
+    expect(body.error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(body.error.details.reason).toContain('commandTimeoutMs')
   })
 })

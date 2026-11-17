@@ -714,6 +714,15 @@ specific to security is below.
   only while its `status` is not `'end'`: `ioredis` arms a 2000 ms teardown timer on `disconnect()` that only
   a `'close'` event clears, and a client that has already ended never emits one, which keeps the process
   alive about two seconds longer.
+- **A stopped Redis costs one timeout, then the database answers.** The client a `RedisBudgetCounterStore` creates from a URL
+  retries a command once and fails it after `commandTimeoutMs` (default 500 ms, a whole number from 1 to 2,147,483,647). Measured
+  against a stopped Redis 7, a command failed in 254 to 501 ms, where the `ioredis` defaults held it for 73 and 107 s; the
+  store was serving again 0.8 s after the server came back. The budget service treats the failure as an unavailable counter
+  and decides from the database window, so a call is still counted and refused at the limit. The offline queue stays on, so a
+  command issued while the connection is still opening waits for it instead of failing. A client you pass in keeps your own
+  settings: set `maxRetriesPerRequest`, `commandTimeout` and `enableOfflineQueue` on it yourself.
+- **The hold reaper never overlaps itself.** A tick that finds the previous sweep still running does nothing, and a run of
+  skipped ticks is one `ai_tokens.hold_reaper.tick_skipped` line, so a slow store is not swept twice at once.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.

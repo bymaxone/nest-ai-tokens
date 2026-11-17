@@ -59,18 +59,19 @@ async function grant(wallets: WalletService, amountNanoUsd: bigint): Promise<voi
 
 describe('HoldReaper', () => {
   /** The interval starts on bootstrap and clears on shutdown (no open handles). */
-  it('starts on bootstrap and clears on shutdown', () => {
+  it('starts on bootstrap and clears on shutdown', async () => {
     jest.useFakeTimers()
     try {
       const built = build()
       const reaper = built.reaper()
       const sweep = jest.spyOn(reaper, 'sweep').mockResolvedValue()
       reaper.onApplicationBootstrap()
-      jest.advanceTimersByTime(3_000)
+      // Each sweep ends before the next tick, which a timer advance that runs the microtasks between ticks reproduces.
+      await jest.advanceTimersByTimeAsync(3_000)
       expect(sweep.mock.calls.length).toBeGreaterThanOrEqual(2)
       reaper.onApplicationShutdown()
       const after = sweep.mock.calls.length
-      jest.advanceTimersByTime(5_000)
+      await jest.advanceTimersByTimeAsync(5_000)
       expect(sweep.mock.calls.length).toBe(after)
     } finally {
       jest.clearAllTimers()
