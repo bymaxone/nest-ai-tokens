@@ -197,7 +197,7 @@ describe('usage token counts of a normalized usage', () => {
     return (JSON.parse(JSON.stringify((await refusal(run)).getResponse())) as { error: { code: string } }).error.code
   }
 
-  /** A fractional count used to throw a raw RangeError out of the cost arithmetic; it is the typed malformed-usage error now. */
+  /** A fractional count is refused with the typed malformed-usage error, not left to fail in the cost arithmetic. */
   it.each(['inputTokens', 'outputTokens', 'cacheReadTokens'])('refuses a fractional %s with the malformed-usage error', async (field) => {
     expect(await codeOf(() => recordWith({ [field]: 1.5 }))).toBe('AI_TOKENS_USAGE_MALFORMED')
   })
