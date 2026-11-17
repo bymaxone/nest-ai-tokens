@@ -10,6 +10,18 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+**Apply:** no migration. An owed marker older than `settlement.retentionSeconds` used to pause the deletion of given-back budget
+applications for every tenant; it now pauses it for the tenants that owe effects only, because a given-back application belongs to a
+budget and a budget to one tenant. The sweeper names those tenants from the markers and calls the new optional
+`IBudgetStore.pruneGivenBackExcept(before, limit, exceptTenants)`; the Prisma store implements it with no schema change. A custom
+budget store that omits it, or a tick whose listing of markers may have been cut at a page, keeps the pause for every tenant, as
+before. The tick's line says `given-back pruning skipped for <n> tenant(s): an owed marker is older than the retention` and carries
+a count, never a tenant id.
+
+### Changed
+
+- The `server` bundle grows to 51552 bytes brotli with the per-tenant guard; its budget moves from 51190 to 51582. The `prisma` bundle grows to 15714 bytes; its budget moves from 15624 to 15744.
+
 ## [1.1.16] - 2026-11-16
 
 **Apply:** no migration. A wallet debit that no ledger row stands behind is now given back by the reaper. A keyed `hold()` or

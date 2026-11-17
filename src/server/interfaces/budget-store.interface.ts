@@ -188,6 +188,13 @@ export interface IBudgetStore {
    * many. A given-back application no longer holds a movement; only the record of it is left.
    */
   pruneGivenBack?(before: Date, limit: number): Promise<number>
+  /**
+   * Optional. {@link IBudgetStore.pruneGivenBack} for the applications of every tenant except the named ones: a given-back
+   * application belongs to a budget, a budget to one tenant, and a tenant that still owes effects keeps the record a retry of
+   * its release needs. An empty list spares nobody. A store without it is paused for every tenant instead, because a store
+   * that only knows `pruneGivenBack` cannot spare one.
+   */
+  pruneGivenBackExcept?(before: Date, limit: number, exceptTenants: string[]): Promise<number>
   /** A window's current spend, or `null` when it has no row yet. */
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null>
   /** Move a budget's active window start (rotateWindow support). */

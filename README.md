@@ -905,10 +905,13 @@ Limits you can rely on:
   for the same reason: a posted row cannot be told apart from a captured hold that shares its debit.
 - The record of a movement is deleted after the retention. A key is replayed from its ledger row, which holds the
   call, so a replay after the retention takes no budget movement.
-- While any row has owed its effects for longer than the retention, the records of given-back movements are kept, because a
-  retry of that row's release or reversal needs them to give nothing back twice; the deletion resumes when the marker clears. A marker
-  that never clears pauses this deletion for every record until it is settled, and the tick says so in
-  one line, `given-back pruning skipped: an owed marker is older than the retention`, so the tables do not grow unseen.
+- While a row of a tenant has owed its effects for longer than the retention, the records of that tenant's given-back movements
+  are kept, because a retry of that row's release or reversal needs them to give nothing back twice; the deletion resumes when
+  the marker clears. The other tenants are pruned as usual. A marker that never clears keeps its tenant's records until it is
+  settled, and the tick says so in one line, `given-back pruning skipped for <n> tenant(s): an owed marker is older than the
+  retention`, so the tables do not grow unseen. A store without the optional `pruneGivenBackExcept`, or a tick whose listing of
+  markers may be cut at a page, pauses the deletion for every tenant and logs `given-back pruning skipped: an owed marker is older
+  than the retention`.
 - For `record({ enforce: true })` and `hold()` with a key, the grace is a correctness bound: it must exceed the longest wallet
   debit or ledger append of a call. A call whose append lands after the sweep claimed its key is refused with the idempotency
   conflict, and the reaper logs `ai_tokens.orphan_claim.late_append claim=<row id>`; the debit was already given back. No

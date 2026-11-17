@@ -181,6 +181,23 @@ export function pruneGivenBackSql(before: Date, limit: number): Sql {
   `
 }
 
+/**
+ * `pruneGivenBackSql` for the applications of every tenant except the named ones. The tenant is the budget's, a NOT NULL
+ * column, so no application has an unknown tenant for the comparison to leave out. The array is cast to `text[]` because the
+ * client binds an empty one without a type, and an empty one spares nobody.
+ */
+export function pruneGivenBackExceptSql(before: Date, limit: number, exceptTenants: string[]): Sql {
+  const spared = sql`b."tenantId" <> ALL(${exceptTenants}::text[])`
+  return sql`
+    DELETE FROM "ai_budget_applications"
+    WHERE ("key", "budgetId") IN (
+      SELECT a."key", a."budgetId" FROM "ai_budget_applications" a JOIN "ai_budgets" b ON b."id" = a."budgetId"
+      WHERE a."unappliedAt" < ${before} AND ${spared} ORDER BY a."unappliedAt" ASC LIMIT ${limit})
+      AND "unappliedAt" < ${before}
+    RETURNING "key"
+  `
+}
+
 /** Delete the windows of a budget the tenant owns. */
 export function removeBudgetWindowsSql(budgetId: string, tenantId: string): Sql {
   return sql`DELETE FROM "ai_budget_windows" WHERE "budgetId" IN (SELECT "id" FROM "ai_budgets" WHERE "id" = ${budgetId} AND "tenantId" = ${tenantId})`

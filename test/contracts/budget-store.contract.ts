@@ -359,5 +359,45 @@ export function runBudgetStoreContract(label: string, make: () => Promise<IBudge
       expect(await store.getWindow('back2', windowStart)).toEqual({ spentNanoUsd: 5n, spentTokens: 0, spentCount: 0 })
       expect(await store.dropReference({ key: 'record:live', budgetId: 'back2', attempt: 'a' })).toBe('unapplied')
     })
+
+    /**
+     * Invariant: the pruning that spares tenants deletes the given-back applications of every other tenant and keeps the
+     * spared ones, however many tenants it names; an empty set spares nobody, so it prunes exactly what `pruneGivenBack` does;
+     * the budget's tenant is a NOT NULL column (ai_budgets."tenantId"), so no application has an unknown tenant that the
+     * comparison `tenantId <> ALL(...)` could leave out as NULL.
+     */
+    it('prunes the given-back applications of the tenants it does not spare', async () => {
+      const store = await make()
+      await seedBudget(store, 'ex-a')
+      await store.upsert({ id: 'ex-b', tenantId: 'budget-contract-b', scope: { type: 'tenant', id: 'budget-contract-b' }, window: 'total', softThresholds: [], policy: 'block' })
+      await store.upsert({ id: 'ex-c', tenantId: 'budget-contract-c', scope: { type: 'tenant', id: 'budget-contract-c' }, window: 'total', softThresholds: [], policy: 'block' })
+      const future = new Date(Date.now() + 3_600_000)
+      const giveBack = async (budgetId: string, key: string): Promise<void> => {
+        await store.consumeWindowOnce({ key, budgetId, attempt: 'a' }, windowStart, delta(5n), {})
+        await store.dropReference({ key, budgetId, attempt: 'a' })
+      }
+      for (const budgetId of ['ex-a', 'ex-b', 'ex-c']) await giveBack(budgetId, `record:${budgetId}`)
+      expect(await store.pruneGivenBackExcept!(new Date(0), 10, ['budget-contract'])).toBe(0)
+      expect(await store.pruneGivenBackExcept!(future, 10, ['budget-contract', 'budget-contract-c'])).toBe(1)
+      expect(await store.dropReference({ key: 'record:ex-a', budgetId: 'ex-a', attempt: 'a' })).toBe('missing')
+      expect(await store.dropReference({ key: 'record:ex-b', budgetId: 'ex-b', attempt: 'a' })).toBe('absent')
+      expect(await store.pruneGivenBackExcept!(future, 10, ['budget-contract', 'budget-contract-c'])).toBe(0)
+      expect(await store.pruneGivenBackExcept!(future, 10, [])).toBe(2)
+      expect(await store.pruneGivenBack!(future, 10)).toBe(0)
+    })
+
+    /** The limit counts across the tenants that are pruned. */
+    it('prunes the given-back applications of the other tenants up to the limit', async () => {
+      const store = await make()
+      await seedBudget(store, 'lim-a')
+      await store.upsert({ id: 'lim-b', tenantId: 'budget-contract-b', scope: { type: 'tenant', id: 'budget-contract-b' }, window: 'total', softThresholds: [], policy: 'block' })
+      const future = new Date(Date.now() + 3_600_000)
+      for (const key of ['record:l1', 'record:l2', 'record:l3']) {
+        await store.consumeWindowOnce({ key, budgetId: 'lim-b', attempt: 'a' }, windowStart, delta(5n), {})
+        await store.dropReference({ key, budgetId: 'lim-b', attempt: 'a' })
+      }
+      expect(await store.pruneGivenBackExcept!(future, 2, ['budget-contract'])).toBe(2)
+      expect(await store.pruneGivenBackExcept!(future, 2, ['budget-contract'])).toBe(1)
+    })
   })
 }

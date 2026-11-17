@@ -255,5 +255,11 @@ describe('BudgetApplications.drop', () => {
       const { applications } = scripted([['DELETE FROM "ai_budget_applications"', [[{ key: 'a' }, { key: 'b' }]]]])
       expect(await applications.pruneGivenBack(CREATED, 10)).toBe(2)
     })
+
+    it('counts the applications it deleted when pruning the ones given back except for the spared tenants', async () => {
+      const { applications, ran } = scripted([['DELETE FROM "ai_budget_applications"', [[{ key: 'a' }]]]])
+      expect(await applications.pruneGivenBackExcept(CREATED, 10, ['t1'])).toBe(1)
+      expect(ran[0]).toContain('<> ALL(')
+    })
   })
 })

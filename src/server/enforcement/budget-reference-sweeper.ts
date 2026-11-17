@@ -24,6 +24,8 @@ const MS_PER_SECOND = 1_000
 const SCAN_FAILED_LOG_KEY = 'ai_tokens.budget_reference_sweep.scan_failed'
 /** Stable log line, once per tick, while an owed marker older than the retention pauses the deletion of given-back applications. */
 const PRUNE_SKIPPED_LOG_KEY = 'ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped: an owed marker is older than the retention'
+/** Stable log key, once per tick, while a tenant's given-back applications are kept because its owed marker is older than the retention. */
+const PRUNE_SKIPPED_TENANTS_LOG_KEY = 'ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped for'
 /** Stable log key for the references a tick could not settle: one line with a count per tick. */
 const SETTLE_FAILED_LOG_KEY = 'ai_tokens.budget_reference_sweep.settle_failed'
 
@@ -117,18 +119,41 @@ export class BudgetReferenceSweeper {
    * hold, a row that still owes effects, a row that cannot be found and a key the table does not know are left alone.
    */
   private async prune(list: ListStale, before: Date, failed: { count: number }): Promise<void> {
-    if (this.store.pruneGivenBack !== undefined) {
-      try {
-        // A given-back application names no row, so it stays while any row still owes effects past the retention: a retry of
-        // that row's release would otherwise find no application and give the movement back a second time.
-        if (await this.owesBefore(before)) this.logger.warn(PRUNE_SKIPPED_LOG_KEY)
-        else await this.store.pruneGivenBack(before, this.pageSize)
-      } catch {
-        failed.count += 1
-      }
+    try {
+      await this.pruneGivenBack(before)
+    } catch {
+      failed.count += 1
     }
     if (this.store.pruneApplication === undefined) return
     await this.walk(list, 'retained', before, failed, (reference) => this.pruneOne(reference, before))
+  }
+
+  /**
+   * Delete the applications given back before `before`. A given-back application names no row, so it stays while a row of its
+   * tenant still owes effects past the retention: a retry of that row's release would otherwise find no application and give the
+   * movement back a second time. The tenants that owe are spared one by one when the store can do that and the listing of their
+   * markers is whole; otherwise the pruning waits for every marker.
+   */
+  private async pruneGivenBack(before: Date): Promise<void> {
+    const owing = await this.tenantsOwingBefore(before)
+    if (owing === null) {
+      if (this.store.pruneGivenBack === undefined) return
+      if (await this.owesBefore(before)) this.logger.warn(PRUNE_SKIPPED_LOG_KEY)
+      else await this.store.pruneGivenBack(before, this.pageSize)
+      return
+    }
+    if (owing.length > 0) this.logger.warn(`${PRUNE_SKIPPED_TENANTS_LOG_KEY} ${String(owing.length)} tenant(s): an owed marker is older than the retention`)
+    await this.store.pruneGivenBackExcept?.(before, this.pageSize, owing)
+  }
+
+  /**
+   * The tenants of the rows that have owed effects since before `before`, or `null` when they cannot be named: the store cannot
+   * spare a tenant, the ledger keeps no marker, or the listing came back longer than a page and may have left tenants out.
+   */
+  private async tenantsOwingBefore(before: Date): Promise<string[] | null> {
+    if (this.store.pruneGivenBackExcept === undefined || !this.ledger.supportsOwedEffects()) return null
+    const owed = await this.ledger.findEffectsOwed(before, this.pageSize + 1)
+    return owed.length > this.pageSize ? null : [...new Set(owed.map((item) => item.record.tenantId))]
   }
 
   /** Delete one application when the row it belongs to ended and owes nothing. */
