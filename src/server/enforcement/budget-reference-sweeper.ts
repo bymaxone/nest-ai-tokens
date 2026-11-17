@@ -9,6 +9,7 @@
  */
 
 import { Logger } from '@nestjs/common'
+import { describeError } from '../errors/describe-error'
 import type { Budget, UsageRecord } from '../../shared'
 import type { IBudgetStore, StaleCursor, StaleReference, StaleReferenceQuery, StaleSelection } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
@@ -47,11 +48,6 @@ export interface BudgetReferenceSweepTuning {
 
 /** The store's listing of stale references, bound to the store. */
 type ListStale = (query: StaleReferenceQuery) => Promise<StaleReference[]>
-
-/** Summarise a caught error for a log line without the driver's own fields. */
-function describe(error: unknown): string {
-  return error instanceof Error ? `name=${error.name} message=${JSON.stringify(error.message)}` : 'non-Error rejection'
-}
 
 /** The sweep of stale budget references over one budget store and one ledger. */
 export class BudgetReferenceSweeper {
@@ -93,7 +89,7 @@ export class BudgetReferenceSweeper {
       try {
         found = await list({ selection, olderThan, limit: this.pageSize, ...(after === undefined ? {} : { after }) })
       } catch (error) {
-        this.logger.warn(`${SCAN_FAILED_LOG_KEY} ${describe(error)}`)
+        this.logger.warn(`${SCAN_FAILED_LOG_KEY} ${describeError(error)}`)
         return
       }
       const last = found[found.length - 1]

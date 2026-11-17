@@ -34,12 +34,13 @@ const BUDGETS = [
   // 51_838 holds the guard that keeps the reaper's timer from starting a sweep while the previous one runs, and its skipped-tick line.
   // 52_383 holds the guards of the numbers the library takes at its boundaries: the options of the wallets, the budget limits and
   // thresholds, the wallet amounts and grant fields, the hold estimates and the token counts of a usage.
-  // The prisma bundle's 15_781 holds the stale-reference, prune and given-back statements, the budget-row statement
+  // 52_442 holds the shared summary of a caught error that the reaper and the two sweepers log.
+  // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
   // that a store error repeats.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 52_383 },
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 52_442 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_781 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_042 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

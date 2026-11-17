@@ -64,6 +64,7 @@ import type {
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
+import { guardStoreErrors } from './store-boundary'
 import { adjustWindowSql, consumeWindowSql, ensureWindowSql, findBudgetSql, matchingBudgetsSql, removeBudgetSql, removeBudgetWindowsSql, resetWindowSql, windowSql } from './budget-statements'
 import { empty, join, sql } from './sql'
 import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
@@ -152,6 +153,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     this.prisma = new SqlClient(client)
     this.applications = new BudgetApplications(this.prisma)
     this.burnOrder = options.burnOrder ?? 'expiry'
+    return guardStoreErrors(this, (error) => isWalletMissing(error) || isLedgerIdempotencyConflict(error))
   }
 
   async append(record: NewUsageRecord, payloadHash: string, hashChain?: boolean, owed?: OwedEffectsMarker): Promise<UsageRecord> {

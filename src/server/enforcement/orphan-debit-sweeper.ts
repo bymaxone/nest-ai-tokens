@@ -10,6 +10,7 @@
  */
 
 import { Logger } from '@nestjs/common'
+import { describeError } from '../errors/describe-error'
 import type { UsageRecord } from '../../shared'
 import type { IWalletStore, OwedEffects, WalletDebit, WalletDebitCursor } from '../interfaces'
 import type { LedgerAppendInput, LedgerService } from '../services/ledger.service'
@@ -98,7 +99,7 @@ export class OrphanDebitSweeper {
         })
       } catch (error) {
         this.logger.warn(
-          `${SCAN_FAILED_LOG_KEY} ${error instanceof Error ? `name=${error.name} message=${JSON.stringify(error.message)}` : 'non-Error rejection'}`,
+          `${SCAN_FAILED_LOG_KEY} ${describeError(error)}`,
         )
         return
       }
