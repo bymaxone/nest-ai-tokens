@@ -639,6 +639,29 @@ describe('BudgetReferenceSweeper', () => {
       expect(Logger.prototype.warn).not.toHaveBeenCalled()
     })
 
+    /** The pruning of a store that spares tenants and has no other is asked for with no tenant spared: an empty list, nothing else. */
+    it('asks a store with no pruning of every tenant to prune with an empty list of spared tenants', async () => {
+      const r = await rig()
+      const only = Object.create(r.budgets, { pruneGivenBack: { value: undefined } }) as InMemoryBudgetStore
+      const markerless = Object.create(r.ledgerStore, { findEffectsOwed: { value: undefined }, findEffectsOwedFor: { value: undefined }, clearEffectsOwed: { value: undefined } }) as InMemoryLedgerStore
+      const spy = jest.spyOn(only, 'pruneGivenBackExcept')
+      const sweeper = new BudgetReferenceSweeper(only, new LedgerService(markerless), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now)
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect(spy).toHaveBeenCalledWith(expect.any(Date), expect.any(Number), [])
+    })
+
+    /** A store that knows no pruning of given-back applications says nothing about a marker that is owed: there is nothing to pause. */
+    it('logs no pause for a store with no pruning at all, whatever is owed', async () => {
+      const r = await rig({ pageSize: 1 })
+      for (const key of ['x1', 'x2']) await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: key, occurredAt: OCCURRED }), `hash-${key}`, undefined, { reason: 'refund' })
+      const none = Object.create(r.budgets, { pruneGivenBack: { value: undefined }, pruneGivenBackExcept: { value: undefined } }) as InMemoryBudgetStore
+      const sweeper = new BudgetReferenceSweeper(none, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now, { pageSize: 1 })
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
     /** The same store keeps the pause when a marker is owed and the listing cannot name the tenants, and prunes nothing. */
     it('pauses for every tenant on a store with no pruning of every tenant when the marker listing may be truncated', async () => {
       const r = await rig({ pageSize: 1 })
