@@ -587,6 +587,10 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return this.applications.pruneGivenBack(before, limit)
   }
 
+  pruneGivenBackExcept(before: Date, limit: number, exceptTenants: string[]): Promise<number> {
+    return this.applications.pruneGivenBackExcept(before, limit, exceptTenants)
+  }
+
   async getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
     const rows = await this.prisma.query<BudgetWindowRow[]>(windowSql(budgetId, windowStart))
     return rows[0] === undefined ? null : mapBudgetWindowRow(rows[0])

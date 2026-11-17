@@ -175,6 +175,21 @@ export class InMemoryBudgetStore implements IBudgetStore {
     return Promise.resolve(removed)
   }
 
+  pruneGivenBackExcept(before: Date, limit: number, exceptTenants: string[]): Promise<number> {
+    let removed = 0
+    for (const [name, application] of this.applications) {
+      if (removed >= limit) break
+      const [, budgetId] = JSON.parse(name) as [string, string]
+      const tenantId = this.budgets.get(budgetId)?.tenantId
+      if (tenantId !== undefined && exceptTenants.includes(tenantId)) continue
+      if (application.unappliedAt !== undefined && application.unappliedAt < before) {
+        this.applications.delete(name)
+        removed += 1
+      }
+    }
+    return Promise.resolve(removed)
+  }
+
   getWindow(budgetId: string, windowStart: Date): Promise<BudgetWindowSpend | null> {
     const window = this.windows.get(InMemoryBudgetStore.windowKey(budgetId, windowStart))
     return Promise.resolve(window === undefined ? null : { ...window })

@@ -19,6 +19,7 @@ import {
   findBudgetSql,
   matchingBudgetsSql,
   pruneApplicationSql,
+  pruneGivenBackExceptSql,
   pruneGivenBackSql,
   removeBudgetSql,
   removeBudgetWindowsSql,
@@ -167,6 +168,20 @@ describe('stale references and pruning statements', () => {
     expect(statement.text).toContain('ORDER BY "unappliedAt" ASC LIMIT $2')
     expect(statement.text).toContain(`AND "unappliedAt" < ($3::timestamptz AT TIME ZONE 'UTC')`)
     expect(statement.values).toEqual([BEFORE, 7, BEFORE])
+  })
+
+  /**
+   * The spared tenants are compared as a `text[]` cast, so that an empty list, which the client binds without a type, spares
+   * nobody; the tenant is the budget's, which is NOT NULL, so no application is left out by a NULL comparison.
+   */
+  it('deletes the given-back applications of the tenants that are not spared', () => {
+    const statement = pruneGivenBackExceptSql(BEFORE, 7, ['t1', 't2'])
+    expect(statement.text).toContain('JOIN "ai_budgets" b ON b."id" = a."budgetId"')
+    expect(statement.text).toContain('b."tenantId" <> ALL($2::text[])')
+    expect(statement.text).toContain('ORDER BY a."unappliedAt" ASC LIMIT $3')
+    expect(statement.text).toContain(`AND "unappliedAt" < ($4::timestamptz AT TIME ZONE 'UTC')`)
+    expect(statement.values).toEqual([BEFORE, ['t1', 't2'], 7, BEFORE])
+    expect(pruneGivenBackExceptSql(BEFORE, 7, []).values).toEqual([BEFORE, [], 7, BEFORE])
   })
 })
 

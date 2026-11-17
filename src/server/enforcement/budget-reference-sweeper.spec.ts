@@ -21,6 +21,8 @@ const RETENTION = 7 * 24 * 3600
 const WINDOW = new Date('2026-06-01T00:00:00.000Z')
 const OCCURRED = new Date('2026-06-10T00:00:00.000Z')
 const ZERO = { spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 }
+const ALL_LINE = 'ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped: an owed marker is older than the retention'
+const TENANT_LINE = (count: number): string => `ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped for ${String(count)} tenant(s): an owed marker is older than the retention`
 
 /** A clock the stores and the sweeper share. */
 function clock(): { now: () => Date; advance: (seconds: number) => void } {
@@ -241,7 +243,7 @@ describe('BudgetReferenceSweeper', () => {
   it('settles references for a store that cannot prune', async () => {
     const r = await rig()
     await arrange(r, 'record', 'attempt', 'none', false)
-    const bare = Object.create(r.budgets, { pruneGivenBack: { value: undefined }, pruneApplication: { value: undefined } }) as InMemoryBudgetStore
+    const bare = Object.create(r.budgets, { pruneGivenBack: { value: undefined }, pruneGivenBackExcept: { value: undefined }, pruneApplication: { value: undefined } }) as InMemoryBudgetStore
     const sweeper = new BudgetReferenceSweeper(bare, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, () => new Date(Date.now() + 10 * 365 * 86_400_000))
     const listed = jest.spyOn(bare, 'findStaleReferences')
     await sweeper.sweep()
@@ -402,13 +404,105 @@ describe('BudgetReferenceSweeper', () => {
       r.advance(RETENTION + 1)
       await r.sweeper.sweep()
       // The tick says why nothing was pruned, once, so a stuck marker is visible.
-      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual(['ai_tokens.budget_reference_sweep.prune_skipped given-back pruning skipped: an owed marker is older than the retention'])
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(1)])
       // The application is still there: dropping the reference again finds it, with no reference left on it.
       expect(await r.budgets.dropReference(held)).toBe('missing')
       ;(Logger.prototype.warn as jest.Mock).mockClear()
       await r.ledgerStore.clearEffectsOwed(row.id)
       await r.sweeper.sweep()
       expect(await r.budgets.dropReference(held)).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
+    /**
+     * Invariant: a marker older than the retention protects the given-back applications of its own tenant and no other: the
+     * application belongs to a budget and a budget to one tenant, and the retry that needs it is of a row of that tenant.
+     */
+    it('keeps the given-back applications of the tenant that owes effects and prunes the other tenants', async () => {
+      const r = await rig()
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      for (const budgetId of ['b1', 'b2']) {
+        await r.budgets.consumeWindowOnce({ key: 'reserve:rel', budgetId, attempt: 'row' }, WINDOW, DELTA, {})
+        await r.budgets.dropReference({ key: 'reserve:rel', budgetId, attempt: 'row' })
+      }
+      const row = await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: 'rel', occurredAt: OCCURRED }), 'hash', undefined, { reason: 'refund' })
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(1)])
+      expect(await r.budgets.dropReference({ key: 'reserve:rel', budgetId: 'b1', attempt: 'row' })).toBe('missing')
+      expect(await r.budgets.dropReference({ key: 'reserve:rel', budgetId: 'b2', attempt: 'row' })).toBe('absent')
+      ;(Logger.prototype.warn as jest.Mock).mockClear()
+      await r.ledgerStore.clearEffectsOwed(row.id)
+      await r.sweeper.sweep()
+      expect(await r.budgets.dropReference({ key: 'reserve:rel', budgetId: 'b1', attempt: 'row' })).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
+    /** Two tenants with an old marker are two in the line, and a tenant with several markers is one. */
+    it('counts the tenants that owe effects, not the markers', async () => {
+      const r = await rig()
+      for (const [tenantId, key] of [['t1', 'a'], ['t1', 'b'], ['t2', 'c']] as const) {
+        await r.ledgerStore.append(usageRecord({ tenantId, scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: key, occurredAt: OCCURRED }), `hash-${key}`, undefined, { reason: 'refund' })
+      }
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(2)])
+    })
+
+    /** A listing that is exactly one page long is whole: the sweep asks for one row more than a page to tell. */
+    it('names the tenants when the marker listing is exactly one page long', async () => {
+      const r = await rig({ pageSize: 1 })
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      await r.budgets.consumeWindowOnce({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })
+      await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: 'a', occurredAt: OCCURRED }), 'hash-a', undefined, { reason: 'refund' })
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(1)])
+      expect(await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })).toBe('absent')
+    })
+
+    /** A store that cannot spare a tenant is paused for all, as before, and says so with the line it always had. */
+    it('pauses the given-back pruning for every tenant on a store that cannot spare one', async () => {
+      const r = await rig()
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      await r.budgets.consumeWindowOnce({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })
+      await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: 'rel', occurredAt: OCCURRED }), 'hash', undefined, { reason: 'refund' })
+      const bare = Object.create(r.budgets, { pruneGivenBackExcept: { value: undefined } }) as InMemoryBudgetStore
+      const sweeper = new BudgetReferenceSweeper(bare, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now)
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([ALL_LINE])
+      expect(await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })).toBe('missing')
+    })
+
+    /** A listing that may have been cut at the page size cannot name every tenant, so nobody is pruned. */
+    it('pauses the given-back pruning for every tenant when the marker listing may be truncated', async () => {
+      const r = await rig({ pageSize: 1 })
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      await r.budgets.consumeWindowOnce({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })
+      for (const [tenantId, key] of [['t1', 'a'], ['t3', 'b']] as const) {
+        await r.ledgerStore.append(usageRecord({ tenantId, scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: key, occurredAt: OCCURRED }), `hash-${key}`, undefined, { reason: 'refund' })
+      }
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([ALL_LINE])
+      expect(await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })).toBe('missing')
+    })
+
+    /** With no marker older than the retention the pruning spares nobody, as it did before. */
+    it('prunes every tenant when no marker is older than the retention', async () => {
+      const r = await rig()
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      for (const budgetId of ['b1', 'b2']) {
+        await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId, attempt: 'a' }, WINDOW, DELTA, {})
+        await r.budgets.dropReference({ key: 'record:g', budgetId, attempt: 'a' })
+      }
+      r.advance(RETENTION + 1)
+      await r.sweeper.sweep()
+      for (const budgetId of ['b1', 'b2']) expect(await r.budgets.dropReference({ key: 'record:g', budgetId, attempt: 'a' })).toBe('absent')
       expect(Logger.prototype.warn).not.toHaveBeenCalled()
     })
 
@@ -487,9 +581,22 @@ describe('BudgetReferenceSweeper', () => {
 
     it('counts a failed deletion of given-back applications with the rest of the tick', async () => {
       const r = await rig()
-      jest.spyOn(r.budgets, 'pruneGivenBack').mockRejectedValue(new Error('down'))
+      jest.spyOn(r.budgets, 'pruneGivenBackExcept').mockRejectedValue(new Error('down'))
       await r.sweeper.sweep()
       expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual(['ai_tokens.budget_reference_sweep.settle_failed count=1'])
+    })
+
+    /** A store that only knows the pruning of every tenant is still pruned by it when nothing owes effects. */
+    it('prunes with the store that cannot spare a tenant when no marker is older than the retention', async () => {
+      const r = await rig()
+      await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId: 'b1', attempt: 'a' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })
+      const bare = Object.create(r.budgets, { pruneGivenBackExcept: { value: undefined } }) as InMemoryBudgetStore
+      const sweeper = new BudgetReferenceSweeper(bare, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now)
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect(await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
     })
 
     it('leaves the pruning to a store that can do it, and logs a failure once per tick', async () => {

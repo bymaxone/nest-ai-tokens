@@ -15,6 +15,7 @@ import {
   deleteReferenceSql,
   ensureWindowSql,
   pruneApplicationSql,
+  pruneGivenBackExceptSql,
   pruneGivenBackSql,
   lockApplicationSql,
   recordApplicationSql,
@@ -112,6 +113,11 @@ export class BudgetApplications {
   /** Delete up to `limit` applications that were given back before `before`. */
   async pruneGivenBack(before: Date, limit: number): Promise<number> {
     return (await this.prisma.query<unknown[]>(pruneGivenBackSql(before, limit))).length
+  }
+
+  /** Delete up to `limit` applications that were given back before `before`, except those of the named tenants. */
+  async pruneGivenBackExcept(before: Date, limit: number, exceptTenants: string[]): Promise<number> {
+    return (await this.prisma.query<unknown[]>(pruneGivenBackExceptSql(before, limit, exceptTenants))).length
   }
 
   /** A page of the references older than a bound, with what each application moved. */
