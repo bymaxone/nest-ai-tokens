@@ -73,6 +73,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   /** Whether a timer-driven sweep is running: a tick that finds one running does nothing, so a slow store is never swept twice at once. */
   private running = false
   /** Whether the current run of skipped ticks has been logged. */
+  // Stryker disable next-line BooleanLiteral: equivalent: a tick that can skip needs a sweep already running, and starting that sweep sets the flag to false first, so the initial value is never read
   private skipLogged = false
 
   /**
