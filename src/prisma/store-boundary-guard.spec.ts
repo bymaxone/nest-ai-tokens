@@ -19,6 +19,12 @@ class Sample {
   nothing(): null {
     return null
   }
+  nothingAtAll(): undefined {
+    return undefined
+  }
+  callable(): (() => string) & { then: () => void } {
+    return Object.assign(() => 'called', { then: () => undefined })
+  }
   fakeThen(): { then: number } {
     return { then: 1 }
   }
@@ -66,6 +72,8 @@ describe('guardStoreErrors', () => {
     expect(store.fine()).toBe('ok')
     expect(store.plain()).toBe(PLAIN)
     expect(store.nothing()).toBeNull()
+    expect(store.nothingAtAll()).toBeUndefined()
+    expect(store.callable()()).toBe('called')
     expect(store.fakeThen()).toEqual({ then: 1 })
   })
 
