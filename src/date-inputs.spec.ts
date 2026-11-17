@@ -35,11 +35,11 @@ async function refusal(run: () => unknown): Promise<AiTokensException> {
   throw new Error('expected the call to be refused')
 }
 
-/** Assert the refusal is the typed invalid-configuration error naming `field` in its reason and carrying none of the value. */
+/** Assert the refusal is the typed invalid-configuration error whose reason starts with `field` and carries none of the value. */
 async function expectRefused(run: () => unknown, field: string): Promise<void> {
   const body = JSON.stringify((await refusal(run)).getResponse())
   expect(body).toContain('AI_TOKENS_INVALID_CONFIG')
-  expect(body).toMatch(new RegExp(`"reason":"[^"]*${field}`))
+  expect(body).toContain(`"reason":"${field} must be a valid date"`)
   expect(body).not.toContain(MARKER)
 }
 
