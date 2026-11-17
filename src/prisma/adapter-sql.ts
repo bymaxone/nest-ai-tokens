@@ -305,10 +305,13 @@ export function isUniqueViolation(error: unknown): boolean {
   return cause?.originalCode === PG_UNIQUE_VIOLATION || cause?.kind === 'UniqueConstraintViolation'
 }
 
+/** The shape of a driver error's code (`P2010`, `ECONNREFUSED`), the one value of it the response body repeats: a string that is a sentence, or carries a value, is not a code. */
+const DRIVER_CODE = /^[A-Z][A-Z0-9_]{0,31}$/
+
 /** Map an unknown driver error to a domain store error: the body keeps the code, the original error rides as `cause`. */
 export function storeError(error: unknown): AiTokensException {
   if (error instanceof AiTokensException) return error
-  const code = isKnownRequestError(error) ? error.code : undefined
+  const code = isKnownRequestError(error) && DRIVER_CODE.test(error.code) ? error.code : undefined
   return attachCause(new AiTokensException(storeFailureCode(error), undefined, code === undefined ? {} : { code }), error)
 }
 
