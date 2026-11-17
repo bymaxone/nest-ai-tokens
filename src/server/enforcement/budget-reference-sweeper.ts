@@ -132,7 +132,7 @@ export class BudgetReferenceSweeper {
    * Delete the applications given back before `before`. A given-back application names no row, so it stays while a row of its
    * tenant still owes effects past the retention: a retry of that row's release would otherwise find no application and give the
    * movement back a second time. The tenants that owe are spared one by one when the store can do that and the listing of their
-   * markers is whole; otherwise the pruning waits for every marker, as it always has.
+   * markers is whole; otherwise the pruning waits for every marker.
    */
   private async pruneGivenBack(before: Date): Promise<void> {
     const owing = await this.tenantsOwingBefore(before)

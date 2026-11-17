@@ -449,7 +449,7 @@ describe('BudgetReferenceSweeper', () => {
       expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(2)])
     })
 
-    /** A ledger that keeps no marker owes nothing, so no tenant is spared and every tenant is pruned, as before the guard. */
+    /** A ledger that keeps no marker owes nothing, so no tenant is spared and every tenant is pruned. */
     it('prunes every tenant on a ledger that keeps no marker', async () => {
       const r = await rig()
       await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
@@ -478,7 +478,7 @@ describe('BudgetReferenceSweeper', () => {
       expect(await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })).toBe('absent')
     })
 
-    /** A store that cannot spare a tenant is paused for all, as before, and says so with the line it always had. */
+    /** A store that cannot spare a tenant is paused for all, and says so with the line that names no tenant count. */
     it('pauses the given-back pruning for every tenant on a store that cannot spare one', async () => {
       const r = await rig()
       await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
@@ -508,7 +508,7 @@ describe('BudgetReferenceSweeper', () => {
       expect(await r.budgets.dropReference({ key: 'reserve:x', budgetId: 'b2', attempt: 'row' })).toBe('missing')
     })
 
-    /** With no marker older than the retention the pruning spares nobody, as it did before. */
+    /** With no marker older than the retention the pruning spares nobody. */
     it('prunes every tenant when no marker is older than the retention', async () => {
       const r = await rig()
       await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
