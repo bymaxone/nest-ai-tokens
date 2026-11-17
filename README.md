@@ -716,8 +716,8 @@ specific to security is below.
   alive about two seconds longer.
 - **A stopped Redis costs one timeout, then the database answers.** The client a `RedisBudgetCounterStore` creates from a URL
   retries a command once and fails it after `commandTimeoutMs` (default 500 ms, a whole number from 1 to 2,147,483,647). Measured
-  against a stopped Redis 7, a command failed in 254 to 501 ms, where the `ioredis` defaults held it for 73 and 107 s; the
-  store was serving again 0.8 s after the server came back. The budget service treats the failure as an unavailable counter
+  against a stopped Redis 7, a command failed in about 500 ms (327 to 503 ms), where the `ioredis` defaults held it for 73 and 107 s; the
+  store was serving again 0.3 to 2.5 s after the server came back, which the reconnect backoff of `ioredis` sets. The budget service treats the failure as an unavailable counter
   and decides from the database window, so a call is still counted and refused at the limit. The offline queue stays on, so a
   command issued while the connection is still opening waits for it instead of failing. A client you pass in keeps your own
   settings: set `maxRetriesPerRequest`, `commandTimeout` and `enableOfflineQueue` on it yourself.
