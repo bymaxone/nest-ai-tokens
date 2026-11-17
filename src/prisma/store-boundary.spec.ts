@@ -28,8 +28,10 @@ const INTERNAL = new Set([
 
 /** A call of a method by its name, for the one the type system marks deprecated and the lint refuses to see called by name. */
 function callByName(store: PrismaAiTokensStore, name: string, ...args: unknown[]): Promise<unknown> {
-  const method = (store as unknown as Record<string, (...parameters: unknown[]) => Promise<unknown>>)[name]
-  return method === undefined ? Promise.reject(new Error(`no method ${name}`)) : method.apply(store, args)
+  const method: unknown = Reflect.get(store, name)
+  if (typeof method !== 'function') return Promise.reject(new Error(`no method ${name}`))
+  const result: unknown = Reflect.apply(method, store, args)
+  return Promise.resolve(result)
 }
 
 /** One call per public method, with arguments valid enough to reach the database. */
@@ -46,8 +48,8 @@ const CALLS: Record<string, (store: PrismaAiTokensStore) => Promise<unknown>> = 
   sumCost: (s) => s.sumCost({ tenantId: TENANT }),
   lastHash: (s) => s.lastHash(TENANT),
   resolveRate: (s) => s.resolveRate('openai', 'gpt-5', 'chat', 'standard', NOW),
-  upsertPrice: (s) => s.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n } as never),
-  seedPrice: (s) => s.seedPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n } as never),
+  upsertPrice: (s) => s.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n }),
+  seedPrice: (s) => s.seedPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n }),
   getPriceHistory: (s) => s.getPriceHistory('openai', 'gpt-5', 'chat'),
   listModels: (s) => s.listModels('openai'),
   acquireSeedLock: (s) => callByName(s, 'acquireSeedLock', 'seed'),
@@ -58,7 +60,7 @@ const CALLS: Record<string, (store: PrismaAiTokensStore) => Promise<unknown>> = 
   listEntries: (s) => s.listEntries(WALLET, {}),
   findDebitsBefore: (s) => s.findDebitsBefore({ keyPrefixes: ['hold:'], olderThan: NOW, limit: 10 }),
   reconcile: (s) => s.reconcile(WALLET, NOW),
-  upsert: (s) => s.upsert({ tenantId: TENANT, scope: USER_SCOPE, window: 'day', limitNanoUsd: 5n, softThresholds: [], policy: 'block' } as never),
+  upsert: (s) => s.upsert({ tenantId: TENANT, scope: USER_SCOPE, window: 'day', limitNanoUsd: 5n, softThresholds: [], policy: 'block' }),
   remove: (s) => s.remove({ tenantId: TENANT, id: 'b1' }),
   findBudgetById: (s) => s.findBudgetById({ tenantId: TENANT, id: 'b1' }),
   findMatching: (s) => s.findMatching(TENANT, USER_SCOPE),
@@ -112,8 +114,8 @@ function poisonedClient(poison: () => unknown): { client: ConstructorParameters<
       throw poison()
     })()
   }
-  const client = { $queryRawUnsafe: fail, $executeRawUnsafe: fail, $transaction: fail }
-  return { client: client as never, calls: () => calls }
+  const client: ConstructorParameters<typeof PrismaAiTokensStore>[0] = { $queryRawUnsafe: fail, $executeRawUnsafe: fail, $transaction: fail }
+  return { client, calls: () => calls }
 }
 
 /** The surfaces of an error a caller or a log line can read. */

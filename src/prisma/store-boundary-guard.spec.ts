@@ -23,7 +23,7 @@ class Sample {
     return { then: 1 }
   }
   thenable(): PromiseLike<never> {
-    return { then: (_resolve: unknown, reject: (reason: unknown) => void) => reject(new Error('driver down')) } as unknown as PromiseLike<never>
+    return { then: (onFulfilled, onRejected) => Promise.reject(new Error('driver down')).then(onFulfilled, onRejected) }
   }
   async rejects(): Promise<never> {
     throw Object.assign(new Error('driver down'), { code: 'P2010' })
