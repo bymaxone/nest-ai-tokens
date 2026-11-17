@@ -10,6 +10,9 @@ import { guardStoreErrors } from './store-boundary'
 
 class Sample {
   readonly field = 5
+  get inherited(): number {
+    return this.field + 1
+  }
   fine(): string {
     return 'ok'
   }
@@ -68,6 +71,7 @@ describe('guardStoreErrors', () => {
   it('returns a field, the constructor and a result that is not a promise unchanged', () => {
     const store = guarded()
     expect(store.field).toBe(5)
+    expect(store.inherited).toBe(6)
     expect(store.constructor).toBe(Sample)
     expect(store.fine()).toBe('ok')
     expect(store.plain()).toBe(PLAIN)
