@@ -40,7 +40,8 @@ async function expectRefused(run: () => unknown, field: string): Promise<void> {
   const error = await refusal(run)
   const body = JSON.stringify(error.getResponse())
   expect(body).toContain('AI_TOKENS_INVALID_CONFIG')
-  expect(body).toContain(field)
+  // The field is named in the reason of the error, not merely somewhere in the body.
+  expect(body).toMatch(new RegExp(`"reason":"[^"]*${field}`))
   expect(body).not.toContain(MARKER)
 }
 
@@ -143,10 +144,22 @@ describe('alert thresholds', () => {
     const { service } = makeService()
     await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: [value] } as never)), 'softThresholds')
   })
-  it('refuses thresholds that are not a list', async () => {
+  it.each([MARKER, 5, {}, true])('refuses thresholds that are not a list: %p', async (value) => {
     const { service } = makeService()
-    await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: MARKER } as never)), 'softThresholds')
-    await expectRefused(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: MARKER } } as never), 'alert thresholds')
+    await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: value } as never)), 'softThresholds')
+    await expectRefused(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: value } } as never), 'alert thresholds')
+  })
+  /** One bad entry among valid ones refuses the whole list. */
+  it.each(BAD_THRESHOLDS)('refuses a list of thresholds with %p among valid ones', async (value) => {
+    const { service } = makeService()
+    await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: [0.5, value, 1] } as never)), 'softThresholds')
+    await expectRefused(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: [0.5, value, 1] } } as never), 'alert thresholds')
+  })
+  /** A list of valid fractions, one at the upper bound, is accepted. */
+  it('accepts a list of fractions up to and including 1', async () => {
+    const { service } = makeService()
+    await expect(service.upsertBudget(budgetInput({ softThresholds: [0.1, 0.5, 1] }))).resolves.toBeDefined()
+    expect(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: [0.1, 1] } } as never)).not.toThrow()
   })
 })
 
