@@ -78,6 +78,8 @@ function poisonedFactory(): Promise<AiTokensException> {
 const CASES: readonly { name: string; code: AiTokensErrorCode; make: () => Promise<AiTokensException> | AiTokensException }[] = [
   { name: 'a driver error whose message is poisoned', code: 'AI_TOKENS_STORE_ERROR', make: () => storeError(driverError(POISON, 'P2010')) },
   { name: 'a driver error whose code is poisoned', code: 'AI_TOKENS_STORE_ERROR', make: () => storeError(driverError('boom', POISON)) },
+  { name: 'a driver code that ends like a code', code: 'AI_TOKENS_STORE_ERROR', make: () => storeError(driverError('boom', `${POISON} P2010`)) },
+  { name: 'a driver code that starts like a code', code: 'AI_TOKENS_STORE_ERROR', make: () => storeError(driverError('boom', `P2010 ${POISON}`)) },
   { name: 'a driver error that says the server is unreachable', code: 'AI_TOKENS_STORE_UNAVAILABLE', make: () => storeError(driverError(POISON, 'P1001')) },
   { name: 'a wallet store that fails', code: 'AI_TOKENS_STORE_ERROR', make: poisonedWallet },
   { name: 'a budget store that fails closed', code: 'AI_TOKENS_STORE_ERROR', make: poisonedBudget },
@@ -115,6 +117,15 @@ describe('what an AiTokensException response may carry', () => {
     expect(bodyOf(error)).not.toContain('s3cr3t')
     expect(bodyOf(error)).not.toContain('10.0.0.5')
     expect(bodyOf(error)).not.toContain('a@b.c')
+  })
+
+  /** A code is repeated up to 32 characters, and a longer one, which no driver writes, is left out. */
+  it('repeats a code of at most 32 characters and no longer one', () => {
+    const detailsOf = (code: string): Record<string, unknown> => (storeError(driverError('boom', code)).getResponse() as { error: { details: Record<string, unknown> } }).error.details
+    expect(detailsOf(`P${'X'.repeat(31)}`)).toEqual({ code: `P${'X'.repeat(31)}` })
+    expect(detailsOf(`P${'X'.repeat(32)}`)).toEqual({})
+    expect(detailsOf('P')).toEqual({ code: 'P' })
+    expect(detailsOf('')).toEqual({})
   })
 
   /** The failure that caused the typed error rides on `cause`, which is not serialised. */
