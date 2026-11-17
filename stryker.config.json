@@ -34,6 +34,7 @@
     "src/prisma/sql.ts",
     "src/prisma/wallet-statements.ts",
     "src/prisma/raw-client.ts",
+    "src/prisma/store-boundary.ts",
     "!src/**/*.spec.ts",
     "!src/prices/index.ts",
     "!src/shared/index.ts",

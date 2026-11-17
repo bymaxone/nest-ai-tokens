@@ -12,7 +12,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Fixed
 
-- **Apply:** no migration and no option change is needed. Every public method of the PostgreSQL store now rejects with a typed `AI_TOKENS_STORE_ERROR` or `AI_TOKENS_STORE_UNAVAILABLE` when the driver fails, with the original failure on `cause` and nothing of the driver's text in the message, the response, the details or the stack; the methods that used to pass the raw driver error through (`getBalance`, `findById`, `findByIdempotencyKey`, a budget's `upsert` and others) are covered, and the signals the store raises for the service layer (a missing wallet, an idempotency conflict) are unchanged. The log lines of the hold reaper and of the two sweepers carry the error's `name` and a code of the shape of one (`ECONNREFUSED`, or the typed code), and no longer carry its message.
+- **Apply:** no migration and no option change is needed. Every public method of the PostgreSQL store now rejects with a typed `AI_TOKENS_STORE_ERROR` or `AI_TOKENS_STORE_UNAVAILABLE` when the driver fails, with the original failure on `cause` and nothing of the driver's text in the message, the response, the details or the stack; the methods that used to pass the raw driver error through (`findById`, `findByIdempotencyKey`, a budget's `upsert` and others) are covered, and the signals the store raises for the service layer (a missing wallet, an idempotency conflict) are unchanged. The log lines of the hold reaper and of the two sweepers carry the error's `name` and a code of the shape of one (`ECONNREFUSED`, or the typed code), and no longer carry its message.
 
 ## [1.1.18] - 2026-11-17
 
