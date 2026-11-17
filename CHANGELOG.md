@@ -12,6 +12,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Fixed
 
+- The PostgreSQL store's typed error repeats the code of the driver error in its `details` only when the code has the shape of one (`P2010`, `ECONNREFUSED`); a code that is a sentence or carries a value is left out, so no text a driver wrote reaches the HTTP body. The original error stays on `cause`.
 - The pruning of given-back budget applications now runs for a custom budget store that implements `pruneGivenBackExcept` but not `pruneGivenBack`, when the ledger keeps no markers or none is owed; before, it pruned nothing.
 
 ### Changed
