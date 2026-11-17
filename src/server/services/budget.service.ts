@@ -28,6 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey } from './budget.keys'
@@ -144,6 +145,9 @@ export class BudgetService {
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the option name
+    const given: unknown = input.policy
+    if (given !== undefined && given !== null && !isBudgetPolicy(given)) throw invalid('policy must be one of block, throttle or allow')
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the field name
     if (!Array.isArray(softThresholds) || !(softThresholds as unknown[]).every(isFraction)) throw invalid('softThresholds must be a list of numbers within (0, 1]')
@@ -434,7 +438,7 @@ export class BudgetService {
   ): Promise<void> {
     let increments: CounterIncrement[] = []
     let replayed: boolean
-    if (located.budget.policy === 'block') {
+    if (effectivePolicy(located.budget.policy) === 'block') {
       const result = await this.guardedConsume(located, delta, keyed)
       if (!result.ok) {
         await this.rollback(consumed)

@@ -9,6 +9,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { IMarkupPolicy } from '../interfaces'
 import type { BymaxAiTokensModuleOptions } from '../interfaces'
+import { withoutNullish } from './without-nullish'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 import type {
   ResolvedAiTokensOptions,
@@ -124,7 +125,8 @@ function resolveReporting(
  * @param options The validated host options.
  * @returns The fully-resolved, frozen options.
  */
-export function applyDefaults(options: BymaxAiTokensModuleOptions): ResolvedAiTokensOptions {
+export function applyDefaults(given: BymaxAiTokensModuleOptions): ResolvedAiTokensOptions {
+  const options = withoutNullish(given)
   return Object.freeze<ResolvedAiTokensOptions>({
     store: options.store,
     scopeResolver: options.scopeResolver,
