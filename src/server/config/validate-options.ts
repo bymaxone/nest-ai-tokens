@@ -10,6 +10,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
+import { isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 
 const LEDGER_METHODS = [
@@ -200,13 +201,13 @@ function validatePricing(options: BymaxAiTokensModuleOptions): void {
 function validateWallets(options: BymaxAiTokensModuleOptions): void {
   const wallets = options.wallets
   if (wallets === undefined) return
-  if (wallets.creditRateNanoUsd !== undefined && wallets.creditRateNanoUsd <= 0n) {
+  if (wallets.creditRateNanoUsd !== undefined && !isPositiveBigint(wallets.creditRateNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.creditRateNanoUsd must be greater than 0')
+    throw invalidConfig('wallets.creditRateNanoUsd must be a bigint greater than 0')
   }
-  if (wallets.overdraftNanoUsd !== undefined && wallets.overdraftNanoUsd < 0n) {
+  if (wallets.overdraftNanoUsd !== undefined && !isNonNegativeBigint(wallets.overdraftNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.overdraftNanoUsd must not be negative')
+    throw invalidConfig('wallets.overdraftNanoUsd must be a bigint of 0 or more')
   }
 }
 

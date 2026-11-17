@@ -22,6 +22,7 @@ import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../share
 import { AiTokensException } from '../errors'
 import { setErrorMessage } from '../errors/set-error-message'
 import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
+import { isCount, isNonNegativeBigint } from '../utils/numeric-guards'
 import type { PricingService } from './pricing.service'
 
 /** The placeholder recorded for a token/amount estimate that carries no model (§11.1). */
@@ -176,6 +177,23 @@ function syntheticUsage(estimate: Extract<HoldEstimate, { provider: ProviderId }
   }
 }
 
+/** Refuse a hold estimate whose amounts are not whole non-negative counts or a non-negative bigint, naming the field and echoing no value. */
+function assertEstimate(estimate: HoldEstimate): void {
+  const fields: [string, unknown][] = isRatedEstimate(estimate)
+    ? [['inputTokens', estimate.inputTokens], ['maxOutputTokens', estimate.maxOutputTokens]]
+    : isTokenEstimate(estimate)
+      ? [['tokens', estimate.tokens]]
+      : []
+  for (const [name, value] of fields) {
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the field name
+    if (!isCount(value)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} of a hold estimate must be a whole number of 0 or more` })
+  }
+  if (!isRatedEstimate(estimate) && !isTokenEstimate(estimate) && !isNonNegativeBigint(estimate.amountNanoUsd)) {
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the field name
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'amountNanoUsd of a hold estimate must be a bigint of 0 or more' })
+  }
+}
+
 /**
  * Rate a {@link HoldEstimate} into a reservation. Variant A rates a synthetic
  * usage at the model's effective price; variant B (`{ tokens }`, requires
@@ -196,6 +214,7 @@ export async function resolveHoldEstimate(
   estimate: HoldEstimate,
   at: Date,
 ): Promise<ResolvedHoldEstimate> {
+  assertEstimate(estimate)
   const serviceTier = context.serviceTier ?? 'standard'
   if (isRatedEstimate(estimate)) {
     const tier = estimate.serviceTier ?? serviceTier
