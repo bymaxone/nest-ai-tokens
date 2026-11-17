@@ -624,5 +624,33 @@ describe('BudgetReferenceSweeper', () => {
       await r.sweeper.sweep()
       expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual(['ai_tokens.budget_reference_sweep.settle_failed count=2'])
     })
+
+    /** A store that can spare a tenant but has no pruning of every tenant is still pruned, sparing nobody, when nothing is owed. */
+    it('prunes through the store that can spare a tenant when it has no pruning of every tenant and the ledger keeps no marker', async () => {
+      const r = await rig()
+      await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId: 'b1', attempt: 'a' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })
+      const only = Object.create(r.budgets, { pruneGivenBack: { value: undefined } }) as InMemoryBudgetStore
+      const markerless = Object.create(r.ledgerStore, { findEffectsOwed: { value: undefined }, findEffectsOwedFor: { value: undefined }, clearEffectsOwed: { value: undefined } }) as InMemoryLedgerStore
+      const sweeper = new BudgetReferenceSweeper(only, new LedgerService(markerless), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now)
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect(await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
+    /** The same store keeps the pause when a marker is owed and the listing cannot name the tenants, and prunes nothing. */
+    it('pauses for every tenant on a store with no pruning of every tenant when the marker listing may be truncated', async () => {
+      const r = await rig({ pageSize: 1 })
+      await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId: 'b1', attempt: 'a' }, WINDOW, DELTA, {})
+      await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })
+      for (const key of ['x1', 'x2']) await r.ledgerStore.append(usageRecord({ tenantId: 't1', scope: { type: 'user', id: 'u1' }, status: 'released', idempotencyKey: key, occurredAt: OCCURRED }), `hash-${key}`, undefined, { reason: 'refund' })
+      const only = Object.create(r.budgets, { pruneGivenBack: { value: undefined } }) as InMemoryBudgetStore
+      const sweeper = new BudgetReferenceSweeper(only, new LedgerService(r.ledgerStore), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now, { pageSize: 1 })
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      expect(await r.budgets.dropReference({ key: 'record:g', budgetId: 'b1', attempt: 'a' })).toBe('missing')
+      expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([ALL_LINE])
+    })
   })
 })

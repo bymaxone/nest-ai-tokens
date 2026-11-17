@@ -137,8 +137,9 @@ export class BudgetReferenceSweeper {
   private async pruneGivenBack(before: Date): Promise<void> {
     const owing = await this.tenantsOwingBefore(before)
     if (owing === null) {
-      if (this.store.pruneGivenBack === undefined) return
+      if (this.store.pruneGivenBack === undefined && this.store.pruneGivenBackExcept === undefined) return
       if (await this.owesBefore(before)) this.logger.warn(PRUNE_SKIPPED_LOG_KEY)
+      else if (this.store.pruneGivenBack === undefined) await this.store.pruneGivenBackExcept?.(before, this.pageSize, [])
       else await this.store.pruneGivenBack(before, this.pageSize)
       return
     }

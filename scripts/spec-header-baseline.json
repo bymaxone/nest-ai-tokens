@@ -16,7 +16,6 @@
     "src/server/services/budget-predicate.spec.ts",
     "src/server/services/budget.service.spec.ts",
     "src/server/services/content-capture.spec.ts",
-    "src/server/services/ledger-hash-chain.spec.ts",
     "src/server/services/ledger-idempotency-conflict.spec.ts",
     "src/server/services/ledger.service.spec.ts",
     "src/server/services/markup.resolver.spec.ts",
