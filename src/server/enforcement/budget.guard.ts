@@ -16,6 +16,7 @@
  * @layer server
  */
 
+import { effectivePolicy } from '../utils/enum-guards'
 import { Inject, Injectable } from '@nestjs/common'
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
 import type { Reflector } from '@nestjs/core'
@@ -107,7 +108,7 @@ function featureMatches(features: string[] | undefined, feature: string): boolea
  * when the budget is soft, does not apply to the feature, or still has headroom.
  */
 function exhaustedError(status: BudgetStatus, feature: string): AiTokensException | null {
-  if (status.policy !== 'block' || !featureMatches(status.features, feature)) return null
+  if (effectivePolicy(status.policy) !== 'block' || !featureMatches(status.features, feature)) return null
   if (status.limit.nanoUsd !== undefined && status.spent.nanoUsd >= status.limit.nanoUsd) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check error code only
     return new AiTokensException('AI_TOKENS_BUDGET_EXCEEDED', undefined, { budgetId: status.budgetId, dimension: 'cost' })

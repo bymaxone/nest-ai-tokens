@@ -10,6 +10,8 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
+import { isBudgetPolicy, isRatingMode } from '../utils/enum-guards'
+import { withoutNullish } from './without-nullish'
 import { isFraction, isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 
@@ -63,7 +65,7 @@ function firstMissingMethod(store: object, methods: readonly string[]): string |
 function validateStorePorts(options: BymaxAiTokensModuleOptions): void {
   const store: unknown = options.store
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-  if (store === undefined || store === null) throw invalidConfig('options.store is required')
+  if (store === undefined) throw invalidConfig('options.store is required')
   const missingLedger = firstMissingMethod(options.store, LEDGER_METHODS)
   if (missingLedger !== undefined) {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
@@ -113,6 +115,41 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
   if (typeof markup.resolve !== 'function') {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('markup policy must implement a resolve() method')
+  }
+}
+
+/** The groups whose omission leaves a limit or a protection off, so that a group which failed to load must not read as omitted. */
+const NULL_REFUSED_GROUPS = ['budgets', 'wallets', 'ledger'] as const
+
+/**
+ * Refuse a null where an omitted option leaves a limit or a protection off: no budget enforcement, no wallet balance, and the
+ * integrity chain of the ledger, which is off by default. A group or a chain flag that failed to load as null must not be read
+ * as "off". It is read from the options as given, before nulls are dropped.
+ */
+function validateProtections(given: BymaxAiTokensModuleOptions): void {
+  for (const group of NULL_REFUSED_GROUPS) {
+    const value: unknown = Reflect.get(given, group)
+    if (value === null) {
+      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+      throw invalidConfig(`${group} must be an object, or left out`)
+    }
+  }
+  const ledger: unknown = Reflect.get(given, 'ledger')
+  if (typeof ledger === 'object' && ledger !== null && Reflect.get(ledger, 'hashChain') === null) {
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    throw invalidConfig('ledger.hashChain must be true or false')
+  }
+}
+
+/** Refuse a budget policy or a rating mode that is not a documented value: a typo must not mean no limit, or another price. */
+function validateEnums(options: BymaxAiTokensModuleOptions): void {
+  if (options.budgets?.defaultPolicy !== undefined && !isBudgetPolicy(options.budgets.defaultPolicy)) {
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    throw invalidConfig('budgets.defaultPolicy must be one of block, throttle or allow')
+  }
+  if (options.ratingMode !== undefined && !isRatingMode(options.ratingMode)) {
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    throw invalidConfig('ratingMode must be one of rate-table or provider-reported')
   }
 }
 
@@ -220,9 +257,12 @@ function validateWallets(options: BymaxAiTokensModuleOptions): void {
  * @param options The host-provided module options.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` or `AI_TOKENS_FX_REQUIRED`.
  */
-export function validateOptions(options: BymaxAiTokensModuleOptions): void {
+export function validateOptions(given: BymaxAiTokensModuleOptions): void {
+  validateProtections(given)
+  const options = withoutNullish(given)
   validateStorePorts(options)
   validateFeaturePorts(options)
+  validateEnums(options)
   validateCurrency(options)
   validateMarkup(options.markup)
   validateBudgetThresholds(options)

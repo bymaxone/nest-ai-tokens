@@ -23,6 +23,8 @@ const MARKER = '9876543'
 
 const BAD_NUMBERS: readonly unknown[] = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1, 1.5, MARKER, null]
 const BAD_BIGINTS: readonly unknown[] = [Number.NaN, Number.POSITIVE_INFINITY, 1.5, 3, MARKER, null, -1n]
+/** The bad values of an option: `null` is not one, because an option set to `null` takes its default as an option left out does. */
+const BAD_OPTION_BIGINTS: readonly unknown[] = BAD_BIGINTS.filter((value) => value !== null)
 
 /** The exception `run` rejects with; fails when it neither throws nor rejects. */
 async function refusal(run: () => unknown): Promise<AiTokensException> {
@@ -48,16 +50,23 @@ async function expectRefused(run: () => unknown, field: string): Promise<void> {
 const withStore = { store: makeFullStore() } as never
 
 describe('module options that hold money or limits', () => {
-  it.each(BAD_BIGINTS)('refuses wallets.creditRateNanoUsd %p', async (value) => {
+  it.each(BAD_OPTION_BIGINTS)('refuses wallets.creditRateNanoUsd %p', async (value) => {
     await expectRefused(() => validateOptions({ ...(withStore as object), wallets: { creditRateNanoUsd: value } } as never), 'wallets.creditRateNanoUsd')
   })
 
-  it.each([...BAD_BIGINTS, 0n])('refuses wallets.creditRateNanoUsd of the rate %p when it is not above zero', async (value) => {
+  it.each([...BAD_OPTION_BIGINTS, 0n])('refuses wallets.creditRateNanoUsd of the rate %p when it is not above zero', async (value) => {
     await expectRefused(() => validateOptions({ ...(withStore as object), wallets: { creditRateNanoUsd: value } } as never), 'wallets.creditRateNanoUsd')
   })
 
-  it.each(BAD_BIGINTS)('refuses wallets.overdraftNanoUsd %p', async (value) => {
+  it.each(BAD_OPTION_BIGINTS)('refuses wallets.overdraftNanoUsd %p', async (value) => {
     await expectRefused(() => validateOptions({ ...(withStore as object), wallets: { overdraftNanoUsd: value } } as never), 'wallets.overdraftNanoUsd')
+  })
+
+  /** An option set to `null` is absent, as one left out is: it takes its default and is neither refused nor switched off. */
+  it('takes a null rate and a null overdraft as the defaults', () => {
+    const options = { ...(withStore as object), wallets: { overdraftNanoUsd: null, creditRateNanoUsd: null } } as never
+    expect(() => validateOptions(options)).not.toThrow()
+    expect(applyDefaults(options).wallets).toMatchObject({ enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n })
   })
 
   /** Zero overdraft and a positive bigint rate are the valid values and are accepted. */

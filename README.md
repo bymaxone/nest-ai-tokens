@@ -313,6 +313,14 @@ export class AiController {
 | `telemetry.sink`            | `ITelemetrySink`                      | — (off)          | Your OpenTelemetry sink; the library ships none and telemetry is off without it  |
 | `telemetry.metrics`         | `boolean`                             | `true`           | Emit token-usage and duration metrics when a sink is present                     |
 
+The options are checked when the module is configured. `budgets.defaultPolicy`, the `policy` of a budget passed to `upsertBudget`
+(checked at that call), and `ratingMode` accept only the values in the table; any other value throws `AI_TOKENS_INVALID_CONFIG`,
+naming the option and never the value. A stored budget whose policy is not a documented value is evaluated as `'block'`. An option
+set to `null` or `undefined` is left out: it takes its default, or stays off where it has none; `store` is
+required and refuses both. A group of options set to `null` is left out too, except `budgets`, `wallets` and `ledger`, and the flag `ledger.hashChain`: leaving
+these out switches a limit or a protection off, so they refuse `null` with `AI_TOKENS_INVALID_CONFIG`, because a configuration that
+failed to load must not do the same. Leave them out, or set them to `undefined`, to keep the feature off.
+
 With `forRootAsync`, the options arrive after the providers are declared, so `WalletService`,
 `BudgetService` and `BudgetGuard` are always registered. When the options leave `wallets` or
 `budgets` out, the injected object throws `AI_TOKENS_INVALID_CONFIG` on any method call, with a

@@ -4,6 +4,7 @@
  * @layer server
  */
 
+import { effectivePolicy } from '../utils/enum-guards'
 import type { Budget, BudgetStatus } from '../../shared'
 import type { BudgetDelta, BudgetLimits, BudgetWindowSpend } from '../interfaces'
 import type { CounterDimensionName } from './budget.keys'
@@ -127,7 +128,7 @@ export function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | 
     window: budget.window,
     windowStart,
     resetsAt,
-    policy: budget.policy,
+    policy: effectivePolicy(budget.policy),
     limit: limitSnapshot(limits),
     spent: spendSnapshot(spend),
     remaining: remainingSnapshot(limits, spend),
