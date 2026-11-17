@@ -26,6 +26,8 @@ export default tseslint.config(
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
   {
+    // An inline `eslint-disable` or rule override cannot widen a rule: a rule is relaxed here, in this file, in review.
+    linterOptions: { noInlineConfig: true },
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.eslint.json'],
