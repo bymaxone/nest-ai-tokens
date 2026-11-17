@@ -153,14 +153,17 @@ describe('the dates of a filter, an estimate, a reconciliation and a price', () 
     expect(await pricing.getPriceHistory('openai', 'gpt-5', 'chat')).toHaveLength(1)
   })
 
-  it('takes each optional date input left out', async () => {
+  it('takes the optional date inputs of the ledger, the wallet, the reports and the estimate left out', async () => {
     const { ledger, wallets, metering } = await services()
     await expect(ledger.query({ tenantId: TENANT })).resolves.toEqual([])
-    await expect(ledger.sumCost({ tenantId: TENANT })).resolves.toBeDefined()
+    await expect(ledger.sumCost({ tenantId: TENANT })).resolves.toMatchObject({ records: 0, rawCostNanoUsd: 0n })
     await expect(ledger.verifyChain(TENANT)).resolves.toMatchObject({ valid: true })
     await expect(wallets.getEntries(REF)).resolves.toMatchObject({ entries: [] })
     await expect(wallets.getEntries(REF, {})).resolves.toMatchObject({ entries: [] })
-    await expect(metering.estimateCost(ESTIMATE)).resolves.toBeDefined()
+    await expect(metering.estimateCost(ESTIMATE)).resolves.toMatchObject({ rawCostNanoUsd: 0n, billedCostNanoUsd: 0n })
+    const reports = new UsageReportService(new InMemoryLedgerStore(), new InMemoryPricingStore(), { currency: 'USD', reporting: { maxExportRows: 1000 } })
+    await expect(reports.summarize({ tenantId: TENANT, groupBy: [] } as never)).resolves.toEqual([])
+    await expect(reports.export({ tenantId: TENANT } as never, 'csv')).resolves.toBeDefined()
   })
 
   it('accepts a valid date for each input', async () => {
