@@ -30,20 +30,29 @@ export interface RedisBudgetCounterStoreOptions {
    * refused with `AI_TOKENS_INVALID_CONFIG`. A client passed in by the host is never closed.
    */
   closeTimeoutMs?: number
+  /**
+   * How long a command on a client this store created waits for Redis before it fails, which the budget service answers with
+   * the database path. A whole number of milliseconds from 1 to 2,147,483,647, default 500; anything else is refused with
+   * `AI_TOKENS_INVALID_CONFIG`. A client passed in by the host keeps the host's own settings.
+   */
+  commandTimeoutMs?: number
 }
 
 /** The default bound on a graceful `quit()` of an owned client, in milliseconds. */
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000
 
+/** The default bound on one command of an owned client, in milliseconds. Against a stopped server a command then fails in at most about 500 ms, where the ioredis defaults held it for over a minute. */
+const DEFAULT_COMMAND_TIMEOUT_MS = 500
+
 /** The longest delay `setTimeout` runs: 2^31-1 milliseconds, a longer one fires after a millisecond. */
 const MAX_CLOSE_TIMEOUT_MS = 2_147_483_647
 
-/** Throw unless `value`, when given, is a whole number of milliseconds a timer honours, naming the option. */
-function requireCloseTimeout(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_CLOSE_TIMEOUT_MS
+/** Throw unless `value`, when given, is a whole number of milliseconds a timer honours, naming the option; `fallback` when it is not given. */
+function requireMillis(name: string, value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback
   if (!Number.isInteger(value) || value < 1 || value > MAX_CLOSE_TIMEOUT_MS) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error reason template is internal diagnostics; tests check the code and the option name
-    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `closeTimeoutMs must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}, received ${String(value)}` })
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}, received ${String(value)}` })
   }
   return value
 }
@@ -110,6 +119,9 @@ export class CounterValueOutOfRangeError extends Error {
 export class RedisBudgetCounterStore implements IBudgetCounterStore {
   private readonly keyPrefix: string
   private readonly closeTimeoutMs: number
+
+  /** The command timeout of a client this store creates. */
+  private readonly commandTimeoutMs: number
   /**
    * The live client or the connection URL it is opened from.
    *
@@ -134,7 +146,8 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   constructor(redis: Redis | string, options: RedisBudgetCounterStoreOptions = {}) {
     this.keyPrefix = options.keyPrefix ?? ''
-    this.closeTimeoutMs = requireCloseTimeout(options.closeTimeoutMs)
+    this.closeTimeoutMs = requireMillis('closeTimeoutMs', options.closeTimeoutMs, DEFAULT_CLOSE_TIMEOUT_MS)
+    this.commandTimeoutMs = requireMillis('commandTimeoutMs', options.commandTimeoutMs, DEFAULT_COMMAND_TIMEOUT_MS)
     this.#source = redis
   }
 
@@ -232,6 +245,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   /** Dynamically import `ioredis` and connect the given URL. */
   private async connect(url: string): Promise<Redis> {
     const { default: RedisClient } = await import('ioredis')
-    return new RedisClient(url)
+    // One retry per command and a command timeout, so a stopped Redis answers in the time of the timeout; the offline queue stays on, so a command issued while the connection is still opening waits for it.
+    return new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
   }
 }

@@ -31,10 +31,11 @@ const BUDGETS = [
   // pause for every tenant, and the call of the store's pruning that spares them.
   // 51_653 holds the row's instant that the hold's reservation and its two rollbacks take, to locate the windows they charge
   // and give back.
+  // 51_838 holds the guard that keeps the reaper's timer from starting a sweep while the previous one runs, and its skipped-tick line.
   // The prisma bundle's 15_781 holds the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
   // that a store error repeats.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 51_653 },
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 51_838 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 15_781 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
