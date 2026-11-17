@@ -53,22 +53,30 @@ jobs:
       - name: Source files stay within the length limit
         env:
           BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # A pull request is also checked against the baseline on its base branch, so the
-          # baseline it carries cannot admit the offender it adds.
+          # The baseline a change carries cannot admit the offender it adds: a pull request is compared with
+          # the baseline on its base branch, and a push with the one at the commit the push replaced.
+          # A new branch or a manual run has no such commit (all zeros or empty) and is checked alone.
           if [ -n "$BASE_REF" ]; then
             pnpm check:file-length --base "origin/$BASE_REF"
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            pnpm check:file-length --base "$BEFORE_SHA"
           else
             pnpm check:file-length
           fi
       - name: Spec files open with a purpose and layer header
         env:
           BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # A pull request is also checked against the baseline on its base branch, so the
-          # baseline it carries cannot admit the spec it adds.
+          # The baseline a change carries cannot admit the spec it adds: a pull request is compared with
+          # the baseline on its base branch, and a push with the one at the commit the push replaced.
+          # A new branch or a manual run has no such commit (all zeros or empty) and is checked alone.
           if [ -n "$BASE_REF" ]; then
             pnpm check:spec-headers --base "origin/$BASE_REF"
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            pnpm check:spec-headers --base "$BEFORE_SHA"
           else
             pnpm check:spec-headers
           fi

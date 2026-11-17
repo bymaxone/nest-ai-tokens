@@ -77,8 +77,8 @@ function makeService(
 
 /** A stub store whose named method rejects with `thrown`; the rest are inert. */
 function throwingStore(method: keyof IWalletStore, thrown: unknown): IWalletStore {
-  // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the store double intentionally rejects with arbitrary values to exercise the non-Error mapping branch.
-  const reject = (): Promise<never> => Promise.reject(thrown)
+  // The double rejects with any value, to exercise the mapping of a rejection that is not an Error.
+  const reject = jest.fn<Promise<never>, []>().mockRejectedValue(thrown)
   const base: IWalletStore = {
     getWallet: (): Promise<Wallet | null> => Promise.resolve(null),
     appendEntry: (): Promise<never> => Promise.reject(new Error('unused')),
