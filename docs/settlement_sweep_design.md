@@ -139,6 +139,6 @@ A keyed call whose append failed with no row keeps its wallet debit for the retr
 ## What it does not fix
 
 - The effects are at-least-once for events and spans; the wallet and budget are exact.
-- A counter and a window can still disagree between a crash and the next sweep or `reconcileWindow`. The reservation of a hold and its rollbacks locate the windows by the instant stamped on the hold's row. A live counter that is stale-high after a sweep is left alone: it fails closed, and the database decides.
+- A counter and a window can still disagree between a crash and the next sweep or `reconcileWindow`; a live counter that is stale-high after a sweep is left alone, because it fails closed and the database decides.
 - A caller that never retries and whose process dies before the transition commits leaves the `pending` row it leaves today, which the reaper already reclaims.
 - The price-change retry of the settlement note, item 5, stays a documented limit.
