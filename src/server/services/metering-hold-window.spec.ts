@@ -57,6 +57,7 @@ class Counter implements IBudgetCounterStore {
 
 interface Rig {
   metering: MeteringService
+  pricing: InMemoryPricingStore
   budgets: InMemoryBudgetStore
   ledgerStore: InMemoryLedgerStore
   counter: Counter
@@ -109,31 +110,35 @@ async function seedRig(
   return budget.id
 }
 
-/** A metering service stamping rows at STAMPED over a budget service that reads CONSUMED: the boundary falls between them. */
-async function rig(wallet = false): Promise<Rig> {
-  const ledgerStore = new InMemoryLedgerStore()
-  const pricingStore = new InMemoryPricingStore()
-  const budgets = new InMemoryBudgetStore({ now: () => CONSUMED })
-  const counter = new Counter()
-  const options = rigOptions(counter, wallet)
+/** A metering service stamping its rows at `stamp` over the stores of the rig, with a budget service that reads CONSUMED. */
+function serviceAt(r: Omit<Rig, 'metering'>, wallet: boolean, stamp: Date): MeteringService {
+  const options = rigOptions(r.counter, wallet)
   if (!options.budgets.enabled) throw new Error('the fixture enables budgets')
-  const ledger = new LedgerService(ledgerStore, options)
-  const budgetService = new BudgetService(budgets, ledger, options.budgets, () => CONSUMED)
+  const ledger = new LedgerService(r.ledgerStore, options)
+  const budgetService = new BudgetService(r.budgets, ledger, options.budgets, () => CONSUMED)
   const walletService =
     wallet && options.wallets.enabled
       ? new WalletService(new InMemoryWalletStore({ now: () => STAMPED }), options.wallets)
       : undefined
-  const metering = new MeteringService(
+  return new MeteringService(
     ledger,
-    new PricingService(options, pricingStore),
+    new PricingService(options, r.pricing),
     new MarkupResolver(options),
     options,
     undefined,
     walletService,
     budgetService,
-    () => STAMPED,
+    () => stamp,
   )
-  return { metering, budgets, ledgerStore, counter, budgetId: await seedRig(pricingStore, budgets) }
+}
+
+/** A metering service stamping rows at STAMPED over a budget service that reads CONSUMED: the boundary falls between them. */
+async function rig(wallet = false): Promise<Rig> {
+  const pricing = new InMemoryPricingStore()
+  const budgets = new InMemoryBudgetStore({ now: () => CONSUMED })
+  const base = { budgets, ledgerStore: new InMemoryLedgerStore(), counter: new Counter(), pricing }
+  const budgetId = await seedRig(pricing, budgets)
+  return { ...base, budgetId, metering: serviceAt({ ...base, budgetId }, wallet, STAMPED) }
 }
 
 async function spent(r: Rig, windowStart: Date): Promise<bigint> {
@@ -196,6 +201,20 @@ describe('the window a hold charges', () => {
     const first = await r.metering.hold(context('w-4'), ESTIMATE)
     await r.metering.hold(context('w-4'), ESTIMATE)
     expect(await spent(r, DAY_ONE)).toBe(first.estimatedCostNanoUsd)
+    expect(await spent(r, DAY_TWO)).toBe(0n)
+  })
+
+  /**
+   * Invariant: a hold on a key whose reservation stands in another window is refused by the budget store, so the loser of a
+   * race across a window boundary never charges a second window: only the winner's window holds anything.
+   */
+  it('refuses a hold on a key already reserved in the other window and charges no second window', async () => {
+    const r = await rig()
+    const winner = await r.metering.hold(context('w-5'), ESTIMATE)
+    const loser = serviceAt(r, false, CONSUMED)
+    jest.spyOn(r.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    await expect(loser.hold(context('w-5'), ESTIMATE)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_IDEMPOTENCY_CONFLICT' } } })
+    expect(await spent(r, DAY_ONE)).toBe(winner.estimatedCostNanoUsd)
     expect(await spent(r, DAY_TWO)).toBe(0n)
   })
 })

@@ -38,7 +38,6 @@ overrides:
   # (matches drop to zero), so glob 10 itself moves to 13 rather than minimatch being
   # forced under it. archiver 8 is ESM-only and Jest's CommonJS runtime cannot load it,
   # so testcontainers keeps archiver 7 and only its glob moves.
-  'minimatch@>=10.0.0 <11.0.1': '>=11.0.1'
   'test-exclude@7': '^8.0.0'
   # GHSA-3g3m-2fjr-6pw4 (glob >=9.0.0 <=14.0.1) and GHSA-g3hv-75wg-m249 (minimatch <11.0.1)
   # are fixed in glob 14.0.2 and minimatch 11.0.1. Every glob line and the minimatch 9 and 10

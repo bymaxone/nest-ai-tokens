@@ -10,6 +10,14 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Fixed
+
+- The pruning of given-back budget applications now runs for a custom budget store that implements `pruneGivenBackExcept` but not `pruneGivenBack`, when the ledger keeps no markers or none is owed; before, it pruned nothing.
+
+### Changed
+
+- The note on `status: ['released']` reads says to filter on the provider or feature `orphan-claim` client-side, or to list features with `features: [...]`; there is no server-side "not equal" filter.
+
 ## [1.1.17] - 2026-11-16
 
 **Apply:** no migration. An owed marker older than `settlement.retentionSeconds` used to pause the deletion of given-back budget

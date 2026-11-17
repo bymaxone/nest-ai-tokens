@@ -1,3 +1,9 @@
+/**
+ * @fileoverview The hash chain of the ledger: how a record is chained to its predecessor, how verification reads a chain and
+ * reports its forks, and how the siblings of one predecessor are grouped, ordered and bounded.
+ * @layer server
+ */
+
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import type { UsageRecord } from '../../shared'
 import { chainHash, forksOf as groupForks, verifyChainRecords, type ChainFork } from '../utils/hash-chain'
@@ -355,6 +361,18 @@ describe('verifyChainRecords structure', () => {
     const oneLarge = leastCpuOf(5, () => groupForks(large))
     expect(oneLarge / eightSmall).toBeLessThan(6)
   }, 120_000)
+
+  /** Many distinct parents with two children each yield one fork per parent, every fork holding exactly its own two siblings. */
+  it('groups many distinct parents into one fork each', async () => {
+    const [, first] = await chained()
+    const parents = 5_000
+    const records: UsageRecord[] = Array.from({ length: parents * 2 }, (_, i) => ({ ...first, id: `r-${String(i).padStart(6, '0')}`, prevHash: `parent-${String(i % parents).padStart(5, '0')}`, createdAt: new Date(i * 1000) }))
+    const forks = groupForks(records)
+    expect(forks).toHaveLength(parents)
+    expect(forks.every((fork) => fork.records.length === 2)).toBe(true)
+    expect(forks.map((fork) => fork.parentHash)).toEqual([...forks.map((fork) => fork.parentHash)].sort())
+    expect(forks[7]?.records.map((record) => record.id)).toEqual(['r-000007', 'r-005007'])
+  })
 
   /** A bounded call reports the siblings inside its window, and a parent outside the window is still named. */
   it('reports a fork on a bounded call from the siblings in the window', async () => {
