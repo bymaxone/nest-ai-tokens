@@ -66,7 +66,7 @@ describe('module options that hold money or limits', () => {
   it('takes a null rate and a null overdraft as the defaults', () => {
     const options = { ...(withStore as object), wallets: { overdraftNanoUsd: null, creditRateNanoUsd: null } } as never
     expect(() => validateOptions(options)).not.toThrow()
-    expect(applyDefaults(options).wallets).toMatchObject({ enabled: true, overdraftNanoUsd: 0n })
+    expect(applyDefaults(options).wallets).toMatchObject({ enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n })
   })
 
   /** Zero overdraft and a positive bigint rate are the valid values and are accepted. */

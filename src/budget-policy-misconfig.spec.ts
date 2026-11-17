@@ -119,11 +119,14 @@ describe('a group of options set to null', () => {
       ledger: { hashChain: undefined },
       reporting: { maxExportRows: value },
     } as never)
-    expect(resolved.wallets).toMatchObject({ overdraftNanoUsd: 0n, burnOrder: 'expiry' })
-    expect(resolved.budgets).toMatchObject({ defaultPolicy: 'block', failClosed: true })
+    expect(resolved.wallets).toMatchObject({ creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' })
+    expect(resolved.budgets).toMatchObject({ defaultPolicy: 'block', failClosed: true, alertThresholds: [0.8, 1] })
     expect(resolved.holds).toMatchObject({ ttlSeconds: 3_600, reaperIntervalSeconds: 300 })
-    expect(resolved.settlement).toMatchObject({ enabled: true })
+    expect(resolved.settlement).toMatchObject({ enabled: true, graceSeconds: 300, retentionSeconds: 604_800 })
+    expect(resolved.pricing).toMatchObject({ strict: true, cacheTtlMs: 300_000, seedFromSnapshot: true })
     expect(resolved.ledger).toEqual({ hashChain: false })
+    expect(resolved.reporting).toMatchObject({ maxExportRows: 1_000_000 })
+    expect(resolved).toEqual(applyDefaults({ ...withStore, wallets: {}, budgets: {}, holds: {}, settlement: {}, pricing: {}, ledger: {}, reporting: {} }))
   })
 })
 
