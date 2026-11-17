@@ -24,6 +24,7 @@ import type {
 import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { isNonZeroBigint, isPositiveBigint, isValidDate } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
@@ -146,7 +147,8 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (input.amountNanoUsd <= 0n) throw this.invalid('grant amount must be greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint greater than 0')
+    this.assertGrantFields(input)
     const entry = await this.append(ref, {
       type: 'grant',
       amountNanoUsd: input.amountNanoUsd,
@@ -191,7 +193,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (input.amountNanoUsd <= 0n) throw this.invalid('debit amount must be greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint greater than 0')
     if (input.usageRecordId === undefined && input.reason === undefined) {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw this.invalid('a debit without a usageRecordId must carry a reason')
@@ -230,7 +232,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (input.amountNanoUsd <= 0n) throw this.invalid('refund amount must be greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint greater than 0')
     return this.append(ref, {
       type: 'refund',
       amountNanoUsd: input.amountNanoUsd,
@@ -257,7 +259,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (input.amountNanoUsd === 0n) throw this.invalid('adjustment amount must not be 0')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint')
     const entry = await this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -294,7 +296,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (input.amountNanoUsd === 0n) throw this.invalid('settlement adjustment amount must not be 0')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint')
     return this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -399,6 +401,16 @@ export class WalletService {
   /** Present a nano-USD balance as credits (presentation-only division). */
   private toCredits(nanoUsd: bigint): number {
     return Number(nanoUsd) / Number(this.options.creditRateNanoUsd)
+  }
+
+  /** Refuse a grant whose priority is not a whole number or whose dates are not valid dates: an `Invalid Date` compares false with every instant. */
+  private assertGrantFields(input: GrantInput): void {
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    if (input.priority !== undefined && !Number.isInteger(input.priority)) throw this.invalid('grant priority must be a whole number')
+    for (const [name, value] of [['effectiveAt', input.effectiveAt], ['expiresAt', input.expiresAt]] as const) {
+      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+      if (value !== undefined && !isValidDate(value)) throw this.invalid(`grant ${name} must be a valid date`)
+    }
   }
 
   /** Build the invalid-config exception with an actionable reason. */

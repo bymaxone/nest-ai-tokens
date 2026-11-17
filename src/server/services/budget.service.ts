@@ -28,6 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import { counterDimensions, counterKey, counterTtlSeconds, dimensionSpends, windowKey } from './budget.keys'
 import type {
@@ -144,10 +145,8 @@ export class BudgetService {
     this.assertLimits(input)
     assertWindowKind(input.window)
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
-    for (const threshold of softThresholds) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics; tests check error code only
-      if (!(threshold > 0 && threshold <= 1)) throw invalid(`softThresholds must be within (0, 1], received ${String(threshold)}`)
-    }
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the field name
+    if (!Array.isArray(softThresholds) || !(softThresholds as unknown[]).every(isFraction)) throw invalid('softThresholds must be a list of numbers within (0, 1]')
     if (input.id !== undefined) {
       const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
       if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
@@ -751,13 +750,16 @@ export class BudgetService {
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
   private assertLimits(input: UpsertBudgetInput): void {
+    if (input.limitNanoUsd !== undefined && !isNonNegativeBigint(input.limitNanoUsd)) {
+      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+      throw invalid('limitNanoUsd must be a bigint of 0 or more (§10.2)')
+    }
     for (const [name, value] of [
-      ['limitNanoUsd', input.limitNanoUsd],
       ['limitTokens', input.limitTokens],
       ['limitCount', input.limitCount],
     ] as const) {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      if (value !== undefined && value < 0) throw invalid(`${name} must not be negative (§10.2)`)
+      if (value !== undefined && !isCount(value)) throw invalid(`${name} must be a whole number of 0 or more (§10.2)`)
     }
     if (input.limitNanoUsd === undefined && input.limitTokens === undefined && input.limitCount === undefined) {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics

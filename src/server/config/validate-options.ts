@@ -10,6 +10,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
+import { isFraction, isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 
 const LEDGER_METHODS = [
@@ -119,10 +120,12 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
 function validateBudgetThresholds(options: BymaxAiTokensModuleOptions): void {
   const thresholds = options.budgets?.alertThresholds
   if (thresholds === undefined) return
-  for (const threshold of thresholds) {
-    if (!(threshold > 0 && threshold <= 1)) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      throw invalidConfig(`budget alert thresholds must be within (0, 1], received ${String(threshold)}`)
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  if (!Array.isArray(thresholds)) throw invalidConfig('budget alert thresholds must be a list of numbers within (0, 1]')
+  for (const threshold of thresholds as unknown[]) {
+    if (!isFraction(threshold)) {
+      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+      throw invalidConfig('budget alert thresholds must be numbers within (0, 1]')
     }
   }
 }
@@ -200,13 +203,13 @@ function validatePricing(options: BymaxAiTokensModuleOptions): void {
 function validateWallets(options: BymaxAiTokensModuleOptions): void {
   const wallets = options.wallets
   if (wallets === undefined) return
-  if (wallets.creditRateNanoUsd !== undefined && wallets.creditRateNanoUsd <= 0n) {
+  if (wallets.creditRateNanoUsd !== undefined && !isPositiveBigint(wallets.creditRateNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.creditRateNanoUsd must be greater than 0')
+    throw invalidConfig('wallets.creditRateNanoUsd must be a bigint greater than 0')
   }
-  if (wallets.overdraftNanoUsd !== undefined && wallets.overdraftNanoUsd < 0n) {
+  if (wallets.overdraftNanoUsd !== undefined && !isNonNegativeBigint(wallets.overdraftNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.overdraftNanoUsd must not be negative')
+    throw invalidConfig('wallets.overdraftNanoUsd must be a bigint of 0 or more')
   }
 }
 
