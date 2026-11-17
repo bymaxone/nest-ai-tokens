@@ -24,6 +24,7 @@ import type {
 import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { assertOptionalDate } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint, isValidDate } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -322,6 +323,8 @@ export class WalletService {
    */
   async getEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage> {
     this.assertOwner(ref)
+    assertOptionalDate('from', filter?.from)
+    assertOptionalDate('to', filter?.to)
     return this.store.listEntries(ref, filter)
   }
 

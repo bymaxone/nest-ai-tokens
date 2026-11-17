@@ -13,6 +13,7 @@ import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTie
 import { AiTokensException } from '../errors'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
+import { assertDate, assertOptionalDate } from '../utils/date-guards'
 import { normalizeModelId } from '../utils/model-id'
 
 /** Inputs to {@link PricingService.resolveRate}. */
@@ -63,6 +64,7 @@ export class PricingService implements OnModuleInit {
    * @throws {AiTokensException} `AI_TOKENS_PRICE_NOT_FOUND` on a miss in strict mode.
    */
   async resolveRate(input: ResolveRateInput): Promise<PriceVersion | null> {
+    assertDate('at', input.at)
     const serviceTier = input.serviceTier ?? 'standard'
     // Stryker disable next-line ConditionalExpression: CE true: always mapping to 'chat' is detectable only when a non-'responses', non-'chat' operation (e.g. 'embeddings') is used alongside a mismatched 'chat' price row; no such test exists. But CE true changes 'embeddings' → 'chat' which then finds the wrong price — the fix is the test for non-responses passing through
     const operation = input.operation === 'responses' ? 'chat' : input.operation
@@ -102,6 +104,7 @@ export class PricingService implements OnModuleInit {
    * @returns The newly-inserted open price row.
    */
   async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
+    assertOptionalDate('effectiveFrom', input.effectiveFrom)
     const row = await this.store.upsertPrice(input)
     this.cache.clear()
     return row

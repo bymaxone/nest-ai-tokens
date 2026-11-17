@@ -486,6 +486,11 @@ answer exactly as they do for an id that does not exist (`removeBudget` does not
 different answer from creating a new budget, let the library generate budget ids, or use a UUID: an id a caller can guess
 tells them whether it exists. Pass the tenant from your verified auth context, never from the request.
 
+**Dates must be valid `Date`s.** `anchorAt` and `expiresAt` of a budget, the `newWindowStart` of `rotateWindow`, the `windowStart` of
+`reconcileWindow`, the `occurredAt` of `record`, the `at` of `estimateCost` and `resolveRate`, the `effectiveFrom` of `upsertPrice`, and
+the `from` and `to` of a ledger, report or wallet-entry filter are refused with `AI_TOKENS_INVALID_CONFIG`, naming the input and never
+the value, when they are an Invalid Date, a string, a number or `null`. `undefined` keeps the default where the input has one.
+
 ---
 
 ## 🌊 Streaming
@@ -585,7 +590,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | Code                             | HTTP | When                                                                             |
 | -------------------------------- | ---- | -------------------------------------------------------------------------------- |
 | `AI_TOKENS_NOT_CONFIGURED`       | 503  | Reserved; nothing raises it                                                      |
-| `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, missing `scopeResolver`, missing fx                 |
+| `AI_TOKENS_INVALID_CONFIG`       | 500  | Bad markup, negative limits, a date that is not a valid `Date`, missing `scopeResolver`, missing fx |
 | `AI_TOKENS_UNKNOWN_PROVIDER`     | 400  | No preset/normalizer and usage is not already `NormalizedUsage`                  |
 | `AI_TOKENS_USAGE_MALFORMED`      | 422  | Normalizer could not read required token fields                                  |
 | `AI_TOKENS_PRICE_NOT_FOUND`      | 422  | No effective-dated rate after the model-resolution chain (strict mode)           |

@@ -35,6 +35,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
+import { assertOptionalDate } from '../utils/date-guards'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -235,6 +236,7 @@ export class MeteringService {
     const parsed = this.resolveNormalizedUsage(input)
     const normalized = withBaseModel(parsed, context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
+    assertOptionalDate('occurredAt', input.occurredAt)
     const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
@@ -337,6 +339,7 @@ export class MeteringService {
    * @returns The raw and billed nano-USD estimate.
    */
   async estimateCost(input: EstimateCostInput): Promise<CostEstimate> {
+    assertOptionalDate('at', input.at)
     const serviceTier = input.serviceTier ?? 'standard'
     const at = input.at ?? this.now()
     const usage: NormalizedUsage = {
