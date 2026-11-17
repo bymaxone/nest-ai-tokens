@@ -105,6 +105,15 @@ function clampUnits(units: Record<string, number>): Record<string, number> {
   return clamped
 }
 
+/** Refuse a usage whose token or tool unit count is not a whole number: a fraction or NaN reaches the cost arithmetic as a raw `RangeError`. */
+function assertWholeCounts(usage: NormalizedUsage): void {
+  const counts = tokenCountsOf(usage)
+  const units = Object.values(usage.serverToolUse ?? {})
+  if (TOKEN_FIELDS.every((field) => Number.isInteger(counts[field])) && units.every((count) => Number.isInteger(count))) return
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code
+  throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'every token and tool unit count of a usage must be a whole number' })
+}
+
 /**
  * Floor every token count — and the provider-reported cost — at zero.
  *
@@ -127,6 +136,7 @@ function clampUnits(units: Record<string, number>): Record<string, number> {
  * @returns The same usage with every token count, tool unit count and the provider-reported cost floored at zero.
  */
 export function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
+  assertWholeCounts(usage)
   const counts = tokenCountsOf(usage)
   const clamped = zeroTokenCounts()
   for (const field of TOKEN_FIELDS) {

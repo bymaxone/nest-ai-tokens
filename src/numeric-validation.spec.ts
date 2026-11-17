@@ -132,3 +132,69 @@ describe('hold estimates', () => {
     await expect((await metering()).hold(call, { ...rated, inputTokens: 0, maxOutputTokens: 0 })).resolves.toBeDefined()
   })
 })
+
+describe('alert thresholds', () => {
+  const BAD_THRESHOLDS: readonly unknown[] = [Number.NaN, 0, 1.5, -0.1, '0.5', true, null]
+
+  it.each(BAD_THRESHOLDS)('refuses the module threshold %p', async (value) => {
+    await expectRefused(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: [value] } } as never), 'alert thresholds')
+  })
+  it.each([...BAD_THRESHOLDS, 'x'])('refuses the budget soft threshold %p', async (value) => {
+    const { service } = makeService()
+    await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: [value] } as never)), 'softThresholds')
+  })
+  it('refuses thresholds that are not a list', async () => {
+    const { service } = makeService()
+    await expectRefused(() => service.upsertBudget(budgetInput({ softThresholds: MARKER } as never)), 'softThresholds')
+    await expectRefused(() => validateOptions({ ...(withStore as object), budgets: { alertThresholds: MARKER } } as never), 'alert thresholds')
+  })
+})
+
+describe('wallet grant fields other than the amount', () => {
+  const REF = { tenantId: 't', ownerType: 'user', ownerId: 'u' } as const
+  const grant = (over: object): Promise<unknown> =>
+    new WalletService(new InMemoryWalletStore(), { enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'priority' }).grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', reason: 'r', ...over })
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 1.5, MARKER, null])('refuses a grant priority of %p', async (value) => {
+    await expectRefused(() => grant({ priority: value }), 'priority')
+  })
+  it.each([new Date(Number.NaN), MARKER, 5, null])('refuses a grant effectiveAt of %p', async (value) => {
+    await expectRefused(() => grant({ effectiveAt: value }), 'effectiveAt')
+  })
+  it.each([new Date(Number.NaN), MARKER, 5, null])('refuses a grant expiresAt of %p', async (value) => {
+    await expectRefused(() => grant({ expiresAt: value }), 'expiresAt')
+  })
+  it('accepts a negative whole priority, a date, and no optional field', async () => {
+    await expect(grant({ priority: -2, effectiveAt: new Date(0), expiresAt: new Date('2100-01-01') })).resolves.toBeDefined()
+    await expect(grant({})).resolves.toBeDefined()
+  })
+})
+
+describe('usage token counts of a normalized usage', () => {
+  async function recordWith(over: object): Promise<unknown> {
+    const options = applyDefaults({ store: makeFullStore(), markup: 1, pricing: { seedFromSnapshot: false, strict: true } })
+    const pricing = new InMemoryPricingStore()
+    await pricing.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1_250_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
+    const metering = new MeteringService(new LedgerService(new InMemoryLedgerStore(), options), new PricingService(options, pricing), new MarkupResolver(options), options)
+    const usage = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0, ...over }
+    return metering.record({ usage: usage, context: { tenantId: TENANT, scope: USER_SCOPE, feature: 'f' } })
+  }
+  /** The typed error code a call refuses with. */
+  async function codeOf(run: () => Promise<unknown>): Promise<string> {
+    return (JSON.parse(JSON.stringify((await refusal(run)).getResponse())) as { error: { code: string } }).error.code
+  }
+
+  /** A fractional count used to throw a raw RangeError out of the cost arithmetic; it is the typed malformed-usage error now. */
+  it.each(['inputTokens', 'outputTokens', 'cacheReadTokens'])('refuses a fractional %s with the malformed-usage error', async (field) => {
+    expect(await codeOf(() => recordWith({ [field]: 1.5 }))).toBe('AI_TOKENS_USAGE_MALFORMED')
+  })
+  /** A count that is not a finite number was never a normalized usage, and still is not one. */
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, MARKER, null])('refuses a count of %p', async (value) => {
+    await refusal(() => recordWith({ inputTokens: value }))
+  })
+  /** A negative count keeps its documented floor at zero. */
+  it('floors a negative count at zero', async () => {
+    const result = (await recordWith({ inputTokens: -5 })) as { inputTokens: number }
+    expect(result.inputTokens).toBe(0)
+  })
+})

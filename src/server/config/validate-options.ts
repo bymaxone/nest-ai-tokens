@@ -10,7 +10,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
-import { isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
+import { isFraction, isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 
 const LEDGER_METHODS = [
@@ -120,10 +120,12 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
 function validateBudgetThresholds(options: BymaxAiTokensModuleOptions): void {
   const thresholds = options.budgets?.alertThresholds
   if (thresholds === undefined) return
-  for (const threshold of thresholds) {
-    if (!(threshold > 0 && threshold <= 1)) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      throw invalidConfig(`budget alert thresholds must be within (0, 1], received ${String(threshold)}`)
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  if (!Array.isArray(thresholds)) throw invalidConfig('budget alert thresholds must be a list of numbers within (0, 1]')
+  for (const threshold of thresholds as unknown[]) {
+    if (!isFraction(threshold)) {
+      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+      throw invalidConfig('budget alert thresholds must be numbers within (0, 1]')
     }
   }
 }

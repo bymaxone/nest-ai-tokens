@@ -24,3 +24,13 @@ export function isPositiveBigint(value: unknown): value is bigint {
 export function isNonZeroBigint(value: unknown): value is bigint {
   return typeof value === 'bigint' && value !== 0n
 }
+
+/** A number above 0 and at most 1: an alert threshold, the fraction of a limit at which it fires. */
+export function isFraction(value: unknown): value is number {
+  return typeof value === 'number' && value > 0 && value <= 1
+}
+
+/** A valid `Date`: not an `Invalid Date`, whose comparisons are all false. */
+export function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime())
+}
