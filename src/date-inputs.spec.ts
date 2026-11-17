@@ -153,7 +153,17 @@ describe('the dates of a filter, an estimate, a reconciliation and a price', () 
     expect(await pricing.getPriceHistory('openai', 'gpt-5', 'chat')).toHaveLength(1)
   })
 
-  it('accepts valid dates, or none, for each', async () => {
+  it('takes each optional date input left out', async () => {
+    const { ledger, wallets, metering } = await services()
+    await expect(ledger.query({ tenantId: TENANT })).resolves.toEqual([])
+    await expect(ledger.sumCost({ tenantId: TENANT })).resolves.toBeDefined()
+    await expect(ledger.verifyChain(TENANT)).resolves.toMatchObject({ valid: true })
+    await expect(wallets.getEntries(REF)).resolves.toMatchObject({ entries: [] })
+    await expect(wallets.getEntries(REF, {})).resolves.toMatchObject({ entries: [] })
+    await expect(metering.estimateCost(ESTIMATE)).resolves.toBeDefined()
+  })
+
+  it('accepts a valid date for each input', async () => {
     const { ledger, wallets, metering, pricing } = await services()
     const from = new Date('2026-01-01T00:00:00Z')
     await expect(ledger.query({ tenantId: TENANT, from, to: new Date('2026-02-01T00:00:00Z') })).resolves.toBeDefined()
