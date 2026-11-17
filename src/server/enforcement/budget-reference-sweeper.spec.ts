@@ -449,6 +449,22 @@ describe('BudgetReferenceSweeper', () => {
       expect((Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line))).toEqual([TENANT_LINE(2)])
     })
 
+    /** A ledger that keeps no marker owes nothing, so no tenant is spared and every tenant is pruned, as before the guard. */
+    it('prunes every tenant on a ledger that keeps no marker', async () => {
+      const r = await rig()
+      await r.budgets.upsert({ id: 'b2', tenantId: 't2', scope: { type: 'user', id: 'u1' }, window: 'month', softThresholds: [], policy: 'block' })
+      for (const budgetId of ['b1', 'b2']) {
+        await r.budgets.consumeWindowOnce({ key: 'record:g', budgetId, attempt: 'a' }, WINDOW, DELTA, {})
+        await r.budgets.dropReference({ key: 'record:g', budgetId, attempt: 'a' })
+      }
+      const markerless = Object.create(r.ledgerStore, { findEffectsOwed: { value: undefined }, findEffectsOwedFor: { value: undefined }, clearEffectsOwed: { value: undefined } }) as InMemoryLedgerStore
+      const sweeper = new BudgetReferenceSweeper(r.budgets, new LedgerService(markerless), { graceSeconds: GRACE, holdTtlSeconds: TTL, retentionSeconds: RETENTION }, r.now)
+      r.advance(RETENTION + 1)
+      await sweeper.sweep()
+      for (const budgetId of ['b1', 'b2']) expect(await r.budgets.dropReference({ key: 'record:g', budgetId, attempt: 'a' })).toBe('absent')
+      expect(Logger.prototype.warn).not.toHaveBeenCalled()
+    })
+
     /** A listing that is exactly one page long is whole: the sweep asks for one row more than a page to tell. */
     it('names the tenants when the marker listing is exactly one page long', async () => {
       const r = await rig({ pageSize: 1 })
