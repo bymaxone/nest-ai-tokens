@@ -411,7 +411,7 @@ describe('MeteringEffects budget give-back that is not this attempt\'s own', () 
     const release = jest.spyOn(budgets, 'release')
     const effects = new MeteringEffects(undefined, budgets)
 
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false, false)
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', now(), false, false)
 
     expect(release).not.toHaveBeenCalled()
   })
@@ -423,10 +423,11 @@ describe('MeteringEffects budget give-back that is not this attempt\'s own', () 
     const effects = new MeteringEffects(undefined, budgets)
 
     const enforcement = enforcementFor(effects)
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false)
+    const stamped = new Date('2026-06-10T23:59:59.900Z')
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', stamped, false)
     await effects.withdraw(enforcement, false)
 
-    expect(release).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), undefined, 'reserve:k-1', 'attempt-1')
+    expect(release).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), stamped, 'reserve:k-1', 'attempt-1')
     expect(release).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.anything(), 'record:k-1', enforcement.attempt)
   })
 })
@@ -440,7 +441,7 @@ describe('MeteringEffects.compensateHold', () => {
     const release = jest.spyOn(budgets, 'release')
     const effects = new MeteringEffects(wallets, budgets)
 
-    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', false)
+    await effects.compensateHold({ tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }, { billedNanoUsd: 10n, tokens: 1, count: 1 }, 'k-1', 'attempt-1', now(), false)
 
     expect(refund).not.toHaveBeenCalled()
     expect(release).toHaveBeenCalledTimes(1)

@@ -18,9 +18,13 @@ budget store that omits it, or a tick whose listing of markers may have been cut
 before. The tick's line says `given-back pruning skipped for <n> tenant(s): an owed marker is older than the retention` and carries
 a count, never a tenant id.
 
+### Fixed
+
+- A hold charged the budget windows of the instant its reservation ran, while its commit, its release, the reaper and the reconcile act on the windows of the instant stamped on its ledger row. When a window boundary fell between the stamp and the reservation, the reservation stayed counted in the window nobody gave back, in the budget store and in a live counter. The reservation, its rollback after a wallet refusal and its rollback after a failed append now locate the windows by the row's instant. A stale-high live counter after a sweep is unchanged: it fails closed and the database decides.
+
 ### Changed
 
-- The `server` bundle grows to 51552 bytes brotli with the per-tenant guard; its budget moves from 51190 to 51582. The `prisma` bundle grows to 15714 bytes; its budget moves from 15624 to 15744.
+- The `server` bundle grows to 51623 bytes brotli with the per-tenant guard and the hold's window fix; its budget moves from 51190 to 51653. The `prisma` bundle grows to 15714 bytes; its budget moves from 15624 to 15744.
 
 ## [1.1.16] - 2026-11-16
 

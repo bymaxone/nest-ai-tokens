@@ -102,17 +102,18 @@ export class MeteringEffects {
    * @param delta The estimated reservation.
    * @param ledgerKey The stable key deriving the wallet debit idempotency key.
    * @param attempt This attempt's id, unique per attempt: the budget movement is recorded as this attempt's, so a rollback gives back only what it applied.
+   * @param occurredAt The instant stamped on the hold's row. It locates the windows the reservation charges, so that the commit, the release and the reaper act on the windows it moved even when a boundary falls between the stamp and this call.
    * @throws {AiTokensException} The dimension's budget/quota/credits error on a shortfall (prior steps compensated).
    */
-  async reserveHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string): Promise<void> {
-    if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta), undefined, reserveKey(ledgerKey), attempt)
+  async reserveHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, occurredAt: Date): Promise<void> {
+    if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract; signed=false/true are equivalent for non-negative amounts
     const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
     if (leg === null) return
     try {
       await leg.wallets.debit(leg.ref, { amountNanoUsd: delta.billedNanoUsd, idempotencyKey: `hold:${ledgerKey}`, reason: 'auth-hold reservation' })
     } catch (error) {
-      if (this.budgets !== undefined) await this.budgets.release(context, budgetDelta(delta), undefined, reserveKey(ledgerKey), attempt)
+      if (this.budgets !== undefined) await this.budgets.release(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
       throw error
     }
   }
@@ -126,10 +127,11 @@ export class MeteringEffects {
    * @param delta The reservation to unwind.
    * @param ledgerKey The stable key deriving the wallet rollback idempotency key.
    * @param attempt The id of the attempt that reserved: only what it applied is given back.
+   * @param occurredAt The instant the reservation was charged at, which locates the windows it is given back from.
    * @param refundWallet Whether the wallet debit is this attempt's own to refund.
    * @param releaseBudget Whether the budget movement recorded under the hold's key is this attempt's own to give back.
    */
-  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, refundWallet = true, releaseBudget = true): Promise<void> {
+  async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, occurredAt: Date, refundWallet = true, releaseBudget = true): Promise<void> {
     // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = refundWallet ? this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false) : null
     if (leg !== null) {
@@ -142,7 +144,7 @@ export class MeteringEffects {
     }
     if (this.budgets === undefined || !releaseBudget) return
     try {
-      await this.budgets.release(context, budgetDelta(delta), undefined, reserveKey(ledgerKey), attempt)
+      await this.budgets.release(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
     } catch {
       // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget reservation during rollback')
