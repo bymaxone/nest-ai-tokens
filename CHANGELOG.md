@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-11-16
+
 **Apply:** no migration. An owed marker older than `settlement.retentionSeconds` used to pause the deletion of given-back budget
 applications for every tenant; it now pauses it for the tenants that owe effects only, because a given-back application belongs to a
 budget and a budget to one tenant. The sweeper names those tenants from the markers and calls the new optional
@@ -17,6 +19,8 @@ budget and a budget to one tenant. The sweeper names those tenants from the mark
 budget store that omits it, or a tick whose listing of markers may have been cut at a page, keeps the pause for every tenant, as
 before. The tick's line says `given-back pruning skipped for <n> tenant(s): an owed marker is older than the retention` and carries
 a count, never a tenant id.
+
+A read that asks for `status: ['released']` returns the claim rows of the orphan-debit give-back (1.1.16) together with released holds. A claim row has the provider and the feature `orphan-claim`, so filter on them when the difference matters; the default reads, which count posted and reversed rows, never include one.
 
 ### Fixed
 
@@ -1212,4 +1216,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.14]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.13...v1.1.14
 [1.1.15]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...v1.1.15
 [1.1.16]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...v1.1.16
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.16...HEAD
+[1.1.17]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.16...v1.1.17
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.17...HEAD

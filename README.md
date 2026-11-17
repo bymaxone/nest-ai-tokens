@@ -875,6 +875,8 @@ provider, model and feature, is never counted by a usage report, a cost summary 
 same key with `AI_TOKENS_IDEMPOTENCY_CONFLICT`. The budget half of such a call is the budget-reference sweep's. A wallet store
 without the optional `findDebitsBefore` leaves this part inactive, and the reaper says so once at boot.
 
+A read that asks for `status: ['released']` returns claim rows together with released holds. A claim row has the provider and the feature `orphan-claim`, so filter on them when the difference matters.
+
 The Prisma store's listing reads `ai_wallet_entries` across wallets in `(createdAt, id)` order, a bounded number of pages per reaper tick. No shipped index leads with `createdAt`, so on a large table each page is a scan of the whole table. A
 host with a large wallet table should add this partial index, created with `CONCURRENTLY` so that it does not block wallet
 writes, which means outside a transaction and so outside a migration tool that wraps its files in one. The listing is correct
