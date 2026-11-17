@@ -43,17 +43,17 @@ const PER_MILLION = 1_000_000n
 /** Nano-USD per USD (fx returns nano-units of the presentation currency PER USD). */
 const NANO_PER_USD = 1_000_000_000n
 
-/**
- * Read-side reporting: per-scope cost summaries with currency conversion, CSV
- * and JSON export, paginated history, and per-model analytics. All money is
- * presented in nano-USD internally; `formatNanoUsd` handles display. See file overview.
- */
 /** Throw unless the bounds of a report filter, when given, are valid dates; the stores compare them as given. */
 function assertFilterDates(filter: ReportFilter): void {
   assertOptionalDate('from', filter.from)
   assertOptionalDate('to', filter.to)
 }
 
+/**
+ * Read-side reporting: per-scope cost summaries with currency conversion, CSV
+ * and JSON export, paginated history, and per-model analytics. All money is
+ * presented in nano-USD internally; `formatNanoUsd` handles display. See file overview.
+ */
 @Injectable()
 export class UsageReportService {
   /**
