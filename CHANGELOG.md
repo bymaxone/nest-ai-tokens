@@ -10,6 +10,16 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.18] - 2026-11-17
+
+**Apply:** no migration and no option is required. Two behaviours tighten, and each fails loudly with a typed error where it used to
+pass: a value of the wrong type for a limit, an overdraft or an amount (NaN, Infinity, a fraction or a string where a number or a bigint
+is required) is refused with `AI_TOKENS_INVALID_CONFIG`, the field named and no value echoed (a `wallets.overdraftNanoUsd` of `NaN`
+used to switch the overdraft bound off); and a usage whose token or tool unit count is fractional or NaN is refused with
+`AI_TOKENS_USAGE_MALFORMED`. The hold reaper no longer overlaps its own sweeps, and the Redis client a `RedisBudgetCounterStore` creates
+from a URL fails a command in about `commandTimeoutMs` (default 500 ms) instead of 73 to 107 s against a stopped Redis; a client you pass
+in is unchanged.
+
 ### Fixed
 
 - **Apply:** nothing changes for a caller that passes what the types say. A value that the types forbid is now refused with `AI_TOKENS_INVALID_CONFIG`, naming the field and echoing no value, where it was accepted before: a `wallets.overdraftNanoUsd` or `wallets.creditRateNanoUsd` that is not a bigint (NaN, Infinity, a fraction or a string), a budget limit that is not a bigint of 0 or more (`limitNanoUsd`) or a whole number of 0 or more (`limitTokens`, `limitCount`), a wallet `grant`, `debit`, `refund` or `adjust` amount that is not a bigint (a string used to reach the ledger, and a `grant` of `'3'` left the balance as the string `"03"`), and a hold estimate whose token counts are not whole numbers of 0 or more or whose `amountNanoUsd` is not a bigint of 0 or more. The one that mattered: a `wallets.overdraftNanoUsd` of `NaN` switched the overdraft bound off, so a debit of 100 against a balance of 5 was allowed. A budget with a NaN, Infinity or fractional limit was accepted and then made every consume throw a raw `TypeError`. The alert thresholds (`budgets.alertThresholds` and a budget's `softThresholds`) must be a list of numbers within (0, 1], where a string such as `'0.5'` used to pass; a grant's `priority` must be a whole number and its `effectiveAt` and `expiresAt` valid dates, where an `Invalid Date` used to make a grant never expire; and a usage with a fractional or NaN token or tool unit count is refused with `AI_TOKENS_USAGE_MALFORMED`, where it used to throw a raw `RangeError` from the cost arithmetic. A negative count keeps its floor at zero.
@@ -20,6 +30,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 ### Changed
 
 - The note on `status: ['released']` reads says to filter on the provider or feature `orphan-claim` client-side, or to list features with `features: [...]`; there is no server-side "not equal" filter.
+- The `server` bundle grows to 52353 bytes brotli with the reaper guard and the validation of numbers at the library's boundaries; its budget moves from 51653 to 52383. The `prisma` bundle grows to 15751 bytes (the shape test of a driver error's code); its budget moves from 15744 to 15781. The `redis` bundle is 2125 bytes.
 
 ## [1.1.17] - 2026-11-16
 
@@ -1228,4 +1239,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.15]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.14...v1.1.15
 [1.1.16]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...v1.1.16
 [1.1.17]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.16...v1.1.17
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.17...HEAD
+[1.1.18]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.17...v1.1.18
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.18...HEAD
