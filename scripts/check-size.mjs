@@ -37,10 +37,13 @@ const BUDGETS = [
   // 52_442 holds the shared summary of a caught error that the reaper and the two sweepers log.
   // 53_046 holds the tests of the documented budget policies and rating modes, the policy a stored budget is evaluated with, the
   // lists of option keys that a group of options set to null is read through, and the refusal of a null integrity-chain flag.
+  // 53_286 holds the tests of the dates a caller supplies: a budget's anchor and expiry, a rotation's and a reconciliation's window
+  // start, a record's instant, an estimate's and a rate lookup's instant, a budget movement's instant, a price version's start and the
+  // bounds of a ledger, report or wallet-entry filter.
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
   // that a store error repeats.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 53_046 },
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 53_286 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_042 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },

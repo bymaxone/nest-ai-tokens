@@ -20,6 +20,7 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
+import { assertOptionalDate } from '../utils/date-guards'
 import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
@@ -177,8 +178,8 @@ export class LedgerService {
    * @param filter The ledger query filter.
    * @returns The matching records.
    */
-  query(filter: LedgerFilter): Promise<UsageRecord[]> {
-    return this.store.query(this.withBalanceStatuses(filter))
+  async query(filter: LedgerFilter): Promise<UsageRecord[]> {
+    return await this.store.query(this.withBalanceStatuses(filter))
   }
 
   /**
@@ -188,12 +189,14 @@ export class LedgerService {
    * @param filter The ledger query filter.
    * @returns The aggregate cost/token summary.
    */
-  sumCost(filter: LedgerFilter): Promise<LedgerCostSummary> {
-    return this.store.sumCost(this.withBalanceStatuses(filter))
+  async sumCost(filter: LedgerFilter): Promise<LedgerCostSummary> {
+    return await this.store.sumCost(this.withBalanceStatuses(filter))
   }
 
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
+    assertOptionalDate('from', filter.from)
+    assertOptionalDate('to', filter.to)
     return filter.status === undefined ? { ...filter, status: [...BALANCE_STATUSES] } : filter
   }
 
@@ -292,6 +295,8 @@ export class LedgerService {
    * @returns The verification outcome; see {@link ChainVerification}.
    */
   async verifyChain(tenantId: string, from?: Date, to?: Date): Promise<ChainVerification> {
+    assertOptionalDate('from', from)
+    assertOptionalDate('to', to)
     const filter: LedgerFilter = { tenantId, status: ['posted', 'reversed'] }
     if (from !== undefined) filter.from = from
     if (to !== undefined) filter.to = to

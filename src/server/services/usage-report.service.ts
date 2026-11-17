@@ -18,6 +18,7 @@ import type { LedgerFilter, ProviderId, ReportFilter, TokenCategory, UsageRecord
 import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
+import { assertOptionalDate } from '../utils/date-guards'
 
 /** The resolved-options subset the report service consumes. */
 export interface UsageReportOptions {
@@ -41,6 +42,12 @@ const BALANCE_STATUSES = ['posted', 'reversed'] as const
 const PER_MILLION = 1_000_000n
 /** Nano-USD per USD (fx returns nano-units of the presentation currency PER USD). */
 const NANO_PER_USD = 1_000_000_000n
+
+/** Throw unless the bounds of a report filter, when given, are valid dates; the stores compare them as given. */
+function assertFilterDates(filter: ReportFilter): void {
+  assertOptionalDate('from', filter.from)
+  assertOptionalDate('to', filter.to)
+}
 
 /**
  * Read-side reporting: per-scope cost summaries with currency conversion, CSV
@@ -76,6 +83,7 @@ export class UsageReportService {
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     const { groupBy, ...filter } = input
+    assertFilterDates(filter)
     const max = this.options.reporting.maxExportRows
     if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
@@ -105,6 +113,7 @@ export class UsageReportService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the result exceeds `reporting.maxExportRows`.
    */
   async export(filter: ReportFilter, format: ReportExportFormat): Promise<Readable> {
+    assertFilterDates(filter)
     const max = this.options.reporting.maxExportRows
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
     // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only

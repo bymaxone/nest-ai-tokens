@@ -28,6 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { assertDate, assertOptionalDate } from '../utils/date-guards'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
@@ -145,6 +146,8 @@ export class BudgetService {
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
+    assertOptionalDate('anchorAt', input.anchorAt)
+    assertOptionalDate('expiresAt', input.expiresAt)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the option name
     const given: unknown = input.policy
     if (given !== undefined && given !== null && !isBudgetPolicy(given)) throw invalid('policy must be one of block, throttle or allow')
@@ -201,6 +204,7 @@ export class BudgetService {
    */
   async rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void> {
     assertTenant(tenantId)
+    assertOptionalDate('newWindowStart', newWindowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const start = newWindowStart ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
@@ -383,6 +387,7 @@ export class BudgetService {
    */
   async reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void> {
     assertTenant(tenantId)
+    assertDate('windowStart', windowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
     // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
@@ -709,6 +714,7 @@ export class BudgetService {
 
   /** The matching, feature-relevant budgets located in the current window. */
   private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string, at?: Date): Promise<LocatedWindow[]> {
+    assertOptionalDate('at', at)
     const budgets = await this.matching(tenantId, scope)
     const now = at ?? this.now()
     return budgets
