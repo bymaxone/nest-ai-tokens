@@ -319,7 +319,7 @@ export class MeteringService {
     if (row !== null && isOrphanClaim(row) && isIdempotencyConflict(error)) lateAppend(this.logger, row)
     if (row !== null && !isIdempotencyConflict(error) && sameScope(row.scope, context.scope) && row.occurredAt.getTime() === occurredAt.getTime()) return
     const ownDebit = context.idempotencyKey === undefined || (row !== null && !this.effects.sharesHoldDebit(row, context.scope))
-    await this.effects.compensateHold(context, delta, ledgerKey, attempt, ownDebit, !sameCall)
+    await this.effects.compensateHold(context, delta, ledgerKey, attempt, occurredAt, ownDebit, !sameCall)
   }
 
   /**
@@ -411,7 +411,7 @@ export class MeteringService {
     const ledgerKey = context.idempotencyKey ?? `hold:${randomUUID()}`
     const delta = { billedNanoUsd: billedEstimate, tokens: resolved.estimatedTokens, count: 1 }
     const attempt = randomUUID()
-    if (!isSystemCost) await this.effects.reserveHold(context, delta, ledgerKey, attempt)
+    if (!isSystemCost) await this.effects.reserveHold(context, delta, ledgerKey, attempt, occurredAt)
     const record = await this.appendPending(context, resolved, billedEstimate, markup.multiplier, occurredAt, ledgerKey, isSystemCost, delta, attempt)
     if (!isSystemCost) await this.effects.commitHoldBudget(context, delta, ledgerKey, attempt, occurredAt)
     return this.holdOf(record)

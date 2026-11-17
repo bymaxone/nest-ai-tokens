@@ -150,7 +150,7 @@ describe('MeteringEffects.reserveHold', () => {
     const debit = jest.spyOn(wallets, 'debit')
 
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(ctx(), delta(), 'ledger-key-abc', 'attempt-1')
+    await effects.reserveHold(ctx(), delta(), 'ledger-key-abc', 'attempt-1', now())
 
     expect(debit).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 'tenant-1' }),
@@ -168,7 +168,7 @@ describe('MeteringEffects.reserveHold', () => {
     const debit = jest.spyOn(wallets, 'debit')
 
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(ctx(), delta(), 'key-1', 'attempt-1')
+    await effects.reserveHold(ctx(), delta(), 'key-1', 'attempt-1', now())
 
     expect(debit).toHaveBeenCalledWith(
       expect.anything(),
@@ -194,7 +194,7 @@ describe('MeteringEffects.reserveHold', () => {
     const debit = jest.spyOn(wallets, 'debit')
 
     const effects = new MeteringEffects(wallets, budgets)
-    await expect(effects.reserveHold(ctx(), delta(), 'key-2', 'attempt-1')).rejects.toThrow()
+    await expect(effects.reserveHold(ctx(), delta(), 'key-2', 'attempt-1', now())).rejects.toThrow()
     // Wallet debit must NOT have been called when budget blocked
     expect(debit).not.toHaveBeenCalled()
   })
@@ -216,7 +216,7 @@ describe('MeteringEffects.reserveHold', () => {
     const release = jest.spyOn(budgets, 'release')
 
     const effects = new MeteringEffects(wallets, budgets)
-    await expect(effects.reserveHold(ctx(), delta(), 'key-3', 'attempt-1')).rejects.toThrow()
+    await expect(effects.reserveHold(ctx(), delta(), 'key-3', 'attempt-1', now())).rejects.toThrow()
     expect(release).toHaveBeenCalled()
   })
 
@@ -235,7 +235,7 @@ describe('MeteringEffects.reserveHold', () => {
     const consume = jest.spyOn(budgets, 'consume')
 
     const effects = new MeteringEffects(undefined, budgets)
-    await effects.reserveHold(ctx(), delta(), 'key-4', 'attempt-1')
+    await effects.reserveHold(ctx(), delta(), 'key-4', 'attempt-1', now())
     expect(consume).toHaveBeenCalledTimes(1)
   })
 
@@ -247,7 +247,7 @@ describe('MeteringEffects.reserveHold', () => {
     const debit = jest.spyOn(wallets, 'debit')
 
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(ctx(), delta({ billedNanoUsd: 0n }), 'key-5', 'attempt-1')
+    await effects.reserveHold(ctx(), delta({ billedNanoUsd: 0n }), 'key-5', 'attempt-1', now())
     expect(debit).not.toHaveBeenCalled()
   })
 
@@ -261,7 +261,7 @@ describe('MeteringEffects.reserveHold', () => {
     const keyCtx: MeteringContext = { tenantId: 'tenant-1', scope: { type: 'key', id: 'api-key-1' }, feature: 'chat.reply' }
 
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(keyCtx, delta(), 'key-6', 'attempt-1')
+    await effects.reserveHold(keyCtx, delta(), 'key-6', 'attempt-1', now())
     expect(debit).not.toHaveBeenCalled()
   })
 })
@@ -280,10 +280,10 @@ describe('MeteringEffects.compensateHold', () => {
     await grantToUser(wallets)
     // First reserve so there is a debit to refund
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(ctx(), delta(), 'lk-1', 'attempt-1')
+    await effects.reserveHold(ctx(), delta(), 'lk-1', 'attempt-1', now())
     const refund = jest.spyOn(wallets, 'refund')
 
-    await effects.compensateHold(ctx(), delta(), 'lk-1', 'attempt-1')
+    await effects.compensateHold(ctx(), delta(), 'lk-1', 'attempt-1', now())
     expect(refund).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ idempotencyKey: 'hold-rollback:lk-1' }),
@@ -298,10 +298,10 @@ describe('MeteringEffects.compensateHold', () => {
     const { service: wallets } = buildWalletService()
     await grantToUser(wallets)
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.reserveHold(ctx(), delta(), 'lk-5', 'attempt-1')
+    await effects.reserveHold(ctx(), delta(), 'lk-5', 'attempt-1', now())
     const refund = jest.spyOn(wallets, 'refund')
 
-    await effects.compensateHold(ctx(), delta(), 'lk-5', 'attempt-1')
+    await effects.compensateHold(ctx(), delta(), 'lk-5', 'attempt-1', now())
 
     expect(refund).toHaveBeenCalledWith(
       expect.anything(),
@@ -322,7 +322,7 @@ describe('MeteringEffects.compensateHold', () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(wallets, undefined)
-    await expect(effects.compensateHold(ctx(), delta(), 'lk-2', 'attempt-1')).resolves.toBeUndefined()
+    await expect(effects.compensateHold(ctx(), delta(), 'lk-2', 'attempt-1', now())).resolves.toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to refund a hold debit during rollback'))
     warn.mockRestore()
   })
@@ -341,7 +341,7 @@ describe('MeteringEffects.compensateHold', () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
     const effects = new MeteringEffects(undefined, budgets)
-    await expect(effects.compensateHold(ctx(), delta(), 'lk-3', 'attempt-1')).resolves.toBeUndefined()
+    await expect(effects.compensateHold(ctx(), delta(), 'lk-3', 'attempt-1', now())).resolves.toBeUndefined()
     expect(release).toHaveBeenCalled()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to release a budget reservation during rollback'))
     warn.mockRestore()
@@ -356,7 +356,7 @@ describe('MeteringEffects.compensateHold', () => {
     const refund = jest.spyOn(wallets, 'refund').mockResolvedValue({} as never)
 
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.compensateHold(ctx(), delta(), 'lk-4', 'attempt-1')
+    await effects.compensateHold(ctx(), delta(), 'lk-4', 'attempt-1', now())
     expect(refund).toHaveBeenCalledTimes(1)
   })
 })
@@ -627,7 +627,7 @@ describe('MeteringEffects.restoreOrphanDebit', () => {
       reason: 'pre-debit',
     })
     const effects = new MeteringEffects(wallets, undefined)
-    await effects.compensateHold(ctx(), delta(), 'k', 'attempt-1')
+    await effects.compensateHold(ctx(), delta(), 'k', 'attempt-1', now())
     await effects.restoreOrphanDebit(claim({ requestId: 'hold:k' }))
     expect((await store.listEntries(WALLET, { type: 'refund' })).entries).toHaveLength(1)
     expect((await wallets.getBalance(WALLET)).nanoUsd).toBe(100_000_000_000n)
