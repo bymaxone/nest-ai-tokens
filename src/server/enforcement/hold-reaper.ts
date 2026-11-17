@@ -17,6 +17,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import type { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common'
 import type { ResolvedAiTokensOptions } from '../config'
 import type { UsageRecord } from '../../shared'
+import { describeError } from '../errors/describe-error'
 import type { OwedEffects } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
 import type { MeteringService } from '../services/metering.service'
@@ -44,19 +45,6 @@ const DEFAULT_GRACE_SECONDS = 300
 const TICK_SKIPPED_LOG_KEY = 'ai_tokens.hold_reaper.tick_skipped'
 /** Stable log key for any other rejection out of a timer-driven sweep. */
 const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
-
-/**
- * Summarise a caught error for a log line: its `name`, `message` and `code` only —
- * never the full object, whose driver-specific fields may carry connection details.
- * @param error The caught value (not necessarily an `Error`).
- * @returns `name=… message=… code=…`, or a fixed marker for a non-`Error` value.
- */
-function describeError(error: unknown): string {
-  if (!(error instanceof Error)) return 'non-Error rejection'
-  const { code } = error as { code?: unknown }
-  const suffix = typeof code === 'string' || typeof code === 'number' ? ` code=${String(code)}` : ''
-  return `name=${error.name} message=${JSON.stringify(error.message)}${suffix}`
-}
 
 /** The resolved-options subset the reaper consumes. */
 export type HoldReaperOptions = Pick<ResolvedAiTokensOptions, 'holds'> & Partial<Pick<ResolvedAiTokensOptions, 'settlement'>>

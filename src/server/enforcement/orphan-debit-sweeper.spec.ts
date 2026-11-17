@@ -550,7 +550,7 @@ describe('OrphanDebitSweeper', () => {
     jest.spyOn(r.walletStore, 'findDebitsBefore').mockRejectedValueOnce(new Error('db down'))
     await r.sweeper.sweep()
     expect(warned()).toEqual([
-      'ai_tokens.orphan_debit_sweep.scan_failed name=Error message="db down"',
+      'ai_tokens.orphan_debit_sweep.scan_failed name=Error',
     ])
     expect(await refunds(r)).toBe(0)
     await r.sweeper.sweep()

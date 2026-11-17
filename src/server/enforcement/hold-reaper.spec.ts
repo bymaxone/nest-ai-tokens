@@ -1,3 +1,4 @@
+import { AiTokensException } from '../errors'
 import { Logger } from '@nestjs/common'
 import type { NormalizedUsage } from '../../shared'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
@@ -185,7 +186,7 @@ describe('HoldReaper', () => {
     const reaper = new HoldReaper(built.ledger, built.service, built.options, () => later)
     try {
       await expect(reaper.sweep()).resolves.toBeUndefined()
-      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error message="Connection terminated unexpectedly" code=ECONNRESET')
+      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error code=ECONNRESET')
       expect((await wallets.getBalance(walletRef)).nanoUsd).toBe(93_750_000n)
       await reaper.sweep()
       expect((await wallets.getBalance(walletRef)).nanoUsd).toBe(100_000_000n)
@@ -194,12 +195,14 @@ describe('HoldReaper', () => {
     }
   })
 
-  /** The log line carries a numeric `code`, omits an absent one, and never dumps a non-`Error` value. */
+  /** The log line carries the `name`, keeps no message, repeats a `code` only when it has the shape of one, and never dumps a non-`Error` value. */
   it.each([
-    [Object.assign(new TypeError('bad'), { code: 57 }), 'ai_tokens.hold_reaper.scan_failed name=TypeError message="bad" code=57'],
-    [Object.assign(new Error('bad'), { code: { host: 'db' } }), 'ai_tokens.hold_reaper.scan_failed name=Error message="bad"'],
-    [new Error('bad'), 'ai_tokens.hold_reaper.scan_failed name=Error message="bad"'],
+    [Object.assign(new TypeError('bad'), { code: 57 }), 'ai_tokens.hold_reaper.scan_failed name=TypeError'],
+    [Object.assign(new Error('bad'), { code: { host: 'db' } }), 'ai_tokens.hold_reaper.scan_failed name=Error'],
+    [new Error('bad'), 'ai_tokens.hold_reaper.scan_failed name=Error'],
     [{ password: 'secret' }, 'ai_tokens.hold_reaper.scan_failed non-Error rejection'],
+    [Object.assign(new Error('connect ECONNREFUSED 10.0.0.1 password=s3cr3t'), { code: 'ECONNREFUSED 10.0.0.1' }), 'ai_tokens.hold_reaper.scan_failed name=Error'],
+    [new AiTokensException('AI_TOKENS_STORE_ERROR', undefined, { code: 'P2010' }), 'ai_tokens.hold_reaper.scan_failed name=AiTokensException code=AI_TOKENS_STORE_ERROR'],
   ])('summarises a scan rejection safely (%#)', async (rejection, expected) => {
     const built = build(60)
     jest.spyOn(built.ledger, 'findExpiredHolds').mockRejectedValueOnce(rejection)
@@ -223,7 +226,7 @@ describe('HoldReaper', () => {
       jest.spyOn(reaper, 'sweep').mockRejectedValue(new Error('clock exploded'))
       reaper.onApplicationBootstrap()
       await jest.advanceTimersByTimeAsync(1_000)
-      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.sweep_failed name=Error message="clock exploded"')
+      expect(warnSpy).toHaveBeenCalledWith('ai_tokens.hold_reaper.sweep_failed name=Error')
     } finally {
       reaper.onApplicationShutdown()
       jest.useRealTimers()
@@ -303,7 +306,7 @@ describe('HoldReaper', () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
       try {
         await expect(built.reaper().sweep()).resolves.toBeUndefined()
-        expect(warn).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error message="database down"')
+        expect(warn).toHaveBeenCalledWith('ai_tokens.hold_reaper.scan_failed name=Error')
       } finally {
         warn.mockRestore()
       }
