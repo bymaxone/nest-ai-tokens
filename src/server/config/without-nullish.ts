@@ -52,11 +52,6 @@ const GROUP_KEYS: { readonly [G in GroupName]: Keys<NonNullable<Options[G]>> } =
   content: { store: true, mask: true, ttlSeconds: true },
 }
 
-/** Whether a value is a group of options: an object, whatever its prototype, and neither null nor an array. */
-function isGroup(value: unknown): value is object {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /** A copy of `source` with the entries of `names` that it holds a value for, read by property access so a getter of the prototype counts. */
 function valuesOf<T extends object>(source: T, names: Keys<T>): T {
   const kept: Record<string, unknown> = {}
@@ -77,8 +72,8 @@ export function withoutNullish(options: Options): Options {
   const top = valuesOf(options, OPTION_KEYS)
   const groups: Record<string, object> = {}
   for (const group of Object.keys(GROUP_KEYS) as GroupName[]) {
-    const value: unknown = Reflect.get(top, group)
-    if (isGroup(value)) groups[group] = valuesOf(value, GROUP_KEYS[group])
+    const value = top[group]
+    if (typeof value === 'object' && !Array.isArray(value)) groups[group] = valuesOf<object>(value, GROUP_KEYS[group])
   }
   return Object.assign(top, groups)
 }

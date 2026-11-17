@@ -65,7 +65,7 @@ function firstMissingMethod(store: object, methods: readonly string[]): string |
 function validateStorePorts(options: BymaxAiTokensModuleOptions): void {
   const store: unknown = options.store
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-  if (store === undefined || store === null) throw invalidConfig('options.store is required')
+  if (store === undefined) throw invalidConfig('options.store is required')
   const missingLedger = firstMissingMethod(options.store, LEDGER_METHODS)
   if (missingLedger !== undefined) {
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
