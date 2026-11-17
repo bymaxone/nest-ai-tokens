@@ -96,4 +96,25 @@ describe('guardStoreErrors', () => {
     await expect(guarded().typed()).rejects.toBeInstanceOf(AiTokensException)
     expect((await typedFailure(() => guarded().typed())).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_IDEMPOTENCY_CONFLICT' } })
   })
+
+  /**
+   * A host replaces a method of the store to inject a fault, as `jest.spyOn` does: the replacement is installed on the object and read
+   * back from it. What is read back is the replacement itself, with its own members, and what the replacement throws is its own;
+   * the methods nobody replaced stay guarded, and so does the original once the replacement is restored.
+   */
+  it('hands back a replaced method as it is and keeps the others guarded', async () => {
+    const store = guarded()
+    const spy = jest.spyOn(store, 'fine').mockReturnValueOnce('replaced')
+    expect(store.fine).toBe(spy)
+    expect(store.fine()).toBe('replaced')
+    expect(store.fine()).toBe('ok')
+    spy.mockRestore()
+    await expect(store.rejects()).rejects.toBeInstanceOf(AiTokensException)
+    const failing = jest.spyOn(store, 'plain').mockImplementationOnce(() => {
+      throw new Error('injected')
+    })
+    expect(() => store.plain()).toThrow('injected')
+    failing.mockRestore()
+    expect(store.plain()).toBe(PLAIN)
+  })
 })

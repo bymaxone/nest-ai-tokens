@@ -16,6 +16,8 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 /**
  * Wrap the methods of `store` so that what they throw crosses the boundary as a typed error. A method runs with the store
  * itself as its receiver, so a call between two of its own methods does not pass the boundary a second time.
+ * A function installed on the store itself, as a test double a host puts in place of a method, is handed back as it is, with its
+ * own members, and what it throws is its own; only the methods the class defines are wrapped.
  *
  * @param store The store to guard.
  * @param isSignal Whether a thrown value is one the store raises on purpose and the caller must receive unchanged.
@@ -28,7 +30,7 @@ export function guardStoreErrors<T extends object>(store: T, isSignal: (error: u
   return new Proxy(store, {
     get(target, property, receiver) {
       const value: unknown = Reflect.get(target, property, receiver)
-      if (typeof value !== 'function' || property === 'constructor') return value
+      if (typeof value !== 'function' || property === 'constructor' || Object.hasOwn(target, property)) return value
       return (...args: unknown[]): unknown => {
         try {
           const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(target, args)
