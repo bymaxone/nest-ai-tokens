@@ -315,11 +315,11 @@ export class AiController {
 
 The options are checked when the module is configured. `budgets.defaultPolicy`, the `policy` of a budget passed to `upsertBudget`
 (checked at that call), and `ratingMode` accept only the values in the table; any other value throws `AI_TOKENS_INVALID_CONFIG`,
-naming the option and never the value. A stored budget whose policy is none of the three is evaluated as `'block'`. An option set
-to `null` or `undefined` takes its default, and so does a group of options set to `null`. The exceptions are the groups
-`budgets`, `wallets` and `ledger`, and the flag `ledger.hashChain`, which refuse `null` with `AI_TOKENS_INVALID_CONFIG`: leaving them out
-switches a limit or a protection off, and a configuration that failed to load must not do the same. Leave them out, or set them to
-`undefined`, to keep the feature off.
+naming the option and never the value. A stored budget whose policy is not a documented value is evaluated as `'block'`. An option
+set to `null` or `undefined` is left out: it takes its default, or stays off where it has none; `store` is
+required and refuses both. A group of options set to `null` is left out too, except `budgets`, `wallets` and `ledger`, and the flag `ledger.hashChain`: leaving
+these out switches a limit or a protection off, so they refuse `null` with `AI_TOKENS_INVALID_CONFIG`, because a configuration that
+failed to load must not do the same. Leave them out, or set them to `undefined`, to keep the feature off.
 
 With `forRootAsync`, the options arrive after the providers are declared, so `WalletService`,
 `BudgetService` and `BudgetGuard` are always registered. When the options leave `wallets` or
