@@ -12,6 +12,7 @@ import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
 import { applyDefaults } from '../config'
+import type { ResolvedAiTokensOptions } from '../config'
 import type { HoldEstimate, IBudgetCounterStore } from '../interfaces'
 import { BudgetService } from './budget.service'
 import { counterKey } from './budget.keys'
@@ -62,13 +63,9 @@ interface Rig {
   budgetId: string
 }
 
-/** A metering service stamping rows at STAMPED over a budget service that reads CONSUMED: the boundary falls between them. */
-async function rig(wallet = false): Promise<Rig> {
-  const ledgerStore = new InMemoryLedgerStore()
-  const pricingStore = new InMemoryPricingStore()
-  const budgets = new InMemoryBudgetStore({ now: () => CONSUMED })
-  const counter = new Counter()
-  const options = applyDefaults({
+/** The resolved options of the rig: budgets with the live counter, and a wallet that holds nothing when asked for. */
+function rigOptions(counter: Counter, wallet: boolean): ResolvedAiTokensOptions {
+  return applyDefaults({
     store: makeFullStore(),
     markup: 1,
     pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
@@ -84,23 +81,13 @@ async function rig(wallet = false): Promise<Rig> {
       : {}),
     budgets: { counter },
   })
-  const ledger = new LedgerService(ledgerStore, options)
-  if (!options.budgets.enabled) throw new Error('the fixture enables budgets')
-  const budgetService = new BudgetService(budgets, ledger, options.budgets, () => CONSUMED)
-  const walletService =
-    wallet && options.wallets.enabled
-      ? new WalletService(new InMemoryWalletStore({ now: () => STAMPED }), options.wallets)
-      : undefined
-  const metering = new MeteringService(
-    ledger,
-    new PricingService(options, pricingStore),
-    new MarkupResolver(options),
-    options,
-    undefined,
-    walletService,
-    budgetService,
-    () => STAMPED,
-  )
+}
+
+/** The price and the day budget every rig starts from. */
+async function seedRig(
+  pricingStore: InMemoryPricingStore,
+  budgets: InMemoryBudgetStore,
+): Promise<string> {
   await pricingStore.upsertPrice({
     provider: 'openai',
     model: 'gpt-5',
@@ -119,7 +106,34 @@ async function rig(wallet = false): Promise<Rig> {
     softThresholds: [],
     policy: 'block',
   })
-  return { metering, budgets, ledgerStore, counter, budgetId: budget.id }
+  return budget.id
+}
+
+/** A metering service stamping rows at STAMPED over a budget service that reads CONSUMED: the boundary falls between them. */
+async function rig(wallet = false): Promise<Rig> {
+  const ledgerStore = new InMemoryLedgerStore()
+  const pricingStore = new InMemoryPricingStore()
+  const budgets = new InMemoryBudgetStore({ now: () => CONSUMED })
+  const counter = new Counter()
+  const options = rigOptions(counter, wallet)
+  if (!options.budgets.enabled) throw new Error('the fixture enables budgets')
+  const ledger = new LedgerService(ledgerStore, options)
+  const budgetService = new BudgetService(budgets, ledger, options.budgets, () => CONSUMED)
+  const walletService =
+    wallet && options.wallets.enabled
+      ? new WalletService(new InMemoryWalletStore({ now: () => STAMPED }), options.wallets)
+      : undefined
+  const metering = new MeteringService(
+    ledger,
+    new PricingService(options, pricingStore),
+    new MarkupResolver(options),
+    options,
+    undefined,
+    walletService,
+    budgetService,
+    () => STAMPED,
+  )
+  return { metering, budgets, ledgerStore, counter, budgetId: await seedRig(pricingStore, budgets) }
 }
 
 async function spent(r: Rig, windowStart: Date): Promise<bigint> {
