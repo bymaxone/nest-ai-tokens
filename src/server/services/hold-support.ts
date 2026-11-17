@@ -105,7 +105,7 @@ function clampUnits(units: Record<string, number>): Record<string, number> {
   return clamped
 }
 
-/** Refuse a usage whose token or tool unit count is not a whole number: a fraction or NaN reaches the cost arithmetic as a raw `RangeError`. */
+/** Refuse a usage whose token or tool unit count is not a whole number: the cost arithmetic converts each count to a `BigInt`, which takes whole numbers only. */
 function assertWholeCounts(usage: NormalizedUsage): void {
   const counts = tokenCountsOf(usage)
   const units = Object.values(usage.serverToolUse ?? {})
