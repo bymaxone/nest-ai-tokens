@@ -23,6 +23,8 @@ const COUNT = (name: string): string => `${name} must be a whole number of 0 or 
 
 const CONTEXT_ROWS: Row[] = [
   ['metering.hold', [0], NUMBER, OBJECT('context')],
+  ['metering.hold', [0], null, OBJECT('context')],
+  ['metering.hold', [0], [], OBJECT('context')],
   ['metering.hold', [0, 'tenantId'], NUMBER, TEXT('context.tenantId')],
   ['metering.hold', [0, 'scope'], NUMBER, OBJECT('context.scope')],
   ['metering.hold', [0, 'scope', 'type'], NUMBER, TEXT('context.scope.type')],
@@ -83,6 +85,7 @@ const STORE_ROWS: Row[] = [
   ['reports.summarize', [0, 'groupBy'], ['nonsense'], 'groupBy must name only the documented dimensions'],
   ['reports.summarize', [0, 'groupBy'], ['toString'], 'groupBy must name only the documented dimensions'],
   ['reports.summarize', [0, 'groupBy'], ['day', NUMBER], 'groupBy must name only the documented dimensions'],
+  ['reports.summarize', [0, 'groupBy'], [{ toString: () => 'day' }], 'groupBy must name only the documented dimensions'],
 ]
 
 /** Put `value` at `path` in the arguments. */

@@ -122,7 +122,7 @@ export function assertMeteringContext(value: unknown): void {
 
 /**
  * Throw unless `value` is the input of a cost estimate: the identity of the call is text, the token counts are whole numbers, and the
- * optional tier, feature and scope are what they should be.
+ * optional feature and scope are what they should be. The optional tier is checked where the rate is resolved.
  *
  * @param value What the caller passed.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not valid.
@@ -130,7 +130,6 @@ export function assertMeteringContext(value: unknown): void {
 export function assertEstimateCostInput(value: unknown): void {
   assertObject('input', value)
   for (const field of ['provider', 'model', 'operation'] as const) assertText(field, Reflect.get(value, field))
-  assertOptionalText('serviceTier', Reflect.get(value, 'serviceTier'))
   assertOptionalText('feature', Reflect.get(value, 'feature'))
   const scope: unknown = Reflect.get(value, 'scope')
   if (scope !== undefined) assertScope('scope', scope)
