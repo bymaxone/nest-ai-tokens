@@ -11,6 +11,7 @@ import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
 import { AiTokensException } from '../errors'
+import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
 import { assertDate, assertOptionalDate } from '../utils/date-guards'
@@ -85,12 +86,7 @@ export class PricingService implements OnModuleInit {
 
     if (resolved === null && this.options.pricing.strict) {
       // Stryker disable next-line ObjectLiteral: error context fields are diagnostic; tests check error code (AI_TOKENS_PRICE_NOT_FOUND), not payload shape
-      throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, {
-        provider: input.provider,
-        model: input.model,
-        operation: input.operation,
-        serviceTier,
-      })
+      throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, suppliedDetails({ provider: input.provider, model: input.model, operation: input.operation, serviceTier }))
     }
     return resolved
   }

@@ -90,18 +90,18 @@ const CASES: readonly { name: string; code: AiTokensErrorCode; make: () => Promi
 /** Why each code the cases above do not produce cannot carry text a third party wrote. */
 const EXEMPT: Readonly<Record<string, string>> = {
   AI_TOKENS_NOT_CONFIGURED: 'raised by a disabled service with a fixed reason naming the option block',
-  AI_TOKENS_UNKNOWN_PROVIDER: 'carries the provider the caller passed, which is the caller’s own input',
+  AI_TOKENS_UNKNOWN_PROVIDER: 'carries a fixed reason',
   AI_TOKENS_USAGE_MALFORMED: 'carries a fixed reason; the normalizer’s own failure is not repeated',
-  AI_TOKENS_PRICE_NOT_FOUND: 'carries the provider, model and operation the caller asked for',
-  AI_TOKENS_FX_REQUIRED: 'carries the currency the caller passed',
-  AI_TOKENS_BUDGET_EXCEEDED: 'carries the budget id and the amounts the library computed',
-  AI_TOKENS_QUOTA_EXCEEDED: 'carries the budget id and the counts the library computed',
+  AI_TOKENS_PRICE_NOT_FOUND: 'carries the provider, model, operation and tier of the call, each only when a string of at most 256 characters; on a record the model is the one the normalizer read from the provider response',
+  AI_TOKENS_FX_REQUIRED: 'a refusal at startup, raised with no details',
+  AI_TOKENS_BUDGET_EXCEEDED: 'carries the budget id when a string of at most 256 characters, and the dimension the library computed',
+  AI_TOKENS_QUOTA_EXCEEDED: 'carries the budget id when a string of at most 256 characters, and the dimension the library computed',
   AI_TOKENS_INSUFFICIENT_CREDITS: 'carries the balance and the requested amount as strings the library computed',
-  AI_TOKENS_HOLD_NOT_FOUND: 'carries the hold id the caller passed',
-  AI_TOKENS_HOLD_EXPIRED: 'carries the hold id the caller passed',
-  AI_TOKENS_HOLD_ALREADY_SETTLED: 'carries the hold id the caller passed',
-  AI_TOKENS_IDEMPOTENCY_CONFLICT: 'carries the tenant and the key the caller passed, or a fixed reason',
-  AI_TOKENS_STREAM_USAGE_MISSING: 'carries a fixed reason',
+  AI_TOKENS_HOLD_NOT_FOUND: 'carries the hold id when a string of at most 256 characters',
+  AI_TOKENS_HOLD_EXPIRED: 'carries the hold id when a string of at most 256 characters',
+  AI_TOKENS_HOLD_ALREADY_SETTLED: 'carries the hold id when a string of at most 256 characters',
+  AI_TOKENS_IDEMPOTENCY_CONFLICT: 'carries the tenant and the key, and the record id of a reversal, each only when a string of at most 256 characters, or a fixed reason',
+  AI_TOKENS_STREAM_USAGE_MISSING: 'carries a fixed reason, or the provider and model of the collector when each is a string of at most 256 characters',
 }
 
 /** The serialised response of an exception, as the HTTP body carries it. */

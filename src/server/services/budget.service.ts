@@ -49,6 +49,7 @@ import { COMMITTED_REFERENCE } from '../utils/budget-references'
 import { guardOf, keyNamesAnotherCall, keyedOf, referenceOf, type CounterIncrement, type GuardResult, type Keyed } from './budget-keyed'
 import type { LedgerService } from './ledger.service'
 import { recordConsumesBudget } from './budget-predicate'
+import { suppliedDetails } from '../utils/detail-text'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
 import { assertWindowKind } from '../utils/window-kind'
 
@@ -611,7 +612,7 @@ export class BudgetService {
       resetsAt: located.windowEnd,
     })
     // Stryker disable next-line ObjectLiteral: exception context is internal diagnostics; the asserted dimension travels on the exceeded event above, and tests check only the thrown error code
-    throw new AiTokensException(failing.code, undefined, { budgetId: located.budget.id, dimension: failing.dimension })
+    throw new AiTokensException(failing.code, undefined, suppliedDetails({ budgetId: located.budget.id, dimension: failing.dimension }))
   }
 
   /** Signal an over-limit `'allow'`/`'throttle'` budget (records spend, never throws). */
@@ -743,7 +744,7 @@ export class BudgetService {
   private async requireBudget(key: BudgetKey): Promise<Budget> {
     const budget = await this.findOwned(key)
     // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    if (budget === null) throw invalid(`budget ${key.id} does not exist`)
+    if (budget === null) throw invalid('the budget does not exist')
     return budget
   }
 
