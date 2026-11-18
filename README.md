@@ -492,8 +492,7 @@ tells them whether it exists. Pass the tenant from your verified auth context, n
 `reconcileWindow`, the `occurredAt` of `record`, the `at` of `estimateCost` and `resolveRate`, the `effectiveFrom` of `upsertPrice`, and
 the `from` and `to` of a ledger, report or wallet-entry filter are refused with `AI_TOKENS_INVALID_CONFIG`, naming the input and never
 the value, when they are an Invalid Date, a string, a number or `null`. `undefined` keeps the default where the input has one. A `Date` from
-another realm and a subclass of `Date` are dates, at the JSON boundary of `toJsonSafe`, in the key `deriveIdempotencyKey` derives and in the SQL of the PostgreSQL store as well; a value that only looks like one, a Proxy of a `Date` or a subclass whose `getTime` throws, is
-not. The range is the year 1 to the year 9999, which PostgreSQL 18 round-trips to the millisecond and fails one millisecond outside, and a date outside it is refused with the reason
+another realm and a subclass of `Date` are dates, at the JSON boundary of `toJsonSafe`, in the key `deriveIdempotencyKey` derives and in the SQL of the PostgreSQL store as well; a Proxy of a `Date` is not one there, and as an input a Proxy of a `Date` or a subclass whose `getTime` throws is refused. The range is the year 1 to the year 9999, which PostgreSQL 18 round-trips to the millisecond and fails one millisecond outside, and a date outside it is refused with the reason
 `<input> must be a date from the year 1 to the year 9999`.
 
 ---
