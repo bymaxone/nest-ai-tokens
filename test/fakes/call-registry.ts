@@ -23,6 +23,7 @@ import { WalletService } from '../../src/server/services/wallet.service'
 /** The arguments of a call as the call reads them; each is cast to the type the method takes, which is the point of the matrix. */
 type Args = [never, never, never, never]
 
+/** The calls of the argument specs, by the name of the method: each runs the method with the arguments it is given and builds, fresh each time, the arguments that make it succeed. */
 export interface Rig {
   readonly calls: Record<string, { run: (args: unknown[]) => unknown; base: () => unknown[] | Promise<unknown[]> }>
 }
