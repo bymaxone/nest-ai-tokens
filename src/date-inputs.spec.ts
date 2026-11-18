@@ -66,7 +66,7 @@ describe('the dates of a budget', () => {
     expect(await service.status(TENANT, USER_SCOPE)).toEqual(before)
   })
 
-  it('rotates to a valid date, or to now when none is given', async () => {
+  it('accepts a valid new window start, and none, for a rotation', async () => {
     const { service } = makeService()
     const budget = await service.upsertBudget(budgetInput({}))
     await expect(service.rotateWindow(budget.id, TENANT, new Date('2026-02-01T00:00:00Z'))).resolves.toBeUndefined()
@@ -91,7 +91,7 @@ describe('the instant of a record', () => {
     expect(await ledger.query({ tenantId: TENANT })).toEqual([])
   })
 
-  it('records at a valid instant, or at now when none is given', async () => {
+  it('accepts a valid occurredAt, and none, for a record', async () => {
     const { metering: service } = await metering()
     await expect(service.record({ usage, context, occurredAt: new Date('2026-03-01T00:00:00Z') })).resolves.toBeDefined()
     await expect(service.record({ usage, context })).resolves.toBeDefined()
