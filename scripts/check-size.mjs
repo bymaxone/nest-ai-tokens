@@ -42,14 +42,14 @@ const BUDGETS = [
   // bounds of a ledger, report or wallet-entry filter.
   // 53_610 holds the watchdog that abandons a hold-reaper sweep that never settles, and its stalled-tick line.
   // 53_604 holds the bound on an identifier that an error's details carry.
-  // 54_798 holds the argument guards of every public method (typed refusal of an argument of the wrong kind), the supported range and the cross-realm test of a date,
+  // 54_775 holds the argument guards of every public method (typed refusal of an argument of the wrong kind), the supported range and the cross-realm test of a date,
   // the shape checks of five options, the wallet reconcile mapping and the reaper's drop of a sweep it no longer waits for.
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
-  // that a store error repeats. 16_129 adds the adapter kinds that mean the connection, not the call, failed.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 54_798 },
+  // that a store error repeats. 16_171 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 54_775 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_129 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_171 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

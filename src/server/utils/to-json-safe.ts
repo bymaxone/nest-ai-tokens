@@ -9,6 +9,8 @@
  * @layer server
  */
 
+import { isDate } from '../../shared/utils/is-date'
+
 /** The result of {@link toJsonSafe}: every `bigint` replaced by a decimal string. */
 export type JsonSafe<T> = T extends bigint
   ? string
@@ -23,7 +25,7 @@ export type JsonSafe<T> = T extends bigint
 /** Recursively clone a value, converting every `bigint` to a decimal string. */
 function convert(value: unknown): unknown {
   if (typeof value === 'bigint') return value.toString()
-  if (value instanceof Date) return new Date(value.getTime())
+  if (isDate(value)) return new Date(Date.prototype.getTime.call(value))
   if (Array.isArray(value)) return value.map((element: unknown) => convert(element))
   if (typeof value === 'object' && value !== null) {
     const output: Record<string, unknown> = {}

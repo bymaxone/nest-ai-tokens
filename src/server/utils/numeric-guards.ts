@@ -5,7 +5,7 @@
  * @layer server
  */
 
-import { types } from 'node:util'
+import { isDate } from '../../shared/utils/is-date'
 
 /** A whole number from 0 to `Number.MAX_SAFE_INTEGER`: a token or call count. Refuses NaN, Infinity, fractions, negatives and non-numbers. */
 export function isCount(value: unknown): value is number {
@@ -38,7 +38,7 @@ export function isFraction(value: unknown): value is number {
  * one, because a store would call it and fail with the host's own error.
  */
 export function isValidDate(value: unknown): value is Date {
-  if (!types.isDate(value)) return false
+  if (!isDate(value)) return false
   try {
     return Number.isFinite(value.getTime()) && Number.isFinite(Date.prototype.getTime.call(value))
   } catch {
