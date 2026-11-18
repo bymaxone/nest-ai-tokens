@@ -77,12 +77,15 @@ describe('HoldReaper with a sweep that never settles', () => {
 
   /** Invariant: the stall is one line with the time it ran and nothing a store wrote, and a later stall is a later line. */
   it('logs each stalled sweep once, with no store detail', async () => {
-    const { ledger } = hangingLedger()
+    const built = hangingLedger()
+    const { ledger } = built
     const reaper = reaperOver(ledger, 1)
     reaper.onApplicationBootstrap()
+    const { releaseNth } = built
     await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
     expect(stalledLines()).toHaveLength(1)
     expect(stalledLines()[0]).toBe(`${STALLED_LINE} the previous sweep ran for 601 seconds`)
+    releaseNth(0)
     await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
     reaper.onApplicationShutdown()
     expect(stalledLines()).toHaveLength(2)
@@ -123,6 +126,29 @@ describe('HoldReaper with a sweep that never settles', () => {
     await jest.advanceTimersByTimeAsync(4 * MINUTE_MS)
     reaper.onApplicationShutdown()
     expect(scans.total).toBe(2)
+  })
+
+  /** Invariant: with every scan hanging, at most one abandoned sweep and one fresh one are ever running, however long it goes on. */
+  it('never has more than two sweeps running when every scan hangs', async () => {
+    const { ledger, scans } = hangingLedger()
+    const reaper = reaperOver(ledger, 1)
+    reaper.onApplicationBootstrap()
+    await jest.advanceTimersByTimeAsync(3 * 60 * MINUTE_MS)
+    reaper.onApplicationShutdown()
+    expect(scans.total).toBe(2)
+    expect(scans.active).toBe(2)
+  })
+
+  /** Invariant: once the abandoned sweep ends, a later stall of the fresh one can be abandoned in its turn. */
+  it('abandons the fresh sweep once the abandoned one has ended', async () => {
+    const { ledger, scans, releaseNth } = hangingLedger()
+    const reaper = reaperOver(ledger, 1)
+    reaper.onApplicationBootstrap()
+    await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
+    releaseNth(0)
+    await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
+    reaper.onApplicationShutdown()
+    expect(scans.total).toBe(3)
   })
 
   /** Invariant: a sweep that ends on its own is never abandoned, however many intervals pass. */

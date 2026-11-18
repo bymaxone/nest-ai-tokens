@@ -734,11 +734,12 @@ specific to security is below.
   and decides from the database window, so a call is still counted and refused at the limit. The offline queue stays on, so a
   command issued while the connection is still opening waits for it instead of failing. A client you pass in keeps your own
   settings: set `maxRetriesPerRequest`, `commandTimeout` and `enableOfflineQueue` on it yourself.
-- **The hold reaper never overlaps itself.** A tick that finds the previous sweep still running does nothing, and a run of
+- **The hold reaper does not pile up sweeps.** A tick that finds the previous sweep still running does nothing, and a run of
   skipped ticks is one `ai_tokens.hold_reaper.tick_skipped` line, so a slow store is not swept twice at once. A sweep that has run
   for longer than ten intervals, or ten minutes when that is longer, is abandoned with one `ai_tokens.hold_reaper.tick_stalled`
   line and the next tick starts a fresh sweep, so a scan that never settles does not stop the reaper for good; the abandoned
-  sweep's late end changes nothing.
+  sweep's late end changes nothing. At most one abandoned sweep is kept: while it and the fresh sweep are both running no
+  further sweep starts, so a store whose scans never settle is asked for two connections, not one more every time the bound passes.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.

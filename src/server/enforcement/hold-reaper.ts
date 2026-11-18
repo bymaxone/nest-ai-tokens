@@ -70,6 +70,8 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   private sweepStartedAt = 0
   /** The latest sweep the timer started: a sweep that is not this one was abandoned and changes nothing when it ends. */
   private latestSweep: object | undefined
+  /** Whether an abandoned sweep is still running: at most one is, so a store whose scans never settle holds two connections, not one more every stall bound. */
+  private abandonedRunning = false
   /** How long a sweep may run before the next tick abandons it, in milliseconds. */
   private stallAfterMs = STALL_AFTER_MIN_MS
   /** Whether the current run of skipped ticks has been logged. */
@@ -107,17 +109,19 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
 
   /**
    * One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. A
-   * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one.
+   * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one, unless an
+   * abandoned sweep is still running, so at most two sweeps ever run.
    */
   private tick(): void {
     if (this.running) {
       const ranMs = this.now().getTime() - this.sweepStartedAt
-      if (ranMs <= this.stallAfterMs) {
+      if (ranMs <= this.stallAfterMs || this.abandonedRunning) {
         if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
         this.skipLogged = true
         return
       }
       this.logger.warn(`${TICK_STALLED_LOG_KEY} the previous sweep ran for ${String(Math.round(ranMs / MS_PER_SECOND))} seconds`)
+      this.abandonedRunning = true
     }
     this.running = true
     this.skipLogged = false
@@ -130,6 +134,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
       })
       .finally(() => {
         if (sweep === this.latestSweep) this.running = false
+        else this.abandonedRunning = false
       })
   }
 
