@@ -24,7 +24,22 @@ function rawFlat(code: string): Error {
   return prisma('P2010', { meta: { code, message: 'm' } })
 }
 
+/** A `P2010` whose driver-adapter cause names only a mapped `kind`, as Prisma 7 raises it for a server it cannot reach. */
+function adapterKind(kind: string): Error {
+  return prisma('P2010', { meta: { driverAdapterError: { name: 'DriverAdapterError', cause: { kind } } } })
+}
+
 describe('isStoreUnavailable', () => {
+  /** A stopped PostgreSQL arrives as `P2010` with no SQLSTATE and only a mapped kind: the kinds that name a failure of the connection are unavailable without one. */
+  it.each(['DatabaseNotReachable', 'ConnectionClosed', 'TooManyConnections', 'SocketTimeout', 'TransactionWriteConflict'])('reads the adapter kind %s as unavailable', (kind) => {
+    expect(isStoreUnavailable(adapterKind(kind))).toBe(true)
+  })
+
+  /** A kind that names a defect of the call or the schema, not of the connection, stays an error. */
+  it.each(['UniqueConstraintViolation', 'TableDoesNotExist', 'ColumnNotFound', 'AuthenticationFailed', 'DatabaseDoesNotExist', 'GenericJs', 'postgres'])('reads the adapter kind %s as an error', (kind) => {
+    expect(isStoreUnavailable(adapterKind(kind))).toBe(false)
+  })
+
   /** Each Prisma code the installed 7.10.1 runtime maps from a connection, timeout or conflict failure, and the two the Prisma 6 engine emits. */
   it.each(['P1001', 'P1002', 'P1008', 'P1017', 'P2024', 'P2034', 'P2037'])('reads Prisma %s as unavailable', (code) => {
     expect(isStoreUnavailable(prisma(code))).toBe(true)

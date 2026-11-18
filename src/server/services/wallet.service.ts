@@ -25,8 +25,9 @@ import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
+import { assertObject, assertOptionalCount, assertWalletRef } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
-import { isNonZeroBigint, isPositiveBigint, isValidDate } from '../utils/numeric-guards'
+import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
@@ -324,6 +325,11 @@ export class WalletService {
    */
   async getEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage> {
     this.assertOwner(ref)
+    if (filter !== undefined) {
+      assertObject('filter', filter)
+      assertOptionalCount('limit', filter.limit)
+      assertOptionalCount('offset', filter.offset)
+    }
     assertOptionalDate('from', filter?.from)
     assertOptionalDate('to', filter?.to)
     return this.store.listEntries(ref, filter)
@@ -339,7 +345,13 @@ export class WalletService {
    */
   async reconcile(ref: WalletRef): Promise<WalletBalance> {
     this.assertOwner(ref)
-    const wallet = await this.store.reconcile(ref, this.now())
+    let wallet: Awaited<ReturnType<IWalletStore['reconcile']>>
+    try {
+      wallet = await this.store.reconcile(ref, this.now())
+    } catch (error) {
+      // Stryker disable next-line StringLiteral: the key is read only for an idempotency conflict, which a reconcile never raises
+      throw this.mapStoreError(error, ref, '')
+    }
     // Stryker disable next-line ObjectLiteral,StringLiteral: audit event name and payload are internal observability; tests check the reconciled balance, not event shape
     await this.events.audit('ai_tokens.wallet.reconciled', {
       tenantId: ref.tenantId,
@@ -395,6 +407,7 @@ export class WalletService {
 
   /** Reject a `'key'` owner at runtime (`'key'` scopes cannot own money, §9.1). */
   private assertOwner(ref: WalletRef): void {
+    assertWalletRef(ref)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if ((ref.ownerType as string) === 'key') throw this.invalid("'key' scopes cannot own a wallet")
   }
@@ -409,8 +422,7 @@ export class WalletService {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (input.priority !== undefined && !Number.isInteger(input.priority)) throw this.invalid('grant priority must be a whole number')
     for (const [name, value] of [['effectiveAt', input.effectiveAt], ['expiresAt', input.expiresAt]] as const) {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-      if (value !== undefined && !isValidDate(value)) throw this.invalid(`grant ${name} must be a valid date`)
+      assertOptionalDate(`grant ${name}`, value)
     }
   }
 

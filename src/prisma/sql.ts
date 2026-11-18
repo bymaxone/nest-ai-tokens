@@ -12,6 +12,8 @@
  * works with any major version and any generator, including a custom output.
  */
 
+import { isDate } from '../shared/utils/is-date'
+
 /** The separators `join` accepts. They end up in the text, so they are a closed set of constants. */
 export type JoinSeparator = ',' | ', ' | ' AND '
 
@@ -45,13 +47,13 @@ export class Sql {
 
   /** The values as they are sent: a `Date` as its ISO string, which carries the zone that {@link Sql.text} casts from. */
   get parameters(): unknown[] {
-    return this.values.map((value) => (value instanceof Date ? value.toISOString() : value))
+    return this.values.map((value) => (isDate(value) ? Date.prototype.toISOString.call(value) : value))
   }
 }
 
 /** The placeholder for the `number`-th parameter: a date is read as a UTC timestamp, anything else is bound as it is. */
 function placeholder(number: number, value: unknown): string {
-  return value instanceof Date ? `($${number.toString()}::timestamptz AT TIME ZONE 'UTC')` : `$${number.toString()}`
+  return isDate(value) ? `($${number.toString()}::timestamptz AT TIME ZONE 'UTC')` : `$${number.toString()}`
 }
 
 /** Builds a statement from constant parts and values, splicing every value that is itself a statement. */

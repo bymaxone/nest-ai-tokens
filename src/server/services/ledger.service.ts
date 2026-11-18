@@ -21,6 +21,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
+import { assertObject, assertOptionalCount, assertText } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
@@ -140,8 +141,10 @@ export class LedgerService {
    * @param key The idempotency key.
    * @returns The record, or `null` when none exists.
    */
-  findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null> {
-    return this.store.findByIdempotencyKey(tenantId, key)
+  async findByIdempotencyKey(tenantId: string, key: string): Promise<UsageRecord | null> {
+    assertText('tenantId', tenantId)
+    assertText('idempotencyKey', key)
+    return await this.store.findByIdempotencyKey(tenantId, key)
   }
 
   /**
@@ -193,6 +196,9 @@ export class LedgerService {
 
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
+    assertObject('filter', filter)
+    assertOptionalCount('limit', filter.limit)
+    assertOptionalCount('offset', filter.offset)
     assertOptionalDate('from', filter.from)
     assertOptionalDate('to', filter.to)
     return filter.status === undefined ? { ...filter, status: [...BALANCE_STATUSES] } : filter

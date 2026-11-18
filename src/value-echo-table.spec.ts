@@ -3,6 +3,7 @@
  * every refusal that takes an id, a key, a model, a provider, a policy or a price, and asserts the serialised response of the
  * typed error does not contain it, except under the one `details` key a row names as the documented echo of an identifier the
  * caller already holds. A refusal added without a row here is a refusal nobody decided about: the table is the place to decide it.
+ * The arguments of every public method, each field of each, are in `argument-matrix.spec.ts`, which puts eight hostile values in each.
  * @layer server
  */
 

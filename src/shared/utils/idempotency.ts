@@ -12,6 +12,7 @@
  * @layer shared
  */
 
+import { isDate } from './is-date'
 import { sha256Hex } from './sha256'
 
 /**
@@ -28,7 +29,7 @@ function canonicalize(value: unknown): string {
   if (typeof value === 'bigint') return JSON.stringify(`${value.toString()}n`)
   if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
-  if (value instanceof Date) return JSON.stringify(value.toISOString())
+  if (isDate(value)) return JSON.stringify(Date.prototype.toISOString.call(value))
 
   if (Array.isArray(value)) {
     return `[${value.map((element: unknown) => canonicalize(element)).join(',')}]`

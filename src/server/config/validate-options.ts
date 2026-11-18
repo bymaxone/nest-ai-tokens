@@ -134,9 +134,33 @@ function validateProtections(given: BymaxAiTokensModuleOptions): void {
     }
   }
   const ledger: unknown = Reflect.get(given, 'ledger')
-  if (typeof ledger === 'object' && ledger !== null && Reflect.get(ledger, 'hashChain') === null) {
+  if (typeof ledger !== 'object' || ledger === null) return
+  const hashChain: unknown = Reflect.get(ledger, 'hashChain')
+  // The flag is read as truthy, so a string such as 'false' would switch the chain on, and null is not a way to leave it off.
+  if (hashChain !== undefined && typeof hashChain !== 'boolean') {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('ledger.hashChain must be true or false')
+  }
+}
+
+/** The options that are functions the library calls. */
+const FUNCTION_OPTIONS = ['scopeResolver', 'fx'] as const
+
+/** The options that are groups of options the library reads fields of. */
+const GROUP_OPTIONS = ['holds', 'wallets'] as const
+
+/** Refuse a function option that is not a function and a group option that is not an object: either would be read as left out. */
+function validateShapes(options: BymaxAiTokensModuleOptions): void {
+  for (const name of FUNCTION_OPTIONS) {
+    const value: unknown = Reflect.get(options, name)
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    if (value !== undefined && typeof value !== 'function') throw invalidConfig(`${name} must be a function`)
+  }
+  for (const name of GROUP_OPTIONS) {
+    const value: unknown = Reflect.get(options, name)
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    // A null group was dropped from the options before this point, so what is not an object here is a value of another kind.
+    if (value !== undefined && (typeof value !== 'object' || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
   }
 }
 
@@ -259,6 +283,7 @@ function validateWallets(options: BymaxAiTokensModuleOptions): void {
 export function validateOptions(given: BymaxAiTokensModuleOptions): void {
   validateProtections(given)
   const options = withoutNullish(given)
+  validateShapes(options)
   validateStorePorts(options)
   validateFeaturePorts(options)
   validateEnums(options)

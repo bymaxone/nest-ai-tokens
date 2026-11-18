@@ -36,6 +36,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
+import { assertEstimateCostInput, assertMeteringContext, assertObject } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
@@ -57,6 +58,7 @@ import type { ContentCapture } from './content-capture'
 import type { TokenCounts } from './hold-support'
 import {
   assertCaller,
+  assertHoldEstimate,
   clampUsageCounts,
   isNormalizedUsage,
   normalizeCaptureUsage,
@@ -203,6 +205,8 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
   async record(input: RecordInput): Promise<UsageRecord> {
+    assertObject('input', input)
+    assertMeteringContext(input.context)
     return (await this.recordSettled(input)).record
   }
 
@@ -340,6 +344,7 @@ export class MeteringService {
    * @returns The raw and billed nano-USD estimate.
    */
   async estimateCost(input: EstimateCostInput): Promise<CostEstimate> {
+    assertEstimateCostInput(input)
     assertOptionalDate('at', input.at)
     const serviceTier = input.serviceTier ?? 'standard'
     const at = input.at ?? this.now()
@@ -392,6 +397,8 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated).
    */
   async hold(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
+    assertMeteringContext(context)
+    assertHoldEstimate(estimate)
     const key = context.idempotencyKey
     if (key === undefined) return this.holdOnce(context, estimate)
     return this.inflight.run(JSON.stringify([context.tenantId, key]), () => this.holdOnce(context, estimate))

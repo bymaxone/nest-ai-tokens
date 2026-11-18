@@ -13,6 +13,7 @@ import type { MeteringService } from '../services/metering.service'
 import { HoldReaper } from './hold-reaper'
 
 const STALLED_LINE = 'ai_tokens.hold_reaper.tick_stalled'
+const DROPPED_LINE = 'ai_tokens.hold_reaper.sweep_dropped'
 const MINUTE_MS = 60_000
 
 /** A ledger whose expired-hold scans stay pending until released one by one, counting the scans started. */
@@ -35,11 +36,31 @@ function hangingLedger(): { ledger: LedgerService; scans: { total: number; activ
   return { ledger, scans, releaseNth: (index) => pending[index]?.() }
 }
 
+/** A ledger whose scans settle at once, except the numbered ones, which never settle; `hangs` says which, or `'all'`. */
+function ledgerHangingAt(hangs: readonly number[] | 'all'): { ledger: LedgerService; scans: { total: number; active: number; startedAt: number[] } } {
+  const scans = { total: 0, active: 0, startedAt: [] as number[] }
+  const ledger = {
+    findExpiredHolds: (): Promise<never[]> => {
+      scans.total += 1
+      scans.startedAt.push(Date.now())
+      if (hangs === 'all' || hangs.includes(scans.total)) {
+        scans.active += 1
+        return new Promise<never[]>(() => undefined)
+      }
+      return Promise.resolve([])
+    },
+    supportsOwedEffects: (): boolean => false,
+  } as unknown as LedgerService
+  return { ledger, scans }
+}
+
 function reaperOver(ledger: LedgerService, reaperIntervalSeconds: number): HoldReaper {
   return new HoldReaper(ledger, {} as MeteringService, { holds: { ttlSeconds: 60, reaperIntervalSeconds } })
 }
 
-const stalledLines = (): string[] => (Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith(STALLED_LINE))
+const linesStarting = (prefix: string): string[] => (Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith(prefix))
+const stalledLines = (): string[] => linesStarting(STALLED_LINE)
+const droppedLines = (): string[] => linesStarting(DROPPED_LINE)
 
 describe('HoldReaper with a sweep that never settles', () => {
   beforeEach(() => {
@@ -128,15 +149,51 @@ describe('HoldReaper with a sweep that never settles', () => {
     expect(scans.total).toBe(2)
   })
 
-  /** Invariant: with every scan hanging, at most one abandoned sweep and one fresh one are ever running, however long it goes on. */
-  it('never has more than two sweeps running when every scan hangs', async () => {
-    const { ledger, scans } = hangingLedger()
+  /**
+   * Invariant: the reaper never stops for good, whatever the store does, and it waits for at most two sweeps. Each row says which scans
+   * never settle over 3000 seconds at a one-second interval, where the bound is 600 seconds, and what the reaper did: the scans it
+   * started, how many are still unsettled (a sweep the reaper no longer waits for holds its connection until the store gives it up),
+   * the stall lines, the lines for a sweep it stopped waiting for, and the instants of its last two scans, which show it still sweeping.
+   */
+  it.each([
+    { name: 'no scan hangs', hangs: [] as number[], scans: 3000, unsettled: 0, stalled: 0, dropped: 0, lastScanAfter: 2999 },
+    { name: 'one scan hangs for good', hangs: [1], scans: 2400, unsettled: 1, stalled: 1, dropped: 0, lastScanAfter: 2999 },
+    { name: 'two scans hang for good', hangs: [1, 3], scans: 1800, unsettled: 2, stalled: 2, dropped: 1, lastScanAfter: 2999 },
+    { name: 'every scan hangs for good', hangs: 'all' as const, scans: 5, unsettled: 5, stalled: 4, dropped: 3, lastScanAfter: 2404 },
+  ])('over 3000 seconds, when $name', async ({ hangs, scans: expectedScans, unsettled, stalled, dropped, lastScanAfter }) => {
+    const { ledger, scans } = ledgerHangingAt(hangs)
+    const reaper = reaperOver(ledger, 1)
+    const start = Date.now()
+    reaper.onApplicationBootstrap()
+    await jest.advanceTimersByTimeAsync(3000 * 1000)
+    reaper.onApplicationShutdown()
+    expect({ scans: scans.total, unsettled: scans.active, stalled: stalledLines().length, dropped: droppedLines().length }).toEqual({ scans: expectedScans, unsettled, stalled, dropped })
+    expect(Math.round(((scans.startedAt.at(-1) ?? start) - start) / 1000)).toBeGreaterThanOrEqual(lastScanAfter)
+  })
+
+  /** Invariant: the line for a sweep the reaper stopped waiting for gives the seconds it ran and nothing a store wrote. */
+  it('logs a sweep it stops waiting for once, with the seconds it ran', async () => {
+    const { ledger } = ledgerHangingAt('all')
     const reaper = reaperOver(ledger, 1)
     reaper.onApplicationBootstrap()
-    await jest.advanceTimersByTimeAsync(3 * 60 * MINUTE_MS)
+    await jest.advanceTimersByTimeAsync(1300 * 1000)
     reaper.onApplicationShutdown()
-    expect(scans.total).toBe(2)
-    expect(scans.active).toBe(2)
+    expect(droppedLines()).toEqual([`${DROPPED_LINE} an abandoned sweep was still running after 1202 seconds and is no longer waited for`])
+  })
+
+  /** Invariant: a sweep the reaper has stopped waiting for ends whenever it likes without disturbing the one it is waiting for. */
+  it('is not disturbed by the late end of a sweep it stopped waiting for', async () => {
+    const { ledger, scans, releaseNth } = hangingLedger()
+    const reaper = reaperOver(ledger, 1)
+    reaper.onApplicationBootstrap()
+    await jest.advanceTimersByTimeAsync(1300 * 1000)
+    expect(scans.total).toBe(3)
+    releaseNth(0)
+    await jest.advanceTimersByTimeAsync(5_000)
+    expect(scans.total).toBe(3)
+    await jest.advanceTimersByTimeAsync(700 * 1000)
+    reaper.onApplicationShutdown()
+    expect({ scans: scans.total, dropped: droppedLines().length, stalled: stalledLines().length }).toEqual({ scans: 4, dropped: 2, stalled: 3 })
   })
 
   /** Invariant: once the abandoned sweep ends, a later stall of the fresh one can be abandoned in its turn. */
@@ -149,6 +206,7 @@ describe('HoldReaper with a sweep that never settles', () => {
     await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
     reaper.onApplicationShutdown()
     expect(scans.total).toBe(3)
+    expect({ dropped: droppedLines().length, stalled: stalledLines().length }).toEqual({ dropped: 0, stalled: 2 })
   })
 
   /** Invariant: a sweep that ends on its own is never abandoned, however many intervals pass. */

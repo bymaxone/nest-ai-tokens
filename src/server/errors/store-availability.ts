@@ -17,6 +17,9 @@ const UNAVAILABLE_SOCKET_CODES: ReadonlySet<string> = new Set([
 /** SQLSTATEs of a deadline the database enforced (57014 statement timeout, 55P03 lock timeout), a shutdown or a refusal to connect (57P01, 57P03), and a retryable conflict (40001 serialization failure, 40P01 deadlock). */
 const UNAVAILABLE_SQLSTATES: ReadonlySet<string> = new Set(['57014', '55P03', '57P01', '57P03', '40001', '40P01'])
 
+/** The `kind` Prisma 7's driver adapter maps a failure to when the connection, not the call, is what failed: a server that cannot be reached, a closed connection, a server out of connections, a socket timeout and a write conflict. */
+const UNAVAILABLE_ADAPTER_KINDS: ReadonlySet<string> = new Set(['DatabaseNotReachable', 'ConnectionClosed', 'TooManyConnections', 'SocketTimeout', 'TransactionWriteConflict'])
+
 /** Messages of the PostgreSQL driver's own errors for a connection that could not be made, was closed or timed out. */
 const DRIVER_CONNECTION_MESSAGE =
   /connection terminated|timeout exceeded when trying to connect|connection error and is not queryable|connection (?:is )?closed|cannot use a pool after calling end/i
@@ -33,7 +36,7 @@ interface ErrorFields {
   code?: unknown
   errorCode?: unknown
   message?: unknown
-  meta?: { code?: unknown; timeout?: unknown; driverAdapterError?: { cause?: { originalCode?: unknown; code?: unknown } } }
+  meta?: { code?: unknown; timeout?: unknown; driverAdapterError?: { cause?: { originalCode?: unknown; code?: unknown; kind?: unknown } } }
   cause?: unknown
 }
 
@@ -65,6 +68,8 @@ function isUnavailableItself(fields: ErrorFields): boolean {
   if (isTransactionDeadline(fields)) return true
   const cause = fields.meta?.driverAdapterError?.cause
   if (isUnavailableSqlState(text(fields.meta?.code) ?? text(cause?.originalCode) ?? text(cause?.code))) return true
+  const kind = text(cause?.kind)
+  if (kind !== undefined && UNAVAILABLE_ADAPTER_KINDS.has(kind)) return true
   if (isUnavailableSqlState(text(fields.code))) return true
   const message = String(fields.message)
   if (fields.name === 'PrismaClientInitializationError') return UNREACHABLE_MESSAGE.test(message)
