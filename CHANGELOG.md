@@ -1252,4 +1252,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.16]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.15...v1.1.16
 [1.1.17]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.16...v1.1.17
 [1.1.18]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.17...v1.1.18
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.18...HEAD
+[1.1.19]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.18...v1.1.19
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.19...HEAD
