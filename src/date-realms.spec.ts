@@ -1,7 +1,7 @@
 /**
  * @fileoverview What counts as a date a caller may supply. A valid `Date` from another realm (a `vm` context, an iframe) or a
- * subclass of `Date`, which a clock-shifting test double is, is a date: `instanceof Date` refused both, where 1.1.18 took them. A
- * value that only looks like one is not: a subclass whose `getTime` throws, or a Proxy of a `Date`, which would fail later with
+ * subclass of `Date`, which a clock-shifting test double is, is a date, so the test reads the internal slot, not the prototype
+ * chain. A value that only looks like one is not: a subclass whose `getTime` throws, or a Proxy of a `Date`, which would fail later with
  * the host's own error. A date outside the years 1 to 9999 is refused by name, because a store cannot hold it and would fail
  * with an error that does not say which input it was.
  * @layer server

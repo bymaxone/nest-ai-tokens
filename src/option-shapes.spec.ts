@@ -1,8 +1,7 @@
 /**
  * @fileoverview The kind of value five options take. `scopeResolver` and `fx` are functions, `holds` and `wallets` are groups of
- * options, and `ledger.hashChain` is a boolean: a string `'false'` is truthy, so a host that read the flag from its environment
- * got the hash chain it meant to turn off, and a string where a group belongs left every option of the group at its default with no
- * word said. Each is refused at startup with the typed invalid-configuration error that names the option and never repeats the
+ * options, and `ledger.hashChain` is a boolean: the flag is read as truthy, so the string `'false'` would switch the chain on, and a
+ * string where a group belongs would leave every option of the group at its default with no word said. Each is refused at startup with the typed invalid-configuration error that names the option and never repeats the
  * value, and each documented value is still accepted.
  * @layer server
  */

@@ -30,7 +30,7 @@ function adapterKind(kind: string): Error {
 }
 
 describe('isStoreUnavailable', () => {
-  /** QA-048 item 7: a stopped PostgreSQL arrives as P2010 with no SQLSTATE and the kind DatabaseNotReachable, and 18 of 20 operations answered 500. */
+  /** A stopped PostgreSQL arrives as `P2010` with no SQLSTATE and only a mapped kind: the kinds that name a failure of the connection are unavailable without one. */
   it.each(['DatabaseNotReachable', 'ConnectionClosed', 'TooManyConnections', 'SocketTimeout', 'TransactionWriteConflict'])('reads the adapter kind %s as unavailable', (kind) => {
     expect(isStoreUnavailable(adapterKind(kind))).toBe(true)
   })
