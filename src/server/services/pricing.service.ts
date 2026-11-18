@@ -14,6 +14,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
+import { assertObject, assertOptionalText, assertText } from '../utils/argument-guards'
 import { assertDate, assertOptionalDate } from '../utils/date-guards'
 import { normalizeModelId } from '../utils/model-id'
 
@@ -65,6 +66,11 @@ export class PricingService implements OnModuleInit {
    * @throws {AiTokensException} `AI_TOKENS_PRICE_NOT_FOUND` on a miss in strict mode.
    */
   async resolveRate(input: ResolveRateInput): Promise<PriceVersion | null> {
+    assertObject('input', input)
+    assertText('provider', input.provider)
+    assertText('model', input.model)
+    assertText('operation', input.operation)
+    assertOptionalText('serviceTier', input.serviceTier)
     assertDate('at', input.at)
     const serviceTier = input.serviceTier ?? 'standard'
     // Stryker disable next-line ConditionalExpression: CE true: always mapping to 'chat' is detectable only when a non-'responses', non-'chat' operation (e.g. 'embeddings') is used alongside a mismatched 'chat' price row; no such test exists. But CE true changes 'embeddings' → 'chat' which then finds the wrong price — the fix is the test for non-responses passing through

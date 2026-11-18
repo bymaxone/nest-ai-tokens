@@ -18,6 +18,7 @@ import type { LedgerFilter, ProviderId, ReportFilter, TokenCategory, UsageRecord
 import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
+import { assertObject } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 
 /** The resolved-options subset the report service consumes. */
@@ -42,6 +43,30 @@ const BALANCE_STATUSES = ['posted', 'reversed'] as const
 const PER_MILLION = 1_000_000n
 /** Nano-USD per USD (fx returns nano-units of the presentation currency PER USD). */
 const NANO_PER_USD = 1_000_000_000n
+
+/** Every group-by dimension mapped to `true`, so that the compiler refuses a list that misses a dimension or names one that does not exist. */
+const REPORT_GROUPS: Readonly<Record<ReportGroupBy, true>> = {
+  day: true,
+  week: true,
+  month: true,
+  feature: true,
+  provider: true,
+  model: true,
+  operation: true,
+  serviceTier: true,
+  scope: true,
+  beneficiary: true,
+  tag: true,
+  systemCostCategory: true,
+}
+
+/** Throw unless the group-by of a summary is an array of the documented dimensions; a store reads it as one, and a value that is not iterable fails there with a raw error. */
+function assertGroupBy(groupBy: unknown): void {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the argument name
+  const refused = (reason: string): AiTokensException => new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
+  if (!Array.isArray(groupBy)) throw refused('groupBy must be an array')
+  if (!groupBy.every((dimension): boolean => typeof dimension === 'string' && Object.hasOwn(REPORT_GROUPS, dimension))) throw refused('groupBy must name only the documented dimensions')
+}
 
 /** Throw unless the bounds of a report filter, when given, are valid dates; the stores compare them as given. */
 function assertFilterDates(filter: ReportFilter): void {
@@ -82,7 +107,9 @@ export class UsageReportService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the matched rows exceed `reporting.maxExportRows`.
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
+    assertObject('input', input)
     const { groupBy, ...filter } = input
+    assertGroupBy(groupBy)
     assertFilterDates(filter)
     const max = this.options.reporting.maxExportRows
     if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)

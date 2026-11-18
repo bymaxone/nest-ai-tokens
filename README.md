@@ -319,7 +319,9 @@ naming the option and never the value. A stored budget whose policy is not a doc
 set to `null` or `undefined` is left out: it takes its default, or stays off where it has none; `store` is
 required and refuses both. A group of options set to `null` is left out too, except `budgets`, `wallets` and `ledger`, and the flag `ledger.hashChain`: leaving
 these out switches a limit or a protection off, so they refuse `null` with `AI_TOKENS_INVALID_CONFIG`, because a configuration that
-failed to load must not do the same. Leave them out, or set them to `undefined`, to keep the feature off.
+failed to load must not do the same. Leave them out, or set them to `undefined`, to keep the feature off. `scopeResolver` and `fx` must be
+functions, `holds` and `wallets` objects, and `ledger.hashChain` a boolean, so a string such as `'false'` is refused, not read as true; a value of
+another kind throws `AI_TOKENS_INVALID_CONFIG`, naming the option and never the value.
 
 With `forRootAsync`, the options arrive after the providers are declared, so `WalletService`,
 `BudgetService` and `BudgetGuard` are always registered. When the options leave `wallets` or
@@ -489,7 +491,10 @@ tells them whether it exists. Pass the tenant from your verified auth context, n
 **Dates must be valid `Date`s.** `anchorAt` and `expiresAt` of a budget, the `newWindowStart` of `rotateWindow`, the `windowStart` of
 `reconcileWindow`, the `occurredAt` of `record`, the `at` of `estimateCost` and `resolveRate`, the `effectiveFrom` of `upsertPrice`, and
 the `from` and `to` of a ledger, report or wallet-entry filter are refused with `AI_TOKENS_INVALID_CONFIG`, naming the input and never
-the value, when they are an Invalid Date, a string, a number or `null`. `undefined` keeps the default where the input has one.
+the value, when they are an Invalid Date, a string, a number or `null`. `undefined` keeps the default where the input has one. A `Date` from
+another realm and a subclass of `Date` are dates; a value that only looks like one, a Proxy of a `Date` or a subclass whose `getTime` throws, is
+not. The range is the year 1 to the year 9999, which is what PostgreSQL stores, and a date outside it is refused with the reason
+`<input> must be a date from the year 1 to the year 9999`.
 
 ---
 
@@ -608,7 +613,9 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 
 ### Set a connect timeout on the database client
 
-`AI_TOKENS_STORE_UNAVAILABLE` is raised only when the driver reports a failure. A database that is paused or whose
+`AI_TOKENS_STORE_UNAVAILABLE` is raised only when the driver reports a failure; it also covers a server that Prisma 7's `pg` adapter
+reports as unreachable, as `P2010` with the cause kind `DatabaseNotReachable`, `ConnectionClosed`, `TooManyConnections`, `SocketTimeout` or
+`TransactionWriteConflict`. A database that is paused or whose
 network drops without closing the socket makes some drivers wait forever instead, and the library cannot classify a
 call that never fails. Measured on PostgreSQL 16: with Prisma 6's engine, a plain query against a paused server never
 returns, while an interactive transaction fails after `maxWait` with `P2028`. With Prisma 7's `pg` adapter the pool
@@ -626,7 +633,10 @@ and keep it out of the response: it can name the host, a statement or a row.
 
 The `reason` of a refused option or input names what was refused and the bound it broke, and never repeats the value, so a string
 read from an environment variable cannot reach a response body or a log through it. Match on the option name in the reason, not on
-the value. A runtime error may carry, in its `details`, an identifier the caller already holds (`holdId`, `idempotencyKey`,
+the value. Every public method also refuses an argument of the wrong kind with `AI_TOKENS_INVALID_CONFIG`, naming the argument and never
+repeating the value, where it used to fail with a raw `TypeError`, `RangeError` or `SyntaxError` that did: an identifier (tenant, key, model,
+provider, operation, scope, wallet owner) that is not a string, a token count, `limit` or `offset` that is not a whole number of 0 or more, a hold
+estimate, a cost estimate or a metering context that is not an object, and a `groupBy` that is not an array of the documented dimensions. A runtime error may carry, in its `details`, an identifier the caller already holds (`holdId`, `idempotencyKey`,
 `budgetId`, `tenantId`, `provider`, `model`, `operation`, `serviceTier`, `recordId`) so the caller can correlate it, but only when the value is a string of at most 256
 characters; otherwise the field is left out. The budget errors also carry the `dimension` that refused (`cost`, `tokens` or `count`). A refusal at startup never carries a supplied value: `AI_TOKENS_FX_REQUIRED` has no
 `details`.
@@ -745,9 +755,11 @@ specific to security is below.
   skipped ticks is one `ai_tokens.hold_reaper.tick_skipped` line, so a slow store is not swept twice at once. A sweep that has run
   for longer than ten intervals, or ten minutes when that is longer, is abandoned with one `ai_tokens.hold_reaper.tick_stalled`
   line and the next tick starts a fresh sweep, so a scan that never settles does not stop the reaper for good; the abandoned
-  sweep's late end does not mark the fresh sweep as finished. At most one abandoned sweep is kept: a stalled sweep is
-  abandoned only while none is still running, so at most two sweeps run at once, and a store whose scans never settle is asked for
-  two connections, not one more every time the bound passes.
+  sweep's late end does not mark the fresh sweep as finished. At most one abandoned sweep is waited for: while it has been abandoned for
+  less than a further bound, a stalled sweep is not abandoned, so at most two sweeps are waited for at once. After that the reaper stops
+  waiting for it, with one `ai_tokens.hold_reaper.sweep_dropped` line (the seconds it ran), and abandons the stalled one in its turn,
+  so the reaper never stops for good. With a store whose scans never settle it starts one sweep per bound, about every ten minutes, and
+  each sweep it stopped waiting for holds its connection until the store gives it up.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.

@@ -5,6 +5,8 @@
  * @layer server
  */
 
+import { types } from 'node:util'
+
 /** A whole number from 0 to `Number.MAX_SAFE_INTEGER`: a token or call count. Refuses NaN, Infinity, fractions, negatives and non-numbers. */
 export function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
@@ -30,7 +32,16 @@ export function isFraction(value: unknown): value is number {
   return typeof value === 'number' && value > 0 && value <= 1
 }
 
-/** A valid `Date`: not an `Invalid Date`, whose comparisons are all false. */
+/**
+ * A valid `Date`: one whose internal slot says so, which a `Date` from another realm and a subclass of `Date` have and a Proxy of one
+ * does not, and whose time is a number, not an `Invalid Date`, whose comparisons are all false. A subclass whose own `getTime` throws is not
+ * one, because a store would call it and fail with the host's own error.
+ */
 export function isValidDate(value: unknown): value is Date {
-  return value instanceof Date && !Number.isNaN(value.getTime())
+  if (!types.isDate(value)) return false
+  try {
+    return Number.isFinite(value.getTime()) && Number.isFinite(Date.prototype.getTime.call(value))
+  } catch {
+    return false
+  }
 }

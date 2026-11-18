@@ -22,6 +22,7 @@ import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../share
 import { AiTokensException } from '../errors'
 import { setErrorMessage } from '../errors/set-error-message'
 import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
+import { assertObject, assertOptionalText, assertText } from '../utils/argument-guards'
 import { isCount, isNonNegativeBigint } from '../utils/numeric-guards'
 import type { PricingService } from './pricing.service'
 
@@ -187,8 +188,21 @@ function syntheticUsage(estimate: Extract<HoldEstimate, { provider: ProviderId }
   }
 }
 
-/** Refuse a hold estimate whose amounts are not whole non-negative counts or a non-negative bigint, naming the field and echoing no value. */
-function assertEstimate(estimate: HoldEstimate): void {
+/**
+ * Refuse a hold estimate that is not an object, whose identity is not text, whose amounts are not whole non-negative counts or whose
+ * amount is not a non-negative bigint, naming the field and echoing no value.
+ *
+ * @param estimate The estimate as the caller passed it.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not valid.
+ */
+export function assertHoldEstimate(estimate: HoldEstimate): void {
+  assertObject('estimate', estimate)
+  if (isRatedEstimate(estimate)) {
+    assertText('estimate.provider', estimate.provider)
+    assertText('estimate.model', estimate.model)
+    assertText('estimate.operation', estimate.operation)
+    assertOptionalText('estimate.serviceTier', estimate.serviceTier)
+  }
   const fields: [string, unknown][] = isRatedEstimate(estimate)
     ? [['inputTokens', estimate.inputTokens], ['maxOutputTokens', estimate.maxOutputTokens]]
     : isTokenEstimate(estimate)
@@ -224,7 +238,6 @@ export async function resolveHoldEstimate(
   estimate: HoldEstimate,
   at: Date,
 ): Promise<ResolvedHoldEstimate> {
-  assertEstimate(estimate)
   const serviceTier = context.serviceTier ?? 'standard'
   if (isRatedEstimate(estimate)) {
     const tier = estimate.serviceTier ?? serviceTier

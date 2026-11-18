@@ -8,6 +8,12 @@
 import { AiTokensException } from '../errors'
 import { isValidDate } from './numeric-guards'
 
+/** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
+const FIRST_SUPPORTED_MS = -62_135_596_800_000
+
+/** The last instant of the supported range, 9999-12-31T23:59:59.999Z, in milliseconds since the epoch. */
+const LAST_SUPPORTED_MS = 253_402_300_799_999
+
 /** The typed refusal of an input that is not a valid date. */
 function notADate(name: string): AiTokensException {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the input name
@@ -19,10 +25,13 @@ function notADate(name: string): AiTokensException {
  *
  * @param name The input the reason names.
  * @param value The date the caller supplied.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not a valid `Date`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not a valid `Date`, or is before the year 1 or after the year 9999.
  */
 export function assertDate(name: string, value: unknown): void {
   if (!isValidDate(value)) throw notADate(name)
+  const time = Date.prototype.getTime.call(value)
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the input name
+  if (time < FIRST_SUPPORTED_MS || time > LAST_SUPPORTED_MS) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be a date from the year 1 to the year 9999` })
 }
 
 /**
