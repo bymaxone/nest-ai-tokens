@@ -45,7 +45,7 @@ const DEFAULT_GRACE_SECONDS = 300
 const TICK_SKIPPED_LOG_KEY = 'ai_tokens.hold_reaper.tick_skipped'
 /** Stable log key, written once per stalled sweep, for a tick that abandoned a sweep that had run too long. */
 const TICK_STALLED_LOG_KEY = 'ai_tokens.hold_reaper.tick_stalled'
-/** Stable log key, written once for an abandoned sweep that is still unsettled a further bound later and is no longer waited for. */
+/** Stable log key, written once for an abandoned sweep that is still unsettled when its successor stalls. */
 const SWEEP_DROPPED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_dropped'
 /** A sweep is abandoned once it has run for this many reaper intervals, or for the minimum below when that is longer. */
 const STALL_AFTER_INTERVALS = 10
@@ -113,7 +113,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   /**
    * One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. A
    * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one. Only one
-   * abandoned sweep is waited for: when the fresh sweep stalls in its turn, a further bound later, the reaper stops waiting for the
+   * abandoned sweep is waited for: when the fresh sweep stalls in its turn, the reaper stops waiting for the
    * abandoned one, with one line, and abandons the stalled one, so that a store whose scans never settle never leaves the reaper idle.
    * At most two sweeps are waited for at once; one the reaper stopped waiting for holds its connection until the store gives it up.
    */
