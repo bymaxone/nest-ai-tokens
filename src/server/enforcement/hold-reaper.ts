@@ -43,6 +43,12 @@ const ORPHAN_INACTIVE_LOG_KEY = 'ai_tokens.hold_reaper.orphan_debit_sweep_inacti
 const DEFAULT_GRACE_SECONDS = 300
 /** Stable log key, written once per run of skipped ticks, for a tick that found the previous sweep still running. */
 const TICK_SKIPPED_LOG_KEY = 'ai_tokens.hold_reaper.tick_skipped'
+/** Stable log key, written once per stalled sweep, for a tick that abandoned a sweep that had run too long. */
+const TICK_STALLED_LOG_KEY = 'ai_tokens.hold_reaper.tick_stalled'
+/** A sweep is abandoned once it has run for this many reaper intervals, or for the minimum below when that is longer. */
+const STALL_AFTER_INTERVALS = 10
+/** The shortest time a sweep may run before it is abandoned, in milliseconds. */
+const STALL_AFTER_MIN_MS = 600_000
 /** Stable log key for any other rejection out of a timer-driven sweep. */
 const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
 
@@ -60,6 +66,12 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   private timer: ReturnType<typeof setInterval> | undefined
   /** Whether a timer-driven sweep is running: a tick that finds one running does nothing, so a slow store is never swept twice at once. */
   private running = false
+  /** The clock reading, in milliseconds, at which the running sweep started. */
+  private sweepStartedAt = 0
+  /** The latest sweep the timer started: a sweep that is not this one was abandoned and changes nothing when it ends. */
+  private latestSweep: object | undefined
+  /** How long a sweep may run before the next tick abandons it, in milliseconds. */
+  private stallAfterMs = STALL_AFTER_MIN_MS
   /** Whether the current run of skipped ticks has been logged. */
   // Stryker disable next-line BooleanLiteral: equivalent: a tick that can skip needs a sweep already running, and starting that sweep sets the flag to false first, so the initial value is never read
   private skipLogged = false
@@ -86,27 +98,38 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     if (this.settlementEnabled() && !this.ledger.supportsOwedEffects()) this.logger.warn(`${SETTLEMENT_INACTIVE_LOG_KEY} the ledger store keeps no effects-owed marker`)
     if (this.settlementEnabled() && this.orphans !== undefined && this.ledger.supportsOwedEffects() && !this.orphans.supported) this.logger.warn(`${ORPHAN_INACTIVE_LOG_KEY} the wallet store lists no debits across wallets`)
     const intervalMs = this.options.holds.reaperIntervalSeconds * MS_PER_SECOND
+    this.stallAfterMs = Math.max(STALL_AFTER_INTERVALS * intervalMs, STALL_AFTER_MIN_MS)
     this.timer = setInterval(() => {
       this.tick()
     }, intervalMs)
     this.timer.unref()
   }
 
-  /** One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. */
+  /**
+   * One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. A
+   * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one.
+   */
   private tick(): void {
     if (this.running) {
-      if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
-      this.skipLogged = true
-      return
+      const ranMs = this.now().getTime() - this.sweepStartedAt
+      if (ranMs <= this.stallAfterMs) {
+        if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
+        this.skipLogged = true
+        return
+      }
+      this.logger.warn(`${TICK_STALLED_LOG_KEY} the previous sweep ran for ${String(Math.round(ranMs / MS_PER_SECOND))} seconds`)
     }
     this.running = true
     this.skipLogged = false
+    this.sweepStartedAt = this.now().getTime()
+    const sweep = {}
+    this.latestSweep = sweep
     void this.sweep()
       .catch((error: unknown) => {
         this.logger.warn(`${SWEEP_FAILED_LOG_KEY} ${describeError(error)}`)
       })
       .finally(() => {
-        this.running = false
+        if (sweep === this.latestSweep) this.running = false
       })
   }
 
