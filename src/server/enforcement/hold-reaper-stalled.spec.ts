@@ -190,8 +190,10 @@ describe('HoldReaper with a sweep that never settles', () => {
     expect(scans.total).toBe(3)
     releaseNth(0)
     await jest.advanceTimersByTimeAsync(5_000)
-    reaper.onApplicationShutdown()
     expect(scans.total).toBe(3)
+    await jest.advanceTimersByTimeAsync(700 * 1000)
+    reaper.onApplicationShutdown()
+    expect({ scans: scans.total, dropped: droppedLines().length, stalled: stalledLines().length }).toEqual({ scans: 4, dropped: 2, stalled: 3 })
   })
 
   /** Invariant: once the abandoned sweep ends, a later stall of the fresh one can be abandoned in its turn. */
@@ -204,6 +206,7 @@ describe('HoldReaper with a sweep that never settles', () => {
     await jest.advanceTimersByTimeAsync(11 * MINUTE_MS)
     reaper.onApplicationShutdown()
     expect(scans.total).toBe(3)
+    expect({ dropped: droppedLines().length, stalled: stalledLines().length }).toEqual({ dropped: 0, stalled: 2 })
   })
 
   /** Invariant: a sweep that ends on its own is never abandoned, however many intervals pass. */

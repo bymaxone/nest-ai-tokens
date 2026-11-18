@@ -55,6 +55,23 @@ describe('a date from another realm or a subclass of Date', () => {
     expect(refusal).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' })
   })
 
+  /** The guard reads both the date's own time and its internal slot, so a subclass that lies about either is refused. */
+  it('is refused when its getTime disagrees with its internal time', async () => {
+    class LyingDate extends Date {
+      override getTime(): number {
+        return Number.NaN
+      }
+    }
+    class InvalidLyingDate extends Date {
+      override getTime(): number {
+        return 0
+      }
+    }
+    const reason = { code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' }
+    expect(await outcome(() => anchoredAt(new LyingDate(0)))).toEqual(reason)
+    expect(await outcome(() => anchoredAt(new InvalidLyingDate(Number.NaN)))).toEqual(reason)
+  })
+
   it('is refused when it is a Proxy of a Date, which is not a date', async () => {
     expect(await outcome(() => anchoredAt(new Proxy(new Date(0), {})))).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' })
   })

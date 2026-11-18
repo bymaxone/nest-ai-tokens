@@ -14,7 +14,6 @@
  * @returns `true` for a `Date`, a subclass of `Date` and a `Date` from another realm, whose time may be invalid.
  */
 export function isDate(value: unknown): value is Date {
-  if (typeof value !== 'object' || value === null) return false
   try {
     Date.prototype.getTime.call(value)
     return true

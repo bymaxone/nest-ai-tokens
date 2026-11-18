@@ -54,10 +54,9 @@ const STALL_AFTER_MIN_MS = 600_000
 /** Stable log key for any other rejection out of a timer-driven sweep. */
 const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
 
-/** A sweep the timer started: when it started, and, once a tick abandoned it, when. */
+/** A sweep the timer started, with the clock reading, in milliseconds, at which it started. */
 interface TimedSweep {
   readonly startedAt: number
-  abandonedAt: number | undefined
 }
 
 /** The resolved-options subset the reaper consumes. */
@@ -74,7 +73,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   private timer: ReturnType<typeof setInterval> | undefined
   /** The timer-driven sweep in flight: a tick that finds one within its bound does nothing, so a slow store is never swept twice at once. */
   private current: TimedSweep | undefined
-  /** The sweep a tick abandoned and that has not settled: at most one is waited for, and one that outlasts a further bound is dropped. */
+  /** The sweep a tick abandoned and that has not settled: at most one is waited for, and it is dropped when the sweep that replaced it stalls in its turn. */
   private abandoned: TimedSweep | undefined
   /** How long a sweep may run before the next tick abandons it, in milliseconds. */
   private stallAfterMs = STALL_AFTER_MIN_MS
@@ -114,15 +113,15 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   /**
    * One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. A
    * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one. Only one
-   * abandoned sweep is waited for: while it has been abandoned for less than a further bound the tick waits too, and after that the
-   * reaper stops waiting for it, with one line, so that a store whose scans never settle never leaves the reaper idle. At most two
-   * sweeps are waited for at once; one the reaper stopped waiting for holds its connection until the store gives it up.
+   * abandoned sweep is waited for: when the fresh sweep stalls in its turn, a further bound later, the reaper stops waiting for the
+   * abandoned one, with one line, and abandons the stalled one, so that a store whose scans never settle never leaves the reaper idle.
+   * At most two sweeps are waited for at once; one the reaper stopped waiting for holds its connection until the store gives it up.
    */
   private tick(): void {
     const nowMs = this.now().getTime()
     if (this.current !== undefined) {
       const ranMs = nowMs - this.current.startedAt
-      if (ranMs <= this.stallAfterMs || !this.mayAbandon(nowMs)) {
+      if (ranMs <= this.stallAfterMs) {
         if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
         this.skipLogged = true
         return
@@ -131,11 +130,10 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         this.logger.warn(`${SWEEP_DROPPED_LOG_KEY} an abandoned sweep was still running after ${String(Math.round((nowMs - this.abandoned.startedAt) / MS_PER_SECOND))} seconds and is no longer waited for`)
       }
       this.logger.warn(`${TICK_STALLED_LOG_KEY} the previous sweep ran for ${String(Math.round(ranMs / MS_PER_SECOND))} seconds`)
-      this.current.abandonedAt = nowMs
       this.abandoned = this.current
     }
     this.skipLogged = false
-    const sweep: TimedSweep = { startedAt: nowMs, abandonedAt: undefined }
+    const sweep: TimedSweep = { startedAt: nowMs }
     this.current = sweep
     void this.sweep()
       .catch((error: unknown) => {
@@ -145,11 +143,6 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         if (this.current === sweep) this.current = undefined
         else if (this.abandoned === sweep) this.abandoned = undefined
       })
-  }
-
-  /** Whether the stalled sweep may be abandoned now: no abandoned sweep is waited for, or the one that is has been for a further bound. */
-  private mayAbandon(nowMs: number): boolean {
-    return this.abandoned?.abandonedAt === undefined || nowMs - this.abandoned.abandonedAt > this.stallAfterMs
   }
 
   /** Stop the sweep on shutdown (no open handles left for Jest). */

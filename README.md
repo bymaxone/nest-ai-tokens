@@ -754,10 +754,9 @@ specific to security is below.
   skipped ticks is one `ai_tokens.hold_reaper.tick_skipped` line, so a slow store is not swept twice at once. A sweep that has run
   for longer than ten intervals, or ten minutes when that is longer, is abandoned with one `ai_tokens.hold_reaper.tick_stalled`
   line and the next tick starts a fresh sweep, so a scan that never settles does not stop the reaper for good; the abandoned
-  sweep's late end does not mark the fresh sweep as finished. At most one abandoned sweep is waited for: while it has been abandoned for
-  less than a further bound, a stalled sweep is not abandoned, so at most two sweeps are waited for at once. After that the reaper stops
-  waiting for it, with one `ai_tokens.hold_reaper.sweep_dropped` line (the seconds it ran), and abandons the stalled one in its turn,
-  so the reaper never stops for good. With a store whose scans never settle it starts one sweep per bound, and
+  sweep's late end does not mark the fresh sweep as finished. At most one abandoned sweep is waited for: when the fresh sweep stalls too,
+  a further bound later, the reaper stops waiting for the abandoned one, with one `ai_tokens.hold_reaper.sweep_dropped` line (the seconds
+  it ran), and abandons the stalled one in its turn, so at most two sweeps are waited for at once and the reaper never stops for good. With a store whose scans never settle it starts one sweep per bound, and
   each sweep it stopped waiting for holds its connection until the store gives it up.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver

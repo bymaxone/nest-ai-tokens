@@ -159,7 +159,8 @@ function validateShapes(options: BymaxAiTokensModuleOptions): void {
   for (const name of GROUP_OPTIONS) {
     const value: unknown = Reflect.get(options, name)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    if (value !== undefined && (typeof value !== 'object' || value === null || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
+    // A null group was dropped from the options before this point, so what is not an object here is a value of another kind.
+    if (value !== undefined && (typeof value !== 'object' || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
   }
 }
 

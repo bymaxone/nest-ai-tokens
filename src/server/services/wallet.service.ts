@@ -349,6 +349,7 @@ export class WalletService {
     try {
       wallet = await this.store.reconcile(ref, this.now())
     } catch (error) {
+      // Stryker disable next-line StringLiteral: the key is read only for an idempotency conflict, which a reconcile never raises
       throw this.mapStoreError(error, ref, '')
     }
     // Stryker disable next-line ObjectLiteral,StringLiteral: audit event name and payload are internal observability; tests check the reconciled balance, not event shape
