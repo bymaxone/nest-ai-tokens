@@ -628,7 +628,7 @@ The `reason` of a refused option or input names what was refused and the bound i
 read from an environment variable cannot reach a response body or a log through it. Match on the option name in the reason, not on
 the value. A runtime error may carry, in its `details`, an identifier the caller already holds (`holdId`, `idempotencyKey`,
 `budgetId`, `tenantId`, `provider`, `model`, `operation`, `serviceTier`, `recordId`) so the caller can correlate it, but only when the value is a string of at most 256
-characters; otherwise the field is left out. A refusal at startup never carries a supplied value: `AI_TOKENS_FX_REQUIRED` has no
+characters; otherwise the field is left out. The budget errors also carry the `dimension` that refused (`cost`, `tokens` or `count`). A refusal at startup never carries a supplied value: `AI_TOKENS_FX_REQUIRED` has no
 `details`.
 
 ---
