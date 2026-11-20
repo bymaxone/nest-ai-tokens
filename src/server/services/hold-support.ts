@@ -214,7 +214,7 @@ export function assertHoldEstimate(estimate: HoldEstimate): void {
   }
   if (!isRatedEstimate(estimate) && !isTokenEstimate(estimate) && !isNonNegativeBigint(estimate.amountNanoUsd)) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the field name
-    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'amountNanoUsd of a hold estimate must be a bigint of 0 or more' })
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'amountNanoUsd of a hold estimate must be a bigint from 0 to 9223372036854775807' })
   }
 }
 

@@ -15,7 +15,7 @@ import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
 import { assertObject, assertOptionalAmount, assertOptionalCount, assertOptionalText, assertText } from '../utils/argument-guards'
-import { assertDate, assertOptionalDate } from '../utils/date-guards'
+import { readDate, withReadDates } from '../utils/date-guards'
 import { normalizeModelId } from '../utils/model-id'
 
 /** Inputs to {@link PricingService.resolveRate}. */
@@ -87,12 +87,12 @@ export class PricingService implements OnModuleInit {
     assertText('model', input.model)
     assertText('operation', input.operation)
     assertOptionalText('serviceTier', input.serviceTier)
-    assertDate('at', input.at)
+    const at = readDate('at', input.at)
     const serviceTier = input.serviceTier ?? 'standard'
     // Stryker disable next-line ConditionalExpression: CE true: always mapping to 'chat' is detectable only when a non-'responses', non-'chat' operation (e.g. 'embeddings') is used alongside a mismatched 'chat' price row; no such test exists. But CE true changes 'embeddings' → 'chat' which then finds the wrong price — the fix is the test for non-responses passing through
     const operation = input.operation === 'responses' ? 'chat' : input.operation
     // Stryker disable next-line ArithmeticOperator: * instead of /: changes bucket to input.at.getTime() * cacheTtlMs (huge number), but since both calls use the same input.at, the cache key is still consistent across calls → cache still hits; only observable if two different input.at values are deliberately straddled across a bucket boundary, which no test does
-    const bucket = Math.floor(input.at.getTime() / this.options.pricing.cacheTtlMs)
+    const bucket = Math.floor(at.getTime() / this.options.pricing.cacheTtlMs)
     // A JSON array escapes every string field, so no character inside provider, model or baseModel can move the boundary between fields.
     const cacheKey = JSON.stringify([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
 
@@ -102,7 +102,7 @@ export class PricingService implements OnModuleInit {
     if (cached !== undefined && this.now() < cached.expiresAt) {
       resolved = cached.value
     } else {
-      resolved = await this.resolveUncached(input.provider, input.model, operation, serviceTier, input.at, input.baseModel)
+      resolved = await this.resolveUncached(input.provider, input.model, operation, serviceTier, at, input.baseModel)
       this.cache.set(cacheKey, { value: resolved, expiresAt: this.now() + this.options.pricing.cacheTtlMs })
     }
 
@@ -127,8 +127,7 @@ export class PricingService implements OnModuleInit {
     assertOptionalText('serviceTier', input.serviceTier)
     for (const field of RATE_FIELDS) assertOptionalAmount(field, input[field])
     assertOptionalCount('tierThresholdTokens', input.tierThresholdTokens)
-    assertOptionalDate('effectiveFrom', input.effectiveFrom)
-    const row = await this.store.upsertPrice(input)
+    const row = await this.store.upsertPrice(withReadDates(input, ['effectiveFrom']))
     this.cache.clear()
     return row
   }

@@ -35,12 +35,45 @@ export function assertDate(name: string, value: unknown): void {
 }
 
 /**
- * Throw unless `value`, when given, is a valid `Date`; `undefined` is the default and passes.
+ * Validate a date a caller supplied and return a native `Date` of the same instant, read once. Every later use works on the copy, so a
+ * subclass whose methods answer once and throw afterwards, or a getter that changes, cannot fail after the call has begun.
+ *
+ * @param name The input the reason names.
+ * @param value The date the caller supplied.
+ * @returns A new `Date` for the instant of `value`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` as {@link assertDate} does.
+ */
+export function readDate(name: string, value: unknown): Date {
+  assertDate(name, value)
+  return new Date(Date.prototype.getTime.call(value))
+}
+
+/**
+ * {@link readDate} for a date that may be left out; `undefined` stays `undefined`.
  *
  * @param name The input the reason names.
  * @param value The date the caller supplied, or `undefined`.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a valid `Date`.
+ * @returns A new `Date`, or `undefined`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a valid date.
  */
-export function assertOptionalDate(name: string, value: unknown): void {
-  if (value !== undefined) assertDate(name, value)
+export function readOptionalDate(name: string, value: unknown): Date | undefined {
+  return value === undefined ? undefined : readDate(name, value)
+}
+
+/**
+ * A copy of an input object whose named date fields, when present, are replaced by {@link readDate} copies.
+ *
+ * @param input The object the caller supplied.
+ * @param fields The names of its date fields.
+ * @param prefix Text put before a field's name in a refusal.
+ * @returns The input itself when none of the fields is present, else a shallow copy with clean dates.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not a valid date.
+ */
+export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
+  const copy = { ...input }
+  for (const field of fields) {
+    const value: unknown = Reflect.get(input, field)
+    if (value !== undefined) Reflect.set(copy, field, readDate(`${prefix}${field}`, value))
+  }
+  return copy
 }

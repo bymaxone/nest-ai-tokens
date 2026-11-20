@@ -12,19 +12,22 @@ export function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-/** A bigint of 0 or more: a nano-USD amount that may be zero. */
+/** The largest value of a `BIGINT` column, 2^63 - 1: every amount the library stores is one, so a larger one is refused where it is supplied. */
+export const MAX_STORED_BIGINT = 9_223_372_036_854_775_807n
+
+/** A bigint of 0 or more, up to {@link MAX_STORED_BIGINT}: a nano-USD amount that may be zero. */
 export function isNonNegativeBigint(value: unknown): value is bigint {
-  return typeof value === 'bigint' && value >= 0n
+  return typeof value === 'bigint' && value >= 0n && value <= MAX_STORED_BIGINT
 }
 
-/** A bigint above 0: a nano-USD amount that moves money. */
+/** A bigint above 0, up to {@link MAX_STORED_BIGINT}: a nano-USD amount that moves money. */
 export function isPositiveBigint(value: unknown): value is bigint {
-  return typeof value === 'bigint' && value > 0n
+  return typeof value === 'bigint' && value > 0n && value <= MAX_STORED_BIGINT
 }
 
-/** A bigint other than 0: an adjustment that moves money in either direction. */
+/** A bigint other than 0 that a `BIGINT` column holds, in either direction: an adjustment that moves money up or down. */
 export function isNonZeroBigint(value: unknown): value is bigint {
-  return typeof value === 'bigint' && value !== 0n
+  return typeof value === 'bigint' && value !== 0n && value <= MAX_STORED_BIGINT && value >= -MAX_STORED_BIGINT - 1n
 }
 
 /** A number above 0 and at most 1: an alert threshold, the fraction of a limit at which it fires. */

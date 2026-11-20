@@ -26,7 +26,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
-import { assertOptionalDate } from '../utils/date-guards'
+import { withReadDates } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -151,15 +151,16 @@ export class WalletService {
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint from 1 to 9223372036854775807')
     this.assertGrantFields(input)
+    const { effectiveAt, expiresAt } = withReadDates(input, ['effectiveAt', 'expiresAt'], 'grant ')
     const entry = await this.append(ref, {
       type: 'grant',
       amountNanoUsd: input.amountNanoUsd,
       priority: input.priority ?? 0,
-      effectiveAt: input.effectiveAt ?? now,
+      effectiveAt: effectiveAt ?? now,
       // Stryker disable next-line ConditionalExpression: CE true: spreading { expiresAt: undefined } is equivalent to {} because InMemoryWalletStore and consumers check expiresAt !== undefined
-      ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
     })
@@ -198,7 +199,7 @@ export class WalletService {
     assertEntryText(input, false)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint from 1 to 9223372036854775807')
     if (input.usageRecordId === undefined && input.reason === undefined) {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw this.invalid('a debit without a usageRecordId must carry a reason')
@@ -238,7 +239,7 @@ export class WalletService {
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint from 1 to 9223372036854775807')
     return this.append(ref, {
       type: 'refund',
       amountNanoUsd: input.amountNanoUsd,
@@ -266,7 +267,7 @@ export class WalletService {
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     const entry = await this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -303,7 +304,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     return this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -334,9 +335,7 @@ export class WalletService {
       assertOptionalCount('limit', filter.limit)
       assertOptionalCount('offset', filter.offset)
     }
-    assertOptionalDate('from', filter?.from)
-    assertOptionalDate('to', filter?.to)
-    return this.store.listEntries(ref, filter)
+    return this.store.listEntries(ref, filter === undefined ? undefined : withReadDates(filter, ['from', 'to']))
   }
 
   /**
@@ -425,9 +424,6 @@ export class WalletService {
   private assertGrantFields(input: GrantInput): void {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (input.priority !== undefined && !Number.isInteger(input.priority)) throw this.invalid('grant priority must be a whole number')
-    for (const [name, value] of [['effectiveAt', input.effectiveAt], ['expiresAt', input.expiresAt]] as const) {
-      assertOptionalDate(`grant ${name}`, value)
-    }
   }
 
   /** Build the invalid-config exception with an actionable reason. */

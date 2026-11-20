@@ -29,7 +29,7 @@ import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
 import { assertBudgetShape, assertLookup, assertTenant, assertTexts } from '../utils/argument-guards'
-import { assertDate, assertOptionalDate } from '../utils/date-guards'
+import { readDate, readOptionalDate, withReadDates } from '../utils/date-guards'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
@@ -149,8 +149,7 @@ export class BudgetService {
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
-    assertOptionalDate('anchorAt', input.anchorAt)
-    assertOptionalDate('expiresAt', input.expiresAt)
+    input = withReadDates(input, ['anchorAt', 'expiresAt'])
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the option name
     const given: unknown = input.policy
     if (given !== undefined && given !== null && !isBudgetPolicy(given)) throw invalid('policy must be one of block, throttle or allow')
@@ -209,9 +208,9 @@ export class BudgetService {
   async rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void> {
     assertTexts({ budgetId })
     assertTenant(tenantId)
-    assertOptionalDate('newWindowStart', newWindowStart)
+    const requested = readOptionalDate('newWindowStart', newWindowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
-    const start = newWindowStart ?? this.now()
+    const start = requested ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
     await this.store.upsert({ ...budget, anchorAt: start })
     await this.store.setWindowStart({ tenantId, id: budgetId }, windowStart)
@@ -393,7 +392,7 @@ export class BudgetService {
   async reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void> {
     assertTexts({ budgetId })
     assertTenant(tenantId)
-    assertDate('windowStart', windowStart)
+    windowStart = readDate('windowStart', windowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
     // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
@@ -720,9 +719,9 @@ export class BudgetService {
 
   /** The matching, feature-relevant budgets located in the current window. */
   private async matchingWindows(tenantId: string, scope: MeteringScope, feature: string, at?: Date): Promise<LocatedWindow[]> {
-    assertOptionalDate('at', at)
+    const given = readOptionalDate('at', at)
     const budgets = await this.matching(tenantId, scope)
-    const now = at ?? this.now()
+    const now = given ?? this.now()
     return budgets
       .filter((budget) => featureMatches(budget.features, feature))
       .map((budget) => {
@@ -769,7 +768,7 @@ export class BudgetService {
   private assertLimits(input: UpsertBudgetInput): void {
     if (input.limitNanoUsd !== undefined && !isNonNegativeBigint(input.limitNanoUsd)) {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-      throw invalid('limitNanoUsd must be a bigint of 0 or more (§10.2)')
+      throw invalid('limitNanoUsd must be a bigint from 0 to 9223372036854775807 (§10.2)')
     }
     for (const [name, value] of [
       ['limitTokens', input.limitTokens],
