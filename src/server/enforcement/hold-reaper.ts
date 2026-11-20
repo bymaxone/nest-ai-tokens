@@ -45,8 +45,8 @@ const DEFAULT_GRACE_SECONDS = 300
 const TICK_SKIPPED_LOG_KEY = 'ai_tokens.hold_reaper.tick_skipped'
 /** Stable log key, written once per stalled sweep, for a tick that abandoned a sweep that had run too long. */
 const TICK_STALLED_LOG_KEY = 'ai_tokens.hold_reaper.tick_stalled'
-/** Stable log key, written once for an abandoned sweep that is still unsettled when its successor stalls. */
-const SWEEP_DROPPED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_dropped'
+/** Stable log key, written once per run of ticks, for a stalled sweep that cannot be abandoned while an earlier one is still running. */
+const SWEEP_BLOCKED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_blocked'
 /** A sweep is abandoned once it has run for this many reaper intervals, or for the minimum below when that is longer. */
 const STALL_AFTER_INTERVALS = 10
 /** The shortest time a sweep may run before it is abandoned, in milliseconds. */
@@ -73,8 +73,11 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   private timer: ReturnType<typeof setInterval> | undefined
   /** The timer-driven sweep in flight: a tick that finds one within its bound does nothing, so a slow store is never swept twice at once. */
   private current: TimedSweep | undefined
-  /** The sweep a tick abandoned and that has not settled: at most one is waited for, and it is dropped when the sweep that replaced it stalls in its turn. */
+  /** The sweep a tick abandoned and that has not settled: while it runs, no further sweep is started, so at most two run at once. */
   private abandoned: TimedSweep | undefined
+  /** Whether the current run of blocked ticks has been logged. */
+  // Stryker disable next-line BooleanLiteral: equivalent: a tick that can be blocked needs a sweep already abandoned, and starting a sweep sets the flag to false first, so the initial value is never read
+  private blockedLogged = false
   /** How long a sweep may run before the next tick abandons it, in milliseconds. */
   private stallAfterMs = STALL_AFTER_MIN_MS
   /** Whether the current run of skipped ticks has been logged. */
@@ -112,10 +115,9 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
 
   /**
    * One timer tick: a sweep, unless the previous one is still running, in which case one line per run of skipped ticks says so. A
-   * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one. Only one
-   * abandoned sweep is waited for: when the fresh sweep stalls in its turn, the reaper stops waiting for the
-   * abandoned one, with one line, and abandons the stalled one, so that a store whose scans never settle never leaves the reaper idle.
-   * At most two sweeps are waited for at once; one the reaper stopped waiting for holds its connection until the store gives it up.
+   * sweep that has run for longer than the stall bound is abandoned with one line, and the tick starts a fresh one. At most two sweeps
+   * run at once, each holding a store connection until the store gives it up: while an abandoned sweep is still running, a stalled one
+   * is not abandoned and no sweep starts, with one line per run of such ticks, and the reaper resumes when either settles.
    */
   private tick(): void {
     const nowMs = this.now().getTime()
@@ -127,12 +129,15 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         return
       }
       if (this.abandoned !== undefined) {
-        this.logger.warn(`${SWEEP_DROPPED_LOG_KEY} an abandoned sweep was still running after ${String(Math.round((nowMs - this.abandoned.startedAt) / MS_PER_SECOND))} seconds and is no longer waited for`)
+        if (!this.blockedLogged) this.logger.warn(`${SWEEP_BLOCKED_LOG_KEY} two sweeps are still running, so no sweep starts until one settles`)
+        this.blockedLogged = true
+        return
       }
       this.logger.warn(`${TICK_STALLED_LOG_KEY} the previous sweep ran for ${String(Math.round(ranMs / MS_PER_SECOND))} seconds`)
       this.abandoned = this.current
     }
     this.skipLogged = false
+    this.blockedLogged = false
     const sweep: TimedSweep = { startedAt: nowMs }
     this.current = sweep
     void this.sweep()
@@ -141,7 +146,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
       })
       .finally(() => {
         if (this.current === sweep) this.current = undefined
-        else if (this.abandoned === sweep) this.abandoned = undefined
+        else this.abandoned = undefined
       })
   }
 

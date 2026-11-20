@@ -218,9 +218,9 @@ describe('the integrity chain of the ledger set to null', () => {
     expect(applyDefaults(options).ledger).toEqual({ hashChain: expected })
   })
 
-  /** A ledger value that is not a group is left to the other checks: reading its chain flag must not raise a raw error. */
-  it('does not read the chain flag of a ledger value that is not a group', () => {
-    expect(() => validateOptions({ ...withStore, ledger: 'yes' } as never)).not.toThrow()
+  /** A ledger value that is not a group is refused as a group, naming the option, and its chain flag is never read. */
+  it('refuses a ledger value that is not a group, naming the option', async () => {
+    await expectRefused(() => validateOptions({ ...withStore, ledger: 'yes' } as never), 'ledger must be an object')
   })
 
   /** A ledger group that failed to load as null would leave the chain off, so it is refused as the flag is; left out or undefined keeps the default. */

@@ -72,6 +72,27 @@ describe('a date from another realm or a subclass of Date', () => {
     expect(await outcome(() => anchoredAt(new InvalidLyingDate(Number.NaN)))).toEqual(reason)
   })
 
+  /** A subclass whose `toISOString` or `valueOf` throws is refused where the date is supplied, never later where a store or an event reads it. */
+  it.each(['toISOString', 'valueOf'] as const)('is refused when its %s throws, without the text it throws', async (method) => {
+    const date = Object.assign(new Date(0), {
+      [method]: (): never => {
+        throw new Error('host-private-text')
+      },
+    })
+    expect(await outcome(() => anchoredAt(date))).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' })
+  })
+
+  it('is refused at rotateWindow, naming the input', async () => {
+    const { service } = makeService()
+    const budget = await service.upsertBudget(budgetInput({}))
+    const date = Object.assign(new Date(0), {
+      toISOString: (): never => {
+        throw new Error('host-private-text')
+      },
+    })
+    expect(await outcome(() => service.rotateWindow(budget.id, TENANT, date))).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'newWindowStart must be a valid date' })
+  })
+
   it('is refused when it is a Proxy of a Date, which is not a date', async () => {
     expect(await outcome(() => anchoredAt(new Proxy(new Date(0), {})))).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' })
   })

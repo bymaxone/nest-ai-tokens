@@ -1,6 +1,6 @@
 /**
- * @fileoverview The kind of value five options take. `scopeResolver` and `fx` are functions, `holds` and `wallets` are groups of
- * options, and `ledger.hashChain` is a boolean: the flag is read as truthy, so the string `'false'` would switch the chain on, and a
+ * @fileoverview The kind of value the options take. `scopeResolver` and `fx` are functions, every group (`pricing`, `wallets`, `budgets`, `holds`,
+ * `settlement`, `ledger`, `events`, `telemetry`, `reporting`, `content`) is an object, and each switch is a boolean, `ledger.hashChain` among them: the flag is read as truthy, so the string `'false'` would switch the chain on, and a
  * string where a group belongs would leave every option of the group at its default with no word said. Each is refused at startup with the typed invalid-configuration error that names the option and never repeats the
  * value, and each documented value is still accepted.
  * @layer server
@@ -41,14 +41,16 @@ describe('an option that is a function', () => {
   })
 })
 
+const GROUPS = ['pricing', 'wallets', 'budgets', 'holds', 'settlement', 'ledger', 'events', 'telemetry', 'reporting', 'content']
+
 describe('an option that is a group of options', () => {
-  it.each(['holds', 'wallets'])('refuses %s that is not an object, naming it', (name) => {
+  it.each(GROUPS)('refuses %s that is not an object, naming it', (name) => {
     for (const value of [MARKER, 5, true, [], 5n, () => undefined]) {
       expect(refusalOf({ [name]: value })).toBe(`${name} must be an object`)
     }
   })
 
-  it.each(['holds', 'wallets'])('accepts %s as an object, and takes none as the default', (name) => {
+  it.each(GROUPS)('accepts %s as an object, and takes none as the default', (name) => {
     expect(refusalOf({ [name]: {} })).toBeUndefined()
     expect(refusalOf({ [name]: undefined })).toBeUndefined()
   })
@@ -71,5 +73,19 @@ describe('the hash chain flag of the ledger', () => {
     expect(refusalOf({ ledger: { hashChain: true } })).toBeUndefined()
     expect(refusalOf({ ledger: { hashChain: false } })).toBeUndefined()
     expect(refusalOf({ ledger: {} })).toBeUndefined()
+  })
+})
+
+describe('a switch inside a group', () => {
+  const SWITCHES = [['pricing', 'seedFromSnapshot'], ['pricing', 'strict'], ['budgets', 'failClosed'], ['settlement', 'enabled'], ['events', 'emitter'], ['telemetry', 'metrics']]
+
+  it.each(SWITCHES)('refuses %s.%s that is not a boolean, naming it', (group, name) => {
+    for (const value of ['false', MARKER, 0, 1, {}, [], 5n, () => undefined]) {
+      expect(refusalOf({ [group]: { [name]: value } })).toBe(`${group}.${name} must be true or false`)
+    }
+  })
+
+  it.each(SWITCHES)('accepts %s.%s as true, false and none, and null takes the default', (group, name) => {
+    for (const value of [true, false, undefined, null]) expect(refusalOf({ [group]: { [name]: value } })).toBeUndefined()
   })
 })

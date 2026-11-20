@@ -36,7 +36,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
-import { assertEstimateCostInput, assertMeteringContext, assertObject } from '../utils/argument-guards'
+import { assertEstimateCostInput, assertHold, assertLookup, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
@@ -481,6 +481,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` on another caller's or a missing hold (indistinguishable).
    */
   async release(hold: Hold, caller: HoldCaller, reason: string): Promise<void> {
+    assertText('reason', reason)
     const record = await this.loadHoldRecord(hold, caller, 'release(hold, caller, reason)')
     // Stryker disable next-line BlockStatement: 'posted' status returns via the !== 'pending' guard below; body is logger.warn only
     if (record.status === 'posted') {
@@ -548,6 +549,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
+    assertTexts({ usageRecordId, reason })
     const compensating = await this.ledger.reverse(usageRecordId, reason, { reason })
     const original = await this.ledger.findById(usageRecordId)
     if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed({ ledger: this.ledger, effects: this.effects, events: this.events }, this.logger, original, reason, compensating.id)
@@ -568,6 +570,7 @@ export class MeteringService {
    * @returns The combined access status.
    */
   async getStatus(tenantId: string, scope: MeteringScope): Promise<AccessStatus> {
+    assertLookup(tenantId, scope)
     const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, scope) : []
     const wallet = await this.walletSection(tenantId, scope)
     const budgetBlocked = budgets.some((status) => isHardExhausted(status))
@@ -663,6 +666,7 @@ export class MeteringService {
    * the same answer for both, and a caller that is not a tenant and a scope is a configuration error. Only `hold.id` is read; the tenant and scope on the object are not evidence.
    */
   private async loadHoldRecord(hold: Hold, caller: HoldCaller, signature: string): Promise<UsageRecord> {
+    assertHold(hold)
     assertCaller(caller, signature)
     const record = await this.ledger.findById(hold.id)
     if (record !== null && record.tenantId === caller.tenantId && sameScope(record.scope, caller.scope)) return record

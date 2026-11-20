@@ -106,7 +106,7 @@ function callsOf({ pricing, ledger, metering, wallets, budgets, reports, budget,
     'reports.summarize': call((a) => reports.summarize(a[0]), () => [{ tenantId: TENANT, from: new Date(0), to: new Date(), groupBy: ['feature'] }]),
     'pricing.resolveRate': call((a) => pricing.resolveRate(a[0]), () => [{ provider: 'openai', model: 'gpt-4o', operation: 'chat', at: new Date() }]),
     'pricing.upsertPrice': call((a) => pricing.upsertPrice(a[0]), () => [{ provider: 'openai', model: `m${next()}`, operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n }]),
-    'pricing.getPriceHistory': call((a) => pricing.getPriceHistory(a[0], a[1], a[2]), () => ['openai', 'gpt-4o', 'chat']),
+    'pricing.getPriceHistory': call((a) => pricing.getPriceHistory(a[0], a[1], a[2], a[3]), () => ['openai', 'gpt-4o', 'chat']),
   }
 }
 

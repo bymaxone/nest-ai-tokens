@@ -28,6 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { assertBudgetShape, assertLookup, assertTenant, assertTexts } from '../utils/argument-guards'
 import { assertDate, assertOptionalDate } from '../utils/date-guards'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
@@ -144,6 +145,7 @@ export class BudgetService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
   async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
+    assertBudgetShape(input)
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
@@ -173,6 +175,7 @@ export class BudgetService {
    * @param tenantId The owning tenant (audit context).
    */
   async removeBudget(budgetId: string, tenantId: string): Promise<void> {
+    assertTexts({ budgetId })
     assertTenant(tenantId)
     // A budget of another tenant answers as an unknown id does: nothing is removed and nothing is audited.
     if ((await this.findOwned({ tenantId, id: budgetId })) === null) return
@@ -204,6 +207,7 @@ export class BudgetService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the budget does not exist.
    */
   async rotateWindow(budgetId: string, tenantId: string, newWindowStart?: Date): Promise<void> {
+    assertTexts({ budgetId })
     assertTenant(tenantId)
     assertOptionalDate('newWindowStart', newWindowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
@@ -387,6 +391,7 @@ export class BudgetService {
    * @param windowStart A window start for the budget.
    */
   async reconcileWindow(budgetId: string, tenantId: string, windowStart: Date): Promise<void> {
+    assertTexts({ budgetId })
     assertTenant(tenantId)
     assertDate('windowStart', windowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
@@ -756,6 +761,7 @@ export class BudgetService {
 
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
+    assertLookup(tenantId, scope)
     return (await this.store.findMatching(tenantId, scope)).filter((budget) => budget.tenantId === tenantId)
   }
 
@@ -777,12 +783,6 @@ export class BudgetService {
       throw invalid('a budget must define at least one limit dimension')
     }
   }
-}
-
-/** Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key. */
-function assertTenant(tenantId: unknown): asserts tenantId is string {
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-  if (typeof tenantId !== 'string' || tenantId === '') throw invalid('tenantId must be a non-empty string')
 }
 
 /** The refusal of a budget id another tenant owns: a config error that does not say whose it is. */

@@ -147,9 +147,19 @@ function validateProtections(given: BymaxAiTokensModuleOptions): void {
 const FUNCTION_OPTIONS = ['scopeResolver', 'fx'] as const
 
 /** The options that are groups of options the library reads fields of. */
-const GROUP_OPTIONS = ['holds', 'wallets'] as const
+const GROUP_OPTIONS = ['pricing', 'wallets', 'budgets', 'holds', 'settlement', 'ledger', 'events', 'telemetry', 'reporting', 'content'] as const
 
-/** Refuse a function option that is not a function and a group option that is not an object: either would be read as left out. */
+/** The options inside a group that are switches, each read as truthy, so that a string such as `'false'` would switch it on. */
+const SWITCH_OPTIONS = [
+  ['pricing', 'seedFromSnapshot'],
+  ['pricing', 'strict'],
+  ['budgets', 'failClosed'],
+  ['settlement', 'enabled'],
+  ['events', 'emitter'],
+  ['telemetry', 'metrics'],
+] as const
+
+/** Refuse a function option that is not a function, a group option that is not an object and a switch that is not a boolean: each would be read as left out, or as on. */
 function validateShapes(options: BymaxAiTokensModuleOptions): void {
   for (const name of FUNCTION_OPTIONS) {
     const value: unknown = Reflect.get(options, name)
@@ -158,9 +168,14 @@ function validateShapes(options: BymaxAiTokensModuleOptions): void {
   }
   for (const name of GROUP_OPTIONS) {
     const value: unknown = Reflect.get(options, name)
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     // A null group was dropped from the options before this point, so what is not an object here is a value of another kind.
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (value !== undefined && (typeof value !== 'object' || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
+  }
+  for (const [group, name] of SWITCH_OPTIONS) {
+    const value: unknown = Reflect.get(Reflect.get(options, group) ?? {}, name)
+    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+    if (value !== undefined && typeof value !== 'boolean') throw invalidConfig(`${group}.${name} must be true or false`)
   }
 }
 
@@ -221,10 +236,6 @@ function validateHolds(options: BymaxAiTokensModuleOptions): void {
  */
 function validateSettlement(options: BymaxAiTokensModuleOptions): void {
   const settlement = options.settlement
-  if (settlement?.enabled !== undefined && typeof settlement.enabled !== 'boolean') {
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
-    throw invalidConfig('settlement.enabled must be a boolean')
-  }
   requireBoundedInteger('settlement.graceSeconds', settlement?.graceSeconds, MAX_TIMER_SECONDS)
   requireBoundedInteger('settlement.retentionSeconds', settlement?.retentionSeconds, MAX_TTL_SECONDS)
   const retention = settlement?.retentionSeconds ?? D.settlement.retentionSeconds
