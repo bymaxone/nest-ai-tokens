@@ -82,7 +82,7 @@ describe('a date from another realm or a subclass of Date', () => {
     expect(await outcome(() => anchoredAt(date))).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: 'anchorAt must be a valid date' })
   })
 
-  it('is refused at rotateWindow, naming the input, before any budget is touched', async () => {
+  it('is refused at rotateWindow, naming the input', async () => {
     const { service } = makeService()
     const budget = await service.upsertBudget(budgetInput({}))
     const date = Object.assign(new Date(0), {
