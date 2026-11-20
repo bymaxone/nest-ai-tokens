@@ -117,3 +117,15 @@ updates:
           - major
           - minor
           - patch
+
+      # `agents-sync.yml` is the one Bymax reusable a caller pins to a commit: it is handed the sync
+      # App's private key (see "agents-sync" in the README of bymaxone/.github). This group moves
+      # that SHA in a pull request of its own, to the newest release of the same major. The other
+      # Bymax reusables stay on `@v1`, which Dependabot leaves alone.
+      bymax-agents-sync:
+        patterns:
+          - 'bymaxone/.github/.github/workflows/agents-sync.yml'
+    ignore:
+      # A new major is a deliberate migration, never an automatic bump.
+      - dependency-name: 'bymaxone/.github*'
+        update-types: ['version-update:semver-major']
