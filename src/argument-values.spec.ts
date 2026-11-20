@@ -107,10 +107,12 @@ const GETTER_ROWS: readonly (readonly [string, (string | number)[], string, stri
   ['metering.capture', [0], 'id', 'hold.id'],
 ]
 
-/** Tenant ids the budget calls refuse: empty, and with a NUL character. */
-const TENANT_ROWS: readonly (readonly [string, (string | number)[], string, string])[] = [
+/** Tenant ids the budget calls refuse: empty, not a string, and with a NUL character. */
+const TENANT_ROWS: readonly (readonly [string, (string | number)[], unknown, string])[] = [
   ['budgets.upsertBudget', [0, 'tenantId'], '', 'tenantId must be a non-empty string'],
   ['budgets.removeBudget', [1], '', 'tenantId must be a non-empty string'],
+  ['budgets.removeBudget', [1], 5, 'tenantId must be a non-empty string'],
+  ['budgets.upsertBudget', [0, 'tenantId'], Symbol('x'), 'tenantId must be a non-empty string'],
   ['budgets.rotateWindow', [1], '', 'tenantId must be a non-empty string'],
   ['budgets.reconcileWindow', [1], '', 'tenantId must be a non-empty string'],
   ['budgets.upsertBudget', [0, 'tenantId'], NUL, NUL_REASON('tenantId')],
