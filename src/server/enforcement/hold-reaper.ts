@@ -76,6 +76,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   /** The sweep a tick abandoned and that has not settled: while it runs, no further sweep is started, so at most two run at once. */
   private abandoned: TimedSweep | undefined
   /** Whether the current run of blocked ticks has been logged. */
+  // Stryker disable next-line BooleanLiteral: equivalent: a tick that can be blocked needs a sweep already abandoned, and starting a sweep sets the flag to false first, so the initial value is never read
   private blockedLogged = false
   /** How long a sweep may run before the next tick abandons it, in milliseconds. */
   private stallAfterMs = STALL_AFTER_MIN_MS
