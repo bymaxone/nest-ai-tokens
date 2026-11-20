@@ -66,6 +66,53 @@ export function assertOptionalAmount(name: string, value: unknown): asserts valu
 }
 
 /**
+ * Throw unless every value is a string, naming the first that is not by its key.
+ *
+ * @param values The arguments by name.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first argument that is not a string.
+ */
+export function assertTexts(values: Readonly<Record<string, unknown>>): void {
+  for (const [name, value] of Object.entries(values)) assertText(name, value)
+}
+
+/**
+ * Throw unless the arguments of a lookup are a tenant id and a scope.
+ *
+ * @param tenantId The tenant the caller passed.
+ * @param scope The scope the caller passed.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the argument that is not valid.
+ */
+export function assertLookup(tenantId: unknown, scope: unknown): void {
+  assertText('tenantId', tenantId)
+  assertScope('scope', scope)
+}
+
+/**
+ * Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key.
+ *
+ * @param tenantId What the caller passed.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not a non-empty string.
+ */
+export function assertTenant(tenantId: unknown): asserts tenantId is string {
+  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
+  if (typeof tenantId !== 'string' || tenantId === '') throw refused('tenantId must be a non-empty string')
+}
+
+/**
+ * Throw unless `value` is the shape of a budget definition: an object with a scope, and an id and features that are text when given.
+ *
+ * @param value What the caller passed.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not valid.
+ */
+export function assertBudgetShape(value: unknown): void {
+  assertObject('input', value)
+  assertScope('scope', Reflect.get(value, 'scope'))
+  assertOptionalText('id', Reflect.get(value, 'id'))
+  const features: unknown = Reflect.get(value, 'features')
+  if (features !== undefined) assertTextList('features', features)
+}
+
+/**
  * Throw unless `value` is a list of strings.
  *
  * @param name The argument the reason names.

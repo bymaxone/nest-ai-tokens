@@ -36,7 +36,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
-import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertScope, assertText } from '../utils/argument-guards'
+import { assertEstimateCostInput, assertHold, assertLookup, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
@@ -549,8 +549,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
    */
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
-    assertText('usageRecordId', usageRecordId)
-    assertText('reason', reason)
+    assertTexts({ usageRecordId, reason })
     const compensating = await this.ledger.reverse(usageRecordId, reason, { reason })
     const original = await this.ledger.findById(usageRecordId)
     if (original !== null && original.enforced && !original.isSystemCost) await reverseOrLeaveOwed({ ledger: this.ledger, effects: this.effects, events: this.events }, this.logger, original, reason, compensating.id)
@@ -571,8 +570,7 @@ export class MeteringService {
    * @returns The combined access status.
    */
   async getStatus(tenantId: string, scope: MeteringScope): Promise<AccessStatus> {
-    assertText('tenantId', tenantId)
-    assertScope('scope', scope)
+    assertLookup(tenantId, scope)
     const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, scope) : []
     const wallet = await this.walletSection(tenantId, scope)
     const budgetBlocked = budgets.some((status) => isHardExhausted(status))
