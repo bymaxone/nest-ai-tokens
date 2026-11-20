@@ -71,6 +71,12 @@ overrides:
   # package asks for ^4.24.0, and no other declared range caps the ceiling.
   'browserslist': '^4.28.7'
   'deepmerge-ts': '^8.0.0'
+  # GHSA-7589-6fvf-x4pw (CVSS 8.7) — a regular expression that backtracks without bound
+  # on a crafted input; fixed in 3.22.1. Reached only through @prisma/config under the
+  # `prisma` CLI, which parses prisma.config.ts, so the range cannot be raised from
+  # package.json. Build-time only: this package ships no runtime dependencies.
+  # Remove this entry when the resolved @prisma/config asks for effect 3.22.1 or later.
+  'effect@3': '^3.22.1'
   'esbuild': '0.28.1'
   # GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf and
   # GHSA-jqff-g426-hqxp (CVSS 7.5 each) — a scheme-relative reference skips IDN
