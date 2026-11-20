@@ -25,7 +25,7 @@ import type { ResolvedWalletsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
-import { assertObject, assertOptionalCount, assertWalletRef } from '../utils/argument-guards'
+import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
@@ -148,6 +148,7 @@ export class WalletService {
    */
   async grant(ref: WalletRef, input: GrantInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint greater than 0')
@@ -194,6 +195,7 @@ export class WalletService {
    */
   async debit(ref: WalletRef, input: DebitInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertEntryText(input, false)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint greater than 0')
@@ -233,6 +235,7 @@ export class WalletService {
    */
   async refund(ref: WalletRef, input: RefundInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint greater than 0')
@@ -260,6 +263,7 @@ export class WalletService {
    */
   async adjust(ref: WalletRef, input: AdjustInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint')
@@ -443,4 +447,13 @@ function isWalletMissing(error: unknown): error is WalletMissingShape {
   // Stryker disable next-line ConditionalExpression: CE false on `typeof error !== 'object'`: non-object primitives also fail `.isWalletMissing === true` (returns undefined), giving the same false result; the guard is defensive but the outcome is identical for all realistic inputs
   if (typeof error !== 'object' || error === null) return false
   return (error as Record<string, unknown>).isWalletMissing === true
+}
+
+/** Throw unless the entry is an object whose idempotency key, reason and record id are strings, the reason being required when `reasonRequired`. */
+function assertEntryText(input: unknown, reasonRequired: boolean): void {
+  assertObject('input', input)
+  assertText('idempotencyKey', input.idempotencyKey)
+  if (reasonRequired) assertText('reason', input.reason)
+  else assertOptionalText('reason', input.reason)
+  assertOptionalText('usageRecordId', input.usageRecordId)
 }

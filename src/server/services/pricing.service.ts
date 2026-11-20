@@ -14,7 +14,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
-import { assertObject, assertOptionalText, assertText } from '../utils/argument-guards'
+import { assertObject, assertOptionalAmount, assertOptionalCount, assertOptionalText, assertText } from '../utils/argument-guards'
 import { assertDate, assertOptionalDate } from '../utils/date-guards'
 import { normalizeModelId } from '../utils/model-id'
 
@@ -32,6 +32,22 @@ export interface ResolveRateInput {
 
 /** All seed rows are effective from the epoch so they form the baseline for any timestamp. */
 const SEED_EFFECTIVE_FROM = new Date(0)
+
+/** The rates of a price version, each a bigint of nano-USD per million tokens. */
+const RATE_FIELDS = [
+  'inputNanoUsdPerMillion',
+  'outputNanoUsdPerMillion',
+  'cacheReadNanoUsdPerMillion',
+  'cacheWrite5mNanoUsdPerMillion',
+  'cacheWrite1hNanoUsdPerMillion',
+  'reasoningNanoUsdPerMillion',
+  'audioInNanoUsdPerMillion',
+  'audioOutNanoUsdPerMillion',
+  'imageInNanoUsdPerMillion',
+  'imageOutNanoUsdPerMillion',
+  'tierInputNanoUsdPerMillion',
+  'tierOutputNanoUsdPerMillion',
+] as const
 
 /**
  * Effective-dated rate resolution with a model-resolution chain, an
@@ -106,6 +122,11 @@ export class PricingService implements OnModuleInit {
    * @returns The newly-inserted open price row.
    */
   async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
+    assertObject('input', input)
+    for (const field of ['provider', 'model', 'operation'] as const) assertText(field, input[field])
+    assertOptionalText('serviceTier', input.serviceTier)
+    for (const field of RATE_FIELDS) assertOptionalAmount(field, input[field])
+    assertOptionalCount('tierThresholdTokens', input.tierThresholdTokens)
     assertOptionalDate('effectiveFrom', input.effectiveFrom)
     const row = await this.store.upsertPrice(input)
     this.cache.clear()
@@ -119,6 +140,10 @@ export class PricingService implements OnModuleInit {
     operation: AiOperation,
     serviceTier?: ServiceTier,
   ): Promise<PriceVersion[]> {
+    assertText('provider', provider)
+    assertText('model', model)
+    assertText('operation', operation)
+    assertOptionalText('serviceTier', serviceTier)
     return this.store.getPriceHistory(provider, model, operation, serviceTier)
   }
 

@@ -34,13 +34,13 @@ export function isFraction(value: unknown): value is number {
 
 /**
  * A valid `Date`: one whose internal slot says so, which a `Date` from another realm and a subclass of `Date` have and a Proxy of one
- * does not, and whose time is a number, not an `Invalid Date`, whose comparisons are all false. A subclass whose own `getTime` throws is not
- * one, because a store would call it and fail with the host's own error.
+ * does not, and whose time is a number, not an `Invalid Date`, whose comparisons are all false. A subclass whose own `getTime`,
+ * `valueOf` or `toISOString` throws is not one, because the library or a store would call it and fail with the host's own error.
  */
 export function isValidDate(value: unknown): value is Date {
   if (!isDate(value)) return false
   try {
-    return Number.isFinite(value.getTime()) && Number.isFinite(Date.prototype.getTime.call(value))
+    return Number.isFinite(value.getTime()) && Number.isFinite(Date.prototype.getTime.call(value)) && Number.isFinite(value.valueOf()) && typeof value.toISOString() === 'string'
   } catch {
     return false
   }

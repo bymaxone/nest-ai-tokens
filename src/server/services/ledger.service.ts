@@ -155,8 +155,9 @@ export class LedgerService {
    * @param id The record id.
    * @returns The record, or `null` when none exists.
    */
-  findById(id: string): Promise<UsageRecord | null> {
-    return this.store.findById(id)
+  async findById(id: string): Promise<UsageRecord | null> {
+    assertText('id', id)
+    return await this.store.findById(id)
   }
 
   /**
@@ -197,6 +198,7 @@ export class LedgerService {
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
     assertObject('filter', filter)
+    assertText('tenantId', filter.tenantId)
     assertOptionalCount('limit', filter.limit)
     assertOptionalCount('offset', filter.offset)
     assertOptionalDate('from', filter.from)
@@ -299,6 +301,7 @@ export class LedgerService {
    * @returns The verification outcome; see {@link ChainVerification}.
    */
   async verifyChain(tenantId: string, from?: Date, to?: Date): Promise<ChainVerification> {
+    assertText('tenantId', tenantId)
     assertOptionalDate('from', from)
     assertOptionalDate('to', to)
     const filter: LedgerFilter = { tenantId, status: ['posted', 'reversed'] }

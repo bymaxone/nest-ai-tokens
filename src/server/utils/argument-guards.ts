@@ -8,7 +8,7 @@
  */
 
 import { AiTokensException } from '../errors'
-import { isCount } from './numeric-guards'
+import { isCount, isNonNegativeBigint } from './numeric-guards'
 
 /** The typed refusal of an argument, naming it and never repeating a value. */
 function refused(reason: string): AiTokensException {
@@ -52,6 +52,39 @@ export function assertText(name: string, value: unknown): asserts value is strin
  */
 export function assertOptionalText(name: string, value: unknown): asserts value is string | undefined {
   if (value !== undefined) assertText(name, value)
+}
+
+/**
+ * Throw unless `value`, when given, is a bigint of 0 or more; `undefined` is the default and passes.
+ *
+ * @param name The argument the reason names.
+ * @param value What the caller passed, or `undefined`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a bigint of 0 or more.
+ */
+export function assertOptionalAmount(name: string, value: unknown): asserts value is bigint | undefined {
+  if (value !== undefined && !isNonNegativeBigint(value)) throw refused(`${name} must be a bigint of 0 or more`)
+}
+
+/**
+ * Throw unless `value` is a list of strings.
+ *
+ * @param name The argument the reason names.
+ * @param value What the caller passed.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not an array or an element is not a string.
+ */
+export function assertTextList(name: string, value: unknown): asserts value is string[] {
+  if (!Array.isArray(value) || !(value as unknown[]).every((item) => typeof item === 'string')) throw refused(`${name} must be a list of strings`)
+}
+
+/**
+ * Throw unless `value` is a hold: an object whose `id` is a string. Only the id is read.
+ *
+ * @param value What the caller passed.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not a hold.
+ */
+export function assertHold(value: unknown): void {
+  assertObject('hold', value)
+  assertText('hold.id', Reflect.get(value, 'id'))
 }
 
 /**

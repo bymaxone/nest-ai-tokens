@@ -18,7 +18,7 @@ import type { LedgerFilter, ProviderId, ReportFilter, TokenCategory, UsageRecord
 import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
-import { assertObject } from '../utils/argument-guards'
+import { assertObject, assertText } from '../utils/argument-guards'
 import { assertOptionalDate } from '../utils/date-guards'
 
 /** The resolved-options subset the report service consumes. */
@@ -108,6 +108,7 @@ export class UsageReportService {
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     assertObject('input', input)
+    assertText('tenantId', input.tenantId)
     const { groupBy, ...filter } = input
     assertGroupBy(groupBy)
     assertFilterDates(filter)
