@@ -34,6 +34,23 @@ export function readField(value: object, key: string, name: string): unknown {
   }
 }
 
+/**
+ * The own enumerable keys of an argument object. A Proxy whose `ownKeys` trap throws would put the host's own error in the caller's
+ * hands, so it is refused as an argument that cannot be read.
+ *
+ * @param value The argument object.
+ * @param name What the refusal calls the object.
+ * @returns The keys.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the object when listing its keys throws.
+ */
+export function keysOf(value: object, name: string): string[] {
+  try {
+    return Object.keys(value)
+  } catch {
+    throw refused(`${name} could not be read`)
+  }
+}
+
 /** Whether a value is a plain object: an object that is neither `null` nor an array. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

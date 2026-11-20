@@ -118,16 +118,17 @@ export class PricingService implements OnModuleInit {
    * ADMIN PLANE: this sets prices — the host MUST restrict it to privileged roles
    * (§14.4) and should audit every call.
    *
-   * @param input The new price version (rates default to `0n`, tier to `'standard'`).
+   * @param given The new price version (rates default to `0n`, tier to `'standard'`).
    * @returns The newly-inserted open price row.
    */
-  async upsertPrice(input: NewPriceVersion): Promise<PriceVersion> {
-    assertObject('input', input)
+  async upsertPrice(given: NewPriceVersion): Promise<PriceVersion> {
+    assertObject('input', given)
+    const input = withReadDates(given, ['effectiveFrom'])
     for (const field of ['provider', 'model', 'operation'] as const) assertText(field, input[field])
     assertOptionalText('serviceTier', input.serviceTier)
     for (const field of RATE_FIELDS) assertOptionalAmount(field, input[field])
     assertOptionalCount('tierThresholdTokens', input.tierThresholdTokens)
-    const row = await this.store.upsertPrice(withReadDates(input, ['effectiveFrom']))
+    const row = await this.store.upsertPrice(input)
     this.cache.clear()
     return row
   }

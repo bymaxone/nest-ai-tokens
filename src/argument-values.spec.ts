@@ -119,6 +119,40 @@ const TENANT_ROWS: readonly (readonly [string, (string | number)[], unknown, str
   ['budgets.removeBudget', [1], NUL, NUL_REASON('tenantId')],
 ]
 
+/** Every object argument that is read once into a snapshot: a field whose getter answers once and throws afterwards must not fail the call. */
+const ONCE_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
+  ['budgets.upsertBudget', [0], 'scope'],
+  ['budgets.upsertBudget', [0], 'tenantId'],
+  ['budgets.upsertBudget', [0], 'anchorAt'],
+  ['wallets.grant', [1], 'reason'],
+  ['wallets.grant', [1], 'effectiveAt'],
+  ['wallets.debit', [1], 'idempotencyKey'],
+  ['wallets.refund', [1], 'reason'],
+  ['wallets.adjust', [1], 'amountNanoUsd'],
+  ['wallets.getEntries', [1], 'limit'],
+  ['wallets.getEntries', [1], 'from'],
+  ['pricing.upsertPrice', [0], 'model'],
+  ['pricing.upsertPrice', [0], 'effectiveFrom'],
+  ['ledger.query', [0], 'tenantId'],
+  ['ledger.query', [0], 'from'],
+  ['reports.summarize', [0], 'tenantId'],
+  ['reports.summarize', [0], 'from'],
+]
+
+/** Every object argument that is listed into a snapshot, and what its refusal calls it when listing its keys throws. */
+const KEYS_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
+  ['budgets.upsertBudget', [0], 'input'],
+  ['wallets.grant', [1], 'grant input'],
+  ['wallets.debit', [1], 'input'],
+  ['wallets.refund', [1], 'input'],
+  ['wallets.adjust', [1], 'input'],
+  ['wallets.getEntries', [1], 'input'],
+  ['pricing.upsertPrice', [0], 'input'],
+  ['ledger.query', [0], 'input'],
+  ['ledger.sumCost', [0], 'input'],
+  ['reports.summarize', [0], 'input'],
+]
+
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
   let target: unknown = args
   for (const step of path) target = (target as Record<string | number, unknown>)[step]
@@ -195,6 +229,39 @@ describe('an object whose getter throws', () => {
       },
       enumerable: true,
     })
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+  })
+})
+
+describe('an object whose getter answers once', () => {
+  /** The object is read into a snapshot at the entry, so the one answer is what is checked and used, and the call completes. */
+  it.each(ONCE_ROWS)('is accepted by %s at %j for the field %s', async (name, path, field) => {
+    const { run, args } = await callOf(name)
+    const target = at(args, path)
+    const value = target[field]
+    let reads = 0
+    Object.defineProperty(target, field, {
+      get(): unknown {
+        reads += 1
+        if (reads > 1) throw new Error('host-private-text')
+        return value
+      },
+      enumerable: true,
+    })
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect(reads).toBe(1)
+  })
+})
+
+describe('an object whose keys cannot be listed', () => {
+  it.each(KEYS_ROWS)('is refused by %s at %j naming %s', async (name, path, named) => {
+    const { run, args } = await callOf(name)
+    const hostile = new Proxy({}, {
+      ownKeys(): never {
+        throw new Error('host-private-text')
+      },
+    })
+    setAt(args, path, hostile)
     expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
   })
 })

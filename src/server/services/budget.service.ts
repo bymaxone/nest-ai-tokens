@@ -28,7 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
-import { assertBudgetShape, assertLookup, assertTenant, assertTexts } from '../utils/argument-guards'
+import { assertBudgetShape, assertLookup, assertObject, assertTenant, assertTexts } from '../utils/argument-guards'
 import { readDate, readOptionalDate, withReadDates } from '../utils/date-guards'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
@@ -140,16 +140,17 @@ export class BudgetService {
    * Create or replace a budget (ADMIN PLANE — §14.4; restrict to privileged roles).
    * Applies the §10.2 normative validation and emits `ai_tokens.audit`.
    *
-   * @param input The budget definition (`softThresholds`/`policy` default from options).
+   * @param request The budget definition (`softThresholds`/`policy` default from options).
    * @returns The stored budget.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a negative limit, no limit dimension, a threshold outside `(0, 1]`, or a window kind that is not `'day'`, `'week'`, `'month'`, `'total'` or `{ customSeconds }` with a positive whole number of seconds up to 3153600000.
    */
-  async upsertBudget(input: UpsertBudgetInput): Promise<Budget> {
+  async upsertBudget(request: UpsertBudgetInput): Promise<Budget> {
+    assertObject('input', request)
+    const input = withReadDates(request, ['anchorAt', 'expiresAt'])
     assertBudgetShape(input)
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
-    input = withReadDates(input, ['anchorAt', 'expiresAt'])
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the option name
     const given: unknown = input.policy
     if (given !== undefined && given !== null && !isBudgetPolicy(given)) throw invalid('policy must be one of block, throttle or allow')

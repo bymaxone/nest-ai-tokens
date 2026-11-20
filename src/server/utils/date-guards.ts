@@ -6,6 +6,7 @@
  */
 
 import { AiTokensException } from '../errors'
+import { keysOf, readField } from './argument-guards'
 import { isValidDate } from './numeric-guards'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
@@ -61,19 +62,21 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
 }
 
 /**
- * A copy of an input object whose named date fields, when present, are replaced by {@link readDate} copies.
+ * A snapshot of an input object, read once: every own enumerable field is read a single time, and the named date fields are replaced by
+ * {@link readDate} copies. The caller's object is not read again, so a getter or a Proxy trap that answers once and throws afterwards
+ * cannot fail after the call has begun, and every check and every use works on the same values.
  *
  * @param input The object the caller supplied.
  * @param fields The names of its date fields.
  * @param prefix Text put before a field's name in a refusal.
- * @returns The input itself when none of the fields is present, else a shallow copy with clean dates.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not a valid date.
+ * @returns A new object holding the values read.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
 export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
-  const copy = { ...input }
+  const copy: Record<string, unknown> = {}
+  for (const key of keysOf(input, `${prefix}input`)) copy[key] = readField(input, key, `${prefix}${key}`)
   for (const field of fields) {
-    const value: unknown = Reflect.get(input, field)
-    if (value !== undefined) Reflect.set(copy, field, readDate(`${prefix}${field}`, value))
+    if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
   }
-  return copy
+  return copy as T
 }

@@ -198,10 +198,10 @@ export class LedgerService {
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
     assertObject('filter', filter)
-    assertText('tenantId', filter.tenantId)
-    assertOptionalCount('limit', filter.limit)
-    assertOptionalCount('offset', filter.offset)
     const clean = withReadDates(filter, ['from', 'to'])
+    assertText('tenantId', clean.tenantId)
+    assertOptionalCount('limit', clean.limit)
+    assertOptionalCount('offset', clean.offset)
     return clean.status === undefined ? { ...clean, status: [...BALANCE_STATUSES] } : clean
   }
 

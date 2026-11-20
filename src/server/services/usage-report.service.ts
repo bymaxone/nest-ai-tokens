@@ -107,10 +107,9 @@ export class UsageReportService {
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     assertObject('input', input)
-    assertText('tenantId', input.tenantId)
-    const { groupBy, ...given } = input
+    const { groupBy, ...filter } = withCleanDates(input)
+    assertText('tenantId', filter.tenantId)
     assertGroupBy(groupBy)
-    const filter = withCleanDates(given)
     const max = this.options.reporting.maxExportRows
     if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
