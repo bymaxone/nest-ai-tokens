@@ -84,17 +84,37 @@ const DATE_ROWS: readonly (readonly [string, (string | number)[]])[] = [
   ['reports.summarize', [0, 'from']],
 ]
 
-/** Every object argument whose field is read by a guard: the call, the path of the object, and the field. */
-const GETTER_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
-  ['budgets.upsertBudget', [0], 'scope'],
-  ['budgets.upsertBudget', [0], 'id'],
-  ['budgets.upsertBudget', [0], 'features'],
-  ['metering.hold', [0], 'tenantId'],
-  ['metering.hold', [0, 'scope'], 'type'],
-  ['metering.hold', [0], 'requestedBy'],
-  ['metering.estimateCost', [0], 'inputTokens'],
-  ['wallets.getBalance', [0], 'ownerId'],
-  ['metering.capture', [0], 'id'],
+/** Every object argument whose field is read by a guard: the call, the path of the object, the field, and the name the refusal gives it. */
+const GETTER_ROWS: readonly (readonly [string, (string | number)[], string, string])[] = [
+  ['budgets.upsertBudget', [0], 'scope', 'scope'],
+  ['budgets.upsertBudget', [0], 'id', 'id'],
+  ['budgets.upsertBudget', [0], 'features', 'features'],
+  ['metering.hold', [0], 'tenantId', 'context.tenantId'],
+  ['metering.hold', [0], 'scope', 'context.scope'],
+  ['metering.hold', [0, 'scope'], 'type', 'context.scope.type'],
+  ['metering.hold', [0, 'scope'], 'id', 'context.scope.id'],
+  ['metering.hold', [0], 'beneficiary', 'context.beneficiary'],
+  ['metering.hold', [0], 'feature', 'context.feature'],
+  ['metering.hold', [0], 'requestedBy', 'context.requestedBy'],
+  ['metering.estimateCost', [0], 'provider', 'provider'],
+  ['metering.estimateCost', [0], 'feature', 'feature'],
+  ['metering.estimateCost', [0], 'scope', 'scope'],
+  ['metering.estimateCost', [0], 'inputTokens', 'inputTokens'],
+  ['metering.estimateCost', [0], 'maxOutputTokens', 'maxOutputTokens'],
+  ['wallets.getBalance', [0], 'tenantId', 'wallet.tenantId'],
+  ['wallets.getBalance', [0], 'ownerType', 'wallet.ownerType'],
+  ['wallets.getBalance', [0], 'ownerId', 'wallet.ownerId'],
+  ['metering.capture', [0], 'id', 'hold.id'],
+]
+
+/** Tenant ids the budget calls refuse: empty, and with a NUL character. */
+const TENANT_ROWS: readonly (readonly [string, (string | number)[], string, string])[] = [
+  ['budgets.upsertBudget', [0, 'tenantId'], '', 'tenantId must be a non-empty string'],
+  ['budgets.removeBudget', [1], '', 'tenantId must be a non-empty string'],
+  ['budgets.rotateWindow', [1], '', 'tenantId must be a non-empty string'],
+  ['budgets.reconcileWindow', [1], '', 'tenantId must be a non-empty string'],
+  ['budgets.upsertBudget', [0, 'tenantId'], NUL, NUL_REASON('tenantId')],
+  ['budgets.removeBudget', [1], NUL, NUL_REASON('tenantId')],
 ]
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
@@ -148,8 +168,24 @@ describe('a date that answers once', () => {
   })
 })
 
+describe('a tenant id the budget calls refuse', () => {
+  it.each(TENANT_ROWS)('%s at %j refuses %j', async (name, path, value, reason) => {
+    const { run, args } = await callOf(name)
+    setAt(args, path, value)
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${reason}`)
+  })
+})
+
+describe('a grant date that is not valid', () => {
+  it.each(['effectiveAt', 'expiresAt'])('is refused naming grant %s', async (field) => {
+    const { run, args } = await callOf('wallets.grant')
+    setAt(args, [1, field], new Date(Number.NaN))
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG grant ${field} must be a valid date`)
+  })
+})
+
 describe('an object whose getter throws', () => {
-  it.each(GETTER_ROWS)('is refused by %s at %j naming the field %s', async (name, path, field) => {
+  it.each(GETTER_ROWS)('is refused by %s at %j for the field %s, naming %s', async (name, path, field, named) => {
     const { run, args } = await callOf(name)
     Object.defineProperty(at(args, path), field, {
       get(): never {
@@ -157,9 +193,6 @@ describe('an object whose getter throws', () => {
       },
       enumerable: true,
     })
-    const reason = await reasonOf(() => run(args))
-    expect(reason).toMatch(/^AI_TOKENS_INVALID_CONFIG .* could not be read$/)
-    expect(reason).toContain(field)
-    expect(reason).not.toContain('host-private-text')
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
   })
 })
