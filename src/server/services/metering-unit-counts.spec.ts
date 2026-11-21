@@ -1,3 +1,10 @@
+/**
+ * The tool units of a call are counts. A host that puts units on a context gets them refused when a count is not a whole number from 0 to
+ * the largest safe integer, before anything is debited; a unit name reaches a refusal only when it is plain ASCII of at most 64 characters;
+ * and a unit that has a count and no rate in the price is a missing price: refused in strict mode, billed for what has a price and flagged
+ * otherwise.
+ * @layer test
+ */
 import type { AiTokensErrorResponse } from '../../shared'
 import type { AiTokensException } from '../errors'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
