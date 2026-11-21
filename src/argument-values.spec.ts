@@ -397,6 +397,6 @@ describe('the fields a snapshot lists', () => {
   it('copies the fields as enumerable data that a spread and Object.keys see', () => {
     const copy = snapshotOf(new Derived())
     expect(Object.keys(copy).sort()).toEqual(['inherited', 'own'])
-    expect({ ...(copy as Record<string, unknown>) }).toEqual({ inherited: 1, own: 2 })
+    expect(Object.assign({}, copy)).toEqual({ inherited: 1, own: 2 })
   })
 })
