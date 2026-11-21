@@ -628,6 +628,10 @@ describe('the keys of a nested record', () => {
     expect(keysOf(runInNewContext('new (class { get g() { return 1 } })()') as object, 'input')).toEqual(['g'])
   })
 
+  it('lists the own keys of an object with no prototype', () => {
+    expect(keysOf(Object.assign(Object.create(null) as object, { only: 1 }), 'input')).toEqual(['only'])
+  })
+
   it('names the object when a trap throws', () => {
     const hostile = new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })
     expect(refusal(() => keysOf(hostile, 'record'))).toBe('record could not be read')
