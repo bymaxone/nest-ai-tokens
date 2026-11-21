@@ -52,22 +52,19 @@ export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold
 }
 
 /**
- * The arguments of a capture, read once.
+ * The usage, the preset and the content of a capture, read once. A capture of a hold that is already settled returns the record it
+ * posted without reading them, so they are read only once the stored hold is known to be pending.
  *
- * @param hold The hold the caller passed.
- * @param caller The caller the host resolved.
  * @param usage The raw or normalized usage; a collector of this library is passed on as it is, since it is not data.
  * @param preset The preset, when given.
  * @param content The content, when given.
  * @returns Their snapshots.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
-export function captureArguments(hold: Hold, caller: HoldCaller, usage: unknown, preset: ProviderPreset | undefined, content: Content | undefined): {
-  hold: Hold
-  caller: HoldCaller
+export function captureInputs(usage: unknown, preset: ProviderPreset | undefined, content: Content | undefined): {
   usage: unknown
   preset: ProviderPreset | undefined
   content: Content | undefined
 } {
-  return { ...holdOwnerArguments(hold, caller), usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, 'preset.'), content: readArgument(content, CONTENT_SHAPE, 'content.') }
+  return { usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, 'preset.'), content: readArgument(content, CONTENT_SHAPE, 'content.') }
 }

@@ -39,7 +39,7 @@ import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObjec
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE, RECORD_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
-import { captureArguments, holdArguments, holdOwnerArguments } from '../utils/metering-arguments'
+import { captureInputs, holdArguments, holdOwnerArguments } from '../utils/metering-arguments'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -445,9 +445,10 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` (another caller's or missing, indistinguishable), `_HOLD_EXPIRED` (reaped), `_HOLD_ALREADY_SETTLED` (released), `AI_TOKENS_INVALID_CONFIG` for a caller that is not a tenant and a scope.
    */
   async capture(givenHold: Hold, givenCaller: HoldCaller, givenUsage: unknown, givenPreset?: ProviderPreset, givenContent?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
-    const { hold, caller, usage, preset, content } = captureArguments(givenHold, givenCaller, givenUsage, givenPreset, givenContent)
+    const { hold, caller } = holdOwnerArguments(givenHold, givenCaller)
     const record = await this.loadHoldRecord(hold, caller, 'capture(hold, caller, usage)')
     if (record.status !== 'pending') return this.settledOrConflict(record)
+    const { usage, preset, content } = captureInputs(givenUsage, givenPreset, givenContent)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
     const usageForRating: NormalizedUsage = {
       ...normalized,

@@ -65,6 +65,33 @@ describe('the estimate of a hold', () => {
   })
 })
 
+describe('a capture that is repeated', () => {
+  /** An object whose every field answers the first read and throws at every later one, as a usage a host builds once may. */
+  const answersOnce = (source: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(source)) {
+      let read = false
+      Object.defineProperty(out, key, {
+        enumerable: true,
+        get: (): unknown => {
+          if (read) throw new Error('host-private-text')
+          read = true
+          return source[key]
+        },
+      })
+    }
+    return out
+  }
+
+  it('returns the record it posted without reading the usage again', async () => {
+    const { run, args } = await callOf('metering.capture')
+    args[2] = answersOnce(args[2] as Record<string, unknown>)
+    const first = (await run(args)) as { id: string }
+    const second = (await run(args)) as { id: string }
+    expect(second.id).toBe(first.id)
+  })
+})
+
 describe('a collector given to capture', () => {
   it('is used as it is, and the field of it the settlement reads is read once', async () => {
     const { run, args } = await callOf('metering.capture')
