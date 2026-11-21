@@ -25,7 +25,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Changed
 
-- The `server` size budget is 58015 bytes brotli, for the typed field lists, the single read of every argument, the budget of a read and the view of a raw provider response.
+- The `server` size budget is 58131 bytes brotli, for the typed field lists, the single read of every argument, the budget of a read and the view of a raw provider response.
 
 ## [1.1.19] - 2026-11-20
 
