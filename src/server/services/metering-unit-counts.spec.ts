@@ -136,6 +136,28 @@ describe('the tool units a host puts on a call are counts', () => {
     expect(await built.ledgerStore.query({ tenantId: 'tenant-1' })).toEqual([])
   })
 
+  /** The name of a unit may reach the operator who reads the refusal only when it is plain ASCII of at most 64 characters: anything else is masked. */
+  it.each([
+    ['bidi text', 'web\u202Esearch'],
+    ['a control character', 'web\nsearch'],
+    ['an at-sign', '@web_search'],
+    ['a non-ASCII letter', 'búsqueda'],
+    ['a space', 'web search'],
+    ['a name of 65 characters', 'a'.repeat(65)],
+    ['a name that starts with an underscore', '_web'],
+  ])('masks the name of a unit with %s in the refusal', async (_name, unit) => {
+    const built = await world()
+    const outcome = await refusal(() => built.service.record({ usage: usage(), context: context({ extraUnits: { [unit]: -1 } }) }))
+    expect(outcome).toEqual({ code: 'AI_TOKENS_USAGE_MALFORMED', reason: 'context.extraUnits.<key> must be a whole number from 0 to the largest safe integer' })
+  })
+
+  /** A plain name, with underscores and digits, up to 64 characters, is named as it is. */
+  it.each(['web_search_requests', 'a'.repeat(64), 'tool2_run'])('names the unit %s as it is', async (unit) => {
+    const built = await world()
+    const outcome = await refusal(() => built.service.record({ usage: usage(), context: context({ extraUnits: { [unit]: -1 } }) }))
+    expect(outcome?.reason).toBe(REASON(unit))
+  })
+
   /** A map that is no object is refused as a malformed argument. */
   it('refuses extra units that are not an object', async () => {
     const built = await world()
