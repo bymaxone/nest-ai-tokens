@@ -12,7 +12,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [1.1.21] - 2026-11-21
 
-**Apply:** no migration and no option change is needed. This release fixes billing defects in the usage of a call, all of them present in earlier releases, and three of its changes refuse a usage or a call that an earlier release billed (see Changed). Check a host that passes its own normalized usage or normalizer, and a host that bills tool units.
+**Apply:** no migration and no option change is needed. This release fixes billing defects in the usage of a call, all of them present in earlier releases, and some of its changes refuse a usage or a call that an earlier release billed (see Changed). Check a host that passes its own normalized usage or normalizer, and a host that bills tool units.
 
 ### Fixed
 
@@ -27,7 +27,6 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 - A tool unit with a count above 0 and no rate in the price's `unitRates` is a missing price, like an unpriced model. It was billed at 0 without a trace. With `pricing.strict` on (the default) the call is refused with `AI_TOKENS_PRICE_NOT_FOUND` before anything is debited; with it off the call is billed for what has a price, `priceMissing` is set on the record and `ai_tokens.price.missing` is raised, by `capture()` as by `record()`. A unit named like an inherited property (`constructor`) is looked up as an own entry of the price only. A host that bills tool units must list a rate for each unit it uses.
 - A negative token or tool unit count, a count past 2^53 and a negative provider-reported cost in a normalized usage (from a host normalizer or passed by the host) are refused with `AI_TOKENS_USAGE_MALFORMED`. They were clamped to 0, which hid the defect and billed the call as another. A host that relied on the clamp must fix the usage it passes.
-- The `server` size budget is 59194 bytes brotli, for the checks above.
 
 ## [1.1.20] - 2026-11-21
 
