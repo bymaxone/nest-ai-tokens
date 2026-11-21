@@ -94,7 +94,6 @@ const KNOWN_GAPS: readonly string[] = [
   'wallets.reconcile arg 0',
   'budgets.list arg 1',
   'budgets.status arg 1',
-  'reports.summarize arg 0',
   'pricing.resolveRate arg 0',
 ]
 
