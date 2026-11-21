@@ -114,7 +114,7 @@ function isRecord(value: unknown): value is object {
  * @returns The snapshot of an object, or `argument` itself.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` as {@link readShape} does.
  */
-export function readArgument<T>(argument: T, shape: Shape, prefix: string, visit = newVisit()): T {
+export function readArgument<T>(argument: T, shape: Shape, prefix: string, visit: Visit): T {
   return isRecord(argument) ? (readShape(argument, shape, prefix, visit) as T) : argument
 }
 
