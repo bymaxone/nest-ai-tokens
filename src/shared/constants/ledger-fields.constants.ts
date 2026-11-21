@@ -40,6 +40,7 @@ export const AMOUNT_FIELDS = [
  */
 export const SETTLEMENT_FIELDS = [
   ...AMOUNT_FIELDS,
+  'extraUnits',
   'priceVersionId',
   'priceMissing',
   'markupMultiplier',

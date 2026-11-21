@@ -61,7 +61,7 @@ import type { TokenCounts } from './hold-support'
 import {
   assertCaller,
   assertHoldEstimate,
-  clampUsageCounts,
+  checkUsageCounts,
   isNormalizedUsage,
   normalizeCaptureUsage,
   resolveHoldEstimate,
@@ -450,19 +450,20 @@ export class MeteringService {
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const { usage, preset, content } = captureInputs(givenUsage, givenPreset, givenContent)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
+    const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...record.extraUnits }
     const usageForRating: NormalizedUsage = {
       ...normalized,
       provider: record.provider,
       model: record.model,
       operation: record.operation,
       serviceTier: record.serviceTier,
-      serverToolUse: record.extraUnits ?? {},
+      serverToolUse: ratedUnits,
     }
     const mode = preset?.ratingMode ?? this.options.ratingMode
     const rating = await this.rate(usageForRating, record.serviceTier, record.occurredAt, mode, record.requestedModel)
     const markup = await this.markup.resolve({ scope: record.scope, provider: record.provider, model: record.model, operation: record.operation, serviceTier: record.serviceTier, feature: record.feature })
     const counts = tokenCountsOf(usageForRating)
-    const patch = this.settlementPatch(counts, rating, markup)
+    const patch = { ...this.settlementPatch(counts, rating, markup), ...(Object.keys(ratedUnits).length > 0 ? { extraUnits: ratedUnits } : {}) }
     const reservedBilled = record.billedCostNanoUsd
     const reservedTokens = record.totalTokens
     const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch, { reservedBilledNanoUsd: reservedBilled, reservedTokens })
@@ -626,6 +627,7 @@ export class MeteringService {
         {
           ...baseColumns(resolved, context, resolved.serviceTier),
           ...resolved.tokenCounts,
+          ...(context.extraUnits !== undefined && Object.keys(context.extraUnits).length > 0 ? { extraUnits: context.extraUnits } : {}),
           priceVersionId: null,
           rawCostNanoUsd: resolved.rawEstimateNanoUsd,
           surchargeNanoUsd: 0n,
@@ -752,8 +754,8 @@ export class MeteringService {
   /** Resolve the normalizer chain and produce the normalized usage. */
   private resolveNormalizedUsage(input: RecordInput): NormalizedUsage {
     const normalizer = input.normalizer ?? input.preset?.normalizer
-    if (normalizer !== undefined) return clampUsageCounts(this.normalize(normalizer, input.usage))
-    if (isNormalizedUsage(input.usage)) return clampUsageCounts(input.usage)
+    if (normalizer !== undefined) return checkUsageCounts(this.normalize(normalizer, input.usage))
+    if (isNormalizedUsage(input.usage)) return checkUsageCounts(input.usage)
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER', undefined, {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics

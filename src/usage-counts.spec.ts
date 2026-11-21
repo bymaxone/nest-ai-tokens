@@ -21,9 +21,9 @@ const RESPONSES: readonly (readonly [string, { normalizer: (raw: unknown) => unk
   ['bedrock', providerPresets.bedrock, { model: 'claude', usage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheDetails: [{ ttl: '1h', cacheWriteInputTokens: 7 }, { ttl: '5m', cacheWriteInputTokens: 3 }] } }, ['inputTokens', 'outputTokens']],
   ['bedrockUnsplit', providerPresets.bedrock, { model: 'claude', usage: { inputTokens: 100, outputTokens: 50, cacheWriteInputTokens: 9 } }, ['inputTokens', 'outputTokens']],
   ['mistral', providerPresets.mistral, { model: 'mistral-large', usage: { prompt_tokens: 100, completion_tokens: 50 } }, ['prompt_tokens', 'completion_tokens']],
-  ['vercelAiSdk', providerPresets.vercelAiSdk, { model: 'gpt-4o', usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 10, reasoningTokens: 5, inputTokenDetails: { cacheReadTokens: 2, cacheWriteTokens: 3 }, outputTokenDetails: { reasoningTokens: 4 } } }, ['inputTokens', 'outputTokens']],
+  ['vercelAiSdk', providerPresets.vercelAiSdk, { model: 'gpt-4o', usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 2, reasoningTokens: 4, inputTokenDetails: { cacheReadTokens: 2, cacheWriteTokens: 3 }, outputTokenDetails: { reasoningTokens: 4 } } }, ['inputTokens', 'outputTokens']],
   ['openrouter', providerPresets.openrouter, { model: 'openai/gpt-4o', usage: { prompt_tokens: 100, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 10 } } }, ['prompt_tokens', 'completion_tokens']],
-  ['openaiCompatible', providerPresets.openaiCompatible('deepseek'), { model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 10, prompt_tokens_details: { cached_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 3 } } }, ['prompt_tokens', 'completion_tokens']],
+  ['openaiCompatible', providerPresets.openaiCompatible('deepseek'), { model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 5, prompt_tokens_details: { cached_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 3 } } }, ['prompt_tokens', 'completion_tokens']],
 ]
 
 /** Every path of a number in a response, as a list of keys. */
@@ -83,7 +83,7 @@ describe('the counts of every normalizer', () => {
     ['openaiResponses', providerPresets.openaiResponses, { model: 'gpt-4o', usage: { input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 60, audio_tokens: 41 } } }],
     ['gemini', providerPresets.gemini, { modelVersion: 'gemini', usageMetadata: { promptTokenCount: 100, cachedContentTokenCount: 101 } }],
     ['openrouter', providerPresets.openrouter, { model: 'm', usage: { prompt_tokens: 100, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 41 } } }],
-    ['openaiCompatible', providerPresets.openaiCompatible('x'), { model: 'm', usage: { prompt_tokens: 100, completion_tokens: 1, prompt_cache_hit_tokens: 60, prompt_tokens_details: { cached_tokens: 41 } } }],
+    ['openaiCompatible', providerPresets.openaiCompatible('x'), { model: 'm', usage: { prompt_tokens: 100, completion_tokens: 1, prompt_cache_hit_tokens: 101 } }],
     ['vercelAiSdk', providerPresets.vercelAiSdk, { model: 'm', usage: { inputTokens: 100, outputTokens: 1, cachedInputTokens: 60, inputTokenDetails: { cacheWriteTokens: 41 } } }],
   ])('refuses a part that is more than its total: %s', (_name, preset, response) => {
     expect(() => preset.normalizer(response)).toThrow()
@@ -110,7 +110,7 @@ describe('the counts of every normalizer', () => {
   it('refuses an entry of the cache details of Bedrock that is no object, and counts that add up past the safe range', () => {
     expect(() => providerPresets.bedrock.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cacheDetails: [5] } })).toThrow()
     expect(() => providerPresets.bedrock.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cacheDetails: [{ ttl: '1h', cacheWriteInputTokens: Number.MAX_SAFE_INTEGER }, { ttl: '1h', cacheWriteInputTokens: 1 }] } })).toThrow()
-    expect(() => providerPresets.vercelAiSdk.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: Number.MAX_SAFE_INTEGER, inputTokenDetails: { cacheReadTokens: 1 } } })).toThrow()
+    expect(() => providerPresets.vercelAiSdk.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: Number.MAX_SAFE_INTEGER, inputTokenDetails: { cacheWriteTokens: 1 } } })).toThrow()
   })
 })
 
@@ -119,6 +119,7 @@ const MISSING = (provider: string, field: string): string => `${provider}: missi
 const NOT_OBJECT = (provider: string, field: string): string => `${provider}: "${field}" must be an object`
 const NOT_LIST = (provider: string, field: string): string => `${provider}: "${field}" must be a list`
 const PARTS_PAST_TOTAL = (provider: string, field: string): string => `${provider}: the parts of "${field}" are more than the whole`
+const TWICE = (provider: string, field: string): string => `${provider}: "${field}" is reported twice and the two counts differ`
 const NO_USAGE = (provider: string, key = 'usage'): string => `${provider}: missing "${key}" object`
 const NOT_WHOLE = 'a count of the usage is not a whole number from 0 to the largest safe integer'
 const PAST_SAFE_RANGE = 'the counts of the usage add up past the largest safe integer'
@@ -167,7 +168,10 @@ const REFUSALS: readonly Refusal[] = [
   ['vercelAiSdk', ['usage', 'inputTokenDetails'], 5, NOT_OBJECT('vercel-ai-sdk', 'usage.inputTokenDetails')],
   ['vercelAiSdk', ['usage', 'outputTokenDetails'], 5, NOT_OBJECT('vercel-ai-sdk', 'usage.outputTokenDetails')],
   ['vercelAiSdk', ['usage', 'inputTokenDetails', 'cacheWriteTokens'], TOO_MANY, PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.inputTokens')],
-  ['vercelAiSdk', ['usage', 'outputTokenDetails', 'reasoningTokens'], TOO_MANY, PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.outputTokens')],
+  ['vercelAiSdk', ['usage', 'outputTokenDetails', 'reasoningTokens'], TOO_MANY, TWICE('vercel-ai-sdk', 'usage.reasoningTokens')],
+  ['vercelAiSdk', ['usage', 'reasoningTokens'], TOO_MANY, TWICE('vercel-ai-sdk', 'usage.reasoningTokens')],
+  ['vercelAiSdk', ['usage', 'inputTokenDetails', 'cacheReadTokens'], TOO_MANY, TWICE('vercel-ai-sdk', 'usage.cachedInputTokens')],
+  ['vercelAiSdk', ['usage', 'cachedInputTokens'], TOO_MANY, TWICE('vercel-ai-sdk', 'usage.cachedInputTokens')],
   ['openrouter', ['usage'], undefined, NO_USAGE('openrouter')],
   ['openrouter', ['usage', 'prompt_tokens'], undefined, MISSING('openrouter', 'usage.prompt_tokens')],
   ['openrouter', ['usage', 'completion_tokens'], undefined, MISSING('openrouter', 'usage.completion_tokens')],
@@ -180,7 +184,8 @@ const REFUSALS: readonly Refusal[] = [
   ['openaiCompatible', ['usage', 'completion_tokens'], undefined, MISSING('openai-compatible', 'usage.completion_tokens')],
   ['openaiCompatible', ['usage', 'prompt_tokens_details'], 5, NOT_OBJECT('openai-compatible', 'usage.prompt_tokens_details')],
   ['openaiCompatible', ['usage', 'completion_tokens_details'], 5, NOT_OBJECT('openai-compatible', 'usage.completion_tokens_details')],
-  ['openaiCompatible', ['usage', 'prompt_cache_hit_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-compatible', 'usage.prompt_tokens')],
+  ['openaiCompatible', ['usage', 'prompt_cache_hit_tokens'], TOO_MANY, TWICE('openai-compatible', 'usage.prompt_cache_hit_tokens')],
+  ['openaiCompatible', ['usage', 'prompt_tokens_details', 'cached_tokens'], TOO_MANY, TWICE('openai-compatible', 'usage.prompt_cache_hit_tokens')],
   ['openaiCompatible', ['usage', 'completion_tokens_details', 'reasoning_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-compatible', 'usage.completion_tokens')],
 ]
 
@@ -189,6 +194,14 @@ describe('the exact text of every refusal of a usage', () => {
     const row = RESPONSES.find(([known]) => known === name)
     if (row === undefined) throw new Error(`no response named ${name}`)
     expect(() => row[1].normalizer(withValue(row[2], path, value))).toThrow(new Error(message))
+  })
+
+  it('refuses a part that is more than its total when the aliased count agrees with itself', () => {
+    const vercel = { usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: TOO_MANY, inputTokenDetails: { cacheReadTokens: TOO_MANY }, reasoningTokens: TOO_MANY, outputTokenDetails: { reasoningTokens: TOO_MANY } } }
+    expect(() => providerPresets.vercelAiSdk.normalizer(vercel)).toThrow(new Error(PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.inputTokens')))
+    expect(() => providerPresets.vercelAiSdk.normalizer({ usage: { ...vercel.usage, inputTokens: 1000 } })).toThrow(new Error(PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.outputTokens')))
+    const compatible = { usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: TOO_MANY, prompt_tokens_details: { cached_tokens: TOO_MANY } } }
+    expect(() => providerPresets.openaiCompatible('x').normalizer(compatible)).toThrow(new Error(PARTS_PAST_TOTAL('openai-compatible', 'usage.prompt_tokens')))
   })
 
   it('refuses the counts of Bedrock that add up past the safe range with the text it names', () => {

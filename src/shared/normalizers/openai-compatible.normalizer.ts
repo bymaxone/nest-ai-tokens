@@ -8,7 +8,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
+import { aliasCount, buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str } from './usage-fields'
 
 /**
  * Normalize an OpenAI-compatible chat response into {@link NormalizedUsage}.
@@ -26,8 +26,8 @@ export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
 
   const promptDetails = detailsObject(usage.prompt_tokens_details, 'openai-compatible', 'usage.prompt_tokens_details')
   const completionDetails = detailsObject(usage.completion_tokens_details, 'openai-compatible', 'usage.completion_tokens_details')
-  // DeepSeek reports cache hits at the usage root; OpenAI-style gateways nest them.
-  const cacheReadTokens = sumCounts(num(usage.prompt_cache_hit_tokens), num(promptDetails?.cached_tokens))
+  // DeepSeek reports cache hits at the usage root; OpenAI-style gateways nest them, and one that does both reports the same tokens twice.
+  const cacheReadTokens = aliasCount(usage.prompt_cache_hit_tokens, promptDetails?.cached_tokens, 'openai-compatible', 'usage.prompt_cache_hit_tokens')
   const reasoningTokens = num(completionDetails?.reasoning_tokens)
 
   const serviceTier = openAiServiceTier(response.service_tier)

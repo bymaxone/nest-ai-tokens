@@ -16,18 +16,23 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   cacheWrite1hTokens: number
 } {
   const details = detailsArray(usage.cacheDetails, 'bedrock-converse', 'usage.cacheDetails')
-  if (details === undefined) {
-    // An unsplit total defaults to the 5-minute cache.
+  if (details === undefined || details.length === 0) {
+    // An unsplit total, or a total next to a split that lists nothing, defaults to the 5-minute cache.
     return { cacheWrite5mTokens: num(usage.cacheWriteInputTokens), cacheWrite1hTokens: 0 }
   }
   let cacheWrite5mTokens = 0
   let cacheWrite1hTokens = 0
   for (const item of details) {
     const entry = detailsObject(item, 'bedrock-converse', 'usage.cacheDetails[]')
-    if (entry === undefined) continue
+    if (entry === undefined) throw new Error('bedrock-converse: "usage.cacheDetails[]" must be an object')
     const count = num(entry.cacheWriteInputTokens)
     if (str(entry.ttl) === '1h') cacheWrite1hTokens = sumCounts(cacheWrite1hTokens, count)
     else cacheWrite5mTokens = sumCounts(cacheWrite5mTokens, count)
+  }
+  const total = usage.cacheWriteInputTokens
+  // A total next to a split is the same tokens twice: the two must agree.
+  if (total !== undefined && total !== null && num(total) !== sumCounts(cacheWrite5mTokens, cacheWrite1hTokens)) {
+    throw new Error('bedrock-converse: "usage.cacheWriteInputTokens" and the entries of "usage.cacheDetails" differ')
   }
   return { cacheWrite5mTokens, cacheWrite1hTokens }
 }

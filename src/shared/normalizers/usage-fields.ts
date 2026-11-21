@@ -65,6 +65,20 @@ export function detailsArray(value: unknown, provider: string, field: string): u
   throw new Error(`${provider}: "${field}" must be a list`)
 }
 
+/**
+ * A count that a response may report in two places, such as at the root of the usage and again in a details object: the same tokens
+ * under two names, so they are billed once. One that is there alone is that count; two that are there and agree are one count; two that
+ * are there and differ cannot both be right, and are refused rather than added or picked between.
+ */
+export function aliasCount(first: unknown, second: unknown, provider: string, field: string): number {
+  const left = num(first)
+  const right = num(second)
+  if (first === undefined || first === null) return right
+  if (second === undefined || second === null) return left
+  if (left === right) return left
+  throw new Error(`${provider}: "${field}" is reported twice and the two counts differ`)
+}
+
 /** The sum of counts, which must itself be a count: two counts a provider reports cannot add up past the largest safe integer. */
 export function sumCounts(...counts: number[]): number {
   const sum = counts.reduce((total, count) => total + count, 0)

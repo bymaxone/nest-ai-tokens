@@ -301,31 +301,18 @@ describe('MeteringService.record', () => {
     expect(built.events.priceMissing).not.toHaveBeenCalled()
   })
 
-  /** A negative provider-reported cost is floored at zero on record(), as capture() floors it, so it never writes a negative billed row. */
-  it('floors a negative provider-reported cost at zero', async () => {
+  /** A negative provider-reported cost, a negative token count and a negative tool unit count are refused with the malformed-usage error, and nothing is written: a negative one would credit the wallet and the budget. */
+  it.each([
+    ['a negative provider-reported cost', { provider: 'openrouter', providerReportedCostNanoUsd: -500_000_000n }],
+    ['a negative token count', { inputTokens: -990, outputTokens: 10 }],
+    ['a negative tool unit count', { serverToolUse: { web_search: -3, code_run: 2 } }],
+    ['a token count past the largest safe integer', { inputTokens: 2 ** 53 }],
+  ])('refuses %s', async (_name, over) => {
     const built = build({ markup: 4, ratingMode: 'provider-reported' })
-    const record = await built.service.record({
-      usage: normalized({ provider: 'openrouter', providerReportedCostNanoUsd: -500_000_000n }),
-      context: context(),
-    })
-    expect(record.rawCostNanoUsd).toBe(0n)
-    expect(record.billedCostNanoUsd).toBe(0n)
-  })
-
-  /** A negative token count, as a subtracting normalizer can produce, is floored at zero on record() too. */
-  it('floors a negative token count at zero', async () => {
-    const record = await build({ strict: false }).service.record({ usage: normalized({ inputTokens: -990, outputTokens: 10 }), context: context() })
-    expect(record.inputTokens).toBe(0)
-    expect(record.totalTokens).toBe(10)
-  })
-
-  /** A negative server-tool unit count is floored at zero, and a positive one is kept. */
-  it('floors a negative server tool use count and keeps a positive one', async () => {
-    const record = await build({ strict: false }).service.record({
-      usage: normalized({ serverToolUse: { web_search: -3, code_run: 2 } }),
-      context: context(),
-    })
-    expect(record.extraUnits).toEqual({ web_search: 0, code_run: 2 })
+    const error = await built.service.record({ usage: normalized(over), context: context() }).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details?.reason).toBe('every token and tool unit count of a usage must be a whole number from 0 to the largest safe integer, and a reported cost must not be negative')
+    expect(await built.ledgerStore.query({ tenantId: 'tenant-1' })).toEqual([])
   })
 
   /** Provider-reported mode without a reported cost is malformed. */
