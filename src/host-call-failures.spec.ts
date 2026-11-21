@@ -156,8 +156,10 @@ describe('a host error that cannot be read', () => {
     expect(() => { new TelemetryEmitter(unreadable).recordDuration(record, 5) }).not.toThrow()
     expect(warned).toHaveLength(1)
     expect(warned[0]).toBe(`${SINK_LINE} name=Error`)
-    const withoutDuration: ITelemetrySink = { recordUsage: (): void => undefined }
+    const usageCalls: unknown[] = []
+    const withoutDuration: ITelemetrySink = { recordUsage: (attributes): void => { usageCalls.push(attributes) } }
     expect(() => { new TelemetryEmitter(withoutDuration).recordDuration(record, 5) }).not.toThrow()
+    expect(usageCalls).toEqual([])
     expect(warned).toHaveLength(1)
   })
 })
