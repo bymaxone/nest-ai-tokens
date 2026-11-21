@@ -10,7 +10,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
-- **Apply:** no migration and no option change is needed. The context, the estimate, the usage, the preset and the content of `hold()`, `record()`, `capture()` and `release()`, the input of `estimateCost()`, the hold and its caller, the scope of `getStatus()` and the input of `settleAdjustment()` are read once with the call and by the names of their type. An estimate is read by the names of the variant it is, so a getter named like a field of another variant is not run. A `StreamUsageCollector` passed to `capture()` is used as it is.
+- **Apply:** no migration and no option change is needed. The arguments of `hold()`, `capture()` and `release()`, the input of `record()` and `estimateCost()`, the scope of `getStatus()` and the input of `settleAdjustment()` are read once with the call and by the names of their type. An estimate is read by the names of the variant it is, so a getter named like a field of another variant is not run. A `StreamUsageCollector` passed to `capture()` is used as it is.
 
 - **Apply:** no migration and no option change is needed. The reference of a wallet, the scope of a budget lookup and the input of a rate lookup are read once with the call, like the other inputs, and every input read once is read by the names of its type: a getter of a class and a field defined as not enumerable are read, a key planted on `Object.prototype`, of any realm, is not. A field the host's object does not have is absent, whatever else the object holds.
 
