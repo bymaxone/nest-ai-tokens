@@ -87,6 +87,8 @@ describe('the view of a raw provider response', () => {
     const view = viewOf(Object.freeze([{ ttl: '1h' }, { ttl: '5m' }]))
     expect(Object.entries(view).map(([, item]) => item.ttl)).toEqual(['1h', '5m'])
     expect(Object.keys(view)).toEqual(['0', '1'])
+    expect(Object.getOwnPropertyDescriptor(view, '0')).toMatchObject({ writable: false, configurable: true })
+    expect(Object.getOwnPropertyDescriptor(view, 'length')).toMatchObject({ writable: true, configurable: false })
   })
 
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {

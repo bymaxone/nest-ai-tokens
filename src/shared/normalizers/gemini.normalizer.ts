@@ -33,6 +33,7 @@ export function normalizeGeminiUsage(raw: unknown): NormalizedUsage {
     provider: 'gemini',
     model: str(response.modelVersion) ?? str(response.model) ?? '',
     operation: 'chat',
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: sumCounts(remainder(promptTokenCount, [cacheReadTokens], 'gemini', 'usageMetadata.promptTokenCount'), toolUseInputTokens),
     outputTokens: candidatesTokenCount,
     cacheReadTokens,

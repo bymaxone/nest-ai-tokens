@@ -27,7 +27,9 @@ export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-chat', 'usage.completion_tokens')
 
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const promptDetails = detailsObject(usage.prompt_tokens_details, 'openai-chat', 'usage.prompt_tokens_details')
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const completionDetails = detailsObject(usage.completion_tokens_details, 'openai-chat', 'usage.completion_tokens_details')
   const cacheReadTokens = num(promptDetails?.cached_tokens)
   const audioInTokens = num(promptDetails?.audio_tokens)
@@ -39,7 +41,9 @@ export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
     provider: 'openai',
     model: str(response.model) ?? '',
     operation: 'chat',
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(promptTokens, [cacheReadTokens, audioInTokens], 'openai-chat', 'usage.prompt_tokens'),
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(completionTokens, [reasoningTokens], 'openai-chat', 'usage.completion_tokens'),
     cacheReadTokens,
     reasoningTokens,

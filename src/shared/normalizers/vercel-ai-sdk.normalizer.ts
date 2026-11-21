@@ -29,7 +29,9 @@ export function normalizeVercelAiSdkUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.outputTokens, 'vercel-ai-sdk', 'usage.outputTokens')
 
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const inputDetails = detailsObject(usage.inputTokenDetails, 'vercel-ai-sdk', 'usage.inputTokenDetails')
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const outputDetails = detailsObject(usage.outputTokenDetails, 'vercel-ai-sdk', 'usage.outputTokenDetails')
   const cacheReadTokens = sumCounts(num(usage.cachedInputTokens), num(inputDetails?.cacheReadTokens))
   const cacheWrite5mTokens = num(inputDetails?.cacheWriteTokens)
@@ -39,7 +41,9 @@ export function normalizeVercelAiSdkUsage(raw: unknown): NormalizedUsage {
     provider: '',
     model: str(response.model) ?? '',
     operation: 'chat',
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(inputTokensTotal, [cacheReadTokens, cacheWrite5mTokens], 'vercel-ai-sdk', 'usage.inputTokens'),
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(outputTokensTotal, [reasoningTokens], 'vercel-ai-sdk', 'usage.outputTokens'),
     cacheReadTokens,
     cacheWrite5mTokens,

@@ -28,7 +28,9 @@ export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openrouter', 'usage.completion_tokens')
 
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const promptDetails = detailsObject(usage.prompt_tokens_details, 'openrouter', 'usage.prompt_tokens_details')
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const completionDetails = detailsObject(usage.completion_tokens_details, 'openrouter', 'usage.completion_tokens_details')
   const cacheReadTokens = num(promptDetails?.cached_tokens)
   const cacheWrite5mTokens = num(promptDetails?.cache_write_tokens)
@@ -42,7 +44,9 @@ export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
     provider: 'openrouter',
     model: str(response.model) ?? '',
     operation: 'chat',
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(promptTokens, [cacheReadTokens, cacheWrite5mTokens], 'openrouter', 'usage.prompt_tokens'),
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(completionTokens, [reasoningTokens], 'openrouter', 'usage.completion_tokens'),
     cacheReadTokens,
     cacheWrite5mTokens,

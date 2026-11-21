@@ -37,6 +37,7 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
   const outputTokens = requireNum(usage.output_tokens, 'anthropic', 'usage.output_tokens')
 
   const cacheReadTokens = num(usage.cache_read_input_tokens)
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const cacheCreation = detailsObject(usage.cache_creation, 'anthropic', 'usage.cache_creation')
   const cacheWrite5mTokens = cacheCreation
     ? num(cacheCreation.ephemeral_5m_input_tokens)
@@ -53,6 +54,7 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
     cacheWrite5mTokens,
     cacheWrite1hTokens,
     serviceTier: knownServiceTier(usage.service_tier),
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     serverToolUse: toolUseCounts(usage.server_tool_use, 'anthropic'),
     raw: usage,
   })

@@ -83,7 +83,7 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
   if (identity !== undefined && (identity.provider === undefined || identity.operation === undefined)) return source
   const { provider: _provider, operation: _operation, ...rest } = NORMALIZED_USAGE_FIELDS
   const own = readShape(source, { fields: identity === undefined ? NORMALIZED_USAGE_FIELDS : rest }, 'usage.', visit)
-  if (identity !== undefined) Object.assign(own, identity)
+  Object.assign(own, identity)
   return isNormalizedUsage(own) ? own : source
 }
 

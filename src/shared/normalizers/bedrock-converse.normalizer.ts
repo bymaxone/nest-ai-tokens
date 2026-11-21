@@ -15,6 +15,7 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   cacheWrite5mTokens: number
   cacheWrite1hTokens: number
 } {
+  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const details = detailsArray(usage.cacheDetails, 'bedrock-converse', 'usage.cacheDetails')
   if (details === undefined) {
     // An unsplit total defaults to the 5-minute cache.
@@ -23,6 +24,7 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   let cacheWrite5mTokens = 0
   let cacheWrite1hTokens = 0
   for (const item of details) {
+    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     const entry = detailsObject(item, 'bedrock-converse', 'usage.cacheDetails[]')
     if (entry === undefined) continue
     const count = num(entry.cacheWriteInputTokens)
