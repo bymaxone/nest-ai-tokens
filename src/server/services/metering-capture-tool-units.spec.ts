@@ -156,14 +156,17 @@ describe('the tool units of a captured hold are billed as record() bills them', 
     expect((await built.ledgerStore.findById(hold.id))?.extraUnits).toEqual({ code_run: 2, web_search_requests: 3 })
   })
 
-  /** A call with no tool units keeps no units on the record. */
-  it('keeps no units on a hold or a capture that has none', async () => {
+  /** A call with no tool units keeps no units on the record: the key is absent, whether the host gave none or an empty map. */
+  it.each([['none', undefined], ['an empty map', {}]] as const)('keeps no units key on a hold or a capture whose host gave %s', async (_name, units) => {
     const built = build()
     await seedWithToolRate(built.pricingStore)
-    const hold = await built.service.hold(context(), ESTIMATE)
-    const captured = await built.service.capture(hold, { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } }, normalized())
-    expect(captured.extraUnits).toBeUndefined()
-    expect((await built.ledgerStore.findById(hold.id))?.extraUnits).toBeUndefined()
+    const ctx = context(units === undefined ? {} : { extraUnits: units })
+    const hold = await built.service.hold(ctx, ESTIMATE)
+    const pending = await built.ledgerStore.findById(hold.id)
+    expect(pending).not.toBeNull()
+    expect('extraUnits' in pending!).toBe(false)
+    const captured = await built.service.capture(hold, { tenantId: ctx.tenantId, scope: ctx.scope }, normalized())
+    expect('extraUnits' in captured).toBe(false)
   })
 
   /** Units the host put on the hold are billed on capture, as they are on record(). */
