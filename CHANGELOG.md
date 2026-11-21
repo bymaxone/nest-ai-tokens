@@ -10,6 +10,25 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.21] - 2026-11-21
+
+**Apply:** no migration and no option change is needed. This release fixes billing defects in the usage of a call, all of them present in earlier releases, and three of its changes refuse a usage or a call that an earlier release billed (see Changed). Check a host that passes its own normalized usage or normalizer, and a host that bills tool units.
+
+### Fixed
+
+- A hold that is captured now bills the tool units of the call. `capture()` rated the hold's stored units, which were always empty because a hold never stored `context.extraUnits`, and it overwrote the tool units the provider reported in the usage, so a host that meters through `hold()` and `capture()` undercharged every tool call (seven web searches billed 7,100,000 nano-USD against 77,100,000 through `record()`). The hold now stores its units, capture rates the usage's units merged with the hold's (the host's count wins for a unit both name, as in `record()`), and the settled record names the units it billed. The units are written to the existing `extraUnits` JSONB column, so no migration is needed.
+- OpenAI chat and Responses bill the audio output tokens once. They were counted in the output total and again as audio output, so a call with 20 audio tokens was billed 200,000 nano-USD too much at a 10,000 nano-USD output rate.
+- A count that a response reports twice is billed once: the AI SDK reports reasoning tokens and cache reads at the root of the usage and in its details, and OpenAI-compatible gateways report the cache hit at the root and nested. Two equal values are one count; two values that differ are refused with `AI_TOKENS_USAGE_MALFORMED`, not added.
+- Anthropic `cache_creation: {}` beside `cache_creation_input_tokens`, and Bedrock `cacheDetails: []` beside `cacheWriteInputTokens`, billed no cache write. The total is billed when the split reports nothing. A total that disagrees with a non-empty split, and a null entry of `cacheDetails`, are refused.
+- The tool units a host puts on a context (`extraUnits`) are validated: a count that is not a whole number from 0 to the largest safe integer is refused with `AI_TOKENS_USAGE_MALFORMED` on `hold()` and `record()` before anything is debited, and the merged units are checked again before a capture settles, where a negative one under-billed or credited the wallet and a fraction threw a raw `RangeError`. For a unit both the provider and the host name, the host's count replaces the provider's (so a host that passes 0 bills 0 for that unit); this is the rule `record()` always had and `capture()` now shares.
+- A call whose tokens add up to more than 2,147,483,647 (the 32-bit columns of a ledger row) is refused with `AI_TOKENS_USAGE_MALFORMED` before anything is debited. It used to debit the wallet and then fail to store the row.
+
+### Changed
+
+- A tool unit with a count above 0 and no rate in the price's `unitRates` is a missing price, like an unpriced model. It was billed at 0 without a trace. With `pricing.strict` on (the default) the call is refused with `AI_TOKENS_PRICE_NOT_FOUND` before anything is debited; with it off the call is billed for what has a price, `priceMissing` is set on the record and `ai_tokens.price.missing` is raised, by `capture()` as by `record()`. A unit named like an inherited property (`constructor`) is looked up as an own entry of the price only. A host that bills tool units must list a rate for each unit it uses.
+- A negative token or tool unit count, a count past 2^53 and a negative provider-reported cost in a normalized usage (from a host normalizer or passed by the host) are refused with `AI_TOKENS_USAGE_MALFORMED`. They were clamped to 0, which hid the defect and billed the call as another. A host that relied on the clamp must fix the usage it passes.
+- The `server` size budget is 59194 bytes brotli, for the checks above.
+
 ## [1.1.20] - 2026-11-21
 
 **Apply:** no migration and no option change is needed. Every argument a host passes to a public method is read once, at the call, and by the names of its type: a getter or a Proxy trap that answers once and throws afterwards, a date that does the same, and a list or object that cannot be read are refused as `AI_TOKENS_INVALID_CONFIG` naming the argument or the field, and the host's own error and text no longer reach the caller. A sink or a callback of the host that fails no longer fails a call that had done its work. Two behaviours tighten: a text with a NUL character and an amount beyond a `BIGINT` column are refused naming the argument where the store answered with its own error, and an object that lists no key, where the library lists keys itself, is refused where it was read as empty.
@@ -1272,4 +1291,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.18]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.17...v1.1.18
 [1.1.19]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.18...v1.1.19
 [1.1.20]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.19...v1.1.20
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.20...HEAD
+[1.1.21]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.20...v1.1.21
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...HEAD
