@@ -77,7 +77,7 @@ export function withReadDates<T extends object>(input: T, fields: readonly (keyo
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of keysOf(input, `${prefix}input`)) {
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
-    Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true, configurable: true })
+    Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true })
   }
   for (const field of fields) {
     if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
