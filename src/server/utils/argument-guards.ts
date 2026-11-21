@@ -112,37 +112,57 @@ export const MAX_USAGE_NESTING = 64
 /** The longest list read from an argument. */
 const MAX_LIST_LENGTH = 100_000
 
+/** The most lists and objects one read copies, counting each time a shared one is reached; each costs the reads of its keys. */
+const MAX_CONTAINERS = 10_000
+
+/** The most other values one read visits, counting each time a shared list is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
+const MAX_LEAVES = 1_000_000
+
+/** What one read of an argument has used up: the lists and objects being copied above the value, and how many of each kind of value it has visited. */
+interface Visit {
+  readonly path: Set<object>
+  containers: number
+  leaves: number
+}
+
 /**
  * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
  * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
  * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A value that
- * contains itself is refused, whatever the limit.
+ * contains itself is refused, whatever the limit, and so is a read that visits more lists and objects, or more other values, than a
+ * batch of provider responses holds, which a value that shares a child between its branches reaches at a shallow depth.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
  * @param depth How deep in the argument the value is, counted from the argument itself as 0.
  * @param limit The depth at which a nested value is refused.
- * @param path The lists and objects being copied above this one.
+ * @param visit What the read has used up, shared by every value of one read.
  * @returns The copy.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep or is too long.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep, is too long or is too large.
  */
-export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, path = new Set<object>()): unknown {
-  if (typeof value !== 'object' || value === null || isDate(value)) return value
-  if (depth >= limit || path.has(value)) throw refused(`${name} could not be read`)
-  path.add(value)
+export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit: Visit = { path: new Set<object>(), containers: 0, leaves: 0 }): unknown {
+  if (typeof value !== 'object' || value === null || isDate(value)) {
+    visit.leaves += 1
+    if (visit.leaves > MAX_LEAVES) throw refused(`${name} could not be read`)
+    return value
+  }
+  visit.containers += 1
+  if (visit.containers > MAX_CONTAINERS) throw refused(`${name} could not be read`)
+  if (depth >= limit || visit.path.has(value)) throw refused(`${name} could not be read`)
+  visit.path.add(value)
   try {
     if (Array.isArray(value)) {
       const length = readField(value, 'length', name)
       if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
-      return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, path))
+      return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
     }
     const copy = Object.create(null) as Record<string, unknown>
     for (const key of keysOf(value, name)) {
-      Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, path), enumerable: true })
+      Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
     }
     return copy
   } finally {
-    path.delete(value)
+    visit.path.delete(value)
   }
 }
 
