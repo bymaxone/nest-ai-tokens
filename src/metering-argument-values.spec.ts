@@ -6,7 +6,7 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
-import { providerPresets } from './server/config/provider-presets'
+import { isBuiltInNormalizer, providerPresets } from './server/config/provider-presets'
 import { AiTokensException } from './server/errors'
 import { StreamUsageCollector } from './server/streaming/stream-usage-collector'
 import { readDeep } from './server/utils/argument-guards'
@@ -284,6 +284,41 @@ describe('the usage of a call', () => {
     const data = Array.from({ length: 2048 }, () => ({ embedding: Array.from({ length: 1536 }, () => 0.5) }))
     await recorded(providerPresets.openaiChat, { model: 'text-embedding-3-small', data, usage: { prompt_tokens: 5, completion_tokens: 0 } }, true)
     await recorded(providerPresets.openaiChat, { model: 'gpt-4o', blob: Buffer.alloc(5_000_000), usage: { prompt_tokens: 5, completion_tokens: 1 } }, true)
+  })
+
+  it('accepts a normalized usage that holds an empty raw and an empty serverToolUse, in record() and in capture()', async () => {
+    const normalized = { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0, raw: {}, serverToolUse: {} }
+    const recordCall = await callOf('metering.record')
+    delete at(recordCall.args, [0]).preset
+    at(recordCall.args, [0]).usage = normalized
+    expect(await reasonOf(() => recordCall.run(recordCall.args))).toBeUndefined()
+    const captureCall = await callOf('metering.capture')
+    captureCall.args[2] = normalized
+    expect(await reasonOf(() => captureCall.run(captureCall.args))).toBeUndefined()
+  })
+
+  it('hands a normalizer of the host the host\'s own object, which it may call a method of, test with instanceof and read a private field of', async () => {
+    class Response {
+      readonly #tokens = 7
+      readonly usage = { prompt_tokens: 5, completion_tokens: 5 }
+      tokens(): number {
+        return this.#tokens
+      }
+    }
+    const normalizer = (raw: unknown): unknown => {
+      if (!(raw instanceof Response)) throw new Error('not a response')
+      return { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: raw.tokens(), outputTokens: 1, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 }
+    }
+    const { run, args } = await callOf('metering.record')
+    at(args, [0]).preset = { provider: 'openai', normalizer, ratingMode: 'rate-table' }
+    at(args, [0]).usage = new Response()
+    expect(((await run(args)) as { inputTokens: number }).inputTokens).toBe(7)
+  })
+
+  it('tells the normalizers of the library from a normalizer of the host', () => {
+    expect(isBuiltInNormalizer(providerPresets.anthropic.normalizer)).toBe(true)
+    expect(isBuiltInNormalizer(providerPresets.openaiCompatible('deepseek').normalizer)).toBe(true)
+    expect(isBuiltInNormalizer((raw) => raw as never)).toBe(false)
   })
 
   it('settles a capture whose normalized usage is a Proxy over an empty target', async () => {

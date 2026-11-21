@@ -18,6 +18,19 @@ function unlistable(): AiTokensException {
   return new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the usage holds an object that lists no field' })
 }
 
+/** The views this module made: a view is a Proxy, and the test of a Proxy that lists nothing must not take the library's own for a host's. */
+const views = new WeakSet()
+
+/**
+ * Whether `value` is a view this module made.
+ *
+ * @param value Any value.
+ * @returns `true` for a view of a response, or of an object in it.
+ */
+export function isView(value: object): boolean {
+  return views.has(value)
+}
+
 /** Whether a field is handed on through a view of its own: an object that is no list of bytes, no date and not a function. */
 function isViewable(value: unknown): value is object {
   return typeof value === 'object' && value !== null && !ArrayBuffer.isView(value) && !isDate(value)
@@ -52,7 +65,7 @@ function guarded<T>(read: () => T): T {
 export function viewOf<T extends object>(raw: T): T {
   const answered = new Map<string | symbol, unknown>()
   const isList = Array.isArray(raw)
-  return new Proxy((isList ? [] : {}) as T, {
+  const view = new Proxy((isList ? [] : {}) as T, {
     get: (_target, key) =>
       guarded(() => {
         if (answered.has(key)) return answered.get(key)
@@ -83,4 +96,6 @@ export function viewOf<T extends object>(raw: T): T {
         return keys
       }),
   })
+  views.add(view)
+  return view
 }

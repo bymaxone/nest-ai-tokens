@@ -5,13 +5,14 @@
  * @layer server
  */
 
-import type { ProviderPreset } from '../../shared'
+import type { ProviderPreset, UsageNormalizer } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import type { RecordInput } from '../services/metering.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import { newVisit, type Visit } from './argument-guards'
 import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './date-guards'
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_SHAPE, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
+import { isBuiltInNormalizer } from '../config/provider-presets'
 import { isNormalizedUsage } from '../services/hold-support'
 import { viewOf } from './usage-view'
 
@@ -65,11 +66,14 @@ export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold
  * @param usage What the caller passed.
  * @param visit What the call has used up, shared by every argument it reads.
  * @param normalizedFirst Whether a usage that is already normalized is recognized before the normalizer sees it.
+ * @param normalizer The normalizer that will read the usage, if there is one: a host's own reads the host's object, a built-in one reads the view.
  * @returns The usage the normalizer or the settlement reads.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
-export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean): unknown {
+export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean, normalizer: UsageNormalizer | undefined): unknown {
   if (typeof usage !== 'object' || usage === null || isCollector(usage)) return usage
+  // A normalizer of the host reads the host's own object: it may call a method of it or rely on its class, and what it reads is its own business.
+  if (normalizer !== undefined && !isBuiltInNormalizer(normalizer)) return usage
   // The fields of the type are read through the view, so that a field the normalizer reads afterwards is the value read here.
   const view = viewOf(usage)
   if (normalizedFirst) {
@@ -90,7 +94,7 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
 export function recordInput(given: RecordInput): RecordInput {
   const visit = newVisit()
   const input = readDatedArgument(given, RECORD_SHAPE, ['occurredAt'], visit)
-  if (input !== given) input.usage = readUsage(input.usage, visit, (input.normalizer ?? input.preset?.normalizer) === undefined)
+  if (input !== given) input.usage = readUsage(input.usage, visit, (input.normalizer ?? input.preset?.normalizer) === undefined, input.normalizer ?? input.preset?.normalizer)
   return input
 }
 
@@ -110,5 +114,6 @@ export function captureInputs(usage: unknown, preset: ProviderPreset | undefined
   content: Content | undefined
 } {
   const visit = newVisit()
-  return { usage: readUsage(usage, visit, true), preset: readArgument(preset, PRESET_SHAPE, 'preset.', visit), content: readArgument(content, CONTENT_SHAPE, 'content.', visit) }
+  const own = readArgument(preset, PRESET_SHAPE, 'preset.', visit)
+  return { usage: readUsage(usage, visit, true, own?.normalizer), preset: own, content: readArgument(content, CONTENT_SHAPE, 'content.', visit) }
 }

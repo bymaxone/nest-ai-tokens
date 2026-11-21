@@ -10,6 +10,7 @@
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
+import { isView } from './usage-view'
 import { isCount, isNonNegativeBigint } from './numeric-guards'
 
 /** The typed refusal of an argument, naming it and never repeating a value. */
@@ -166,7 +167,7 @@ export function readDeep(value: unknown, name: string, depth: number, limit = MA
       return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
     }
     const keys = keysOf(value, name)
-    if (keys.length > MAX_LIST_LENGTH || (keys.length === 0 && types.isProxy(value))) throw refused(`${name} could not be read`)
+    if (keys.length > MAX_LIST_LENGTH || (keys.length === 0 && types.isProxy(value) && !isView(value))) throw refused(`${name} could not be read`)
     const copy = Object.create(null) as Record<string, unknown>
     for (const key of keys) {
       Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
