@@ -108,7 +108,7 @@ function build(
   return { service, ledgerStore, pricingStore, walletStore, budgetStore, wallets, budgets, events, now }
 }
 
-/** Seed a gpt-5 chat price with a rate of 10,000,000 nano-USD for a web search. */
+/** Seed a gpt-5 chat price with a rate of 10,000,000 nano-USD for a web search and 1,000,000 for a code run. */
 async function seedWithToolRate(store: InMemoryPricingStore): Promise<void> {
   await store.upsertPrice({
     provider: 'openai',
@@ -117,7 +117,7 @@ async function seedWithToolRate(store: InMemoryPricingStore): Promise<void> {
     serviceTier: 'standard',
     inputNanoUsdPerMillion: 1_250_000_000n,
     outputNanoUsdPerMillion: 10_000_000_000n,
-    unitRates: { web_search_requests: 10_000_000n },
+    unitRates: { web_search_requests: 10_000_000n, code_run: 1_000_000n },
     effectiveFrom: new Date(0),
   })
 }
@@ -178,6 +178,7 @@ describe('the tool units of a captured hold are billed as record() bills them', 
     const usage = normalized({ serverToolUse: { web_search_requests: 7, code_run: 2 } })
     const { recorded, captured } = await billed(usage, { web_search_requests: 3 })
     expect(captured).toBe(recorded)
-    expect(captured - (await billed(normalized())).captured).toBe(30_000_000n)
+    // 3 searches of the host at 10,000,000 and 2 code runs of the provider at 1,000,000: a capture that dropped the provider's units would bill 30,000,000.
+    expect(captured - (await billed(normalized())).captured).toBe(32_000_000n)
   })
 })
