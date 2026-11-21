@@ -111,6 +111,11 @@ describe('a telemetry sink that fails', () => {
     expect(warned[0]).not.toContain(SECRET)
   })
 
+  it('logs a sink that has no recordUsage, which a sink must have, as a failure', () => {
+    expect(() => { new TelemetryEmitter({} as unknown as ITelemetrySink).recordUsage(record) }).not.toThrow()
+    expect(warned).toEqual([`${SINK_LINE} name=TypeError`])
+  })
+
   it('calls a sink that works, with the sink as this, and logs nothing', () => {
     const calls: string[] = []
     const sink = { tag: 'sink', recordUsage(this: { tag: string }): void { calls.push(this.tag) } } as unknown as ITelemetrySink

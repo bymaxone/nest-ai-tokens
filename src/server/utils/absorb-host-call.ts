@@ -18,13 +18,10 @@ import { describeError } from '../errors/describe-error'
  */
 export function absorbHostCall(logger: Logger, key: string, call: () => unknown): void {
   try {
-    const result = call() as { then?: unknown } | null | undefined
-    if (typeof result?.then === 'function') {
-      const settled = Promise.resolve(result)
-      settled.catch((error: unknown) => {
-        logger.warn(`${key} ${describeError(error)}`)
-      })
-    }
+    // A value that is not a thenable resolves at once; one whose `then` getter throws or whose `then` rejects is a rejected promise.
+    Promise.resolve(call()).catch((error: unknown) => {
+      logger.warn(`${key} ${describeError(error)}`)
+    })
   } catch (error) {
     logger.warn(`${key} ${describeError(error)}`)
   }
