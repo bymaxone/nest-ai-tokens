@@ -89,7 +89,7 @@ const STORE_ROWS: Row[] = [
 ]
 
 const LIST = (name: string): string => `${name} must be a list of strings`
-const AMOUNT = (name: string): string => `${name} must be a bigint of 0 or more`
+const AMOUNT = (name: string): string => `${name} must be a bigint from 0 to 9223372036854775807`
 const ENTRY_CALLS = ['wallets.grant', 'wallets.debit', 'wallets.refund', 'wallets.adjust']
 
 const IDENTIFIER_ROWS: Row[] = [

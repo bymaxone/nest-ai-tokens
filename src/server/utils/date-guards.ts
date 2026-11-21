@@ -6,6 +6,7 @@
  */
 
 import { AiTokensException } from '../errors'
+import { keysOf, readField } from './argument-guards'
 import { isValidDate } from './numeric-guards'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
@@ -35,12 +36,63 @@ export function assertDate(name: string, value: unknown): void {
 }
 
 /**
- * Throw unless `value`, when given, is a valid `Date`; `undefined` is the default and passes.
+ * Validate a date a caller supplied and return a native `Date` of the same instant, read once. Every later use works on the copy, so a
+ * subclass whose methods answer once and throw afterwards, or a getter that changes, cannot fail after the call has begun.
+ *
+ * @param name The input the reason names.
+ * @param value The date the caller supplied.
+ * @returns A new `Date` for the instant of `value`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` as {@link assertDate} does.
+ */
+export function readDate(name: string, value: unknown): Date {
+  assertDate(name, value)
+  return new Date(Date.prototype.getTime.call(value))
+}
+
+/**
+ * {@link readDate} for a date that may be left out; `undefined` stays `undefined`.
  *
  * @param name The input the reason names.
  * @param value The date the caller supplied, or `undefined`.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a valid `Date`.
+ * @returns A new `Date`, or `undefined`.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a valid date.
  */
-export function assertOptionalDate(name: string, value: unknown): void {
-  if (value !== undefined) assertDate(name, value)
+export function readOptionalDate(name: string, value: unknown): Date | undefined {
+  return value === undefined ? undefined : readDate(name, value)
+}
+
+/**
+ * A snapshot of an input object, read once: every field is read a single time (the own enumerable fields and the accessors of its class), and the named date fields are replaced by
+ * {@link readDate} copies. The caller's object is not read again, so a getter or a Proxy trap that answers once and throws afterwards
+ * cannot fail after the call has begun, and every check and every use works on the same values.
+ *
+ * @param input The object the caller supplied.
+ * @param fields The names of its date fields.
+ * @param prefix Text put before a field's name in a refusal.
+ * @returns A new object holding the values read.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
+ */
+export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
+  // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
+  const copy = Object.create(null) as Record<string, unknown>
+  for (const key of keysOf(input, `${prefix}input`)) {
+    // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
+    Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true })
+  }
+  for (const field of fields) {
+    if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
+  }
+  return copy as T
+}
+
+/**
+ * A snapshot of an input object that holds no date: every field is read once, as {@link withReadDates} does.
+ *
+ * @param input The object the caller supplied.
+ * @returns A new object holding the values read.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
+ */
+export function snapshotOf<T extends object>(input: T): T {
+  // Stryker disable next-line ArrayDeclaration: equivalent: a field name that no input holds is skipped, so the list is read as empty either way
+  return withReadDates(input, [])
 }

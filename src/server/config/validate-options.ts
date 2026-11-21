@@ -276,11 +276,11 @@ function validateWallets(options: BymaxAiTokensModuleOptions): void {
   if (wallets === undefined) return
   if (wallets.creditRateNanoUsd !== undefined && !isPositiveBigint(wallets.creditRateNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.creditRateNanoUsd must be a bigint greater than 0')
+    throw invalidConfig('wallets.creditRateNanoUsd must be a bigint from 1 to 9223372036854775807')
   }
   if (wallets.overdraftNanoUsd !== undefined && !isNonNegativeBigint(wallets.overdraftNanoUsd)) {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
-    throw invalidConfig('wallets.overdraftNanoUsd must be a bigint of 0 or more')
+    throw invalidConfig('wallets.overdraftNanoUsd must be a bigint from 0 to 9223372036854775807')
   }
 }
 

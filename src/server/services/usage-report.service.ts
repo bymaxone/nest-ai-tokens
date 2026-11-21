@@ -19,7 +19,7 @@ import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { assertObject, assertText } from '../utils/argument-guards'
-import { assertOptionalDate } from '../utils/date-guards'
+import { withReadDates } from '../utils/date-guards'
 
 /** The resolved-options subset the report service consumes. */
 export interface UsageReportOptions {
@@ -68,10 +68,9 @@ function assertGroupBy(groupBy: unknown): void {
   if (!groupBy.every((dimension): boolean => typeof dimension === 'string' && Object.hasOwn(REPORT_GROUPS, dimension))) throw refused('groupBy must name only the documented dimensions')
 }
 
-/** Throw unless the bounds of a report filter, when given, are valid dates; the stores compare them as given. */
-function assertFilterDates(filter: ReportFilter): void {
-  assertOptionalDate('from', filter.from)
-  assertOptionalDate('to', filter.to)
+/** A copy of a report filter whose bounds, when given, are valid dates read once; the stores compare them as given. */
+function withCleanDates<T extends ReportFilter>(filter: T): T {
+  return withReadDates(filter, ['from', 'to'])
 }
 
 /**
@@ -108,10 +107,9 @@ export class UsageReportService {
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     assertObject('input', input)
-    assertText('tenantId', input.tenantId)
-    const { groupBy, ...filter } = input
+    const { groupBy, ...filter } = withCleanDates(input)
+    assertText('tenantId', filter.tenantId)
     assertGroupBy(groupBy)
-    assertFilterDates(filter)
     const max = this.options.reporting.maxExportRows
     if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
@@ -140,8 +138,8 @@ export class UsageReportService {
    * @returns A readable stream of the export.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the result exceeds `reporting.maxExportRows`.
    */
-  async export(filter: ReportFilter, format: ReportExportFormat): Promise<Readable> {
-    assertFilterDates(filter)
+  async export(given: ReportFilter, format: ReportExportFormat): Promise<Readable> {
+    const filter = withCleanDates(given)
     const max = this.options.reporting.maxExportRows
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
     // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only

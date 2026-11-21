@@ -26,7 +26,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
-import { assertOptionalDate } from '../utils/date-guards'
+import { snapshotOf, withReadDates } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -142,16 +142,18 @@ export class WalletService {
    * roles. Emits `ai_tokens.wallet.granted` and `ai_tokens.audit`.
    *
    * @param ref The wallet owner.
-   * @param input The grant amount (`> 0`), optional schedule, key, and reason.
+   * @param given The grant amount (`> 0`), optional schedule, key, and reason.
    * @returns The appended grant entry.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a non-positive amount / `'key'` owner; `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a key reuse with a different payload.
    */
-  async grant(ref: WalletRef, input: GrantInput): Promise<WalletEntry> {
+  async grant(ref: WalletRef, given: GrantInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertObject('input', given)
+    const input = withReadDates(given, ['effectiveAt', 'expiresAt'], 'grant ')
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint from 1 to 9223372036854775807')
     this.assertGrantFields(input)
     const entry = await this.append(ref, {
       type: 'grant',
@@ -189,16 +191,18 @@ export class WalletService {
    * grant burn-down allocation in one atomic step — never a check-then-write.
    *
    * @param ref The wallet owner.
-   * @param input The debit amount (`> 0`), optional `usageRecordId`, key, and reason.
+   * @param given The debit amount (`> 0`), optional `usageRecordId`, key, and reason.
    * @returns The appended debit entry.
    * @throws {AiTokensException} `AI_TOKENS_INSUFFICIENT_CREDITS` (402) when the balance would fall below `-overdraft`; `AI_TOKENS_INVALID_CONFIG` when neither `usageRecordId` nor `reason` is present, or the amount is not positive.
    */
-  async debit(ref: WalletRef, input: DebitInput): Promise<WalletEntry> {
+  async debit(ref: WalletRef, given: DebitInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertObject('input', given)
+    const input = snapshotOf(given)
     assertEntryText(input, false)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint from 1 to 9223372036854775807')
     if (input.usageRecordId === undefined && input.reason === undefined) {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw this.invalid('a debit without a usageRecordId must carry a reason')
@@ -230,15 +234,17 @@ export class WalletService {
    * allowed (they can restore a negative balance).
    *
    * @param ref The wallet owner.
-   * @param input The refund amount (`> 0`), optional `usageRecordId`, key, and reason.
+   * @param given The refund amount (`> 0`), optional `usageRecordId`, key, and reason.
    * @returns The appended refund entry.
    */
-  async refund(ref: WalletRef, input: RefundInput): Promise<WalletEntry> {
+  async refund(ref: WalletRef, given: RefundInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertObject('input', given)
+    const input = snapshotOf(given)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint greater than 0')
+    if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint from 1 to 9223372036854775807')
     return this.append(ref, {
       type: 'refund',
       amountNanoUsd: input.amountNanoUsd,
@@ -257,16 +263,18 @@ export class WalletService {
    * `ai_tokens.audit`.
    *
    * @param ref The wallet owner.
-   * @param input The signed amount (`!= 0`), key, and reason.
+   * @param given The signed amount (`!= 0`), key, and reason.
    * @returns The appended adjustment entry.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a zero amount / `'key'` owner.
    */
-  async adjust(ref: WalletRef, input: AdjustInput): Promise<WalletEntry> {
+  async adjust(ref: WalletRef, given: AdjustInput): Promise<WalletEntry> {
     this.assertOwner(ref)
+    assertObject('input', given)
+    const input = snapshotOf(given)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     const entry = await this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -303,7 +311,7 @@ export class WalletService {
     this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
-    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint')
+    if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     return this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
@@ -329,14 +337,13 @@ export class WalletService {
    */
   async getEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage> {
     this.assertOwner(ref)
-    if (filter !== undefined) {
-      assertObject('filter', filter)
-      assertOptionalCount('limit', filter.limit)
-      assertOptionalCount('offset', filter.offset)
+    if (filter !== undefined) assertObject('filter', filter)
+    const clean = filter === undefined ? undefined : withReadDates(filter, ['from', 'to'])
+    if (clean !== undefined) {
+      assertOptionalCount('limit', clean.limit)
+      assertOptionalCount('offset', clean.offset)
     }
-    assertOptionalDate('from', filter?.from)
-    assertOptionalDate('to', filter?.to)
-    return this.store.listEntries(ref, filter)
+    return this.store.listEntries(ref, clean)
   }
 
   /**
@@ -425,9 +432,6 @@ export class WalletService {
   private assertGrantFields(input: GrantInput): void {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (input.priority !== undefined && !Number.isInteger(input.priority)) throw this.invalid('grant priority must be a whole number')
-    for (const [name, value] of [['effectiveAt', input.effectiveAt], ['expiresAt', input.expiresAt]] as const) {
-      assertOptionalDate(`grant ${name}`, value)
-    }
   }
 
   /** Build the invalid-config exception with an actionable reason. */
@@ -450,8 +454,7 @@ function isWalletMissing(error: unknown): error is WalletMissingShape {
 }
 
 /** Throw unless the entry is an object whose idempotency key, reason and record id are strings, the reason being required when `reasonRequired`. */
-function assertEntryText(input: unknown, reasonRequired: boolean): void {
-  assertObject('input', input)
+function assertEntryText(input: Record<string, unknown>, reasonRequired: boolean): void {
   assertText('idempotencyKey', input.idempotencyKey)
   if (reasonRequired) assertText('reason', input.reason)
   else assertOptionalText('reason', input.reason)

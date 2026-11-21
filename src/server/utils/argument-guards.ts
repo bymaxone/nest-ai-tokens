@@ -16,6 +16,53 @@ function refused(reason: string): AiTokensException {
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
+/**
+ * The value of a field of an argument. A getter, or a Proxy trap, that throws would put the host's own error, with its own text, in the
+ * caller's hands, so it is refused as an argument that cannot be read.
+ *
+ * @param value The argument object.
+ * @param key The field to read.
+ * @param name What the refusal calls the field.
+ * @returns The value of the field.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field when reading it throws.
+ */
+export function readField(value: object, key: string, name: string): unknown {
+  try {
+    return Reflect.get(value, key)
+  } catch {
+    throw refused(`${name} could not be read`)
+  }
+}
+
+/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
+const MAX_PROTOTYPE_DEPTH = 32
+
+/**
+ * The fields of an argument object: its own enumerable keys, and the accessors and data its class or prototype chain defines up to
+ * `Object.prototype`, which an instance of a class holds as getters. A Proxy whose trap throws would put the host's own error in the
+ * caller's hands, so it is refused as an argument that cannot be read.
+ *
+ * @param value The argument object.
+ * @param name What the refusal calls the object.
+ * @returns The names of the fields.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the object when listing its fields throws.
+ */
+export function keysOf(value: object, name: string): string[] {
+  try {
+    const keys = new Set(Object.keys(value))
+    let proto = Object.getPrototypeOf(value) as object | null
+    for (let depth = 0; proto !== null && proto !== Object.prototype; depth += 1) {
+      // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
+      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
+      for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
+      proto = Object.getPrototypeOf(proto) as object | null
+    }
+    return [...keys]
+  } catch {
+    throw refused(`${name} could not be read`)
+  }
+}
+
 /** Whether a value is a plain object: an object that is neither `null` nor an array. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -41,6 +88,8 @@ export function assertObject(name: string, value: unknown): asserts value is Rec
  */
 export function assertText(name: string, value: unknown): asserts value is string {
   if (typeof value !== 'string') throw refused(`${name} must be a string`)
+  // A NUL character is a string a text column of PostgreSQL cannot hold, so it is refused here, naming the argument, and not by the store.
+  if (value.includes('\u0000')) throw refused(`${name} must not contain a NUL character`)
 }
 
 /**
@@ -55,14 +104,14 @@ export function assertOptionalText(name: string, value: unknown): asserts value 
 }
 
 /**
- * Throw unless `value`, when given, is a bigint of 0 or more; `undefined` is the default and passes.
+ * Throw unless `value`, when given, is a bigint from 0 to 2^63 - 1; `undefined` is the default and passes.
  *
  * @param name The argument the reason names.
  * @param value What the caller passed, or `undefined`.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a bigint of 0 or more.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is given and is not a bigint from 0 to 2^63 - 1.
  */
 export function assertOptionalAmount(name: string, value: unknown): asserts value is bigint | undefined {
-  if (value !== undefined && !isNonNegativeBigint(value)) throw refused(`${name} must be a bigint of 0 or more`)
+  if (value !== undefined && !isNonNegativeBigint(value)) throw refused(`${name} must be a bigint from 0 to 9223372036854775807`)
 }
 
 /**
@@ -96,20 +145,19 @@ export function assertLookup(tenantId: unknown, scope: unknown): void {
 export function assertTenant(tenantId: unknown): asserts tenantId is string {
   // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   if (typeof tenantId !== 'string' || tenantId === '') throw refused('tenantId must be a non-empty string')
+  assertText('tenantId', tenantId)
 }
 
 /**
- * Throw unless `value` is the shape of a budget definition: an object with a scope, and an id and features that are text when given.
+ * Throw unless `value`, a snapshot of a budget definition, has a scope, and an id and features that are text when given.
  *
  * @param value What the caller passed.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not valid.
  */
-export function assertBudgetShape(value: unknown): void {
-  assertObject('input', value)
-  assertScope('scope', Reflect.get(value, 'scope'))
-  assertOptionalText('id', Reflect.get(value, 'id'))
-  const features: unknown = Reflect.get(value, 'features')
-  if (features !== undefined) assertTextList('features', features)
+export function assertBudgetShape(value: Record<string, unknown>): void {
+  assertScope('scope', value.scope)
+  assertOptionalText('id', value.id)
+  if (value.features !== undefined) assertTextList('features', value.features)
 }
 
 /**
@@ -131,7 +179,7 @@ export function assertTextList(name: string, value: unknown): asserts value is s
  */
 export function assertHold(value: unknown): void {
   assertObject('hold', value)
-  assertText('hold.id', Reflect.get(value, 'id'))
+  assertText('hold.id', readField(value, 'id', 'hold.id'))
 }
 
 /**
@@ -165,8 +213,8 @@ export function assertOptionalCount(name: string, value: unknown): asserts value
  */
 export function assertScope(name: string, value: unknown): void {
   assertObject(name, value)
-  assertText(`${name}.type`, Reflect.get(value, 'type'))
-  assertText(`${name}.id`, Reflect.get(value, 'id'))
+  assertText(`${name}.type`, readField(value, 'type', `${name}.type`))
+  assertText(`${name}.id`, readField(value, 'id', `${name}.id`))
 }
 
 /**
@@ -177,9 +225,9 @@ export function assertScope(name: string, value: unknown): void {
  */
 export function assertWalletRef(value: unknown): void {
   assertObject('wallet', value)
-  assertText('wallet.tenantId', Reflect.get(value, 'tenantId'))
-  assertText('wallet.ownerType', Reflect.get(value, 'ownerType'))
-  assertText('wallet.ownerId', Reflect.get(value, 'ownerId'))
+  assertText('wallet.tenantId', readField(value, 'tenantId', 'wallet.tenantId'))
+  assertText('wallet.ownerType', readField(value, 'ownerType', 'wallet.ownerType'))
+  assertText('wallet.ownerId', readField(value, 'ownerId', 'wallet.ownerId'))
 }
 
 /** The optional text fields of a metering context. */
@@ -193,11 +241,12 @@ const CONTEXT_TEXT_FIELDS = ['requestedBy', 'baseModel', 'idempotencyKey', 'corr
  */
 export function assertMeteringContext(value: unknown): void {
   assertObject('context', value)
-  assertText('context.tenantId', Reflect.get(value, 'tenantId'))
-  assertScope('context.scope', Reflect.get(value, 'scope'))
-  if (Reflect.get(value, 'beneficiary') !== undefined) assertScope('context.beneficiary', Reflect.get(value, 'beneficiary'))
-  assertText('context.feature', Reflect.get(value, 'feature'))
-  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, Reflect.get(value, field))
+  assertText('context.tenantId', readField(value, 'tenantId', 'context.tenantId'))
+  assertScope('context.scope', readField(value, 'scope', 'context.scope'))
+  const beneficiary = readField(value, 'beneficiary', 'context.beneficiary')
+  if (beneficiary !== undefined) assertScope('context.beneficiary', beneficiary)
+  assertText('context.feature', readField(value, 'feature', 'context.feature'))
+  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, readField(value, field, `context.${field}`))
 }
 
 /**
@@ -209,10 +258,10 @@ export function assertMeteringContext(value: unknown): void {
  */
 export function assertEstimateCostInput(value: unknown): void {
   assertObject('input', value)
-  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, Reflect.get(value, field))
-  assertOptionalText('feature', Reflect.get(value, 'feature'))
-  const scope: unknown = Reflect.get(value, 'scope')
+  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, readField(value, field, field))
+  assertOptionalText('feature', readField(value, 'feature', 'feature'))
+  const scope = readField(value, 'scope', 'scope')
   if (scope !== undefined) assertScope('scope', scope)
-  assertCount('inputTokens', Reflect.get(value, 'inputTokens'))
-  assertCount('maxOutputTokens', Reflect.get(value, 'maxOutputTokens'))
+  assertCount('inputTokens', readField(value, 'inputTokens', 'inputTokens'))
+  assertCount('maxOutputTokens', readField(value, 'maxOutputTokens', 'maxOutputTokens'))
 }

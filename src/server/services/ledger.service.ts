@@ -22,7 +22,7 @@ import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { assertObject, assertOptionalCount, assertText } from '../utils/argument-guards'
-import { assertOptionalDate } from '../utils/date-guards'
+import { readOptionalDate, withReadDates } from '../utils/date-guards'
 import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
@@ -198,12 +198,11 @@ export class LedgerService {
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
     assertObject('filter', filter)
-    assertText('tenantId', filter.tenantId)
-    assertOptionalCount('limit', filter.limit)
-    assertOptionalCount('offset', filter.offset)
-    assertOptionalDate('from', filter.from)
-    assertOptionalDate('to', filter.to)
-    return filter.status === undefined ? { ...filter, status: [...BALANCE_STATUSES] } : filter
+    const clean = withReadDates(filter, ['from', 'to'])
+    assertText('tenantId', clean.tenantId)
+    assertOptionalCount('limit', clean.limit)
+    assertOptionalCount('offset', clean.offset)
+    return clean.status === undefined ? { ...clean, status: [...BALANCE_STATUSES] } : clean
   }
 
   /**
@@ -302,11 +301,11 @@ export class LedgerService {
    */
   async verifyChain(tenantId: string, from?: Date, to?: Date): Promise<ChainVerification> {
     assertText('tenantId', tenantId)
-    assertOptionalDate('from', from)
-    assertOptionalDate('to', to)
+    const after = readOptionalDate('from', from)
+    const before = readOptionalDate('to', to)
     const filter: LedgerFilter = { tenantId, status: ['posted', 'reversed'] }
-    if (from !== undefined) filter.from = from
-    if (to !== undefined) filter.to = to
+    if (after !== undefined) filter.from = after
+    if (before !== undefined) filter.to = before
 
     const settled = await this.store.query(filter)
     const result = verifyChainRecords(settled, from === undefined && to === undefined)
