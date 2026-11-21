@@ -8,7 +8,7 @@
 import type { ProviderPreset } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { MAX_USAGE_NESTING, readDeep } from './argument-guards'
+import { MAX_USAGE_NESTING, newVisit, readDeep } from './argument-guards'
 import { readArgument, readHoldEstimate } from './date-guards'
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, PRESET_SHAPE } from './input-fields'
 
@@ -36,7 +36,8 @@ function isCollector(value: unknown): value is StreamUsageCollector {
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdArguments(context: MeteringContext, estimate: HoldEstimate): { context: MeteringContext; estimate: HoldEstimate } {
-  return { context: readArgument(context, CONTEXT_SHAPE, 'context.'), estimate: readHoldEstimate(estimate) }
+  const visit = newVisit()
+  return { context: readArgument(context, CONTEXT_SHAPE, 'context.', visit), estimate: readHoldEstimate(estimate, visit) }
 }
 
 /**
@@ -48,7 +49,8 @@ export function holdArguments(context: MeteringContext, estimate: HoldEstimate):
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold; caller: HoldCaller } {
-  return { hold: readArgument(hold, HOLD_SHAPE, 'hold.'), caller: readArgument(caller, HOLD_CALLER_SHAPE, 'caller.') }
+  const visit = newVisit()
+  return { hold: readArgument(hold, HOLD_SHAPE, 'hold.', visit), caller: readArgument(caller, HOLD_CALLER_SHAPE, 'caller.', visit) }
 }
 
 /**
@@ -66,5 +68,7 @@ export function captureInputs(usage: unknown, preset: ProviderPreset | undefined
   preset: ProviderPreset | undefined
   content: Content | undefined
 } {
-  return { usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, 'preset.'), content: readArgument(content, CONTENT_SHAPE, 'content.') }
+  const visit = newVisit()
+  // The usage is read at the depth of a field of an input, as `record()` reads it, so that both calls accept the same nesting.
+  return { usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 1, MAX_USAGE_NESTING, visit), preset: readArgument(preset, PRESET_SHAPE, 'preset.', visit), content: readArgument(content, CONTENT_SHAPE, 'content.', visit) }
 }

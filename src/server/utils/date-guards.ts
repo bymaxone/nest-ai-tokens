@@ -7,7 +7,7 @@
 
 import { AiTokensException } from '../errors'
 import type { MeteringScope } from '../../shared'
-import { assertObject, assertScope, assertText, readDeep, readField } from './argument-guards'
+import { assertObject, assertScope, assertText, newVisit, readDeep, readField, type Visit } from './argument-guards'
 import { AMOUNT_ESTIMATE_FIELDS, RATED_ESTIMATE_FIELDS, SCOPE_FIELDS, TOKEN_ESTIMATE_FIELDS, type FieldList, type Shape } from './input-fields'
 import { isDate } from '../../shared/utils/is-date'
 import { isValidDate } from './numeric-guards'
@@ -73,17 +73,18 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
  * @param input The object the caller supplied.
  * @param shape The fields of its type, and of the objects nested in it.
  * @param prefix Text put before a field's name in a refusal.
+ * @param visit What the call has used up, shared by every field and argument it reads.
  * @returns A new object with no prototype, holding the values read.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
-export function readShape(input: object, shape: Shape, prefix: string): Record<string, unknown> {
+export function readShape(input: object, shape: Shape, prefix: string, visit = newVisit()): Record<string, unknown> {
   // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of Object.keys(shape.fields)) {
     const name = `${prefix}${key}`
     const raw = readField(input, key, name)
     const inner = shape.nested?.[key]
-    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`) : readDeep(raw, name, 1, shape.limits?.[key])
+    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : readDeep(raw, name, 1, shape.limits?.[key], visit)
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
     // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
     if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
@@ -109,11 +110,12 @@ function isRecord(value: unknown): value is object {
  * @param argument What the caller passed.
  * @param shape The fields of its type, and of the objects nested in it.
  * @param prefix Text put before a field's name in a refusal.
+ * @param visit What the call has used up, shared by every argument it reads.
  * @returns The snapshot of an object, or `argument` itself.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` as {@link readShape} does.
  */
-export function readArgument<T>(argument: T, shape: Shape, prefix: string): T {
-  return isRecord(argument) ? (readShape(argument, shape, prefix) as T) : argument
+export function readArgument<T>(argument: T, shape: Shape, prefix: string, visit = newVisit()): T {
+  return isRecord(argument) ? (readShape(argument, shape, prefix, visit) as T) : argument
 }
 
 /**
@@ -138,10 +140,11 @@ export function readDatedArgument<T>(argument: T, shape: Shape, dates: readonly 
  * is never run. Anything that is not an object is returned as it is, for the check of the estimate to refuse.
  *
  * @param estimate What the caller passed.
+ * @param visit What the call has used up, shared by every argument it reads.
  * @returns The snapshot of an object, or `estimate` itself.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the estimate or the field that cannot be read.
  */
-export function readHoldEstimate<T>(estimate: T): T {
+export function readHoldEstimate<T>(estimate: T, visit: Visit): T {
   if (!isRecord(estimate)) return estimate
   let fields: object
   try {
@@ -149,7 +152,7 @@ export function readHoldEstimate<T>(estimate: T): T {
   } catch {
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'estimate could not be read' })
   }
-  return readShape(estimate, { fields }, 'estimate.') as T
+  return readShape(estimate, { fields }, 'estimate.', visit) as T
 }
 
 /**

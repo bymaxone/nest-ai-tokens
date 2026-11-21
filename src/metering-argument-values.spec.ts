@@ -10,6 +10,10 @@ import { providerPresets } from './server/config/provider-presets'
 import { AiTokensException } from './server/errors'
 import { StreamUsageCollector } from './server/streaming/stream-usage-collector'
 import { readDeep } from './server/utils/argument-guards'
+import { readShape } from './server/utils/date-guards'
+
+/** An object whose keys each hold a list of zeros of the given length. */
+const lists = (sizes: number[]): Record<string, unknown> => Object.fromEntries(sizes.map((size, index) => [`l${String(index)}`, Array.from({ length: size }, () => 0)]))
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
   let target: unknown = args
@@ -177,10 +181,42 @@ describe('the usage a call reads once', () => {
     expect(() => readDeep(objects(10_000), 'usage', 0, 64)).toThrow()
   })
 
-  it('reads exactly as many other values as the budget holds, and refuses one more', () => {
-    const lists = (count: number): Record<string, unknown> => Object.fromEntries(Array.from({ length: count }, (_, index) => [`l${String(index)}`, Array.from({ length: 100_000 }, () => 0)]))
-    expect(() => readDeep(lists(10), 'usage', 0, 64)).not.toThrow()
-    expect(() => readDeep(lists(11), 'usage', 0, 64)).toThrow()
+  it('reads exactly as many values as the budget holds, counting each list and the root, and refuses one more', () => {
+    const nine = Array.from({ length: 9 }, () => 100_000)
+    expect(() => readDeep(lists([...nine, 99_989]), 'usage', 0, 64)).not.toThrow()
+    expect(() => readDeep(lists([...nine, 99_990]), 'usage', 0, 64)).toThrow()
+  })
+
+  it('refuses, fast, distinct lists of 100_000 elements that all return one shared child, which a memo hit must still count', () => {
+    const shared = { leaf: 1 }
+    const arrays = Array.from({ length: 12 }, () => Array.from({ length: 100_000 }, () => shared))
+    const started = Date.now()
+    expect(refusalOf(() => readDeep(arrays, 'usage', 0, 64))).toMatch(/^usage\[\d+\]\[\d+\] could not be read$/)
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
+  it('shares the budget between the fields of one call, and gives each call its own', () => {
+    const big = (): number[][] => Array.from({ length: 6 }, () => Array.from({ length: 100_000 }, () => 0))
+    const shape = { fields: { a: true, b: true } }
+    expect(() => readShape({ a: big() }, shape, '')).not.toThrow()
+    expect(() => readShape({ a: big(), b: big() }, shape, '')).toThrow()
+    expect(() => readShape({ a: big() }, shape, '')).not.toThrow()
+  })
+
+  it('accepts the same nesting of a usage in record() and in capture()', async () => {
+    const deepest = async (name: string, path: (string | number)[]): Promise<number> => {
+      for (let levels = 55; levels < 80; levels += 1) {
+        const { run, args } = await callOf(name)
+        const base = at(args, path.slice(0, -1))[path.at(-1)!] as Record<string, unknown>
+        setAt(args, [...path], { ...base, content: nested(levels) })
+        if ((await reasonOf(() => run(args))) !== undefined) return levels
+      }
+      return 80
+    }
+    const recorded = await deepest('metering.record', [0, 'usage'])
+    expect(await deepest('metering.capture', [2])).toBe(recorded)
+    expect(recorded).toBeGreaterThan(55)
+    expect(recorded).toBeLessThan(80)
   })
 
   it('refuses an object that holds more keys than a list may hold elements, and reads one that holds that many', () => {
@@ -233,9 +269,8 @@ describe('what a refusal of a read names', () => {
     expect(listed).toBe(0)
   })
 
-  it('names the value that goes past the budget of other values', () => {
-    const lists = Object.fromEntries(Array.from({ length: 11 }, (_, index) => [`l${String(index)}`, Array.from({ length: 100_000 }, () => 0)]))
-    expect(refusalOf(() => readDeep(lists, 'usage', 0, 64))).toBe('usage.l10[0] could not be read')
+  it('names the value that goes past the budget of values', () => {
+    expect(refusalOf(() => readDeep(lists(Array.from({ length: 10 }, () => 100_000)), 'usage', 0, 64))).toBe('usage.l9[99989] could not be read')
   })
 
   it('names the value when a read has too many different lists and objects, too many keys, or contains itself', () => {

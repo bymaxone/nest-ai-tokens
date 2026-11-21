@@ -115,15 +115,25 @@ const MAX_LIST_LENGTH = 100_000
 /** The most different lists and objects one read copies; each costs the reads of its keys, about 30 microseconds. */
 const MAX_CONTAINERS = 10_000
 
-/** The most other values one read visits: a batch of 100 embeddings of 3072 numbers is 307_200. */
-const MAX_LEAVES = 1_000_000
+/** The most values one call reads, counting every value reached, a shared one each time it is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
+const MAX_VISITS = 1_000_000
 
-/** What one read of an argument has used up: the lists and objects being copied above the value, the copies made so far, and how many of each kind of value it has visited. */
-interface Visit {
+/** What the reads of one call have used up: the lists and objects being copied above the value, the copies made so far, and the containers and values visited. */
+export interface Visit {
   readonly path: Set<object>
   readonly copies: Map<object, unknown>
   containers: number
-  leaves: number
+  visits: number
+}
+
+/**
+ * The accounts of a new call, shared by every field and every argument that call reads, so that the budgets bound the call and not each
+ * of its fields.
+ *
+ * @returns The accounts, with nothing used up.
+ */
+export function newVisit(): Visit {
+  return { path: new Set<object>(), copies: new Map<object, unknown>(), containers: 0, visits: 0 }
 }
 
 /**
@@ -132,8 +142,8 @@ interface Visit {
  * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A list or an
  * object reached again, through another branch, is not read again: the copy already made is the one returned, so the work follows the
  * number of different values and a value that shares a child between its branches costs no more than a tree of its size. A value that
- * contains itself is refused, whatever the limit, and so is a read of more different lists and objects, or of more other values, than a
- * batch of provider responses holds.
+ * contains itself is refused, whatever the limit, and so is a call that reaches more values, shared ones each time, or copies more
+ * different lists and objects, than a batch of provider responses holds.
  * The copy is only read, never changed, by the consumers of an argument, which read fields by name, so a child shared by two branches may
  * be one object in it.
  *
@@ -141,18 +151,18 @@ interface Visit {
  * @param name What the refusal calls the value.
  * @param depth How deep in the argument the value is, counted from the argument itself as 0.
  * @param limit The depth at which a nested value is refused.
- * @param visit What the read has used up, shared by every value of one read.
+ * @param visit What the call has used up, shared by every value it reads.
  * @returns The copy.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep, is too long or is too large.
  */
-export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit: Visit = { path: new Set<object>(), copies: new Map<object, unknown>(), containers: 0, leaves: 0 }): unknown {
-  if (typeof value !== 'object' || value === null || isDate(value)) {
-    visit.leaves += 1
-    if (visit.leaves > MAX_LEAVES) throw refused(`${name} could not be read`)
-    return value
-  }
+export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit = newVisit()): unknown {
+  visit.visits += 1
+  if (visit.visits > MAX_VISITS) throw refused(`${name} could not be read`)
+  if (typeof value !== 'object' || value === null) return value
   if (visit.path.has(value)) throw refused(`${name} could not be read`)
+  // Before the test of a date, which throws for every other object: a value reached again must cost no more than a lookup.
   if (visit.copies.has(value)) return visit.copies.get(value)
+  if (isDate(value)) return value
   visit.containers += 1
   if (visit.containers > MAX_CONTAINERS || depth >= limit) throw refused(`${name} could not be read`)
   visit.path.add(value)
