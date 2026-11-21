@@ -219,6 +219,8 @@ describe('the lists and maps a call reads once', () => {
   })
 })
 
+const NORMALIZED = { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 }
+
 describe('the usage of a call', () => {
   /** An object that answers by its get trap and lists nothing, as a lazy wrapper of a response does. */
   const lazy = (source: Record<string, unknown>): object => new Proxy({}, { get: (_target, key) => source[key as string] })
@@ -313,6 +315,17 @@ describe('the usage of a call', () => {
     at(args, [0]).preset = { provider: 'openai', normalizer, ratingMode: 'rate-table' }
     at(args, [0]).usage = new Response()
     expect(((await run(args)) as { inputTokens: number }).inputTokens).toBe(7)
+  })
+
+  it.each([
+    ['a getter that answers a count first and another after', (): Record<string, unknown> => { let reads = 0; return Object.defineProperty({ ...NORMALIZED }, 'inputTokens', { enumerable: true, get: (): number => { reads += 1; return reads === 1 ? 5 : -3 } }) }],
+    ['a Proxy over an empty target that answers by its get trap', (): Record<string, unknown> => lazy({ ...NORMALIZED }) as Record<string, unknown>],
+  ] as const)('settles a capture of a normalized usage that is %s, with the preset of a host, on the values read once', async (_label, make) => {
+    const { run, args } = await callOf('metering.capture')
+    args[3] = { provider: 'openai', normalizer: (raw: unknown): unknown => raw, ratingMode: 'rate-table' }
+    args[2] = make()
+    const record = (await run(args)) as { inputTokens: number; outputTokens: number }
+    expect([record.inputTokens, record.outputTokens]).toEqual([5, 5])
   })
 
   it('tells the normalizers of the library from a normalizer of the host', () => {

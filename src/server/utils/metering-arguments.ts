@@ -73,14 +73,13 @@ export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold
 export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean, normalizer: UsageNormalizer | undefined): unknown {
   if (typeof usage !== 'object' || usage === null || isCollector(usage)) return usage
   // A normalizer of the host reads the host's own object: it may call a method of it or rely on its class, and what it reads is its own business.
-  if (normalizer !== undefined && !isBuiltInNormalizer(normalizer)) return usage
-  // The fields of the type are read through the view, so that a field the normalizer reads afterwards is the value read here.
-  const view = viewOf(usage)
+  // A built-in normalizer reads a view of it, so that a field it reads afterwards is the value read here.
+  const source = normalizer !== undefined && !isBuiltInNormalizer(normalizer) ? usage : viewOf(usage)
   if (normalizedFirst) {
-    const own = readShape(view, NORMALIZED_USAGE_SHAPE, 'usage.', visit)
+    const own = readShape(source, NORMALIZED_USAGE_SHAPE, 'usage.', visit)
     if (isNormalizedUsage(own)) return own
   }
-  return view
+  return source
 }
 
 /**
