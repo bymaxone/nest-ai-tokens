@@ -6,8 +6,9 @@
  */
 
 import { AiTokensException } from '../errors'
-import { readDeep, readField } from './argument-guards'
-import type { FieldList } from './input-fields'
+import type { MeteringScope } from '../../shared'
+import { assertObject, assertScope, assertText, readDeep, readField } from './argument-guards'
+import { SCOPE_FIELDS, type FieldList } from './input-fields'
 import { isValidDate } from './numeric-guards'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
@@ -99,4 +100,21 @@ export function withReadDates<T extends object>(input: T, fields: FieldList<T>, 
  */
 export function snapshotOf<T extends object>(input: T, fields: FieldList<T>): T {
   return withReadDates(input, fields)
+}
+
+/**
+ * The scope of a lookup, read once: the tenant must be a string and the scope an object with a type and an id, and what comes back is
+ * the snapshot of the scope, which every later use of the lookup reads.
+ *
+ * @param tenantId The tenant the caller passed.
+ * @param scope The scope the caller passed.
+ * @returns The snapshot of the scope.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the argument that is not valid or cannot be read.
+ */
+export function lookupScope(tenantId: unknown, scope: unknown): MeteringScope {
+  assertText('tenantId', tenantId)
+  assertObject('scope', scope)
+  const own = snapshotOf(scope as object as MeteringScope, SCOPE_FIELDS)
+  assertScope('scope', own)
+  return own
 }

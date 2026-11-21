@@ -29,9 +29,9 @@ import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
 import { absorbHostCallAndWait } from '../utils/absorb-host-call'
-import { assertBudgetShape, assertLookup, assertObject, assertTenant, assertTexts } from '../utils/argument-guards'
-import { readDate, readOptionalDate, snapshotOf, withReadDates } from '../utils/date-guards'
-import { SCOPE_FIELDS, UPSERT_BUDGET_FIELDS } from '../utils/input-fields'
+import { assertBudgetShape, assertObject, assertTenant, assertTexts } from '../utils/argument-guards'
+import { lookupScope, readDate, readOptionalDate, withReadDates } from '../utils/date-guards'
+import { UPSERT_BUDGET_FIELDS } from '../utils/input-fields'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
 import { isCount, isFraction, isNonNegativeBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
@@ -764,10 +764,7 @@ export class BudgetService {
 
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
-    assertObject('scope', scope)
-    const own = snapshotOf(scope, SCOPE_FIELDS)
-    assertLookup(tenantId, own)
-    return (await this.store.findMatching(tenantId, own)).filter((budget) => budget.tenantId === tenantId)
+    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).filter((budget) => budget.tenantId === tenantId)
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
