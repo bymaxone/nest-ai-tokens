@@ -9,7 +9,7 @@
 import { rig } from '../test/fakes/call-registry'
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
-import { keysOf } from './server/utils/argument-guards'
+import { assertWalletRef, keysOf } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
 
 const MAX = 9_223_372_036_854_775_807n
@@ -593,5 +593,76 @@ describe('an input from another realm', () => {
     expect(await reasonOf(() => run(args))).toBeUndefined()
     args[1] = runInNewContext("({ limit: 'many' })")
     expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
+  })
+})
+
+describe('the keys of a nested record', () => {
+  /** The first `AiTokensException` reason a call raises, or `undefined` when it returns. */
+  function refusal(run: () => unknown): string | undefined {
+    try {
+      run()
+    } catch (error) {
+      if (!(error instanceof AiTokensException)) throw error
+      return (error.getResponse() as { error: { details?: { reason?: string } } }).error.details?.reason
+    }
+    return undefined
+  }
+
+  it('lists a class chain of 31 levels and refuses one of 40, naming the object', () => {
+    const chain = (levels: number): object => {
+      let proto: object = { deep: 1 }
+      for (let level = 1; level < levels; level += 1) proto = Object.create(proto) as object
+      return Object.create(proto) as object
+    }
+    expect(keysOf(chain(30), 'input')).toEqual(['deep'])
+    expect(refusal(() => keysOf(chain(40), 'input'))).toBe('input could not be read')
+  })
+
+  it('refuses a chain that never ends, naming the object', () => {
+    const make = (): object => new Proxy({}, { getPrototypeOf: make })
+    expect(refusal(() => keysOf(make(), 'input'))).toBe('input could not be read')
+  })
+
+  it('does not list what the Object.prototype of another realm holds', () => {
+    expect(keysOf(runInNewContext('({ a: 1 })') as object, 'input')).toEqual(['a'])
+    expect(keysOf(runInNewContext('new (class { get g() { return 1 } })()') as object, 'input')).toEqual(['g'])
+  })
+
+  it('names the object when a trap throws', () => {
+    const hostile = new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })
+    expect(refusal(() => keysOf(hostile, 'record'))).toBe('record could not be read')
+  })
+})
+
+describe('the reference of a wallet', () => {
+  const refusal = (value: unknown): string | undefined => {
+    try {
+      assertWalletRef(value)
+    } catch (error) {
+      if (!(error instanceof AiTokensException)) throw error
+      return (error.getResponse() as { error: { details?: { reason?: string } } }).error.details?.reason
+    }
+    return undefined
+  }
+
+  it('is refused naming the wallet, or the field that is not a string', () => {
+    expect(refusal(5)).toBe('wallet must be an object')
+    expect(refusal({ tenantId: 1, ownerType: 'user', ownerId: 'u' })).toBe('wallet.tenantId must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 1, ownerId: 'u' })).toBe('wallet.ownerType must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 'user', ownerId: 1 })).toBe('wallet.ownerId must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 'user', ownerId: 'u' })).toBeUndefined()
+  })
+
+  it.each(['tenantId', 'ownerType', 'ownerId'])('is refused naming %s when reading it throws', (field) => {
+    const ref = { tenantId: 't', ownerType: 'user', ownerId: 'u' }
+    Object.defineProperty(ref, field, { get: (): never => { throw new Error('host-private-text') } })
+    expect(refusal(ref)).toBe(`wallet.${field} could not be read`)
+  })
+})
+
+describe('a field the host does not have', () => {
+  it('is absent from the snapshot, and so is one set to undefined', () => {
+    const copy = snapshotOf<{ a: number; b?: number | undefined; c?: number }>({ a: 1, b: undefined }, { a: true, b: true, c: true })
+    expect(Object.keys(copy)).toEqual(['a'])
   })
 })
