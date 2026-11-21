@@ -27,7 +27,7 @@ import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
 import { snapshotOf, withReadDates } from '../utils/date-guards'
-import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
+import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, SETTLE_ADJUSTMENT_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -308,8 +308,10 @@ export class WalletService {
    * @returns The appended adjustment entry.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a zero amount / `'key'` owner.
    */
-  async settleAdjustment(ref: WalletRef, input: SettleAdjustmentInput): Promise<WalletEntry> {
+  async settleAdjustment(ref: WalletRef, given: SettleAdjustmentInput): Promise<WalletEntry> {
     ref = this.assertOwner(ref)
+    assertObject('input', given)
+    const input = snapshotOf(given, SETTLE_ADJUSTMENT_FIELDS)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')

@@ -156,6 +156,25 @@ const SNAPSHOT_ROWS: readonly (readonly [string, (string | number)[]])[] = [
   ['ledger.query', [0]],
   ['ledger.sumCost', [0]],
   ['reports.summarize', [0]],
+  ['metering.hold', [0]],
+  ['metering.hold', [0, 'scope']],
+  ['metering.hold', [1]],
+  ['metering.hold(amount)', [1]],
+  ['metering.record', [0]],
+  ['metering.record', [0, 'context']],
+  ['metering.record', [0, 'context', 'scope']],
+  ['metering.record', [0, 'preset']],
+  ['metering.estimateCost', [0]],
+  ['metering.getStatus', [1]],
+  ['metering.capture', [0]],
+  ['metering.capture', [1]],
+  ['metering.capture', [1, 'scope']],
+  ['metering.capture', [3]],
+  ['metering.release', [0]],
+  ['metering.release', [1]],
+  ['metering.release', [1, 'scope']],
+  ['wallets.settleAdjustment', [0]],
+  ['wallets.settleAdjustment', [1]],
 ]
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
@@ -741,5 +760,30 @@ describe('a chain that ends in an object the host built', () => {
     expect(readField(runInNewContext('({})') as object, 'toString', 'input')).toBeUndefined()
     expect(readField({}, 'toString', 'input')).toBeUndefined()
     expect(keysOf(Object.create(runInNewContext('({ a: 1 })') as object) as object, 'input')).toEqual(['a'])
+  })
+})
+
+describe('the estimate of a hold', () => {
+  /** A getter that throws, on a field the estimate's own variant does not have: the variant is told by the name that is present (`provider`, then `tokens`), so only a field the variant's own list does not hold can be trapped. */
+  const trap = (target: Record<string, unknown>, field: string): Record<string, unknown> =>
+    Object.defineProperty(target, field, { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+
+  it.each([
+    ['rated', { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 10, maxOutputTokens: 10 }, ['tokens', 'amountNanoUsd']],
+    ['tokens', { tokens: 10 }, ['amountNanoUsd', 'model']],
+    ['amount', { amountNanoUsd: 5n }, ['model', 'inputTokens']],
+  ] as const)('reads only the fields of the %s variant', async (_variant, estimate, others) => {
+    const { run, args } = await callOf('metering.hold')
+    const own: Record<string, unknown> = { ...estimate }
+    for (const other of others) if (!(other in estimate)) trap(own, other)
+    setAt(args, [1], own)
+    // A token estimate needs a preset in the context to be rated, so it may be refused for that; it is never refused for a field it cannot read.
+    expect((await reasonOf(() => run(args))) ?? '').not.toContain('could not be read')
+  })
+
+  it('refuses an estimate whose has trap throws, naming the estimate', async () => {
+    const { run, args } = await callOf('metering.hold')
+    setAt(args, [1], new Proxy({}, { has: (): never => { throw new Error('host-private-text') } }))
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG estimate could not be read')
   })
 })

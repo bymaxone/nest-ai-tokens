@@ -17,7 +17,6 @@ import { Injectable, Logger } from '@nestjs/common'
 import type {
   AccessStatus,
   AiOperation,
-  BudgetStatus,
   MeteringScope,
   NewUsageRecord,
   NormalizedUsage,
@@ -36,8 +35,11 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
-import { assertEstimateCostInput, assertHold, assertLookup, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
-import { readOptionalDate } from '../utils/date-guards'
+import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
+import { lookupScope, readArgument, readOptionalDate } from '../utils/date-guards'
+import { ESTIMATE_COST_SHAPE, RECORD_SHAPE } from '../utils/input-fields'
+import { isHardExhausted } from './budget-status'
+import { captureArguments, holdArguments, holdOwnerArguments } from '../utils/metering-arguments'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -204,7 +206,8 @@ export class MeteringService {
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
-  async record(input: RecordInput): Promise<UsageRecord> {
+  async record(given: RecordInput): Promise<UsageRecord> {
+    const input = readArgument(given, RECORD_SHAPE, ['occurredAt'])
     assertObject('input', input)
     assertMeteringContext(input.context)
     return (await this.recordSettled(input)).record
@@ -342,7 +345,8 @@ export class MeteringService {
    * @param input The hypothetical call.
    * @returns The raw and billed nano-USD estimate.
    */
-  async estimateCost(input: EstimateCostInput): Promise<CostEstimate> {
+  async estimateCost(given: EstimateCostInput): Promise<CostEstimate> {
+    const input = readArgument(given, ESTIMATE_COST_SHAPE, ['at'])
     assertEstimateCostInput(input)
     const serviceTier = input.serviceTier ?? 'standard'
     const at = readOptionalDate('at', input.at) ?? this.now()
@@ -394,7 +398,8 @@ export class MeteringService {
    * @returns The plain, serializable {@link Hold}.
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated).
    */
-  async hold(context: MeteringContext, estimate: HoldEstimate): Promise<Hold> {
+  async hold(givenContext: MeteringContext, givenEstimate: HoldEstimate): Promise<Hold> {
+    const { context, estimate } = holdArguments(givenContext, givenEstimate)
     assertMeteringContext(context)
     assertHoldEstimate(estimate)
     const key = context.idempotencyKey
@@ -439,7 +444,8 @@ export class MeteringService {
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` (another caller's or missing, indistinguishable), `_HOLD_EXPIRED` (reaped), `_HOLD_ALREADY_SETTLED` (released), `AI_TOKENS_INVALID_CONFIG` for a caller that is not a tenant and a scope.
    */
-  async capture(hold: Hold, caller: HoldCaller, usage: unknown, preset?: ProviderPreset, content?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
+  async capture(givenHold: Hold, givenCaller: HoldCaller, givenUsage: unknown, givenPreset?: ProviderPreset, givenContent?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
+    const { hold, caller, usage, preset, content } = captureArguments(givenHold, givenCaller, givenUsage, givenPreset, givenContent)
     const record = await this.loadHoldRecord(hold, caller, 'capture(hold, caller, usage)')
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
@@ -478,7 +484,8 @@ export class MeteringService {
    * @param reason The caller's stated reason (surfaced on `ai_tokens.hold.released`).
    * @throws {AiTokensException} `AI_TOKENS_HOLD_NOT_FOUND` on another caller's or a missing hold (indistinguishable).
    */
-  async release(hold: Hold, caller: HoldCaller, reason: string): Promise<void> {
+  async release(givenHold: Hold, givenCaller: HoldCaller, reason: string): Promise<void> {
+    const { hold, caller } = holdOwnerArguments(givenHold, givenCaller)
     assertText('reason', reason)
     const record = await this.loadHoldRecord(hold, caller, 'release(hold, caller, reason)')
     // Stryker disable next-line BlockStatement: 'posted' status returns via the !== 'pending' guard below; body is logger.warn only
@@ -568,9 +575,9 @@ export class MeteringService {
    * @returns The combined access status.
    */
   async getStatus(tenantId: string, scope: MeteringScope): Promise<AccessStatus> {
-    assertLookup(tenantId, scope)
-    const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, scope) : []
-    const wallet = await this.walletSection(tenantId, scope)
+    const own = lookupScope(tenantId, scope)
+    const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, own) : []
+    const wallet = await this.walletSection(tenantId, own)
     const budgetBlocked = budgets.some((status) => isHardExhausted(status))
     const walletBlocked = wallet !== undefined && wallet.balanceNanoUsd + wallet.overdraftRemainingNanoUsd <= 0n
     const blockedBy = walletBlocked ? 'wallet' : budgetBlocked ? 'budget' : undefined
@@ -787,12 +794,4 @@ export class MeteringService {
     const breakdown = computeCostNanoUsd(usage, rate)
     return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: false }
   }
-}
-
-/** Whether a hard (`'block'`) budget has no headroom on a limited dimension. */
-function isHardExhausted(status: BudgetStatus): boolean {
-  if (status.policy !== 'block') return false
-  if (status.limit.nanoUsd !== undefined && status.spent.nanoUsd >= status.limit.nanoUsd) return true
-  if (status.limit.tokens !== undefined && status.spent.tokens >= status.limit.tokens) return true
-  return status.limit.count !== undefined && status.spent.count >= status.limit.count
 }

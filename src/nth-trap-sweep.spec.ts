@@ -73,18 +73,6 @@ async function objectArgs(name: string): Promise<number[]> {
  * when an argument that is not listed leaks, and when a listed one no longer leaks, so the list only ever shrinks.
  */
 const KNOWN_GAPS: readonly string[] = [
-  'metering.hold arg 0',
-  'metering.hold arg 1',
-  'metering.hold(amount) arg 0',
-  'metering.hold(amount) arg 1',
-  'metering.record arg 0',
-  'metering.estimateCost arg 0',
-  'metering.capture arg 0',
-  'metering.capture arg 1',
-  'metering.capture arg 2',
-  'metering.capture arg 3',
-  'metering.release arg 0',
-  'metering.release arg 1',
 ]
 
 /** The call and the position of every object argument of every call. */
