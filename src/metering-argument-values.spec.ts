@@ -140,4 +140,17 @@ describe('the usage a call reads once', () => {
     expect(() => readDeep(shared(10), 'usage', 0, 64)).not.toThrow()
     expect(() => readDeep(shared(11), 'usage', 0, 64)).toThrow()
   })
+
+  it('refuses an object that holds more keys than a list may hold elements, and reads one that holds that many', () => {
+    const keyed = (count: number): Record<string, number> => Object.fromEntries(Array.from({ length: count }, (_, index) => [`k${String(index)}`, index]))
+    expect(Object.keys(readDeep(keyed(100_000), 'usage', 0, 64) as object)).toHaveLength(100_000)
+    expect(() => readDeep(keyed(100_001), 'usage', 0, 64)).toThrow()
+  })
+
+  it('refuses a value that makes two new objects of every object it is asked for, fast', () => {
+    const lazy = (): object => ({ get left(): object { return lazy() }, get right(): object { return lazy() } })
+    const started = Date.now()
+    expect(() => readDeep(lazy(), 'usage', 0, 64)).toThrow()
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
 })
