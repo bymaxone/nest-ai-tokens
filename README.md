@@ -784,8 +784,8 @@ specific to security is below.
   host's count replaces the provider's, because the host is the billing caller: a host that passes `{ web_search_requests: 0 }` bills 0
   for that unit whatever the provider reported. A hold stores its `extraUnits`, and `capture()` bills them with the units of the usage.
   A unit count that is not a whole number from 0 to the largest safe integer (a negative, a fraction, `NaN`, `Infinity`, a string, `2**53`)
-  is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. A unit with a count above 0 and no rate in the price's `unitRates`
-  is a missing price, like an unpriced model: refused as `AI_TOKENS_PRICE_NOT_FOUND` when `pricing.strict` is on, and otherwise billed for
+  is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. When rated from prices, a unit above 0 with no `unitRates` rate
+  is a missing price: refused as `AI_TOKENS_PRICE_NOT_FOUND` when `pricing.strict` is on, and otherwise billed for
   what has a price, with `priceMissing` set on the record and `ai_tokens.price.missing` raised.
 
 ---
