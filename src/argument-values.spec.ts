@@ -333,4 +333,41 @@ describe('an input whose fields are accessors of its class', () => {
     setAt(args, [1], Object.create(proto))
     expect(await reasonOf(() => run(args))).toBeUndefined()
   })
+
+  /** The case list of the prototype walk, one row each: every way a chain can be hostile is refused naming the input, and every way it can be odd but honest is read. */
+  const HOSTILE_CHAINS: readonly (readonly [string, () => object])[] = [
+    ['a getPrototypeOf trap that throws', () => new Proxy({}, { getPrototypeOf: (): never => { throw new Error('host-private-text') } })],
+    ['an ownKeys trap that throws', () => new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })],
+    ['a prototype Proxy whose ownKeys trap throws', () => Object.create(new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })) as object],
+    ['a getPrototypeOf trap that returns a new Proxy each time', () => { const make = (): object => new Proxy({}, { getPrototypeOf: make }); return make() }],
+  ]
+  const HONEST_CHAINS: readonly (readonly [string, () => object])[] = [
+    ['a null prototype', () => Object.assign(Object.create(null) as object, { limit: 5 })],
+    ['an own __proto__ key', () => JSON.parse('{"__proto__":{"limit":"many"},"limit":5}') as object],
+    ['a frozen object', () => Object.freeze({ limit: 5 })],
+    ['a class that holds its fields as getters and a method', () => new (class { get limit(): number { return Number('5') }; describe(): string { return 'filter' } })()],
+  ]
+
+  it.each(HOSTILE_CHAINS)('refuses %s naming the input', async (_label, make) => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], make())
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+  })
+
+  it.each(HONEST_CHAINS)('reads %s', async (_label, make) => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], make())
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('refuses a getter of the class that throws, naming the field', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    class Throwing {
+      get from(): Date {
+        throw new Error('host-private-text')
+      }
+    }
+    setAt(args, [1], new Throwing())
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
+  })
 })
