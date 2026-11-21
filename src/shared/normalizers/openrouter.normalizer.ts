@@ -9,7 +9,7 @@
 
 import { floatUsdToNanoUsd } from '../pricing/money'
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str } from './usage-fields'
 
 /**
  * Normalize an OpenRouter response into {@link NormalizedUsage}.
@@ -21,15 +21,12 @@ import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum,
  * normalizeOpenRouterUsage({ model: 'gpt-5.2', usage: { prompt_tokens: 100, completion_tokens: 40, cost: 0.0123 } })
  */
 export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openrouter')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openrouter', 'usage.prompt_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openrouter', 'usage.completion_tokens')
 
-  const promptDetails = asObject(usage.prompt_tokens_details)
-  const completionDetails = asObject(usage.completion_tokens_details)
+  const promptDetails = detailsObject(usage.prompt_tokens_details, 'openrouter', 'usage.prompt_tokens_details')
+  const completionDetails = detailsObject(usage.completion_tokens_details, 'openrouter', 'usage.completion_tokens_details')
   const cacheReadTokens = num(promptDetails?.cached_tokens)
   const cacheWrite5mTokens = num(promptDetails?.cache_write_tokens)
   const reasoningTokens = num(completionDetails?.reasoning_tokens)
@@ -42,8 +39,8 @@ export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
     provider: 'openrouter',
     model: str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: promptTokens - cacheReadTokens - cacheWrite5mTokens,
-    outputTokens: completionTokens - reasoningTokens,
+    inputTokens: remainder(promptTokens, [cacheReadTokens, cacheWrite5mTokens], 'openrouter', 'usage.prompt_tokens'),
+    outputTokens: remainder(completionTokens, [reasoningTokens], 'openrouter', 'usage.completion_tokens'),
     cacheReadTokens,
     cacheWrite5mTokens,
     reasoningTokens,

@@ -762,6 +762,23 @@ specific to security is below.
   that reads a tenant id from request input lets a caller bill someone else.
 - **Supply chain.** `dependencies` is `{}`, third-party Actions are pinned by commit SHA (org-internal
   reusables by tag).
+- **An argument is read once, at the call.** Every object a host passes to a public method is read by the names of its type, once, and
+  the call works on that copy, so a getter or a Proxy trap that answers differently the second time cannot change what is checked and
+  what is used. A field a Proxy answers by its `get` trap is read like any other. What cannot be read (a getter or a trap that throws) is
+  refused as `AI_TOKENS_INVALID_CONFIG`, naming the field and never the host's own error. The maps the library lists itself
+  (`context.extraUnits`, `tags`, a price's `unitRates`, the keys of a record) are copied with limits on depth, length and total size; a value that contains itself, and a Proxy that
+  lists no key (which answers for names nobody can list, so an empty copy would drop what it holds), are refused, and a `Buffer` or
+  a typed array is kept as it is. The raw response of a provider is not copied: the normalizer reads it by the names of its provider,
+  through a view that answers each field the same way every time, and a Proxy in it that lists no key, where a normalizer lists keys, is refused as
+  `AI_TOKENS_USAGE_MALFORMED`. A usage that is already normalized is read by the names of `NormalizedUsage`. A `StreamUsageCollector`
+  passed to `capture()` is used as it is, and a repeated `capture()` of a settled hold returns its record without reading the usage.
+  A normalizer of the host receives the host's own object (it may call a method of it or rely on its class), and a function that wraps
+  a built-in normalizer is a normalizer of the host: it gets no view.
+- **The counts of a usage are counts.** Every built-in normalizer reads a count that is there as a whole number from 0 to the largest safe
+  integer, and a value that is not one (a string, `NaN`, `Infinity`, a negative, a fraction, a list) is refused as `AI_TOKENS_USAGE_MALFORMED`
+  where it used to be read as `0`, billing the call for less than it used, or as a negative, for more. A part of a total that is more than
+  its total (cached, audio or reasoning tokens past the prompt or the completion) is refused, a container of counts that is there must be an
+  object, and a count that is absent, or `null`, is `0`.
 
 ---
 

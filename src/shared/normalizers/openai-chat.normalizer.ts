@@ -8,7 +8,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str } from './usage-fields'
 
 /**
  * Normalize an OpenAI Chat Completions response into {@link NormalizedUsage}.
@@ -20,15 +20,12 @@ import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum,
  * normalizeOpenAiChatUsage({ model: 'gpt-5.2', usage: { prompt_tokens: 100, completion_tokens: 40 } })
  */
 export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-chat')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openai-chat', 'usage.prompt_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-chat', 'usage.completion_tokens')
 
-  const promptDetails = asObject(usage.prompt_tokens_details)
-  const completionDetails = asObject(usage.completion_tokens_details)
+  const promptDetails = detailsObject(usage.prompt_tokens_details, 'openai-chat', 'usage.prompt_tokens_details')
+  const completionDetails = detailsObject(usage.completion_tokens_details, 'openai-chat', 'usage.completion_tokens_details')
   const cacheReadTokens = num(promptDetails?.cached_tokens)
   const audioInTokens = num(promptDetails?.audio_tokens)
   const reasoningTokens = num(completionDetails?.reasoning_tokens)
@@ -39,8 +36,8 @@ export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
     provider: 'openai',
     model: str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: promptTokens - cacheReadTokens - audioInTokens,
-    outputTokens: completionTokens - reasoningTokens,
+    inputTokens: remainder(promptTokens, [cacheReadTokens, audioInTokens], 'openai-chat', 'usage.prompt_tokens'),
+    outputTokens: remainder(completionTokens, [reasoningTokens], 'openai-chat', 'usage.completion_tokens'),
     cacheReadTokens,
     reasoningTokens,
     audioInTokens,

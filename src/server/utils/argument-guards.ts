@@ -7,26 +7,17 @@
  * @layer server
  */
 
+import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
+import { fieldNamesOf, fieldOf } from './field-names'
+import { isView } from './usage-view'
 import { isCount, isNonNegativeBigint } from './numeric-guards'
 
 /** The typed refusal of an argument, naming it and never repeating a value. */
 function refused(reason: string): AiTokensException {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the argument name
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
-}
-
-/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
-const MAX_PROTOTYPE_DEPTH = 32
-
-/**
- * Whether `value` is the `Object.prototype` of some realm: the object that ends every ordinary chain, whose own `constructor` is a function
- * whose `prototype` is that object. A null-prototype object a host built is not, so its fields are the host's own.
- */
-function isRealmRoot(value: object): boolean {
-  const constructor = Object.getOwnPropertyDescriptor(value, 'constructor')?.value as { prototype?: unknown } | undefined
-  return typeof constructor === 'function' && constructor.prototype === value
 }
 
 /**
@@ -44,16 +35,7 @@ function isRealmRoot(value: object): boolean {
  */
 export function readField(value: object, key: string, name: string): unknown {
   try {
-    let holder: object = value
-    for (let depth = 0; ; depth += 1) {
-      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
-      const next = Object.getPrototypeOf(holder) as object | null
-      // A key found solely on the root of the chain, built in or planted by another library, is not a field of the argument; a key found
-      // nowhere at all is still asked of the object, which a Proxy answers by its `get` trap without having a key of its own.
-      if (next === null) return depth > 0 && isRealmRoot(holder) && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
-      if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
-      holder = next
-    }
+    return fieldOf(value, key)
   } catch {
     throw refused(`${name} could not be read`)
   }
@@ -72,18 +54,7 @@ export function readField(value: object, key: string, name: string): unknown {
  */
 export function keysOf(value: object, name: string): string[] {
   try {
-    const keys = new Set(Object.getOwnPropertyNames(value))
-    let proto = Object.getPrototypeOf(value) as object | null
-    for (let depth = 0; proto !== null; depth += 1) {
-      // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
-      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
-      const next = Object.getPrototypeOf(proto) as object | null
-      // The `Object.prototype` of whichever realm adds nothing; a null-prototype object of the host's own that ends the chain does.
-      if (next === null && isRealmRoot(proto)) break
-      for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
-      proto = next
-    }
-    return [...keys]
+    return fieldNamesOf(value)
   } catch {
     throw refused(`${name} could not be read`)
   }
@@ -106,22 +77,21 @@ export function labelOf(key: string): string {
 /** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
 const MAX_NESTING = 8
 
-/** The deepest nesting read from the usage of a provider, whose response can carry the JSON arguments of a tool call. */
+/** The deepest nesting read from the open fields of a usage: a provider's own response, kept as audit data, is nested deeper than an argument. */
 export const MAX_USAGE_NESTING = 64
 
 /** The longest list, and the most keys of one object, read from an argument. */
 const MAX_LIST_LENGTH = 100_000
 
-/** The most different lists and objects one read copies; each costs the reads of its keys, about 30 microseconds. */
+/** The most lists and objects one call copies, a shared one each time it is reached; each costs the reads of its keys. */
 const MAX_CONTAINERS = 10_000
 
-/** The most values one call reads, counting every value reached, a shared one each time it is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
+/** The most values one call reaches, counting every one each time it is reached. */
 const MAX_VISITS = 1_000_000
 
-/** What the reads of one call have used up: the lists and objects being copied above the value, the copies made so far, and the containers and values visited. */
+/** What the reads of one call have used up: the lists and objects being copied above the value, and the containers and values reached. */
 export interface Visit {
   readonly path: Set<object>
-  readonly copies: Map<object, unknown>
   containers: number
   visits: number
 }
@@ -133,19 +103,17 @@ export interface Visit {
  * @returns The accounts, with nothing used up.
  */
 export function newVisit(): Visit {
-  return { path: new Set<object>(), copies: new Map<object, unknown>(), containers: 0, visits: 0 }
+  return { path: new Set<object>(), containers: 0, visits: 0 }
 }
 
 /**
- * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
- * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
- * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A list or an
- * object reached again, through another branch, is not read again: the copy already made is the one returned, so the work follows the
- * number of different values and a value that shares a child between its branches costs no more than a tree of its size. A value that
- * contains itself is refused, whatever the limit, and so is a call that reaches more values, shared ones each time, or copies more
- * different lists and objects, than a batch of provider responses holds.
- * The copy is only read, never changed, by the consumers of an argument, which read fields by name, so a child shared by two branches may
- * be one object in it.
+ * A copy of the open map or the list an argument holds, read once, all the way down: a list or an object nested in it is copied element
+ * by element through {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail
+ * the call after it has begun. A primitive, a date, a function and a view of an `ArrayBuffer` (a `Buffer`, a typed array) are returned as
+ * they are; an object is copied to one with no prototype. The keys of an object are listed, so an object whose key list is empty and
+ * that is a Proxy is refused: it answers by its `get` trap for names the library cannot know, and an empty copy would drop what it holds.
+ * A value that contains itself is refused, and so is a call that reaches more than a million values or copies more than ten thousand
+ * lists and objects, a shared one each time it is reached.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
@@ -153,15 +121,13 @@ export function newVisit(): Visit {
  * @param limit The depth at which a nested value is refused.
  * @param visit What the call has used up, shared by every value it reads.
  * @returns The copy.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep, is too long or is too large.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is a Proxy that lists no key, is nested too deep, is too long or is too large.
  */
 export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit = newVisit()): unknown {
   visit.visits += 1
   if (visit.visits > MAX_VISITS) throw refused(`${name} could not be read`)
-  if (typeof value !== 'object' || value === null) return value
+  if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value)) return value
   if (visit.path.has(value)) throw refused(`${name} could not be read`)
-  // Before the test of a date, which throws for every other object: a value reached again must cost no more than a lookup.
-  if (visit.copies.has(value)) return visit.copies.get(value)
   if (isDate(value)) return value
   visit.containers += 1
   if (visit.containers > MAX_CONTAINERS || depth >= limit) throw refused(`${name} could not be read`)
@@ -170,17 +136,14 @@ export function readDeep(value: unknown, name: string, depth: number, limit = MA
     if (Array.isArray(value)) {
       const length = readField(value, 'length', name)
       if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
-      const items = Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
-      visit.copies.set(value, items)
-      return items
+      return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
     }
     const keys = keysOf(value, name)
-    if (keys.length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
+    if (keys.length > MAX_LIST_LENGTH || (keys.length === 0 && types.isProxy(value) && !isView(value))) throw refused(`${name} could not be read`)
     const copy = Object.create(null) as Record<string, unknown>
     for (const key of keys) {
       Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
     }
-    visit.copies.set(value, copy)
     return copy
   } finally {
     visit.path.delete(value)

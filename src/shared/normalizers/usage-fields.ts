@@ -24,15 +24,62 @@ export function asArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined
 }
 
-/** Read an optional finite token count; anything else becomes `0`. */
-export function num(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+/** Whether a value is a count a provider can report: a whole number from 0 to `Number.MAX_SAFE_INTEGER`. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-/** Read a required finite token count; throw a plain Error when absent/invalid. */
+/**
+ * Read an optional token count: absent (`undefined`, or `null` as JSON writes it) is `0`; a value that is there must be a count, a whole
+ * number from 0 to `Number.MAX_SAFE_INTEGER`, and anything else (a string, `NaN`, a negative, a fraction, an object) throws, because a count
+ * that is read as `0` bills a call for less than it used.
+ */
+export function num(value: unknown): number {
+  if (value === undefined || value === null) return 0
+  if (isCount(value)) return value
+  throw new Error('a count of the usage is not a whole number from 0 to the largest safe integer')
+}
+
+/** Read a required token count; throw a plain Error when absent or not a count (see {@link num}). */
 export function requireNum(value: unknown, provider: string, field: string): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  throw new Error(`${provider}: missing or invalid numeric field "${field}"`)
+  if (isCount(value)) return value
+  throw new Error(`${provider}: missing or invalid count "${field}"`)
+}
+
+/**
+ * Read a container of counts: absent (`undefined` or `null`) is `undefined`; a plain object is itself; anything else (an array, a string,
+ * a number) throws, because a container that is read as absent drops the counts it holds.
+ */
+export function detailsObject(value: unknown, provider: string, field: string): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) return undefined
+  const object = asObject(value)
+  if (object !== undefined) return object
+  throw new Error(`${provider}: "${field}" must be an object`)
+}
+
+/** Read a list of counts' containers: absent is `undefined`; a list is itself; anything else throws (see {@link detailsObject}). */
+export function detailsArray(value: unknown, provider: string, field: string): unknown[] | undefined {
+  if (value === undefined || value === null) return undefined
+  const list = asArray(value)
+  if (list !== undefined) return list
+  throw new Error(`${provider}: "${field}" must be a list`)
+}
+
+/** The sum of counts, which must itself be a count: two counts a provider reports cannot add up past the largest safe integer. */
+export function sumCounts(...counts: number[]): number {
+  const sum = counts.reduce((total, count) => total + count, 0)
+  if (!isCount(sum)) throw new Error('the counts of the usage add up past the largest safe integer')
+  return sum
+}
+
+/**
+ * What is left of a total once its parts are taken out: a cached, audio or reasoning part is a part of the tokens the provider counted, so
+ * parts that are more than their total are a usage that cannot be, and throw, where a clamp would have billed the call as another.
+ */
+export function remainder(total: number, parts: number[], provider: string, field: string): number {
+  const left = total - sumCounts(...parts)
+  if (left < 0) throw new Error(`${provider}: the parts of "${field}" are more than the whole`)
+  return left
 }
 
 /** Read a string value, or `undefined`. */
@@ -54,13 +101,13 @@ export function openAiServiceTier(value: unknown): ServiceTier | undefined {
   return knownServiceTier(candidate === 'default' ? 'standard' : candidate)
 }
 
-/** Extract the finite numeric entries of a server-tool-use object, or `undefined` when empty. */
-export function toolUseCounts(value: unknown): Record<string, number> | undefined {
-  const source = asObject(value)
+/** Extract the counts of a server-tool-use object, or `undefined` when there is none: an entry that is there must be a count (see {@link num}). */
+export function toolUseCounts(value: unknown, provider: string): Record<string, number> | undefined {
+  const source = detailsObject(value, provider, 'server_tool_use')
   if (source === undefined) return undefined
   const counts: Record<string, number> = {}
   for (const [key, raw] of Object.entries(source)) {
-    if (typeof raw === 'number' && Number.isFinite(raw)) counts[key] = raw
+    if (raw !== undefined && raw !== null) counts[key] = num(raw)
   }
   return Object.keys(counts).length > 0 ? counts : undefined
 }

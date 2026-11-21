@@ -35,11 +35,11 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
-import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
+import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts, newVisit } from '../utils/argument-guards'
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
-import { ESTIMATE_COST_SHAPE, RECORD_SHAPE } from '../utils/input-fields'
+import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
-import { captureInputs, holdArguments, holdOwnerArguments } from '../utils/metering-arguments'
+import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -207,7 +207,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
   async record(given: RecordInput): Promise<UsageRecord> {
-    const input = readDatedArgument(given, RECORD_SHAPE, ['occurredAt'])
+    const input = recordInput(given)
     assertObject('input', input)
     assertMeteringContext(input.context)
     return (await this.recordSettled(input)).record
@@ -346,7 +346,7 @@ export class MeteringService {
    * @returns The raw and billed nano-USD estimate.
    */
   async estimateCost(given: EstimateCostInput): Promise<CostEstimate> {
-    const input = readDatedArgument(given, ESTIMATE_COST_SHAPE, ['at'])
+    const input = readDatedArgument(given, ESTIMATE_COST_SHAPE, ['at'], newVisit())
     assertEstimateCostInput(input)
     const serviceTier = input.serviceTier ?? 'standard'
     const at = input.at ?? this.now()

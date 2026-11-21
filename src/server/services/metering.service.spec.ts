@@ -1460,16 +1460,14 @@ describe('MeteringService.capture — streaming collector', () => {
    * collector's final raw let a negative reach the signed wallet/budget leg and credit
    * it. Pins the `normalizeCaptureUsage` wrap on the streaming branch.
    */
-  it('clamps a negative provider-final count on the streaming path', async () => {
+  it('refuses a negative provider-final count on the streaming path, which would credit the wallet', async () => {
     const built = build({ wallets: true })
     await seedGpt5(built.pricingStore)
     await grant(built, 100_000_000n)
     const hold = await built.service.hold(context({ preset: providerPresets.openaiChat }), ESTIMATE_A)
     const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: providerPresets.openaiChat })
     collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 800, completion_tokens: -400 } })
-    const record = await built.service.capture(hold, context(), collector)
-    expect(record.inputTokens).toBe(800)
-    expect(record.outputTokens).toBe(0)
+    await expect(built.service.capture(hold, context(), collector)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_USAGE_MALFORMED' } } })
   })
 
   /** A NON-fallback stream that reports zero prompt tokens keeps input at 0 — the estimate fallback must NOT trigger. */

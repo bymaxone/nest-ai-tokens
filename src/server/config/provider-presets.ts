@@ -25,8 +25,22 @@ import {
   normalizeVercelAiSdkUsage,
 } from '../../shared'
 
+/** The normalizers of this library's own presets, whose reads of a raw response the library vouches for. */
+const BUILT_IN_NORMALIZERS = new WeakSet<UsageNormalizer>()
+
+/**
+ * Whether a normalizer is one of this library's own.
+ *
+ * @param normalizer A normalizer of a preset or of a call.
+ * @returns `true` for the normalizer of a built-in preset, `false` for a host's.
+ */
+export function isBuiltInNormalizer(normalizer: UsageNormalizer): boolean {
+  return BUILT_IN_NORMALIZERS.has(normalizer)
+}
+
 /** Assemble a preset. */
 function preset(provider: ProviderId, normalizer: UsageNormalizer, ratingMode: RatingMode): ProviderPreset {
+  BUILT_IN_NORMALIZERS.add(normalizer)
   return { provider, normalizer, ratingMode }
 }
 

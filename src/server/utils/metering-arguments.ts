@@ -5,12 +5,16 @@
  * @layer server
  */
 
-import type { ProviderPreset } from '../../shared'
+import type { ProviderPreset, UsageNormalizer } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
+import type { RecordInput } from '../services/metering.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { MAX_USAGE_NESTING, newVisit, readDeep } from './argument-guards'
-import { readArgument, readHoldEstimate } from './date-guards'
-import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, PRESET_SHAPE } from './input-fields'
+import { MAX_USAGE_NESTING, newVisit, readField, type Visit } from './argument-guards'
+import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './date-guards'
+import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_FIELDS, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
+import { isBuiltInNormalizer } from '../config/provider-presets'
+import { isNormalizedUsage } from '../services/hold-support'
+import { viewOf } from './usage-view'
 
 /** The content a capture or a record may carry. */
 interface Content {
@@ -54,6 +58,51 @@ export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold
 }
 
 /**
+ * The usage of a call, ready for its normalizer. A usage that is already normalized is read by the names of its type, once, and is the
+ * snapshot; a collector of this library is passed on as it is, since it is not data; any other is a raw response of a provider, which the
+ * normalizer reads by the names of its provider, so it is handed on in a view that answers each field the same way every time and refuses
+ * an object that lists no field. Anything that is not an object is returned as it is, for the check of the usage to refuse.
+ *
+ * @param usage What the caller passed.
+ * @param visit What the call has used up, shared by every argument it reads.
+ * @param normalizedFirst Whether a usage that is already normalized is recognized before the normalizer sees it.
+ * @param normalizer The normalizer that will read the usage, if there is one: a host's own reads the host's object, a built-in one reads the view.
+ * @returns The usage the normalizer or the settlement reads.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
+ */
+export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean, normalizer: UsageNormalizer | undefined): unknown {
+  if (typeof usage !== 'object' || usage === null || isCollector(usage)) return usage
+  // A normalizer of the host reads the host's own object: it may call a method of it or rely on its class, and what it reads is its own business.
+  // A built-in normalizer reads a view of it, so that a field it reads afterwards is the value read here.
+  const ofHost = normalizer !== undefined && !isBuiltInNormalizer(normalizer)
+  const source = ofHost ? usage : viewOf(usage)
+  if (!normalizedFirst) return source
+  // A raw response of a provider names no `provider` and no `operation`, so the host's own object is read for the rest of a usage that is
+  // already normalized only when it names both; the two names are read once, and what they answered is the snapshot's own.
+  const identity = ofHost ? { provider: readField(usage, 'provider', 'usage.provider'), operation: readField(usage, 'operation', 'usage.operation') } : undefined
+  if (identity !== undefined && (identity.provider === undefined || identity.operation === undefined)) return source
+  const { provider: _provider, operation: _operation, ...rest } = NORMALIZED_USAGE_FIELDS
+  const own = readShape(source, { fields: identity === undefined ? NORMALIZED_USAGE_FIELDS : rest, limits: { raw: MAX_USAGE_NESTING } }, 'usage.', visit)
+  Object.assign(own, identity)
+  return isNormalizedUsage(own) ? own : source
+}
+
+/**
+ * The input of a record, read once: its fields by the names of their types, its dates as valid dates, and its usage as {@link readUsage}
+ * hands it on. What is not an object is returned as it is, for the check of the input to refuse.
+ *
+ * @param given What the caller passed.
+ * @returns The snapshot of the input, or `given` itself.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
+ */
+export function recordInput(given: RecordInput): RecordInput {
+  const visit = newVisit()
+  const input = readDatedArgument(given, RECORD_SHAPE, ['occurredAt'], visit)
+  if (input !== given) input.usage = readUsage(input.usage, visit, (input.normalizer ?? input.preset?.normalizer) === undefined, input.normalizer ?? input.preset?.normalizer)
+  return input
+}
+
+/**
  * The usage, the preset and the content of a capture, read once. A capture of a hold that is already settled returns the record it
  * posted without reading them, so they are read only once the stored hold is known to be pending.
  *
@@ -69,6 +118,6 @@ export function captureInputs(usage: unknown, preset: ProviderPreset | undefined
   content: Content | undefined
 } {
   const visit = newVisit()
-  // The usage is read at the depth of a field of an input, as `record()` reads it, so that both calls accept the same nesting.
-  return { usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 1, MAX_USAGE_NESTING, visit), preset: readArgument(preset, PRESET_SHAPE, 'preset.', visit), content: readArgument(content, CONTENT_SHAPE, 'content.', visit) }
+  const own = readArgument(preset, PRESET_SHAPE, 'preset.', visit)
+  return { usage: readUsage(usage, visit, true, own?.normalizer), preset: own, content: readArgument(content, CONTENT_SHAPE, 'content.', visit) }
 }

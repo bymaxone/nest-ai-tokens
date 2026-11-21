@@ -8,7 +8,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { buildUsage, num, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, num, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
 
 /**
  * Normalize a Gemini / Vertex response into {@link NormalizedUsage}.
@@ -20,9 +20,7 @@ import { buildUsage, num, readResponse, requireNum, str } from './usage-fields'
  * normalizeGeminiUsage({ modelVersion: 'gemini-2.5-flash', usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 40 } })
  */
 export function normalizeGeminiUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name and usage key in error messages are internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'gemini', 'usageMetadata')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokenCount = requireNum(usage.promptTokenCount, 'gemini', 'usageMetadata.promptTokenCount')
   const candidatesTokenCount = num(usage.candidatesTokenCount)
   const cacheReadTokens = num(usage.cachedContentTokenCount)
@@ -33,7 +31,7 @@ export function normalizeGeminiUsage(raw: unknown): NormalizedUsage {
     provider: 'gemini',
     model: str(response.modelVersion) ?? str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: promptTokenCount - cacheReadTokens + toolUseInputTokens,
+    inputTokens: sumCounts(remainder(promptTokenCount, [cacheReadTokens], 'gemini', 'usageMetadata.promptTokenCount'), toolUseInputTokens),
     outputTokens: candidatesTokenCount,
     cacheReadTokens,
     reasoningTokens,

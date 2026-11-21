@@ -1,6 +1,6 @@
 import type { AiTokensErrorResponse } from '../../shared'
 import { providerPresets } from '../config/provider-presets'
-import type { AiTokensException } from '../errors'
+import { AiTokensException } from '../errors'
 import type { ITokenizer } from '../interfaces'
 import { StreamUsageCollector } from './stream-usage-collector'
 
@@ -110,6 +110,17 @@ describe('StreamUsageCollector', () => {
     const usage = await collector.finalize()
     expect(usage.inputTokens).toBe(10)
     expect(usage.outputTokens).toBe(5)
+  })
+
+  /** A normalizer that cannot read the final usage is a malformed usage, typed, and one that already throws a typed error is passed on. */
+  it.each([
+    ['a plain error', (): never => { throw new Error('host-private-text') }, 'AI_TOKENS_USAGE_MALFORMED'],
+    ['a typed error', (): never => { throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER') }, 'AI_TOKENS_UNKNOWN_PROVIDER'],
+  ] as const)('answers %s of the normalizer of the final usage as the typed error', async (_kind, normalizer, code) => {
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset: { provider: 'openai', normalizer, ratingMode: 'rate-table' } })
+    collector.push({ model: 'gpt-5', choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } })
+    const failure = (await collector.finalize().then(() => null, (error: unknown) => error)) as AiTokensException
+    expect((failure.getResponse() as AiTokensErrorResponse).error.code).toBe(code)
   })
 
   /** A custom output extractor is used for a non-built-in provider. */

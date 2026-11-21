@@ -2,12 +2,16 @@ import {
   asArray,
   asObject,
   buildUsage,
+  detailsArray,
+  detailsObject,
   knownServiceTier,
   num,
   openAiServiceTier,
   readResponse,
+  remainder,
   requireNum,
   str,
+  sumCounts,
   toolUseCounts,
 } from './usage-fields'
 
@@ -31,25 +35,29 @@ describe('usage-fields helpers', () => {
   })
 
   describe('num', () => {
-    /** Finite numbers pass; NaN, non-numbers, and undefined collapse to 0. */
-    it('coerces to a finite number or 0', () => {
+    /** A count that is there passes; an absent one, or null, is 0; anything else is refused. */
+    it('reads a count, treats absent and null as 0, and refuses the rest', () => {
       expect(num(7)).toBe(7)
-      expect(num(Number.NaN)).toBe(0)
-      expect(num('7')).toBe(0)
+      expect(num(0)).toBe(0)
+      expect(num(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER)
       expect(num(undefined)).toBe(0)
+      expect(num(null)).toBe(0)
+      for (const bad of [Number.NaN, '7', -1, 1.5, 2 ** 53, Number.POSITIVE_INFINITY, true, [], {}]) expect(() => num(bad)).toThrow(Error)
     })
   })
 
   describe('requireNum', () => {
-    /** A valid finite number is returned. */
-    it('returns a finite number', () => {
+    /** A count is returned. */
+    it('returns a count', () => {
       expect(requireNum(3, 'p', 'f')).toBe(3)
+      expect(requireNum(0, 'p', 'f')).toBe(0)
     })
 
-    /** A missing or non-finite value throws a plain Error naming the field. */
+    /** A missing value, or one that is not a count, throws a plain Error naming the field. */
     it('throws with the provider and field on invalid input', () => {
-      expect(() => requireNum(undefined, 'openai', 'usage.x')).toThrow('openai: missing or invalid numeric field "usage.x"')
-      expect(() => requireNum(Number.NaN, 'openai', 'usage.x')).toThrow(Error)
+      expect(() => requireNum(undefined, 'openai', 'usage.x')).toThrow('openai: missing or invalid count "usage.x"')
+      expect(() => requireNum(null, 'openai', 'usage.x')).toThrow(Error)
+      for (const bad of [Number.NaN, '3', -1, 1.5, 2 ** 53]) expect(() => requireNum(bad, 'openai', 'usage.x')).toThrow(Error)
     })
   })
 
@@ -80,11 +88,38 @@ describe('usage-fields helpers', () => {
   })
 
   describe('toolUseCounts', () => {
-    /** Numeric entries survive; non-numeric entries drop; empty/non-object is undefined. */
-    it('extracts finite numeric counts', () => {
-      expect(toolUseCounts({ web_search_requests: 2, bad: 'x' })).toEqual({ web_search_requests: 2 })
-      expect(toolUseCounts({ bad: 'x' })).toBeUndefined()
-      expect(toolUseCounts(null)).toBeUndefined()
+    /** Counts survive; an unset entry is skipped; an entry that is not a count, or a map that is no object, is refused. */
+    it('extracts counts and refuses what is not one', () => {
+      expect(toolUseCounts({ web_search_requests: 2, unset: null, absent: undefined }, 'p')).toEqual({ web_search_requests: 2 })
+      expect(toolUseCounts({ unset: null }, 'p')).toBeUndefined()
+      expect(toolUseCounts(null, 'p')).toBeUndefined()
+      expect(toolUseCounts(undefined, 'p')).toBeUndefined()
+      expect(() => toolUseCounts({ web_search_requests: 'x' }, 'p')).toThrow(Error)
+      expect(() => toolUseCounts([2], 'p')).toThrow(Error)
+    })
+  })
+
+  describe('detailsObject, detailsArray, sumCounts and remainder', () => {
+    /** A container that is there must be of its kind; absent and null are absent. */
+    it('reads a container, treats absent and null as absent, and refuses another kind', () => {
+      expect(detailsObject({ a: 1 }, 'p', 'f')).toEqual({ a: 1 })
+      expect(detailsObject(undefined, 'p', 'f')).toBeUndefined()
+      expect(detailsObject(null, 'p', 'f')).toBeUndefined()
+      for (const bad of [[], 'x', 5, true]) expect(() => detailsObject(bad, 'p', 'f')).toThrow('p: "f" must be an object')
+      expect(detailsArray([1], 'p', 'f')).toEqual([1])
+      expect(detailsArray(undefined, 'p', 'f')).toBeUndefined()
+      expect(detailsArray(null, 'p', 'f')).toBeUndefined()
+      for (const bad of [{}, 'x', 5]) expect(() => detailsArray(bad, 'p', 'f')).toThrow('p: "f" must be a list')
+    })
+
+    /** Counts add up to a count; parts are taken out of their total, and parts past the total are refused. */
+    it('sums counts and refuses a sum past the safe range or parts past their total', () => {
+      expect(sumCounts(1, 2, 3)).toBe(6)
+      expect(sumCounts()).toBe(0)
+      expect(() => sumCounts(Number.MAX_SAFE_INTEGER, 1)).toThrow(Error)
+      expect(remainder(100, [20, 5], 'p', 'f')).toBe(75)
+      expect(remainder(100, [100], 'p', 'f')).toBe(0)
+      expect(() => remainder(100, [60, 41], 'p', 'f')).toThrow('p: the parts of "f" are more than the whole')
     })
   })
 

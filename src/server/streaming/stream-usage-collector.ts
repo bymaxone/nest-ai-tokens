@@ -181,7 +181,13 @@ export class StreamUsageCollector {
   private normalizeFinal(response: unknown): NormalizedUsage {
     const normalizer: UsageNormalizer =
       this.opts.preset?.normalizer ?? (this.opts.provider === 'anthropic' ? normalizeAnthropicUsage : normalizeOpenAiChatUsage)
-    return normalizer(response)
+    try {
+      return normalizer(response)
+    } catch (error) {
+      if (error instanceof AiTokensException) throw error
+      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check the code
+      throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the normalizer could not read the usage token fields' })
+    }
   }
 
   /** Build the tokenizer-counted fallback usage for an aborted stream. */
