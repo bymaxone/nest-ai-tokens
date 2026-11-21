@@ -1,0 +1,86 @@
+/**
+ * @fileoverview The view of a raw provider response that a normalizer reads. A normalizer takes the response as it is and reads the fields
+ * of the provider by name, so the response is not copied: a copy that lists its keys drops what an object that answers by a `get` trap
+ * holds. The view hands the normalizer each field the first time it is asked for, and the same value every time after, so a getter that
+ * answers differently the second time cannot make a check pass on one value and a sum use another; an object whose key list is empty and
+ * that is a Proxy is refused where a normalizer lists the keys of a map it does not know, a server-tool-use count, where an empty
+ * list would price a tool as free.
+ * @layer server
+ */
+
+import { types } from 'node:util'
+import { AiTokensException } from '../errors'
+import { isDate } from '../../shared/utils/is-date'
+
+/** The typed refusal of a map that cannot be listed, which names nothing the host wrote. */
+function unlistable(): AiTokensException {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and that the usage is refused
+  return new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the usage holds an object that lists no field' })
+}
+
+/** Whether a field is handed on through a view of its own: an object that is no list of bytes, no date and not a function. */
+function isViewable(value: unknown): value is object {
+  return typeof value === 'object' && value !== null && !ArrayBuffer.isView(value) && !isDate(value)
+}
+
+/**
+ * Run a read of the host's object, and answer a failure of it with the typed refusal, which names nothing the host wrote: the host's own
+ * error never reaches whoever reads the view.
+ *
+ * @param read The read of the host's object.
+ * @returns What the read answered.
+ * @throws {AiTokensException} `AI_TOKENS_USAGE_MALFORMED` when the read throws.
+ */
+function guarded<T>(read: () => T): T {
+  try {
+    return read()
+  } catch (error) {
+    if (error instanceof AiTokensException) throw error
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and that the usage is refused
+    throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the usage could not be read' })
+  }
+}
+
+/**
+ * A view of `raw` that answers every field with the value it answered the first time, and the objects in it with views of their own.
+ * The Proxy stands on an empty object of its own, never on the host's object: the engine checks the answer of a trap against its target,
+ * and that check would call the host's own traps, whose errors would escape the view.
+ *
+ * @param raw The response, or an object in it.
+ * @returns The view, which a normalizer reads like the object itself.
+ */
+export function viewOf<T extends object>(raw: T): T {
+  const answered = new Map<string | symbol, unknown>()
+  const isList = Array.isArray(raw)
+  return new Proxy((isList ? [] : {}) as T, {
+    get: (_target, key) =>
+      guarded(() => {
+        if (answered.has(key)) return answered.get(key)
+        const value = Reflect.get(raw, key) as unknown
+        const answer = isViewable(value) ? viewOf(value) : value
+        answered.set(key, answer)
+        return answer
+      }),
+    getPrototypeOf: () => {
+      // An object whose prototype cannot be read is read as one with none, so that testing the view with `instanceof` cannot fail.
+      try {
+        return Reflect.getPrototypeOf(raw)
+      } catch {
+        return null
+      }
+    },
+    has: (_target, key) => guarded(() => Reflect.has(raw, key)),
+    getOwnPropertyDescriptor: (_target, key) =>
+      guarded(() => {
+        const found = Reflect.getOwnPropertyDescriptor(raw, key)
+        // The length of a list is the one property its stand-in cannot give up; every other property is reported as one that can be redefined.
+        return found === undefined ? undefined : { ...found, configurable: isList && key === 'length' ? false : true }
+      }),
+    ownKeys: () =>
+      guarded(() => {
+        const keys = Reflect.ownKeys(raw)
+        if (keys.length === 0 && types.isProxy(raw)) throw unlistable()
+        return keys
+      }),
+  })
+}

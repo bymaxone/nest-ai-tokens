@@ -762,6 +762,17 @@ specific to security is below.
   that reads a tenant id from request input lets a caller bill someone else.
 - **Supply chain.** `dependencies` is `{}`, third-party Actions are pinned by commit SHA (org-internal
   reusables by tag).
+- **An argument is read once, at the call.** Every object a host passes to a public method is read by the names of its type, once, and
+  the call works on that copy, so a getter or a Proxy trap that answers differently the second time cannot change what is checked and
+  what is used. A field a Proxy answers by its `get` trap is read like any other. What cannot be read (a getter or a trap that throws) is
+  refused as `AI_TOKENS_INVALID_CONFIG`, naming the field and never the host's own error. The maps the library lists itself
+  (`context.extraUnits`, `tags`, a price's `unitRates`, the keys of a record) are copied with limits: 8 levels deep, 100 000 elements of a
+  list or keys of an object, 10 000 lists and objects and 1 000 000 values in one call; a value that contains itself, and a Proxy that
+  lists no key (which answers for names nobody can list, so an empty copy would drop what it holds), are refused, and a `Buffer` or
+  a typed array is kept as it is. The raw response of a provider is not copied: the normalizer reads it by the names of its provider,
+  through a view that answers each field the same way every time, and an object in it that lists no key is refused as
+  `AI_TOKENS_USAGE_MALFORMED`. A usage that is already normalized is read by the names of `NormalizedUsage`. A `StreamUsageCollector`
+  passed to `capture()` is used as it is, and a repeated `capture()` of a settled hold returns its record without reading the usage.
 
 ---
 

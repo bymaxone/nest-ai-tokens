@@ -84,7 +84,7 @@ export function readShape(input: object, shape: Shape, prefix: string, visit = n
     const name = `${prefix}${key}`
     const raw = readField(input, key, name)
     const inner = shape.nested?.[key]
-    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : readDeep(raw, name, 1, shape.limits?.[key], visit)
+    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : shape.raw?.includes(key) === true ? raw : readDeep(raw, name, 1, undefined, visit)
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
     // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
     if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
@@ -124,34 +124,31 @@ export function readArgument<T>(argument: T, shape: Shape, prefix: string, visit
  * @param argument What the caller passed.
  * @param shape The fields of its type, and of the objects nested in it.
  * @param dates The names of its date fields.
+ * @param visit What the call has used up, shared by every argument it reads.
  * @returns The snapshot of an object, or `argument` itself.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
-export function readDatedArgument<T>(argument: T, shape: Shape, dates: readonly string[]): T {
+export function readDatedArgument<T>(argument: T, shape: Shape, dates: readonly string[], visit: Visit): T {
   if (!isRecord(argument)) return argument
-  const copy = readShape(argument, shape, '')
+  const copy = readShape(argument, shape, '', visit)
   readDates(copy, dates, '')
   return copy as T
 }
 
 /**
- * The estimate of a hold, read by the names of the variant it is: one that names a provider is rated by model, one that names tokens is
- * sized in tokens, any other in nano-USD, and only the fields of that variant are read, so a getter named like a field of another variant
- * is never run. Anything that is not an object is returned as it is, for the check of the estimate to refuse.
+ * The estimate of a hold, read by the names of the variant it is: one that has a provider is rated by model, one that has tokens is
+ * sized in tokens, any other in nano-USD, and only the fields of that variant are read after the two names that tell them apart, so a getter
+ * named like another field of another variant is never run. Anything that is not an object is returned as it is, for the check of the estimate to refuse.
  *
  * @param estimate What the caller passed.
  * @param visit What the call has used up, shared by every argument it reads.
  * @returns The snapshot of an object, or `estimate` itself.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the estimate or the field that cannot be read.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function readHoldEstimate<T>(estimate: T, visit: Visit): T {
   if (!isRecord(estimate)) return estimate
-  let fields: object
-  try {
-    fields = Reflect.has(estimate, 'provider') ? RATED_ESTIMATE_FIELDS : Reflect.has(estimate, 'tokens') ? TOKEN_ESTIMATE_FIELDS : AMOUNT_ESTIMATE_FIELDS
-  } catch {
-    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'estimate could not be read' })
-  }
+  // The variant is told by the name that has a value, read like any field, so that an object that answers by a `get` trap is the variant it answers for.
+  const fields = readField(estimate, 'provider', 'estimate.provider') !== undefined ? RATED_ESTIMATE_FIELDS : readField(estimate, 'tokens', 'estimate.tokens') !== undefined ? TOKEN_ESTIMATE_FIELDS : AMOUNT_ESTIMATE_FIELDS
   return readShape(estimate, { fields }, 'estimate.', visit) as T
 }
 
