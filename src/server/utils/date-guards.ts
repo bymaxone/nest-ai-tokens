@@ -80,3 +80,15 @@ export function withReadDates<T extends object>(input: T, fields: readonly (keyo
   }
   return copy as T
 }
+
+/**
+ * A snapshot of an input object that holds no date: every own enumerable field is read once, as {@link withReadDates} does.
+ *
+ * @param input The object the caller supplied.
+ * @returns A new object holding the values read.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
+ */
+export function snapshotOf<T extends object>(input: T): T {
+  // Stryker disable next-line ArrayDeclaration: equivalent: a field name that no input holds is skipped, so the list is read as empty either way
+  return withReadDates(input, [])
+}

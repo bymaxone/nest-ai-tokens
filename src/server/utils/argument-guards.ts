@@ -137,17 +137,15 @@ export function assertTenant(tenantId: unknown): asserts tenantId is string {
 }
 
 /**
- * Throw unless `value` is the shape of a budget definition: an object with a scope, and an id and features that are text when given.
+ * Throw unless `value`, a snapshot of a budget definition, has a scope, and an id and features that are text when given.
  *
  * @param value What the caller passed.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the first field that is not valid.
  */
-export function assertBudgetShape(value: unknown): void {
-  assertObject('input', value)
-  assertScope('scope', readField(value, 'scope', 'scope'))
-  assertOptionalText('id', readField(value, 'id', 'id'))
-  const features = readField(value, 'features', 'features')
-  if (features !== undefined) assertTextList('features', features)
+export function assertBudgetShape(value: Record<string, unknown>): void {
+  assertScope('scope', value.scope)
+  assertOptionalText('id', value.id)
+  if (value.features !== undefined) assertTextList('features', value.features)
 }
 
 /**

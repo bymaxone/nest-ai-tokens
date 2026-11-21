@@ -26,7 +26,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
-import { withReadDates } from '../utils/date-guards'
+import { snapshotOf, withReadDates } from '../utils/date-guards'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -198,7 +198,7 @@ export class WalletService {
   async debit(ref: WalletRef, given: DebitInput): Promise<WalletEntry> {
     this.assertOwner(ref)
     assertObject('input', given)
-    const input = withReadDates(given, [])
+    const input = snapshotOf(given)
     assertEntryText(input, false)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -240,7 +240,7 @@ export class WalletService {
   async refund(ref: WalletRef, given: RefundInput): Promise<WalletEntry> {
     this.assertOwner(ref)
     assertObject('input', given)
-    const input = withReadDates(given, [])
+    const input = snapshotOf(given)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -270,7 +270,7 @@ export class WalletService {
   async adjust(ref: WalletRef, given: AdjustInput): Promise<WalletEntry> {
     this.assertOwner(ref)
     assertObject('input', given)
-    const input = withReadDates(given, [])
+    const input = snapshotOf(given)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -454,8 +454,7 @@ function isWalletMissing(error: unknown): error is WalletMissingShape {
 }
 
 /** Throw unless the entry is an object whose idempotency key, reason and record id are strings, the reason being required when `reasonRequired`. */
-function assertEntryText(input: unknown, reasonRequired: boolean): void {
-  assertObject('input', input)
+function assertEntryText(input: Record<string, unknown>, reasonRequired: boolean): void {
   assertText('idempotencyKey', input.idempotencyKey)
   if (reasonRequired) assertText('reason', input.reason)
   else assertOptionalText('reason', input.reason)
