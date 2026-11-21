@@ -25,6 +25,8 @@ export interface Shape {
   readonly nested?: Readonly<Record<string, Shape>>
   /** The fields read by name and returned as they are, because the library reads them later by the names of their own type. */
   readonly raw?: readonly string[]
+  /** The deepest nesting allowed in the named fields that are copied, where it is not the default of an argument. */
+  readonly limits?: Readonly<Record<string, number>>
 }
 
 /** The variant of a hold estimate that is rated by model. */

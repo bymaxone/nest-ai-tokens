@@ -9,7 +9,7 @@ import type { ProviderPreset, UsageNormalizer } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import type { RecordInput } from '../services/metering.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { newVisit, readField, type Visit } from './argument-guards'
+import { MAX_USAGE_NESTING, newVisit, readField, type Visit } from './argument-guards'
 import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './date-guards'
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_FIELDS, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
 import { isBuiltInNormalizer } from '../config/provider-presets'
@@ -82,7 +82,7 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
   const identity = ofHost ? { provider: readField(usage, 'provider', 'usage.provider'), operation: readField(usage, 'operation', 'usage.operation') } : undefined
   if (identity !== undefined && (identity.provider === undefined || identity.operation === undefined)) return source
   const { provider: _provider, operation: _operation, ...rest } = NORMALIZED_USAGE_FIELDS
-  const own = readShape(source, { fields: identity === undefined ? NORMALIZED_USAGE_FIELDS : rest }, 'usage.', visit)
+  const own = readShape(source, { fields: identity === undefined ? NORMALIZED_USAGE_FIELDS : rest, limits: { raw: MAX_USAGE_NESTING } }, 'usage.', visit)
   Object.assign(own, identity)
   return isNormalizedUsage(own) ? own : source
 }

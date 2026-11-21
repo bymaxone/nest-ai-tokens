@@ -77,6 +77,9 @@ export function labelOf(key: string): string {
 /** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
 const MAX_NESTING = 8
 
+/** The deepest nesting read from the open fields of a usage: a provider's own response, kept as audit data, is nested deeper than an argument. */
+export const MAX_USAGE_NESTING = 64
+
 /** The longest list, and the most keys of one object, read from an argument. */
 const MAX_LIST_LENGTH = 100_000
 

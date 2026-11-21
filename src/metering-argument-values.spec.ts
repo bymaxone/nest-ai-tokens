@@ -346,6 +346,17 @@ describe('the usage of a call', () => {
     expect(await reasonOf(() => captureCall.run(captureCall.args))).toBeUndefined()
   })
 
+  it('accepts a normalized usage whose raw holds objects nested 40 deep, and refuses one nested past 64', async () => {
+    const nested = (depth: number): Record<string, unknown> => (depth === 0 ? { leaf: 1 } : { next: nested(depth - 1) })
+    const usage = (depth: number): Record<string, unknown> => ({ provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0, raw: nested(depth) })
+    const call = await callOf('metering.record')
+    delete at(call.args, [0]).preset
+    at(call.args, [0]).usage = usage(40)
+    expect(await reasonOf(() => call.run(call.args))).toBeUndefined()
+    at(call.args, [0]).usage = usage(70)
+    expect(await reasonOf(() => call.run(call.args))).toContain('usage.raw')
+  })
+
   it('hands a normalizer of the host the host\'s own object, which it may call a method of, test with instanceof and read a private field of', async () => {
     class Response {
       readonly #tokens = 7

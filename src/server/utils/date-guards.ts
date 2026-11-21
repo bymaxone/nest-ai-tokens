@@ -84,7 +84,7 @@ export function readShape(input: object, shape: Shape, prefix: string, visit = n
     const name = `${prefix}${key}`
     const raw = readField(input, key, name)
     const inner = shape.nested?.[key]
-    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : shape.raw?.includes(key) === true ? raw : readDeep(raw, name, 1, undefined, visit)
+    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : shape.raw?.includes(key) === true ? raw : readDeep(raw, name, 1, shape.limits?.[key], visit)
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
     // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
     if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })

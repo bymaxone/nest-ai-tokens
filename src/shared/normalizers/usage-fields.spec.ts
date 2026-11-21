@@ -35,7 +35,7 @@ describe('usage-fields helpers', () => {
   })
 
   describe('num', () => {
-    /** A count that is there passes; an absent one, or null, is 0; anything else is refused, where it used to collapse to 0. */
+    /** A count that is there passes; an absent one, or null, is 0; anything else is refused. */
     it('reads a count, treats absent and null as 0, and refuses the rest', () => {
       expect(num(7)).toBe(7)
       expect(num(0)).toBe(0)
@@ -88,7 +88,7 @@ describe('usage-fields helpers', () => {
   })
 
   describe('toolUseCounts', () => {
-    /** Counts survive; an unset entry is skipped; an entry that is not a count, or a map that is no object, is refused, where it was dropped. */
+    /** Counts survive; an unset entry is skipped; an entry that is not a count, or a map that is no object, is refused. */
     it('extracts counts and refuses what is not one', () => {
       expect(toolUseCounts({ web_search_requests: 2, unset: null, absent: undefined }, 'p')).toEqual({ web_search_requests: 2 })
       expect(toolUseCounts({ unset: null }, 'p')).toBeUndefined()
