@@ -9,7 +9,7 @@ import type { ProviderPreset, UsageNormalizer } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import type { RecordInput } from '../services/metering.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { newVisit, type Visit } from './argument-guards'
+import { newVisit, readField, type Visit } from './argument-guards'
 import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './date-guards'
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_SHAPE, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
 import { isBuiltInNormalizer } from '../config/provider-presets'
@@ -74,8 +74,11 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
   if (typeof usage !== 'object' || usage === null || isCollector(usage)) return usage
   // A normalizer of the host reads the host's own object: it may call a method of it or rely on its class, and what it reads is its own business.
   // A built-in normalizer reads a view of it, so that a field it reads afterwards is the value read here.
-  const source = normalizer !== undefined && !isBuiltInNormalizer(normalizer) ? usage : viewOf(usage)
-  if (normalizedFirst) {
+  const ofHost = normalizer !== undefined && !isBuiltInNormalizer(normalizer)
+  const source = ofHost ? usage : viewOf(usage)
+  // A raw response of a provider names no `provider` and no `operation`, so the host's own object is read for the rest of a usage that is
+  // already normalized only when it names both; the fields its normalizer reads are then left to it.
+  if (normalizedFirst && (!ofHost || (readField(usage, 'provider', 'usage.provider') !== undefined && readField(usage, 'operation', 'usage.operation') !== undefined))) {
     const own = readShape(source, NORMALIZED_USAGE_SHAPE, 'usage.', visit)
     if (isNormalizedUsage(own)) return own
   }

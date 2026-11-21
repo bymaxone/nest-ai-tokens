@@ -409,6 +409,17 @@ describe('the usage of a call', () => {
     expect(await reasonOf(() => run(args))).toBeUndefined()
   })
 
+  it('leaves the fields a host normalizer reads to it: a getter that answers once settles the capture on that answer', async () => {
+    let reads = 0
+    const raw = { model: 'custom', get inputTokens(): number { reads += 1; if (reads > 1) throw new Error('host-private-text'); return 100 } }
+    const normalizer = (response: unknown): unknown => ({ ...NORMALIZED, inputTokens: (response as typeof raw).inputTokens })
+    const { run, args } = await callOf('metering.capture')
+    args[3] = { provider: 'openai', normalizer, ratingMode: 'rate-table' }
+    args[2] = raw
+    expect(((await run(args)) as { inputTokens: number }).inputTokens).toBe(100)
+    expect(reads).toBe(1)
+  })
+
   it('tells the normalizers of the library from a normalizer of the host', () => {
     expect(isBuiltInNormalizer(providerPresets.anthropic.normalizer)).toBe(true)
     expect(isBuiltInNormalizer(providerPresets.openaiCompatible('deepseek').normalizer)).toBe(true)
