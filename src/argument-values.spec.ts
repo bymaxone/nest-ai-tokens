@@ -724,6 +724,19 @@ describe('a chain that ends in an object the host built', () => {
     expect(readField(child, 'surcharge', 'input')).toBe(7)
   })
 
+  it('keeps the fields of a null-prototype ancestor whose constructor is not a root, and a method a class shares with the root', () => {
+    const ancestor = Object.assign(Object.create(null) as object, { constructor: function Own() { return 1 }, surcharge: 7 })
+    expect(readField(Object.create(ancestor) as object, 'surcharge', 'input')).toBe(7)
+    expect(readField(Object.create(ancestor) as object, 'constructor', 'input')).toBe(ancestor.constructor)
+    class Shared {
+      toString(): string {
+        return 'own'
+      }
+    }
+    expect(readField(new Shared(), 'toString', 'input')).toBe(Shared.prototype.toString)
+    expect(readField(Object.prototype, 'hasOwnProperty', 'input')).toBe(Object.prototype.hasOwnProperty)
+  })
+
   it('still skips the Object.prototype of the realm and of another realm', () => {
     expect(readField(runInNewContext('({})') as object, 'toString', 'input')).toBeUndefined()
     expect(readField({}, 'toString', 'input')).toBeUndefined()
