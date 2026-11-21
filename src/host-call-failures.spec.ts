@@ -17,13 +17,13 @@ const SINK_LINE = 'ai_tokens.telemetry.sink_failed'
 const THROTTLE_LINE = 'ai_tokens.budget.on_throttle_failed'
 
 /** The hostile ways a host function can fail, each as a function that fails when it is called. */
-const FAILURES: readonly (readonly [string, () => unknown])[] = [
-  ['throws', (): never => { throw new Error(SECRET) }],
-  ['returns a rejecting promise', (): unknown => Promise.reject(new Error(SECRET))],
-  ['returns a thenable whose then throws', (): unknown => ({ then: (): never => { throw new Error(SECRET) } })],
-  ['returns a thenable that rejects', (): unknown => ({ then: (_ok: unknown, no: (error: unknown) => void): void => no(new Error(SECRET)) })],
-  ['returns a thenable that rejects with a value that is not an Error', (): unknown => ({ then: (_ok: unknown, no: (error: unknown) => void): void => no(SECRET) })],
-  ['returns a value whose then getter throws', (): unknown => Object.defineProperty({}, 'then', { get: (): never => { throw new Error(SECRET) } })],
+const FAILURES: readonly (readonly [string, () => unknown, string])[] = [
+  ['throws', (): never => { throw new Error(SECRET) }, 'name=Error'],
+  ['returns a rejecting promise', (): unknown => Promise.reject(new Error(SECRET)), 'name=Error'],
+  ['returns a thenable whose then throws', (): unknown => ({ then: (): never => { throw new Error(SECRET) } }), 'name=Error'],
+  ['returns a thenable that rejects', (): unknown => ({ then: (_ok: unknown, no: (error: unknown) => void): void => no(new Error(SECRET)) }), 'name=Error'],
+  ['returns a thenable that rejects with a value that is not an Error', (): unknown => ({ then: (_ok: unknown, no: (error: unknown) => void): void => no(SECRET) }), 'non-Error rejection'],
+  ['returns a value whose then getter throws', (): unknown => Object.defineProperty({}, 'then', { get: (): never => { throw new Error(SECRET) } }), 'name=Error'],
 ]
 
 /** A complete posted usage record. */
@@ -94,17 +94,14 @@ afterEach(() => {
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('a telemetry sink that fails', () => {
-  it.each(FAILURES)('does not fail recordUsage or recordDuration when it %s, and logs the name only', async (_label, fail) => {
+  it.each(FAILURES)('does not fail recordUsage or recordDuration when it %s, and logs the description of the error only', async (_label, fail, described) => {
     const sink = { recordUsage: fail, recordDuration: fail } as unknown as ITelemetrySink
     const emitter = new TelemetryEmitter(sink)
     expect(() => { emitter.recordUsage(record) }).not.toThrow()
     expect(() => { emitter.recordDuration(record, 5) }).not.toThrow()
     await settle()
     expect(warned).toHaveLength(2)
-    for (const line of warned) {
-      expect(line.startsWith(SINK_LINE)).toBe(true)
-      expect(line).not.toContain(SECRET)
-    }
+    expect(warned).toEqual([`${SINK_LINE} ${described}`, `${SINK_LINE} ${described}`])
   })
 
   it('does not fail when the method itself cannot be read', async () => {
@@ -124,12 +121,12 @@ describe('a telemetry sink that fails', () => {
 })
 
 describe('an onThrottle callback that fails', () => {
-  it.each(FAILURES)('does not fail the consume that throttles when it %s, and the spend is kept', async (_label, fail) => {
+  it.each(FAILURES)('does not fail the consume that throttles when it %s, and the spend is kept', async (_label, fail, described) => {
     const { service, store } = makeService({ options: { onThrottle: fail as never } })
     const budget = await service.upsertBudget(budgetInput({ policy: 'throttle', limitNanoUsd: 100n }))
     await expect(service.consume(context(), { nanoUsd: 150n, tokens: 0, count: 1 })).resolves.toBeUndefined()
     await settle()
-    expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toHaveLength(1)
+    expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toEqual([`${THROTTLE_LINE} ${described}`])
     expect(warned.join('\n')).not.toContain(SECRET)
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(150n)
   })
@@ -143,8 +140,7 @@ describe('a host error that cannot be read', () => {
     expect(() => { new TelemetryEmitter(throws).recordUsage(record) }).not.toThrow()
     expect(() => { new TelemetryEmitter(rejects).recordUsage(record) }).not.toThrow()
     await settle()
-    expect(warned).toHaveLength(2)
-    expect(warned.join('\n')).not.toContain(SECRET)
+    expect(warned).toEqual([`${SINK_LINE} unreadable error`, `${SINK_LINE} unreadable error`])
   })
 
   it.each(HOSTILE_ERRORS)('is absorbed by an onThrottle callback that throws %s', async (_label, make) => {
@@ -152,7 +148,7 @@ describe('a host error that cannot be read', () => {
     const { service } = makeService({ options: { onThrottle: (): never => { throw failure } } })
     await service.upsertBudget(budgetInput({ policy: 'throttle', limitNanoUsd: 100n }))
     await expect(service.consume(context(), { nanoUsd: 150n, tokens: 0, count: 1 })).resolves.toBeUndefined()
-    expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toHaveLength(1)
+    expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toEqual([`${THROTTLE_LINE} unreadable error`])
   })
 
   it('does not fail recordDuration when the method getter throws, and calls nothing when the method is left out', () => {
