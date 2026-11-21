@@ -11,7 +11,7 @@
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
-import { fieldNamesOf } from './field-names'
+import { fieldNamesOf, fieldOf } from './field-names'
 
 /** The typed refusal of a map that cannot be listed, which names nothing the host wrote. */
 function unlistable(): AiTokensException {
@@ -74,7 +74,8 @@ export function viewOf<T extends object>(raw: T, viewed = new WeakMap<object, ob
     get: (_target, key) =>
       guarded(() => {
         if (answered.has(key)) return answered.get(key)
-        const value = Reflect.get(raw, key) as unknown
+        // A key that only the root of the prototype chain holds is not a field of the response.
+        const value: unknown = typeof key === 'string' ? fieldOf(raw, key) : Reflect.get(raw, key)
         const answer = isViewable(value) ? viewOf(value, viewed) : value
         answered.set(key, answer)
         return answer

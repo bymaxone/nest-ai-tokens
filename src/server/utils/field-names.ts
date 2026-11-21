@@ -42,3 +42,24 @@ export function fieldNamesOf(value: object): string[] {
   }
   return [...keys]
 }
+
+/**
+ * The value of a field of an object, by its name: the object's own, or one its class or prototype chain defines up to the root of the
+ * chain. A key found solely on the root (the `Object.prototype` of whichever realm, which another library may have added a key to) is not a
+ * field; a key found nowhere is still asked of the object, which a Proxy answers by its `get` trap.
+ *
+ * @param value The object.
+ * @param key The name of the field.
+ * @returns The value of the field, or `undefined` when the object has none.
+ * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
+ */
+export function fieldOf(value: object, key: string): unknown {
+  let holder: object = value
+  for (let depth = 0; ; depth += 1) {
+    if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
+    const next = Object.getPrototypeOf(holder) as object | null
+    if (next === null) return depth > 0 && isRealmRoot(holder) && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
+    if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
+    holder = next
+  }
+}

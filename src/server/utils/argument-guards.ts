@@ -10,7 +10,7 @@
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
-import { fieldNamesOf, isRealmRoot, MAX_PROTOTYPE_DEPTH } from './field-names'
+import { fieldNamesOf, fieldOf } from './field-names'
 import { isView } from './usage-view'
 import { isCount, isNonNegativeBigint } from './numeric-guards'
 
@@ -35,16 +35,7 @@ function refused(reason: string): AiTokensException {
  */
 export function readField(value: object, key: string, name: string): unknown {
   try {
-    let holder: object = value
-    for (let depth = 0; ; depth += 1) {
-      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
-      const next = Object.getPrototypeOf(holder) as object | null
-      // A key found solely on the root of the chain, built in or planted by another library, is not a field of the argument; a key found
-      // nowhere at all is still asked of the object, which a Proxy answers by its `get` trap without having a key of its own.
-      if (next === null) return depth > 0 && isRealmRoot(holder) && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
-      if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
-      holder = next
-    }
+    return fieldOf(value, key)
   } catch {
     throw refused(`${name} could not be read`)
   }

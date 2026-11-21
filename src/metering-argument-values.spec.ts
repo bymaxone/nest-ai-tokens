@@ -158,7 +158,7 @@ describe('a collector given to capture', () => {
   it('is refused as data, not leaked, when it is a Proxy whose prototype trap throws', async () => {
     const { run, args } = await callOf('metering.capture')
     args[2] = new Proxy({}, { getPrototypeOf: (): never => { throw new Error('host-private-text') } })
-    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_USAGE_MALFORMED the normalizer could not read the usage token fields')
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG usage.provider could not be read')
   })
 })
 
@@ -418,6 +418,17 @@ describe('the usage of a call', () => {
     args[2] = raw
     expect(((await run(args)) as { inputTokens: number }).inputTokens).toBe(100)
     expect(reads).toBe(1)
+  })
+
+  it('does not read a key another library added to Object.prototype as a field of a response, and bills a response as it is', async () => {
+    const prototype = Object.prototype as Record<string, unknown>
+    prototype.cached_tokens = 40
+    try {
+      const record = await recorded(providerPresets.openaiChat, { model: 'gpt-4o', usage: { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: {} } }, true)
+      expect([record.cacheReadTokens, (record as unknown as { inputTokens: number }).inputTokens]).toEqual([0, 100])
+    } finally {
+      Reflect.deleteProperty(prototype, 'cached_tokens')
+    }
   })
 
   it('tells the normalizers of the library from a normalizer of the host', () => {
