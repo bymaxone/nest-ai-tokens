@@ -9,7 +9,7 @@
 import { rig } from '../test/fakes/call-registry'
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
-import { assertWalletRef, keysOf } from './server/utils/argument-guards'
+import { assertWalletRef, keysOf, readDeep, readField } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
 
 const MAX = 9_223_372_036_854_775_807n
@@ -706,8 +706,27 @@ describe('an object that answers by a get trap and holds no key of its own', () 
   })
 
   it('keeps the elements of a list whose length and elements are answered by the trap', async () => {
-    const { run, args } = await callOf('wallets.getEntries')
-    setAt(args, [1], { type: new Proxy([], { get: (_target, key) => (key === 'length' ? 1 : key === '0' ? 'grant' : undefined) }) })
-    expect(await reasonOf(() => run(args))).not.toBe('AI_TOKENS_INVALID_CONFIG type could not be read')
+    const { run, args } = await callOf('ledger.query')
+    const answered = (items: string[]): object => new Proxy([], { get: (_target, key) => (key === 'length' ? items.length : items[Number(key)]) })
+    setAt(args, [0, 'features'], answered(['f']))
+    expect(((await run(args)) as unknown[]).length).toBeGreaterThan(0)
+    setAt(args, [0, 'features'], answered(['no-such-feature']))
+    expect(await run(args)).toEqual([])
+  })
+})
+
+describe('a chain that ends in an object the host built', () => {
+  it('keeps the fields of a null-prototype ancestor, listed and read by name', () => {
+    const ancestor = Object.assign(Object.create(null) as object, { surcharge: 7 })
+    const child = Object.create(ancestor) as object
+    expect(keysOf(child, 'input')).toEqual(['surcharge'])
+    expect(readDeep(child, 'unitRates', 1)).toEqual(expect.objectContaining({ surcharge: 7 }))
+    expect(readField(child, 'surcharge', 'input')).toBe(7)
+  })
+
+  it('still skips the Object.prototype of the realm and of another realm', () => {
+    expect(readField(runInNewContext('({})') as object, 'toString', 'input')).toBeUndefined()
+    expect(readField({}, 'toString', 'input')).toBeUndefined()
+    expect(keysOf(Object.create(runInNewContext('({ a: 1 })') as object) as object, 'input')).toEqual(['a'])
   })
 })

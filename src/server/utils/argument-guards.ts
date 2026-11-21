@@ -21,6 +21,15 @@ function refused(reason: string): AiTokensException {
 const MAX_PROTOTYPE_DEPTH = 32
 
 /**
+ * Whether `value` is the `Object.prototype` of some realm: the object that ends every ordinary chain, whose own `constructor` is a function
+ * whose `prototype` is that object. A null-prototype object a host built is not, so its fields are the host's own.
+ */
+function isRealmRoot(value: object): boolean {
+  const constructor = Object.getOwnPropertyDescriptor(value, 'constructor')?.value as { prototype?: unknown } | undefined
+  return typeof constructor === 'function' && constructor.prototype === value
+}
+
+/**
  * The value of a field of an argument, read by its name. The field is the host's own, or one its class or prototype chain defines up to
  * the root of the chain (the `Object.prototype` of whichever realm the object comes from, which is skipped so that a key another library
  * planted there is not read as a field of the input); an accessor runs with the argument as `this`. A getter, or a Proxy trap, that throws
@@ -41,7 +50,7 @@ export function readField(value: object, key: string, name: string): unknown {
       const next = Object.getPrototypeOf(holder) as object | null
       // A key found solely on the root of the chain, built in or planted by another library, is not a field of the argument; a key found
       // nowhere at all is still asked of the object, which a Proxy answers by its `get` trap without having a key of its own.
-      if (next === null) return depth > 0 && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
+      if (next === null) return depth > 0 && isRealmRoot(holder) && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
       if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
       holder = next
     }
@@ -69,8 +78,8 @@ export function keysOf(value: object, name: string): string[] {
       // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
       const next = Object.getPrototypeOf(proto) as object | null
-      // The root of the chain, whichever realm it is of, adds nothing.
-      if (next === null) break
+      // The `Object.prototype` of whichever realm adds nothing; a null-prototype object of the host's own that ends the chain does.
+      if (next === null && isRealmRoot(proto)) break
       for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
       proto = next
     }
