@@ -24,7 +24,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Changed
 
-- The `server` bundle is 57537 bytes brotli with the typed field lists, the single read of every argument and the budget of a read; its budget moves from 55171 to 57628. The `prisma` bundle is 16142 bytes, within its budget of 16171.
+- The `server` size budget is 57628 bytes brotli, for the typed field lists, the single read of every argument and the budget of a read.
 
 ## [1.1.19] - 2026-11-20
 
