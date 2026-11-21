@@ -43,7 +43,7 @@ class MockClient {
 /** The clients the mocked ioredis constructor created, in order. */
 const mockCreated: MockClient[] = []
 
-jest.mock('ioredis', () => ({ __esModule: true, default: class Owned { constructor(url: string, options?: Record<string, unknown>) { return new MockClient(url, options) } } }))
+jest.mock('ioredis', () => ({ __esModule: true, default: function Owned(url: string, options?: Record<string, unknown>) { return new MockClient(url, options) } }))
 
 beforeEach(() => {
   mockCreated.length = 0
