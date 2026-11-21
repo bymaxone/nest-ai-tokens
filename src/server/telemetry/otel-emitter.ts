@@ -10,8 +10,13 @@
  * @layer server
  */
 
+import { Logger } from '@nestjs/common'
 import type { UsageRecord } from '../../shared'
 import type { ITelemetrySink } from '../interfaces'
+import { absorbHostMethod } from '../utils/absorb-host-call'
+
+/** Stable log key of a telemetry sink call that threw or rejected; the record is already written and the operation goes on. */
+const SINK_FAILED_LOG_KEY = 'ai_tokens.telemetry.sink_failed'
 
 /**
  * Build the `gen_ai.*` attribute set for a record — token counts, model
@@ -35,6 +40,8 @@ export function buildGenAiAttributes(record: UsageRecord): Record<string, string
 
 /** Emits GenAI telemetry through a sink, or does nothing when none is configured. */
 export class TelemetryEmitter {
+  private readonly logger = new Logger(TelemetryEmitter.name)
+
   /** @param sink The host telemetry sink, or `null` to disable telemetry. */
   constructor(private readonly sink: ITelemetrySink | null) {}
 
@@ -45,7 +52,8 @@ export class TelemetryEmitter {
    */
   recordUsage(record: UsageRecord): void {
     if (this.sink === null) return
-    this.sink.recordUsage(buildGenAiAttributes(record), record)
+    const sink = this.sink
+    absorbHostMethod(this.logger, SINK_FAILED_LOG_KEY, sink, 'recordUsage', [buildGenAiAttributes(record), record])
   }
 
   /**
@@ -56,8 +64,7 @@ export class TelemetryEmitter {
    * @param milliseconds The measured operation duration.
    */
   recordDuration(record: UsageRecord, milliseconds: number): void {
-    const sink = this.sink
-    if (sink?.recordDuration === undefined) return
-    sink.recordDuration(buildGenAiAttributes(record), milliseconds)
+    if (this.sink === null) return
+    absorbHostMethod(this.logger, SINK_FAILED_LOG_KEY, this.sink, 'recordDuration', [buildGenAiAttributes(record), milliseconds], true)
   }
 }
