@@ -77,11 +77,11 @@ const MAX_LIST_LENGTH = 100_000
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
- * @param depth How deep in the argument the value is.
+ * @param depth How deep in the argument the value is, counted from the argument itself as 0.
  * @returns The copy.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, is nested too deep or is too long.
  */
-export function readDeep(value: unknown, name: string, depth = 0): unknown {
+export function readDeep(value: unknown, name: string, depth: number): unknown {
   if (typeof value !== 'object' || value === null || isDate(value)) return value
   if (depth >= MAX_NESTING) throw refused(`${name} could not be read`)
   if (Array.isArray(value)) {

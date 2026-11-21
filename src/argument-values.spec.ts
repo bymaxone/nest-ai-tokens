@@ -464,4 +464,21 @@ describe('a list or an object nested in an input', () => {
     at(args, [0]).scope = { type: 'user', id: 'nested' }
     expect(await reasonOf(() => run(args))).toBeUndefined()
   })
+
+  /** The caps are refusals with the library code and the field named, on the line and one step past it, never a silent cut. */
+  it.each([[100_000, undefined], [100_001, 'features could not be read']])('reads a list of %s elements: %s', async (length, refusal) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = new Proxy([], { get: (target, key) => (key === 'length' ? length : key === 'constructor' ? Array : Reflect.get(target, key) as unknown) })
+    const reason = await reasonOf(() => run(args))
+    expect(reason).toBe(refusal === undefined ? 'AI_TOKENS_INVALID_CONFIG features must be a list of strings' : `AI_TOKENS_INVALID_CONFIG ${refusal}`)
+  })
+
+  it.each([[6, undefined], [7, 'scope.n1.n2.n3.n4.n5.n6.n7 could not be read']])('reads an object nested %s levels below the scope: %s', async (levels, refusal) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let nested: Record<string, unknown> = {}
+    for (let level = levels; level >= 1; level -= 1) nested = { [`n${String(level)}`]: nested }
+    at(args, [0]).scope = { type: 'user', id: 'u', ...nested }
+    const reason = await reasonOf(() => run(args))
+    expect(reason).toBe(refusal === undefined ? undefined : `AI_TOKENS_INVALID_CONFIG ${refusal}`)
+  })
 })
