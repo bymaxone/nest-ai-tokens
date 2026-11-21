@@ -82,6 +82,7 @@ export function withReadDates<T extends object>(input: T, fields: FieldList<T>, 
   for (const key of Object.keys(fields)) {
     const value = readDeep(readField(input, key, `${prefix}${key}`), `${prefix}${key}`, 1)
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
+    // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
     if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
   }
   for (const field of dates) {

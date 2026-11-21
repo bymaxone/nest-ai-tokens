@@ -39,7 +39,7 @@ export function readField(value: object, key: string, name: string): unknown {
     for (let depth = 0; ; depth += 1) {
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
       const next = Object.getPrototypeOf(holder) as object | null
-      // The root of the chain holds a key only when another library planted it, so a key found nowhere else is not read; a key found
+      // A key found solely on the root of the chain, built in or planted by another library, is not a field of the argument; a key found
       // nowhere at all is still asked of the object, which a Proxy answers by its `get` trap without having a key of its own.
       if (next === null) return depth > 0 && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
       if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
