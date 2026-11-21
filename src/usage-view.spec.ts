@@ -59,6 +59,28 @@ describe('the view of a raw provider response', () => {
     expect(viewOf(raw, views)).toBe(viewOf(raw, views))
   })
 
+  it('reports a field as the library lists it: own, hidden and defined by a class are enumerable and redefinable, and what is not there is not', () => {
+    class Tools {
+      get counted(): number {
+        return Number('5')
+      }
+      *[Symbol.iterator](): Generator<number> {
+        yield Number('1')
+      }
+    }
+    const hidden = Object.defineProperty({ plain: 1 }, 'secret', { value: 2, enumerable: false, configurable: false, writable: false })
+    const own = viewOf(hidden)
+    expect(Object.getOwnPropertyDescriptor(own, 'plain')).toEqual({ value: 1, writable: true, enumerable: true, configurable: true })
+    expect(Object.getOwnPropertyDescriptor(own, 'secret')).toEqual({ value: 2, writable: false, enumerable: true, configurable: true })
+    expect(Object.keys(own)).toEqual(['plain', 'secret'])
+    const tools = viewOf(new Tools())
+    expect(Object.getOwnPropertyDescriptor(tools, 'counted')).toEqual({ value: undefined, writable: true, enumerable: true, configurable: true })
+    expect(Object.getOwnPropertyDescriptor(tools, 'missing')).toBeUndefined()
+    expect(Object.getOwnPropertyDescriptor(tools, Symbol.iterator)).toBeUndefined()
+    expect(Object.entries(tools)).toEqual([['counted', 5]])
+    expect(Object.getOwnPropertyDescriptor(viewOf([1]), '9')).toBeUndefined()
+  })
+
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {
     const view = viewOf([{ ttl: '1h' }, { ttl: '5m' }])
     expect(Array.isArray(view)).toBe(true)

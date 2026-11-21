@@ -9,8 +9,8 @@ import { rig } from '../test/fakes/call-registry'
 import { isBuiltInNormalizer, providerPresets } from './server/config/provider-presets'
 import { AiTokensException } from './server/errors'
 import { StreamUsageCollector } from './server/streaming/stream-usage-collector'
-import { readDeep } from './server/utils/argument-guards'
-import { readShape } from './server/utils/date-guards'
+import { newVisit, readDeep } from './server/utils/argument-guards'
+import { readHoldEstimate, readShape } from './server/utils/date-guards'
 
 /** An object whose keys each hold a list of zeros of the given length. */
 const lists = (sizes: number[]): Record<string, unknown> => Object.fromEntries(sizes.map((size, index) => [`l${String(index)}`, Array.from({ length: size }, () => 0)]))
@@ -85,6 +85,28 @@ describe('the estimate of a hold', () => {
     setAt(args, [1], estimate)
     expect((await reasonOf(() => run(args))) ?? '').not.toContain('could not be read')
     expect(reads).toBe(1)
+  })
+
+  it('names the field of a rated estimate that cannot be read, and the discriminator that holds a value that cannot be read', async () => {
+    const rated = { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 10, maxOutputTokens: 10 }
+    const { run, args } = await callOf('metering.hold')
+    setAt(args, [1], Object.defineProperty({ ...rated }, 'model', { get: (): never => { throw new Error('host-private-text') }, enumerable: true }))
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG estimate.model could not be read')
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    setAt(args, [1], { ...rated, provider: cyclic })
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG estimate.provider.self could not be read')
+    setAt(args, [1], { tokens: cyclic })
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG estimate.tokens.self could not be read')
+  })
+
+  it('gives the snapshot of an estimate the discriminator as a field a spread and a write both see', () => {
+    for (const estimate of [{ provider: 'openai', model: 'm', operation: 'chat', inputTokens: 1, maxOutputTokens: 1 }, { tokens: 5 }]) {
+      const copy = readHoldEstimate(estimate as never, newVisit()) as Record<string, unknown>
+      const key = 'provider' in estimate ? 'provider' : 'tokens'
+      expect(Object.keys(copy)).toContain(key)
+      expect(Object.getOwnPropertyDescriptor(copy, key)).toEqual({ value: (estimate as Record<string, unknown>)[key], writable: true, enumerable: true, configurable: false })
+    }
   })
 
   it('tells a tokens estimate that answers by its get trap from an amount, and refuses it only for the preset a tokens estimate needs', async () => {
