@@ -420,6 +420,27 @@ describe('the usage of a call', () => {
     expect(reads).toBe(1)
   })
 
+  it.each([
+    ['provider', { provider: 'custom' }],
+    ['operation', { operation: 'chat' }],
+  ] as const)('leaves the fields of a host normalizer to it when the response names only its %s', async (_name, named) => {
+    let reads = 0
+    const raw = { ...named, get inputTokens(): number { reads += 1; if (reads > 1) throw new Error('host-private-text'); return 100 } }
+    const normalizer = (response: unknown): unknown => ({ ...NORMALIZED, inputTokens: (response as typeof raw).inputTokens })
+    const { run, args } = await callOf('metering.capture')
+    args[3] = { provider: 'openai', normalizer, ratingMode: 'rate-table' }
+    args[2] = raw
+    expect(((await run(args)) as { inputTokens: number }).inputTokens).toBe(100)
+    expect(reads).toBe(1)
+  })
+
+  it.each(['provider', 'operation'] as const)('names the %s of a usage under a host normalizer when it cannot be read', async (field) => {
+    const { run, args } = await callOf('metering.capture')
+    args[3] = { provider: 'openai', normalizer: (raw: unknown): unknown => raw, ratingMode: 'rate-table' }
+    args[2] = Object.defineProperty({ provider: 'openai', operation: 'chat' }, field, { enumerable: true, get: (): never => { throw new Error('host-private-text') } })
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG usage.${field} could not be read`)
+  })
+
   it('does not read a key another library added to Object.prototype as a field of a response, and bills a response as it is', async () => {
     const prototype = Object.prototype as Record<string, unknown>
     prototype.cached_tokens = 40
