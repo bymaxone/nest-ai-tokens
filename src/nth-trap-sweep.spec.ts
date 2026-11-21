@@ -123,7 +123,7 @@ async function leaksOf(name: string, index: number): Promise<number[]> {
 }
 
 describe('the Nth trap of a host object', () => {
-  it('covers every call of the registry', async () => {
+  it('has more than thirty object arguments of the registry to sweep', async () => {
     expect((await allObjectArgs()).length).toBeGreaterThan(30)
   })
 

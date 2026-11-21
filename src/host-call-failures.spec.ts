@@ -26,6 +26,50 @@ const FAILURES: readonly (readonly [string, () => unknown])[] = [
   ['returns a value whose then getter throws', (): unknown => Object.defineProperty({}, 'then', { get: (): never => { throw new Error(SECRET) } })],
 ]
 
+/** A complete posted usage record. */
+function completeRecord(over: Partial<UsageRecord> = {}): UsageRecord {
+  const now = new Date('2026-06-01T00:00:00.000Z')
+  return {
+    id: 'rec-1',
+    tenantId: 'tenant-1',
+    scope: { type: 'user', id: 'u1' },
+    provider: 'openai',
+    model: 'gpt-5-2026-03-14',
+    operation: 'chat',
+    serviceTier: 'standard',
+    feature: 'chat.reply',
+    tags: [],
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheReadTokens: 0,
+    cacheWrite5mTokens: 0,
+    cacheWrite1hTokens: 0,
+    reasoningTokens: 0,
+    audioInTokens: 0,
+    audioOutTokens: 0,
+    imageInTokens: 0,
+    imageOutTokens: 0,
+    totalTokens: 1500,
+    priceVersionId: 'price-1',
+    rawCostNanoUsd: 6_250_000n,
+    surchargeNanoUsd: 0n,
+    billedCostNanoUsd: 6_250_000n,
+    markupMultiplier: 1,
+    currency: 'USD',
+    priceMissing: false,
+    status: 'posted',
+    idempotencyKey: 'key-1',
+    isSystemCost: false,
+    enforced: false,
+    occurredAt: now,
+    createdAt: now,
+    updatedAt: now,
+    ...over,
+  }
+}
+
+const record = completeRecord()
+
 /** Errors a host can throw whose own reads throw: a describing line must survive them. */
 const HOSTILE_ERRORS: readonly (readonly [string, () => unknown])[] = [
   ['an error whose code getter throws', (): unknown => Object.defineProperty(new Error('x'), 'code', { get: (): never => { throw new Error(SECRET) } })],
@@ -33,7 +77,6 @@ const HOSTILE_ERRORS: readonly (readonly [string, () => unknown])[] = [
   ['a Proxy whose prototype read throws', (): unknown => new Proxy(new Error('x'), { getPrototypeOf: (): never => { throw new Error(SECRET) } })],
 ]
 
-const record = { id: 'r1', provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard', inputTokens: 1, outputTokens: 1 } as unknown as UsageRecord
 
 let warned: string[] = []
 
