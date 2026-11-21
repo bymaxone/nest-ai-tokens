@@ -481,4 +481,26 @@ describe('a list or an object nested in an input', () => {
     const reason = await reasonOf(() => run(args))
     expect(reason).toBe(refusal === undefined ? undefined : `AI_TOKENS_INVALID_CONFIG ${refusal}`)
   })
+
+  it('names the element of a list that cannot be read, and the field of a nested object', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = new Proxy(['a', 'b'], { get: (target, key) => { if (key === '1') throw new Error('host-private-text'); return Reflect.get(target, key) as unknown } })
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG features[1] could not be read')
+    at(args, [0]).features = ['a']
+    at(args, [0]).scope = { type: 'user', get id(): string { throw new Error('host-private-text') } }
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.id could not be read')
+  })
+
+  it('counts the nesting of lists inside lists against the cap', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let nested: unknown[] = []
+    for (let level = 0; level < 9; level += 1) nested = [nested]
+    at(args, [0]).features = nested
+    expect(await reasonOf(() => run(args))).toMatch(/^AI_TOKENS_INVALID_CONFIG features(\[0\])+ could not be read$/)
+  })
+
+  it('copies a nested object to one whose fields are enumerable', () => {
+    const copy = snapshotOf({ inner: { b: 1, c: 2 } })
+    expect(Object.keys(copy.inner).sort()).toEqual(['b', 'c'])
+  })
 })

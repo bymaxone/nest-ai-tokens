@@ -91,7 +91,7 @@ export function readDeep(value: unknown, name: string, depth: number): unknown {
   }
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of keysOf(value, name)) {
-    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${key}`), `${name}.${key}`, depth + 1), enumerable: true, writable: true })
+    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${key}`), `${name}.${key}`, depth + 1), enumerable: true })
   }
   return copy
 }
