@@ -10,6 +10,22 @@ import type { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 
 /**
+ * Write the line of an absorbed failure. The logger is the host's too (a `LoggerService` of Nest can throw), and a line that cannot be
+ * written is dropped: the failure it reports has already been absorbed, and nothing else may fail on its account.
+ *
+ * @param logger The logger that writes the line.
+ * @param key The stable log key of the line.
+ * @param error What the host's call threw or rejected with.
+ */
+function warnFailure(logger: Logger, key: string, error: unknown): void {
+  try {
+    logger.warn(`${key} ${describeError(error)}`)
+  } catch {
+    // The line is dropped.
+  }
+}
+
+/**
  * Call a host function without letting its failure escape, and without waiting for it.
  *
  * @param logger The logger that writes the line of a failure.
@@ -20,10 +36,10 @@ export function absorbHostCall(logger: Logger, key: string, call: () => unknown)
   try {
     // A value that is not a thenable resolves at once; one whose `then` getter throws or whose `then` rejects is a rejected promise.
     Promise.resolve(call()).catch((error: unknown) => {
-      logger.warn(`${key} ${describeError(error)}`)
+      warnFailure(logger, key, error)
     })
   } catch (error) {
-    logger.warn(`${key} ${describeError(error)}`)
+    warnFailure(logger, key, error)
   }
 }
 
@@ -39,7 +55,7 @@ export async function absorbHostCallAndWait(logger: Logger, key: string, call: (
   try {
     await call()
   } catch (error) {
-    logger.warn(`${key} ${describeError(error)}`)
+    warnFailure(logger, key, error)
   }
 }
 

@@ -168,3 +168,38 @@ describe('a host error that cannot be read', () => {
     expect(warned).toHaveLength(1)
   })
 })
+
+describe('a logger that throws while an absorbed failure is written', () => {
+  let unhandled: unknown[] = []
+  const onUnhandled = (reason: unknown): void => {
+    unhandled.push(reason)
+  }
+
+  beforeEach(() => {
+    unhandled = []
+    process.on('unhandledRejection', onUnhandled)
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      throw new Error(SECRET)
+    })
+  })
+  afterEach(() => {
+    process.off('unhandledRejection', onUnhandled)
+  })
+
+  it.each(FAILURES)('does not fail recordUsage or recordDuration when the sink %s', async (_label, fail) => {
+    const emitter = new TelemetryEmitter({ recordUsage: fail, recordDuration: fail } as unknown as ITelemetrySink)
+    expect(() => { emitter.recordUsage(record) }).not.toThrow()
+    expect(() => { emitter.recordDuration(record, 5) }).not.toThrow()
+    await settle()
+    await settle()
+    expect(unhandled).toEqual([])
+  })
+
+  it.each(FAILURES)('does not fail the consume that throttles when the callback %s', async (_label, fail) => {
+    const { service } = makeService({ options: { onThrottle: fail } })
+    await service.upsertBudget(budgetInput({ policy: 'throttle', limitNanoUsd: 100n }))
+    await expect(service.consume(context(), { nanoUsd: 150n, tokens: 0, count: 1 })).resolves.toBeUndefined()
+    await settle()
+    expect(unhandled).toEqual([])
+  })
+})
