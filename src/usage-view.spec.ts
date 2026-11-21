@@ -79,6 +79,8 @@ describe('the view of a raw provider response', () => {
     expect(Object.getOwnPropertyDescriptor(tools, Symbol.iterator)).toBeUndefined()
     expect(Object.entries(tools)).toEqual([['counted', 5]])
     expect(Object.getOwnPropertyDescriptor(viewOf([1]), '9')).toBeUndefined()
+    const tag = Symbol('tag')
+    expect(Object.getOwnPropertyDescriptor(viewOf({ [tag]: 1 }), tag)).toEqual({ value: 1, writable: true, enumerable: true, configurable: true })
   })
 
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {
