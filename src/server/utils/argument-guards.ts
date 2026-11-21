@@ -112,15 +112,16 @@ export const MAX_USAGE_NESTING = 64
 /** The longest list, and the most keys of one object, read from an argument. */
 const MAX_LIST_LENGTH = 100_000
 
-/** The most lists and objects one read copies, counting each time a shared one is reached; each costs the reads of its keys. */
-const MAX_CONTAINERS = 2_500
+/** The most different lists and objects one read copies; each costs the reads of its keys, about 30 microseconds. */
+const MAX_CONTAINERS = 10_000
 
-/** The most other values one read visits, counting each time a shared list is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
+/** The most other values one read visits: a batch of 100 embeddings of 3072 numbers is 307_200. */
 const MAX_LEAVES = 1_000_000
 
-/** What one read of an argument has used up: the lists and objects being copied above the value, and how many of each kind of value it has visited. */
+/** What one read of an argument has used up: the lists and objects being copied above the value, the copies made so far, and how many of each kind of value it has visited. */
 interface Visit {
   readonly path: Set<object>
+  readonly copies: Map<object, unknown>
   containers: number
   leaves: number
 }
@@ -128,9 +129,11 @@ interface Visit {
 /**
  * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
  * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
- * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A value that
- * contains itself is refused, whatever the limit, and so is a read that visits more lists and objects, or more other values, than a
- * batch of provider responses holds, which a value that shares a child between its branches reaches at a shallow depth.
+ * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A list or an
+ * object reached again, through another branch, is not read again: the copy already made is the one returned, so the work follows the
+ * number of different values and a value that shares a child between its branches costs no more than a tree of its size. A value that
+ * contains itself is refused, whatever the limit, and so is a read of more different lists and objects, or of more other values, than a
+ * batch of provider responses holds.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
@@ -140,21 +143,24 @@ interface Visit {
  * @returns The copy.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep, is too long or is too large.
  */
-export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit: Visit = { path: new Set<object>(), containers: 0, leaves: 0 }): unknown {
+export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit: Visit = { path: new Set<object>(), copies: new Map<object, unknown>(), containers: 0, leaves: 0 }): unknown {
   if (typeof value !== 'object' || value === null || isDate(value)) {
     visit.leaves += 1
     if (visit.leaves > MAX_LEAVES) throw refused(`${name} could not be read`)
     return value
   }
+  if (visit.path.has(value)) throw refused(`${name} could not be read`)
+  if (visit.copies.has(value)) return visit.copies.get(value)
   visit.containers += 1
-  if (visit.containers > MAX_CONTAINERS) throw refused(`${name} could not be read`)
-  if (depth >= limit || visit.path.has(value)) throw refused(`${name} could not be read`)
+  if (visit.containers > MAX_CONTAINERS || depth >= limit) throw refused(`${name} could not be read`)
   visit.path.add(value)
   try {
     if (Array.isArray(value)) {
       const length = readField(value, 'length', name)
       if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
-      return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
+      const items = Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
+      visit.copies.set(value, items)
+      return items
     }
     const keys = keysOf(value, name)
     if (keys.length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
@@ -162,6 +168,7 @@ export function readDeep(value: unknown, name: string, depth: number, limit = MA
     for (const key of keys) {
       Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
     }
+    visit.copies.set(value, copy)
     return copy
   } finally {
     visit.path.delete(value)

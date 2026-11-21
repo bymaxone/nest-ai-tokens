@@ -118,27 +118,42 @@ describe('the usage a call reads once', () => {
     expect(readDeep({ x: shared, y: shared }, 'pair', 0, 64)).toEqual(expect.objectContaining({ x: { a: 1 }, y: { a: 1 } }))
   })
 
-  it('refuses a value that shares a child between its branches 40 levels deep, fast, and still reads a large list', () => {
+  it('reads a value that shares a child between its branches 40 levels deep in one pass, and keeps the sharing', () => {
     let shared: unknown = { leaf: 1 }
     for (let level = 0; level < 40; level += 1) shared = { left: shared, right: shared }
     const started = Date.now()
-    expect(() => readDeep(shared, 'usage', 0, 64)).toThrow()
-    expect(Date.now() - started).toBeLessThan(5000)
-    const embeddings = Array.from({ length: 100 }, () => ({ embedding: Array.from({ length: 3072 }, (_, index) => index) }))
-    expect(readDeep({ data: embeddings }, 'usage', 0, 64)).toEqual(expect.objectContaining({ data: expect.any(Array) as unknown }))
+    const copy = readDeep(shared, 'usage', 0, 64) as { left: unknown; right: unknown }
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(copy.left).toBe(copy.right)
   })
 
-  it('reads exactly as many lists and objects as the budget holds, and refuses one more', () => {
+  it('reads a child shared by two keys once, whatever it answers the second time', () => {
+    let reads = 0
+    const child = { get leaf(): number { reads += 1; return reads } }
+    const copy = readDeep({ a: child, b: child }, 'usage', 0, 64) as { a: { leaf: number }; b: { leaf: number } }
+    expect(reads).toBe(1)
+    expect(copy.b.leaf).toBe(1)
+  })
+
+  it('reads a long list that eleven keys share, and a batch of embeddings and a structured output of 3_000 rows', () => {
+    const list = Array.from({ length: 100_000 }, () => 0)
+    expect(() => readDeep(Object.fromEntries(Array.from({ length: 11 }, (_, index) => [`l${String(index)}`, list])), 'usage', 0, 64)).not.toThrow()
+    const embeddings = Array.from({ length: 100 }, () => ({ embedding: Array.from({ length: 3072 }, (_, index) => index) }))
+    expect(readDeep({ data: embeddings }, 'usage', 0, 64)).toEqual(expect.objectContaining({ data: expect.any(Array) as unknown }))
+    const rows = Array.from({ length: 3_000 }, (_, index) => ({ id: index, detail: { ok: true } }))
+    expect((readDeep({ rows }, 'usage', 0, 64) as { rows: unknown[] }).rows).toHaveLength(3_000)
+  })
+
+  it('reads exactly as many different lists and objects as the budget holds, and refuses one more', () => {
     const objects = (count: number): unknown[] => Array.from({ length: count }, () => ({}))
-    expect(() => readDeep(objects(2_499), 'usage', 0, 64)).not.toThrow()
-    expect(() => readDeep(objects(2_500), 'usage', 0, 64)).toThrow()
+    expect(() => readDeep(objects(9_999), 'usage', 0, 64)).not.toThrow()
+    expect(() => readDeep(objects(10_000), 'usage', 0, 64)).toThrow()
   })
 
   it('reads exactly as many other values as the budget holds, and refuses one more', () => {
-    const list = Array.from({ length: 100_000 }, () => 0)
-    const shared = (count: number): Record<string, unknown> => Object.fromEntries(Array.from({ length: count }, (_, index) => [`l${String(index)}`, list]))
-    expect(() => readDeep(shared(10), 'usage', 0, 64)).not.toThrow()
-    expect(() => readDeep(shared(11), 'usage', 0, 64)).toThrow()
+    const lists = (count: number): Record<string, unknown> => Object.fromEntries(Array.from({ length: count }, (_, index) => [`l${String(index)}`, Array.from({ length: 100_000 }, () => 0)]))
+    expect(() => readDeep(lists(10), 'usage', 0, 64)).not.toThrow()
+    expect(() => readDeep(lists(11), 'usage', 0, 64)).toThrow()
   })
 
   it('refuses an object that holds more keys than a list may hold elements, and reads one that holds that many', () => {
