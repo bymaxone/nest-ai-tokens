@@ -390,6 +390,13 @@ describe('the fields a snapshot lists', () => {
     expect(keysOf(new Derived(), 'input').sort()).toEqual(['inherited', 'own'])
   })
 
+  it('lists a field the host defined as not enumerable, own or in a nested object', () => {
+    const hidden = Object.defineProperty({ shown: 1 }, 'hiddenOwn', { get: () => Number('2'), enumerable: false })
+    expect(keysOf(hidden, 'input').sort()).toEqual(['hiddenOwn', 'shown'])
+    const copy = snapshotOf({ nested: hidden })
+    expect(Object.keys(copy.nested).sort()).toEqual(['hiddenOwn', 'shown'])
+  })
+
   it('does not list the constructor of a class', () => {
     expect(keysOf(new Derived(), 'input')).not.toContain('constructor')
   })
@@ -398,5 +405,172 @@ describe('the fields a snapshot lists', () => {
     const copy = snapshotOf(new Derived())
     expect(Object.keys(copy).sort()).toEqual(['inherited', 'own'])
     expect(Object.assign({}, copy)).toEqual({ inherited: 1, own: 2 })
+  })
+})
+
+describe('a list or an object nested in an input', () => {
+  const throwing = (target: unknown[]): unknown[] => new Proxy(target, { get: (): never => { throw new Error('host-private-text') } })
+  const withLength = (target: unknown[], length: unknown): unknown[] => new Proxy(target, { get: (inner, key) => (key === 'length' ? length : (Reflect.get(inner, key) as unknown)) })
+
+  const LIST_ROWS: readonly (readonly [string, (string | number)[], string, string])[] = [
+    ['budgets.upsertBudget', [0], 'features', 'features'],
+    ['budgets.upsertBudget', [0], 'softThresholds', 'softThresholds'],
+    ['ledger.query', [0], 'status', 'status'],
+    ['reports.summarize', [0], 'groupBy', 'groupBy'],
+  ]
+
+  it.each(LIST_ROWS)('refuses a Proxy list that throws at %s %j for %s', async (name, path, field, named) => {
+    const { run, args } = await callOf(name)
+    at(args, path)[field] = throwing(['day'])
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+  })
+
+  it.each([['a negative length', -1], ['a length that is not a number', 'many'], ['a list of two million elements', 2_000_000], ['a fraction', 1.5]])('refuses a list with %s', async (_label, length) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = withLength(['a'], length)
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG features could not be read')
+  })
+
+  it('reads each element of a list once', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    const reads = new Map<string, number>()
+    at(args, [0]).features = new Proxy(['a', 'b'], {
+      get(target, key): unknown {
+        reads.set(String(key), (reads.get(String(key)) ?? 0) + 1)
+        return Reflect.get(target, key) as unknown
+      },
+    })
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect([reads.get('length'), reads.get('0'), reads.get('1')]).toEqual([1, 1, 1])
+  })
+
+  it('reads a getter of a nested object once', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let reads = 0
+    at(args, [0]).scope = { type: 'user', get id(): string { reads += 1; if (reads > 1) throw new Error('host-private-text'); return 'u1' } }
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect(reads).toBe(1)
+  })
+
+  it('refuses an object that contains itself, and nesting deeper than eight levels', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    const loop: Record<string, unknown> = { type: 'user', id: 'u' }
+    loop.self = loop
+    at(args, [0]).scope = loop
+    expect(await reasonOf(() => run(args))).toMatch(/^AI_TOKENS_INVALID_CONFIG scope.*could not be read$/)
+    let deep: Record<string, unknown> = { type: 'user', id: 'u' }
+    for (let level = 0; level < 9; level += 1) deep = { inner: deep }
+    at(args, [0]).scope = deep
+    expect(await reasonOf(() => run(args))).toMatch(/could not be read$/)
+  })
+
+  it('keeps the values of honest nested lists and objects', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = ['f1', 'f2']
+    at(args, [0]).softThresholds = [0.5, 1]
+    at(args, [0]).scope = { type: 'user', id: 'nested' }
+    const budget = (await run(args)) as { features?: string[]; softThresholds: number[]; scope: { type: string; id: string } }
+    expect(budget.features).toEqual(['f1', 'f2'])
+    expect(budget.softThresholds).toEqual([0.5, 1])
+    expect({ ...budget.scope }).toEqual({ type: 'user', id: 'nested' })
+  })
+
+  /** The caps are refusals with the library code and the field named, on the line and one step past it, never a silent cut. */
+  it.each([[100_000, undefined], [100_001, 'features could not be read']])('reads a list of %s elements: %s', async (length, refusal) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = new Proxy([], { get: (target, key) => (key === 'length' ? length : key === 'constructor' ? Array : Reflect.get(target, key) as unknown) })
+    const reason = await reasonOf(() => run(args))
+    expect(reason).toBe(refusal === undefined ? 'AI_TOKENS_INVALID_CONFIG features must be a list of strings' : `AI_TOKENS_INVALID_CONFIG ${refusal}`)
+  })
+
+  it.each([[6, undefined], [7, 'scope.n1.n2.n3.n4.n5.n6.n7 could not be read']])('reads an object nested %s levels below the scope: %s', async (levels, refusal) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let nested: Record<string, unknown> = {}
+    for (let level = levels; level >= 1; level -= 1) nested = { [`n${String(level)}`]: nested }
+    at(args, [0]).scope = { type: 'user', id: 'u', ...nested }
+    const reason = await reasonOf(() => run(args))
+    expect(reason).toBe(refusal === undefined ? undefined : `AI_TOKENS_INVALID_CONFIG ${refusal}`)
+  })
+
+  it('names the element of a list that cannot be read, and the field of a nested object', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = new Proxy(['a', 'b'], { get: (target, key) => { if (key === '1') throw new Error('host-private-text'); return Reflect.get(target, key) as unknown } })
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG features[1] could not be read')
+    at(args, [0]).features = ['a']
+    at(args, [0]).scope = { type: 'user', get id(): string { throw new Error('host-private-text') } }
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.id could not be read')
+  })
+
+  it('counts the nesting of lists inside lists against the cap', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let nested: unknown[] = []
+    for (let level = 0; level < 9; level += 1) nested = [nested]
+    at(args, [0]).features = nested
+    expect(await reasonOf(() => run(args))).toMatch(/^AI_TOKENS_INVALID_CONFIG features(\[0\])+ could not be read$/)
+  })
+
+  it('copies a nested object to one whose fields are enumerable', () => {
+    const copy = snapshotOf({ inner: { b: 1, c: 2 } })
+    expect(Object.keys(copy.inner).sort()).toEqual(['b', 'c'])
+  })
+
+  /** A key of the host's object is the host's, or an end user's: it never reaches a refusal as it is. */
+  describe('a hostile key of a nested object', () => {
+    const HOSTILE_KEYS: readonly (readonly [string, string])[] = [
+      ['a line break', 'bad\nkey SENTINEL'],
+      ['a bidirectional control', 'bad\u202Ekey SENTINEL'],
+      ['10000 characters', `${'k'.repeat(10_000)}SENTINEL`],
+    ]
+
+    it.each(HOSTILE_KEYS)('is written as a marker when it holds %s and its getter throws', async (_label, key) => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      const scope: Record<string, unknown> = { type: 'user', id: 'u' }
+      Object.defineProperty(scope, key, { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      at(args, [0]).scope = scope
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.<key> could not be read')
+    })
+
+    it.each(HOSTILE_KEYS)('is written as a marker when it holds %s and the nesting under it is too deep', async (_label, key) => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      let deep: Record<string, unknown> = {}
+      for (let level = 0; level < 9; level += 1) deep = { [key]: deep }
+      at(args, [0]).scope = { type: 'user', id: 'u', ...deep }
+      const reason = (await reasonOf(() => run(args))) ?? ''
+      expect(reason).toMatch(/^AI_TOKENS_INVALID_CONFIG scope(\.<key>)+ could not be read$/)
+      expect(reason).not.toContain('SENTINEL')
+    })
+
+    it('is written as it is when it is a plain key', async () => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      const scope: Record<string, unknown> = { type: 'user', id: 'u' }
+      Object.defineProperty(scope, 'plainKey1', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      at(args, [0]).scope = scope
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.plainKey1 could not be read')
+    })
+
+    it('is written as a marker at the top of the input too', async () => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      Object.defineProperty(at(args, [0]), 'bad\nkey SENTINEL', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG <key> could not be read')
+    })
+  })
+})
+
+describe('a field the host defines as not enumerable', () => {
+  /** The services read a field by name, so a field defined without enumerability is still the caller's field and must reach the check and the store. */
+  it.each([['ledger.query', 'tenantId', 5, 'AI_TOKENS_INVALID_CONFIG tenantId must be a string'], ['wallets.getEntries', 'limit', 'many', 'AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more']] as const)('reaches the check of %s for %s', async (name, field, value, reason) => {
+    const { run, args } = await callOf(name)
+    const target = name === 'ledger.query' ? at(args, [0]) : at(args, [1])
+    Object.defineProperty(target, field, { value, enumerable: false, configurable: true })
+    expect(await reasonOf(() => run(args))).toBe(reason)
+  })
+
+  it('keeps a non-enumerable field that is valid, as the same value the store sees', async () => {
+    const getEntries = (await rig()).calls['wallets.getEntries']
+    if (getEntries === undefined) throw new Error('no call')
+    const [ref] = await getEntries.base()
+    const filter = Object.defineProperty({}, 'from', { value: new Date('2100-01-01T00:00:00Z'), enumerable: false })
+    const page = (await getEntries.run([ref, filter])) as { entries: unknown[] }
+    expect(page.entries).toHaveLength(0)
   })
 })

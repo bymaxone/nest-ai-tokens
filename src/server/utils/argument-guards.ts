@@ -8,6 +8,7 @@
  */
 
 import { AiTokensException } from '../errors'
+import { isDate } from '../../shared/utils/is-date'
 import { isCount, isNonNegativeBigint } from './numeric-guards'
 
 /** The typed refusal of an argument, naming it and never repeating a value. */
@@ -38,7 +39,8 @@ export function readField(value: object, key: string, name: string): unknown {
 const MAX_PROTOTYPE_DEPTH = 32
 
 /**
- * The fields of an argument object: its own enumerable keys, and the accessors and data its class or prototype chain defines up to
+ * The fields of an argument object: its own keys, enumerable or not (a field defined with `enumerable: false` is read by name by the
+ * services, so it is a field), and the accessors and data its class or prototype chain defines up to
  * `Object.prototype`, which an instance of a class holds as getters. A Proxy whose trap throws would put the host's own error in the
  * caller's hands, so it is refused as an argument that cannot be read.
  *
@@ -49,7 +51,7 @@ const MAX_PROTOTYPE_DEPTH = 32
  */
 export function keysOf(value: object, name: string): string[] {
   try {
-    const keys = new Set(Object.keys(value))
+    const keys = new Set(Object.getOwnPropertyNames(value))
     let proto = Object.getPrototypeOf(value) as object | null
     for (let depth = 0; proto !== null && proto !== Object.prototype; depth += 1) {
       // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
@@ -61,6 +63,52 @@ export function keysOf(value: object, name: string): string[] {
   } catch {
     throw refused(`${name} could not be read`)
   }
+}
+
+/** A key that can be written in a refusal as it is: letters and digits, starting with a letter, of a bounded length. */
+const PLAIN_KEY = /^[A-Za-z][A-Za-z0-9]{0,63}$/
+
+/**
+ * How a key of the host's object is written in a refusal. A key is the host's, or an end user's through the host, so it can hold line
+ * breaks, control or bidirectional characters, or be of any length: only a plain key is written, and every other one is a fixed marker.
+ *
+ * @param key A key of an object the host supplied.
+ * @returns The key, or `<key>`.
+ */
+export function labelOf(key: string): string {
+  return PLAIN_KEY.test(key) ? key : '<key>'
+}
+
+/** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
+const MAX_NESTING = 8
+
+/** The longest list read from an argument. */
+const MAX_LIST_LENGTH = 100_000
+
+/**
+ * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
+ * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
+ * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype.
+ *
+ * @param value The value to copy.
+ * @param name What the refusal calls the value.
+ * @param depth How deep in the argument the value is, counted from the argument itself as 0.
+ * @returns The copy.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, is nested too deep or is too long.
+ */
+export function readDeep(value: unknown, name: string, depth: number): unknown {
+  if (typeof value !== 'object' || value === null || isDate(value)) return value
+  if (depth >= MAX_NESTING) throw refused(`${name} could not be read`)
+  if (Array.isArray(value)) {
+    const length = readField(value, 'length', name)
+    if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
+    return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1))
+  }
+  const copy = Object.create(null) as Record<string, unknown>
+  for (const key of keysOf(value, name)) {
+    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1), enumerable: true })
+  }
+  return copy
 }
 
 /** Whether a value is a plain object: an object that is neither `null` nor an array. */

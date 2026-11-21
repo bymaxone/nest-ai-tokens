@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+- **Apply:** no migration and no option change is needed. A list or an object nested in an input is copied once with the input, element by element, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, can no longer fail a call after it has begun or put the host's own error in the caller's hands: it is refused as `AI_TOKENS_INVALID_CONFIG`, `<field> could not be read`. A list or nesting beyond the limits is refused the same way, and a key of the host's object that is not a short plain name is written in the refusal as `<key>`.
+
 - **Apply:** no migration and no option change is needed. A date a caller supplies is read once at the call and used as a copy, so a `Date` subclass that answers its first call and throws on later ones can no longer fail after the call has begun (`budgets.rotateWindow` threw the host's own error after it had persisted the rotation). A text argument that contains a NUL character, and an amount outside what a `BIGINT` column holds, is refused with `AI_TOKENS_INVALID_CONFIG` naming the argument, where the store answered `AI_TOKENS_STORE_ERROR` without naming it. An argument object whose getter throws is refused naming the field (`<field> could not be read`) and no longer surfaces the host's own error. The messages that refuse an amount now state the range, and `wallets.creditRateNanoUsd` and `wallets.overdraftNanoUsd` are refused above it.
 
 ## [1.1.19] - 2026-11-20
