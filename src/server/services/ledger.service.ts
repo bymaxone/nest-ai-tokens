@@ -23,6 +23,7 @@ import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } 
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { assertObject, assertOptionalCount, assertText } from '../utils/argument-guards'
 import { readOptionalDate, withReadDates } from '../utils/date-guards'
+import { LEDGER_FILTER_FIELDS } from '../utils/input-fields'
 import { hashedModelOf } from '../utils/hashed-model'
 import { computePayloadHash } from '../utils/payload-hash'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
@@ -198,7 +199,7 @@ export class LedgerService {
   /** Default the status filter to the balance-contributing statuses when unset. */
   private withBalanceStatuses(filter: LedgerFilter): LedgerFilter {
     assertObject('filter', filter)
-    const clean = withReadDates(filter, ['from', 'to'])
+    const clean = withReadDates(filter, LEDGER_FILTER_FIELDS, ['from', 'to'])
     assertText('tenantId', clean.tenantId)
     assertOptionalCount('limit', clean.limit)
     assertOptionalCount('offset', clean.offset)

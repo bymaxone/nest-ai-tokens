@@ -27,6 +27,7 @@ import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
 import { snapshotOf, withReadDates } from '../utils/date-guards'
+import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -130,7 +131,7 @@ export class WalletService {
    * @returns The nano-USD balance and its presentation credits.
    */
   async getBalance(ref: WalletRef): Promise<WalletBalance> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     const wallet = await this.store.getWallet(ref)
     const nanoUsd = wallet?.balanceNanoUsd ?? 0n
     return { nanoUsd, credits: this.toCredits(nanoUsd) }
@@ -147,9 +148,9 @@ export class WalletService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a non-positive amount / `'key'` owner; `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a key reuse with a different payload.
    */
   async grant(ref: WalletRef, given: GrantInput): Promise<WalletEntry> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     assertObject('input', given)
-    const input = withReadDates(given, ['effectiveAt', 'expiresAt'], 'grant ')
+    const input = withReadDates(given, GRANT_FIELDS, ['effectiveAt', 'expiresAt'], 'grant ')
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -196,9 +197,9 @@ export class WalletService {
    * @throws {AiTokensException} `AI_TOKENS_INSUFFICIENT_CREDITS` (402) when the balance would fall below `-overdraft`; `AI_TOKENS_INVALID_CONFIG` when neither `usageRecordId` nor `reason` is present, or the amount is not positive.
    */
   async debit(ref: WalletRef, given: DebitInput): Promise<WalletEntry> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     assertObject('input', given)
-    const input = snapshotOf(given)
+    const input = snapshotOf(given, DEBIT_FIELDS)
     assertEntryText(input, false)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -238,9 +239,9 @@ export class WalletService {
    * @returns The appended refund entry.
    */
   async refund(ref: WalletRef, given: RefundInput): Promise<WalletEntry> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     assertObject('input', given)
-    const input = snapshotOf(given)
+    const input = snapshotOf(given, REFUND_FIELDS)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -268,9 +269,9 @@ export class WalletService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a zero amount / `'key'` owner.
    */
   async adjust(ref: WalletRef, given: AdjustInput): Promise<WalletEntry> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     assertObject('input', given)
-    const input = snapshotOf(given)
+    const input = snapshotOf(given, ADJUST_FIELDS)
     assertEntryText(input, true)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
@@ -308,7 +309,7 @@ export class WalletService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` on a zero amount / `'key'` owner.
    */
   async settleAdjustment(ref: WalletRef, input: SettleAdjustmentInput): Promise<WalletEntry> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
@@ -336,9 +337,9 @@ export class WalletService {
    * @returns A page of entries and the total match count.
    */
   async getEntries(ref: WalletRef, filter?: WalletEntryFilter): Promise<WalletEntryPage> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     if (filter !== undefined) assertObject('filter', filter)
-    const clean = filter === undefined ? undefined : withReadDates(filter, ['from', 'to'])
+    const clean = filter === undefined ? undefined : withReadDates(filter, WALLET_ENTRY_FILTER_FIELDS, ['from', 'to'])
     if (clean !== undefined) {
       assertOptionalCount('limit', clean.limit)
       assertOptionalCount('offset', clean.offset)
@@ -355,7 +356,7 @@ export class WalletService {
    * @returns The reconciled nano-USD balance and its presentation credits.
    */
   async reconcile(ref: WalletRef): Promise<WalletBalance> {
-    this.assertOwner(ref)
+    ref = this.assertOwner(ref)
     let wallet: Awaited<ReturnType<IWalletStore['reconcile']>>
     try {
       wallet = await this.store.reconcile(ref, this.now())
@@ -416,11 +417,14 @@ export class WalletService {
       : attachCause(new AiTokensException(storeFailureCode(error), undefined, {}), error)
   }
 
-  /** Reject a `'key'` owner at runtime (`'key'` scopes cannot own money, §9.1). */
-  private assertOwner(ref: WalletRef): void {
+  /** Snapshot the reference of a wallet and reject a `'key'` owner at runtime (`'key'` scopes cannot own money, §9.1). */
+  private assertOwner(given: WalletRef): WalletRef {
+    assertObject('wallet', given)
+    const ref = withReadDates(given, WALLET_REF_FIELDS, [], 'wallet.')
     assertWalletRef(ref)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if ((ref.ownerType as string) === 'key') throw this.invalid("'key' scopes cannot own a wallet")
+    return ref
   }
 
   /** Present a nano-USD balance as credits (presentation-only division). */
@@ -454,7 +458,7 @@ function isWalletMissing(error: unknown): error is WalletMissingShape {
 }
 
 /** Throw unless the entry is an object whose idempotency key, reason and record id are strings, the reason being required when `reasonRequired`. */
-function assertEntryText(input: Record<string, unknown>, reasonRequired: boolean): void {
+function assertEntryText(input: { idempotencyKey: unknown; reason?: unknown; usageRecordId?: unknown }, reasonRequired: boolean): void {
   assertText('idempotencyKey', input.idempotencyKey)
   if (reasonRequired) assertText('reason', input.reason)
   else assertOptionalText('reason', input.reason)

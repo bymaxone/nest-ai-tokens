@@ -7,6 +7,7 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
+import { runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
 import { keysOf } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
@@ -141,18 +142,20 @@ const ONCE_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
   ['reports.summarize', [0], 'from'],
 ]
 
-/** Every object argument that is listed into a snapshot, and what its refusal calls it when listing its keys throws. */
-const KEYS_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
-  ['budgets.upsertBudget', [0], 'input'],
-  ['wallets.grant', [1], 'grant input'],
-  ['wallets.debit', [1], 'input'],
-  ['wallets.refund', [1], 'input'],
-  ['wallets.adjust', [1], 'input'],
-  ['wallets.getEntries', [1], 'input'],
-  ['pricing.upsertPrice', [0], 'input'],
-  ['ledger.query', [0], 'input'],
-  ['ledger.sumCost', [0], 'input'],
-  ['reports.summarize', [0], 'input'],
+/** Every object argument that is read into a snapshot by the names of its type. */
+const SNAPSHOT_ROWS: readonly (readonly [string, (string | number)[]])[] = [
+  ['budgets.upsertBudget', [0]],
+  ['wallets.grant', [1]],
+  ['wallets.debit', [1]],
+  ['wallets.refund', [1]],
+  ['wallets.adjust', [1]],
+  ['wallets.getEntries', [1]],
+  ['wallets.getBalance', [0]],
+  ['pricing.upsertPrice', [0]],
+  ['pricing.resolveRate', [0]],
+  ['ledger.query', [0]],
+  ['ledger.sumCost', [0]],
+  ['reports.summarize', [0]],
 ]
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
@@ -255,16 +258,15 @@ describe('an object whose getter answers once', () => {
   })
 })
 
-describe('an object whose keys cannot be listed', () => {
-  it.each(KEYS_ROWS)('is refused by %s at %j naming %s', async (name, path, named) => {
+describe('an input read by the names of its type', () => {
+  /** The fields are read by name, so the keys of the host's object are never listed: a trap for it is never reached. */
+  it.each(SNAPSHOT_ROWS)('does not list the keys of the input of %s at %j', async (name, path) => {
     const { run, args } = await callOf(name)
-    const hostile = new Proxy({}, {
-      ownKeys(): never {
-        throw new Error('host-private-text')
-      },
-    })
-    setAt(args, path, hostile)
-    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+    let listed = 0
+    const original = at(args, path.slice(0, -1))[path.at(-1)!] as object
+    setAt(args, path, new Proxy(original, { ownKeys(target) { listed += 1; return Reflect.ownKeys(target) } }))
+    await reasonOf(() => run(args))
+    expect(listed).toBe(0)
   })
 })
 
@@ -323,10 +325,10 @@ describe('an input whose fields are accessors of its class', () => {
   it.each([
     ['a prototype that is the object itself', (): object => { const self: object = new Proxy({}, { getPrototypeOf: () => self }); return self }],
     ['a chain of 40 prototypes', (): object => { let proto: object = {}; for (let level = 0; level < 40; level += 1) proto = Object.create(proto) as object; return proto }],
-  ])('refuses %s naming the input', async (_label, make) => {
+  ])('refuses %s naming the first field read', async (_label, make) => {
     const { run, args } = await callOf('wallets.getEntries')
     setAt(args, [1], make())
-    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
   })
 
   it('accepts a class hierarchy of ten levels', async () => {
@@ -340,21 +342,21 @@ describe('an input whose fields are accessors of its class', () => {
   /** The case list of the prototype walk, one row each: every way a chain can be hostile is refused naming the input, and every way it can be odd but honest is read. */
   const HOSTILE_CHAINS: readonly (readonly [string, () => object])[] = [
     ['a getPrototypeOf trap that throws', () => new Proxy({}, { getPrototypeOf: (): never => { throw new Error('host-private-text') } })],
-    ['an ownKeys trap that throws', () => new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })],
-    ['a prototype Proxy whose ownKeys trap throws', () => Object.create(new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })) as object],
     ['a getPrototypeOf trap that returns a new Proxy each time', () => { const make = (): object => new Proxy({}, { getPrototypeOf: make }); return make() }],
   ]
   const HONEST_CHAINS: readonly (readonly [string, () => object])[] = [
+    ['an ownKeys trap that throws, which is never called', () => new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })],
+    ['a prototype Proxy whose ownKeys trap throws, which is never called', () => Object.create(new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })) as object],
     ['a null prototype', () => Object.assign(Object.create(null) as object, { limit: 5 })],
     ['an own __proto__ key', () => JSON.parse('{"__proto__":{"limit":"many"},"limit":5}') as object],
     ['a frozen object', () => Object.freeze({ limit: 5 })],
     ['a class that holds its fields as getters and a method', () => new (class { get limit(): number { return Number('5') }; describe(): string { return 'filter' } })()],
   ]
 
-  it.each(HOSTILE_CHAINS)('refuses %s naming the input', async (_label, make) => {
+  it.each(HOSTILE_CHAINS)('refuses %s naming the first field read', async (_label, make) => {
     const { run, args } = await callOf('wallets.getEntries')
     setAt(args, [1], make())
-    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
   })
 
   it.each(HONEST_CHAINS)('reads %s', async (_label, make) => {
@@ -393,7 +395,7 @@ describe('the fields a snapshot lists', () => {
   it('lists a field the host defined as not enumerable, own or in a nested object', () => {
     const hidden = Object.defineProperty({ shown: 1 }, 'hiddenOwn', { get: () => Number('2'), enumerable: false })
     expect(keysOf(hidden, 'input').sort()).toEqual(['hiddenOwn', 'shown'])
-    const copy = snapshotOf({ nested: hidden })
+    const copy = snapshotOf({ nested: hidden }, { nested: true })
     expect(Object.keys(copy.nested).sort()).toEqual(['hiddenOwn', 'shown'])
   })
 
@@ -401,8 +403,8 @@ describe('the fields a snapshot lists', () => {
     expect(keysOf(new Derived(), 'input')).not.toContain('constructor')
   })
 
-  it('copies the fields as enumerable data that a spread and Object.keys see', () => {
-    const copy = snapshotOf(new Derived())
+  it('copies the fields named, a getter of a class among them, as enumerable data that a spread and Object.keys see', () => {
+    const copy = snapshotOf(new Derived(), { inherited: true, own: true })
     expect(Object.keys(copy).sort()).toEqual(['inherited', 'own'])
     expect(Object.assign({}, copy)).toEqual({ inherited: 1, own: 2 })
   })
@@ -510,7 +512,7 @@ describe('a list or an object nested in an input', () => {
   })
 
   it('copies a nested object to one whose fields are enumerable', () => {
-    const copy = snapshotOf({ inner: { b: 1, c: 2 } })
+    const copy = snapshotOf({ inner: { b: 1, c: 2 } }, { inner: true })
     expect(Object.keys(copy.inner).sort()).toEqual(['b', 'c'])
   })
 
@@ -548,10 +550,10 @@ describe('a list or an object nested in an input', () => {
       expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.plainKey1 could not be read')
     })
 
-    it('is written as a marker at the top of the input too', async () => {
+    it('is never read at the top of the input, where fields are read by the names of their type', async () => {
       const { run, args } = await callOf('budgets.upsertBudget')
       Object.defineProperty(at(args, [0]), 'bad\nkey SENTINEL', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
-      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG <key> could not be read')
+      expect(await reasonOf(() => run(args))).toBeUndefined()
     })
   })
 })
@@ -572,5 +574,24 @@ describe('a field the host defines as not enumerable', () => {
     const filter = Object.defineProperty({}, 'from', { value: new Date('2100-01-01T00:00:00Z'), enumerable: false })
     const page = (await getEntries.run([ref, filter])) as { entries: unknown[] }
     expect(page.entries).toHaveLength(0)
+  })
+})
+
+describe('an input from another realm', () => {
+  /** A `vm` context has its own `Object.prototype`: a nested object of it is copied with its own fields and not with the methods of that root. */
+  it('is copied with its own fields only, a nested object included', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).scope = runInNewContext("({ type: 'user', id: 'foreign' })")
+    const budget = (await run(args)) as { scope: Record<string, unknown> }
+    expect(Object.keys(budget.scope).sort()).toEqual(['id', 'type'])
+    expect(budget.scope).toEqual(expect.objectContaining({ type: 'user', id: 'foreign' }))
+  })
+
+  it('is read by name at the top of the input, with the fields of its own realm', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    args[1] = runInNewContext('({ limit: 5 })')
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    args[1] = runInNewContext("({ limit: 'many' })")
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
   })
 })

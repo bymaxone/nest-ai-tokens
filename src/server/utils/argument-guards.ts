@@ -17,32 +17,43 @@ function refused(reason: string): AiTokensException {
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
+/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
+const MAX_PROTOTYPE_DEPTH = 32
+
 /**
- * The value of a field of an argument. A getter, or a Proxy trap, that throws would put the host's own error, with its own text, in the
- * caller's hands, so it is refused as an argument that cannot be read.
+ * The value of a field of an argument, read by its name. The field is the host's own, or one its class or prototype chain defines up to
+ * the root of the chain (the `Object.prototype` of whichever realm the object comes from, which is skipped so that a key another library
+ * planted there is not read as a field of the input); an accessor runs with the argument as `this`. A getter, or a Proxy trap, that throws
+ * would put the host's own error, with its own text, in the caller's hands, so it is refused as an argument that cannot be read, and so
+ * is a chain too long to be a class hierarchy.
  *
  * @param value The argument object.
  * @param key The field to read.
  * @param name What the refusal calls the field.
- * @returns The value of the field.
+ * @returns The value of the field, or `undefined` when the object has no such field.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field when reading it throws.
  */
 export function readField(value: object, key: string, name: string): unknown {
   try {
-    return Reflect.get(value, key)
+    let holder: object = value
+    for (let depth = 0; ; depth += 1) {
+      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
+      const next = Object.getPrototypeOf(holder) as object | null
+      // The object itself is always asked; a prototype is asked unless it is the root of the chain.
+      if ((depth === 0 || next !== null) && Object.hasOwn(holder, key)) return Reflect.get(value, key)
+      if (next === null) return undefined
+      holder = next
+    }
   } catch {
     throw refused(`${name} could not be read`)
   }
 }
 
-/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
-const MAX_PROTOTYPE_DEPTH = 32
-
 /**
- * The fields of an argument object: its own keys, enumerable or not (a field defined with `enumerable: false` is read by name by the
- * services, so it is a field), and the accessors and data its class or prototype chain defines up to
- * `Object.prototype`, which an instance of a class holds as getters. A Proxy whose trap throws would put the host's own error in the
- * caller's hands, so it is refused as an argument that cannot be read.
+ * The fields of an argument object whose names the library cannot know, such as the keys of a record: its own keys, enumerable or not
+ * (a field defined with `enumerable: false` is read by name by the services, so it is a field), and the accessors and data its class or
+ * prototype chain defines up to the root of the chain. A Proxy whose trap throws would put the host's own error in the caller's hands,
+ * so it is refused as an argument that cannot be read.
  *
  * @param value The argument object.
  * @param name What the refusal calls the object.
@@ -53,7 +64,7 @@ export function keysOf(value: object, name: string): string[] {
   try {
     const keys = new Set(Object.getOwnPropertyNames(value))
     let proto = Object.getPrototypeOf(value) as object | null
-    for (let depth = 0; proto !== null && proto !== Object.prototype; depth += 1) {
+    for (let depth = 0; proto !== null && Object.getPrototypeOf(proto) !== null; depth += 1) {
       // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
       for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
