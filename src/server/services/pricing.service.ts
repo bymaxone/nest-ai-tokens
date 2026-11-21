@@ -15,7 +15,8 @@ import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
 import type { ResolvedAiTokensOptions } from '../config'
 import { assertObject, assertOptionalAmount, assertOptionalCount, assertOptionalText, assertText } from '../utils/argument-guards'
-import { readDate, withReadDates } from '../utils/date-guards'
+import { readDate, snapshotOf, withReadDates } from '../utils/date-guards'
+import { PRICE_FIELDS, RESOLVE_RATE_FIELDS } from '../utils/input-fields'
 import { normalizeModelId } from '../utils/model-id'
 
 /** Inputs to {@link PricingService.resolveRate}. */
@@ -77,12 +78,13 @@ export class PricingService implements OnModuleInit {
   /**
    * Resolve the price version in effect at `input.at`, applying the §6.6 chain.
    *
-   * @param input The provider/model/operation/timestamp (+ optional tier/baseModel).
+   * @param given The provider/model/operation/timestamp (+ optional tier/baseModel).
    * @returns The matching price version, or `null` in non-strict mode on a miss.
    * @throws {AiTokensException} `AI_TOKENS_PRICE_NOT_FOUND` on a miss in strict mode.
    */
-  async resolveRate(input: ResolveRateInput): Promise<PriceVersion | null> {
-    assertObject('input', input)
+  async resolveRate(given: ResolveRateInput): Promise<PriceVersion | null> {
+    assertObject('input', given)
+    const input = snapshotOf(given, RESOLVE_RATE_FIELDS)
     assertText('provider', input.provider)
     assertText('model', input.model)
     assertText('operation', input.operation)
@@ -123,7 +125,7 @@ export class PricingService implements OnModuleInit {
    */
   async upsertPrice(given: NewPriceVersion): Promise<PriceVersion> {
     assertObject('input', given)
-    const input = withReadDates(given, ['effectiveFrom'])
+    const input = withReadDates(given, PRICE_FIELDS, ['effectiveFrom'])
     for (const field of ['provider', 'model', 'operation'] as const) assertText(field, input[field])
     assertOptionalText('serviceTier', input.serviceTier)
     for (const field of RATE_FIELDS) assertOptionalAmount(field, input[field])

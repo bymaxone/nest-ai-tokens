@@ -6,7 +6,9 @@
  */
 
 import { AiTokensException } from '../errors'
-import { keysOf, labelOf, readDeep, readField } from './argument-guards'
+import type { MeteringScope } from '../../shared'
+import { assertObject, assertScope, assertText, readDeep, readField } from './argument-guards'
+import { SCOPE_FIELDS, type FieldList } from './input-fields'
 import { isValidDate } from './numeric-guards'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
@@ -62,37 +64,58 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
 }
 
 /**
- * A snapshot of an input object, read once: every field is read a single time (the own enumerable fields and the accessors of its class), and the named date fields are replaced by
- * {@link readDate} copies. The caller's object is not read again, so a getter or a Proxy trap that answers once and throws afterwards
- * cannot fail after the call has begun, and every check and every use works on the same values.
+ * A snapshot of an input object, read once: each field named in `fields` is read a single time, by its name, and a list or an object
+ * nested in a field is copied the same way; the named date fields are replaced by {@link readDate} copies. The caller's object is not
+ * read again, so a getter or a Proxy trap that answers once and throws afterwards cannot fail after the call has begun, and every check
+ * and every use works on the same values. A field the host left out, or set to `undefined`, is absent from the snapshot.
  *
  * @param input The object the caller supplied.
- * @param fields The names of its date fields.
+ * @param fields The fields of its type, by name.
+ * @param dates The names of its date fields.
  * @param prefix Text put before a field's name in a refusal.
- * @returns A new object holding the values read.
+ * @returns A new object with no prototype, holding the values read.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
-export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
+export function withReadDates<T extends object>(input: T, fields: FieldList<T>, dates: readonly (keyof T & string)[] = [], prefix = ''): T {
   // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
   const copy = Object.create(null) as Record<string, unknown>
-  for (const key of keysOf(input, `${prefix}input`)) {
+  for (const key of Object.keys(fields)) {
+    const value = readDeep(readField(input, key, `${prefix}${key}`), `${prefix}${key}`, 1)
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
-    Object.defineProperty(copy, key, { value: readDeep(readField(input, key, `${prefix}${labelOf(key)}`), `${prefix}${labelOf(key)}`, 1), enumerable: true, writable: true })
+    // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
+    if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
   }
-  for (const field of fields) {
+  for (const field of dates) {
     if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
   }
   return copy as T
 }
 
 /**
- * A snapshot of an input object that holds no date: every field is read once, as {@link withReadDates} does.
+ * A snapshot of an input object that holds no date: each field of `fields` is read once, as {@link withReadDates} does.
  *
  * @param input The object the caller supplied.
+ * @param fields The fields of its type, by name.
  * @returns A new object holding the values read.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
-export function snapshotOf<T extends object>(input: T): T {
-  // Stryker disable next-line ArrayDeclaration: equivalent: a field name that no input holds is skipped, so the list is read as empty either way
-  return withReadDates(input, [])
+export function snapshotOf<T extends object>(input: T, fields: FieldList<T>): T {
+  return withReadDates(input, fields)
+}
+
+/**
+ * The scope of a lookup, read once: the tenant must be a string and the scope an object with a type and an id, and what comes back is
+ * the snapshot of the scope, which every later use of the lookup reads.
+ *
+ * @param tenantId The tenant the caller passed.
+ * @param scope The scope the caller passed.
+ * @returns The snapshot of the scope.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the argument that is not valid or cannot be read.
+ */
+export function lookupScope(tenantId: unknown, scope: unknown): MeteringScope {
+  assertText('tenantId', tenantId)
+  assertObject('scope', scope)
+  const own = snapshotOf(scope as object as MeteringScope, SCOPE_FIELDS)
+  assertScope('scope', own)
+  return own
 }

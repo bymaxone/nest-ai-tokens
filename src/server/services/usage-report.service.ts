@@ -20,6 +20,7 @@ import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { assertObject, assertText } from '../utils/argument-guards'
 import { withReadDates } from '../utils/date-guards'
+import { REPORT_FILTER_FIELDS, SUMMARIZE_FIELDS } from '../utils/input-fields'
 
 /** The resolved-options subset the report service consumes. */
 export interface UsageReportOptions {
@@ -68,11 +69,6 @@ function assertGroupBy(groupBy: unknown): void {
   if (!groupBy.every((dimension): boolean => typeof dimension === 'string' && Object.hasOwn(REPORT_GROUPS, dimension))) throw refused('groupBy must name only the documented dimensions')
 }
 
-/** A copy of a report filter whose bounds, when given, are valid dates read once; the stores compare them as given. */
-function withCleanDates<T extends ReportFilter>(filter: T): T {
-  return withReadDates(filter, ['from', 'to'])
-}
-
 /**
  * Read-side reporting: per-scope cost summaries with currency conversion, CSV
  * and JSON export, paginated history, and per-model analytics. All money is
@@ -107,7 +103,7 @@ export class UsageReportService {
    */
   async summarize(input: SummarizeInput): Promise<UsageSummary[]> {
     assertObject('input', input)
-    const { groupBy, ...filter } = withCleanDates(input)
+    const { groupBy, ...filter } = withReadDates(input, SUMMARIZE_FIELDS, ['from', 'to'])
     assertText('tenantId', filter.tenantId)
     assertGroupBy(groupBy)
     const max = this.options.reporting.maxExportRows
@@ -139,7 +135,7 @@ export class UsageReportService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the result exceeds `reporting.maxExportRows`.
    */
   async export(given: ReportFilter, format: ReportExportFormat): Promise<Readable> {
-    const filter = withCleanDates(given)
+    const filter = withReadDates(given, REPORT_FILTER_FIELDS, ['from', 'to'])
     const max = this.options.reporting.maxExportRows
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
     // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only

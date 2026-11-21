@@ -85,16 +85,6 @@ const KNOWN_GAPS: readonly string[] = [
   'metering.capture arg 3',
   'metering.release arg 0',
   'metering.release arg 1',
-  'wallets.getBalance arg 0',
-  'wallets.grant arg 0',
-  'wallets.debit arg 0',
-  'wallets.refund arg 0',
-  'wallets.adjust arg 0',
-  'wallets.getEntries arg 0',
-  'wallets.reconcile arg 0',
-  'budgets.list arg 1',
-  'budgets.status arg 1',
-  'pricing.resolveRate arg 0',
 ]
 
 /** The call and the position of every object argument of every call. */

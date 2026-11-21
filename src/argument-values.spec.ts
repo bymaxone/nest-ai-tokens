@@ -7,8 +7,9 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
+import { runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
-import { keysOf } from './server/utils/argument-guards'
+import { assertWalletRef, keysOf, readDeep, readField } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
 
 const MAX = 9_223_372_036_854_775_807n
@@ -141,18 +142,20 @@ const ONCE_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
   ['reports.summarize', [0], 'from'],
 ]
 
-/** Every object argument that is listed into a snapshot, and what its refusal calls it when listing its keys throws. */
-const KEYS_ROWS: readonly (readonly [string, (string | number)[], string])[] = [
-  ['budgets.upsertBudget', [0], 'input'],
-  ['wallets.grant', [1], 'grant input'],
-  ['wallets.debit', [1], 'input'],
-  ['wallets.refund', [1], 'input'],
-  ['wallets.adjust', [1], 'input'],
-  ['wallets.getEntries', [1], 'input'],
-  ['pricing.upsertPrice', [0], 'input'],
-  ['ledger.query', [0], 'input'],
-  ['ledger.sumCost', [0], 'input'],
-  ['reports.summarize', [0], 'input'],
+/** Every object argument that is read into a snapshot by the names of its type. */
+const SNAPSHOT_ROWS: readonly (readonly [string, (string | number)[]])[] = [
+  ['budgets.upsertBudget', [0]],
+  ['wallets.grant', [1]],
+  ['wallets.debit', [1]],
+  ['wallets.refund', [1]],
+  ['wallets.adjust', [1]],
+  ['wallets.getEntries', [1]],
+  ['wallets.getBalance', [0]],
+  ['pricing.upsertPrice', [0]],
+  ['pricing.resolveRate', [0]],
+  ['ledger.query', [0]],
+  ['ledger.sumCost', [0]],
+  ['reports.summarize', [0]],
 ]
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
@@ -255,16 +258,15 @@ describe('an object whose getter answers once', () => {
   })
 })
 
-describe('an object whose keys cannot be listed', () => {
-  it.each(KEYS_ROWS)('is refused by %s at %j naming %s', async (name, path, named) => {
+describe('an input read by the names of its type', () => {
+  /** The fields are read by name, so the keys of the host's object are never listed: a trap for it is never reached. */
+  it.each(SNAPSHOT_ROWS)('does not list the keys of the input of %s at %j', async (name, path) => {
     const { run, args } = await callOf(name)
-    const hostile = new Proxy({}, {
-      ownKeys(): never {
-        throw new Error('host-private-text')
-      },
-    })
-    setAt(args, path, hostile)
-    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+    let listed = 0
+    const original = at(args, path.slice(0, -1))[path.at(-1)!] as object
+    setAt(args, path, new Proxy(original, { ownKeys(target) { listed += 1; return Reflect.ownKeys(target) } }))
+    await reasonOf(() => run(args))
+    expect(listed).toBe(0)
   })
 })
 
@@ -323,10 +325,10 @@ describe('an input whose fields are accessors of its class', () => {
   it.each([
     ['a prototype that is the object itself', (): object => { const self: object = new Proxy({}, { getPrototypeOf: () => self }); return self }],
     ['a chain of 40 prototypes', (): object => { let proto: object = {}; for (let level = 0; level < 40; level += 1) proto = Object.create(proto) as object; return proto }],
-  ])('refuses %s naming the input', async (_label, make) => {
+  ])('refuses %s naming the first field read', async (_label, make) => {
     const { run, args } = await callOf('wallets.getEntries')
     setAt(args, [1], make())
-    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
   })
 
   it('accepts a class hierarchy of ten levels', async () => {
@@ -340,21 +342,21 @@ describe('an input whose fields are accessors of its class', () => {
   /** The case list of the prototype walk, one row each: every way a chain can be hostile is refused naming the input, and every way it can be odd but honest is read. */
   const HOSTILE_CHAINS: readonly (readonly [string, () => object])[] = [
     ['a getPrototypeOf trap that throws', () => new Proxy({}, { getPrototypeOf: (): never => { throw new Error('host-private-text') } })],
-    ['an ownKeys trap that throws', () => new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })],
-    ['a prototype Proxy whose ownKeys trap throws', () => Object.create(new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })) as object],
     ['a getPrototypeOf trap that returns a new Proxy each time', () => { const make = (): object => new Proxy({}, { getPrototypeOf: make }); return make() }],
   ]
   const HONEST_CHAINS: readonly (readonly [string, () => object])[] = [
+    ['an ownKeys trap that throws, which is never called', () => new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })],
+    ['a prototype Proxy whose ownKeys trap throws, which is never called', () => Object.create(new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })) as object],
     ['a null prototype', () => Object.assign(Object.create(null) as object, { limit: 5 })],
     ['an own __proto__ key', () => JSON.parse('{"__proto__":{"limit":"many"},"limit":5}') as object],
     ['a frozen object', () => Object.freeze({ limit: 5 })],
     ['a class that holds its fields as getters and a method', () => new (class { get limit(): number { return Number('5') }; describe(): string { return 'filter' } })()],
   ]
 
-  it.each(HOSTILE_CHAINS)('refuses %s naming the input', async (_label, make) => {
+  it.each(HOSTILE_CHAINS)('refuses %s naming the first field read', async (_label, make) => {
     const { run, args } = await callOf('wallets.getEntries')
     setAt(args, [1], make())
-    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
   })
 
   it.each(HONEST_CHAINS)('reads %s', async (_label, make) => {
@@ -393,7 +395,7 @@ describe('the fields a snapshot lists', () => {
   it('lists a field the host defined as not enumerable, own or in a nested object', () => {
     const hidden = Object.defineProperty({ shown: 1 }, 'hiddenOwn', { get: () => Number('2'), enumerable: false })
     expect(keysOf(hidden, 'input').sort()).toEqual(['hiddenOwn', 'shown'])
-    const copy = snapshotOf({ nested: hidden })
+    const copy = snapshotOf({ nested: hidden }, { nested: true })
     expect(Object.keys(copy.nested).sort()).toEqual(['hiddenOwn', 'shown'])
   })
 
@@ -401,8 +403,8 @@ describe('the fields a snapshot lists', () => {
     expect(keysOf(new Derived(), 'input')).not.toContain('constructor')
   })
 
-  it('copies the fields as enumerable data that a spread and Object.keys see', () => {
-    const copy = snapshotOf(new Derived())
+  it('copies the fields named, a getter of a class among them, as enumerable data that a spread and Object.keys see', () => {
+    const copy = snapshotOf(new Derived(), { inherited: true, own: true })
     expect(Object.keys(copy).sort()).toEqual(['inherited', 'own'])
     expect(Object.assign({}, copy)).toEqual({ inherited: 1, own: 2 })
   })
@@ -510,7 +512,7 @@ describe('a list or an object nested in an input', () => {
   })
 
   it('copies a nested object to one whose fields are enumerable', () => {
-    const copy = snapshotOf({ inner: { b: 1, c: 2 } })
+    const copy = snapshotOf({ inner: { b: 1, c: 2 } }, { inner: true })
     expect(Object.keys(copy.inner).sort()).toEqual(['b', 'c'])
   })
 
@@ -548,10 +550,10 @@ describe('a list or an object nested in an input', () => {
       expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.plainKey1 could not be read')
     })
 
-    it('is written as a marker at the top of the input too', async () => {
+    it('is never read at the top of the input, where fields are read by the names of their type', async () => {
       const { run, args } = await callOf('budgets.upsertBudget')
       Object.defineProperty(at(args, [0]), 'bad\nkey SENTINEL', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
-      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG <key> could not be read')
+      expect(await reasonOf(() => run(args))).toBeUndefined()
     })
   })
 })
@@ -572,5 +574,172 @@ describe('a field the host defines as not enumerable', () => {
     const filter = Object.defineProperty({}, 'from', { value: new Date('2100-01-01T00:00:00Z'), enumerable: false })
     const page = (await getEntries.run([ref, filter])) as { entries: unknown[] }
     expect(page.entries).toHaveLength(0)
+  })
+})
+
+describe('an input from another realm', () => {
+  /** A `vm` context has its own `Object.prototype`: a nested object of it is copied with its own fields and not with the methods of that root. */
+  it('is copied with its own fields only, a nested object included', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).scope = runInNewContext("({ type: 'user', id: 'foreign' })")
+    const budget = (await run(args)) as { scope: Record<string, unknown> }
+    expect(Object.keys(budget.scope).sort()).toEqual(['id', 'type'])
+    expect(budget.scope).toEqual(expect.objectContaining({ type: 'user', id: 'foreign' }))
+  })
+
+  it('is read by name at the top of the input, with the fields of its own realm', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    args[1] = runInNewContext('({ limit: 5 })')
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    args[1] = runInNewContext("({ limit: 'many' })")
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
+  })
+})
+
+describe('the keys of a nested record', () => {
+  /** The first `AiTokensException` reason a call raises, or `undefined` when it returns. */
+  function refusal(run: () => unknown): string | undefined {
+    try {
+      run()
+    } catch (error) {
+      if (!(error instanceof AiTokensException)) throw error
+      return (error.getResponse() as { error: { details?: { reason?: string } } }).error.details?.reason
+    }
+    return undefined
+  }
+
+  it('lists a class chain of 31 levels and refuses one of 40, naming the object', () => {
+    const chain = (levels: number): object => {
+      let proto: object = { deep: 1 }
+      for (let level = 1; level < levels; level += 1) proto = Object.create(proto) as object
+      return Object.create(proto) as object
+    }
+    expect(keysOf(chain(30), 'input')).toEqual(['deep'])
+    expect(refusal(() => keysOf(chain(40), 'input'))).toBe('input could not be read')
+  })
+
+  it('refuses a chain that never ends, naming the object', () => {
+    const make = (): object => new Proxy({}, { getPrototypeOf: make })
+    expect(refusal(() => keysOf(make(), 'input'))).toBe('input could not be read')
+  })
+
+  it('does not list what the Object.prototype of another realm holds', () => {
+    expect(keysOf(runInNewContext('({ a: 1 })') as object, 'input')).toEqual(['a'])
+    expect(keysOf(runInNewContext('new (class { get g() { return 1 } })()') as object, 'input')).toEqual(['g'])
+  })
+
+  it('reads the prototype of each level of the chain once', () => {
+    let reads = 0
+    const level = new Proxy({ inherited: 1 }, { getPrototypeOf: (target) => { reads += 1; return Reflect.getPrototypeOf(target) } })
+    expect(keysOf(Object.create(level) as object, 'input')).toEqual(['inherited'])
+    expect(reads).toBe(1)
+  })
+
+  it('lists the own keys of an object with no prototype', () => {
+    expect(keysOf(Object.assign(Object.create(null) as object, { only: 1 }), 'input')).toEqual(['only'])
+  })
+
+  it('names the object when a trap throws', () => {
+    const hostile = new Proxy({}, { ownKeys: (): never => { throw new Error('host-private-text') } })
+    expect(refusal(() => keysOf(hostile, 'record'))).toBe('record could not be read')
+  })
+})
+
+describe('the reference of a wallet', () => {
+  const refusal = (value: unknown): string | undefined => {
+    try {
+      assertWalletRef(value)
+    } catch (error) {
+      if (!(error instanceof AiTokensException)) throw error
+      return (error.getResponse() as { error: { details?: { reason?: string } } }).error.details?.reason
+    }
+    return undefined
+  }
+
+  it('is refused naming the wallet, or the field that is not a string', () => {
+    expect(refusal(5)).toBe('wallet must be an object')
+    expect(refusal({ tenantId: 1, ownerType: 'user', ownerId: 'u' })).toBe('wallet.tenantId must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 1, ownerId: 'u' })).toBe('wallet.ownerType must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 'user', ownerId: 1 })).toBe('wallet.ownerId must be a string')
+    expect(refusal({ tenantId: 't', ownerType: 'user', ownerId: 'u' })).toBeUndefined()
+  })
+
+  it.each(['tenantId', 'ownerType', 'ownerId'])('is refused naming %s when reading it throws', (field) => {
+    const ref = { tenantId: 't', ownerType: 'user', ownerId: 'u' }
+    Object.defineProperty(ref, field, { get: (): never => { throw new Error('host-private-text') } })
+    expect(refusal(ref)).toBe(`wallet.${field} could not be read`)
+  })
+})
+
+describe('a field the host does not have', () => {
+  it('is absent from the snapshot, and so is one set to undefined', () => {
+    const copy = snapshotOf<{ a: number; b?: number | undefined; c?: number }>({ a: 1, b: undefined }, { a: true, b: true, c: true })
+    expect(Object.keys(copy)).toEqual(['a'])
+  })
+})
+
+describe('an object that answers by a get trap and holds no key of its own', () => {
+  /** A Proxy over an empty target: `Object.hasOwn` says it has no key, and only its `get` trap knows the values. */
+  const lazy = (source: Record<string, unknown>): object => new Proxy({}, { get: (_target, key) => source[key as string] })
+
+  it.each([
+    ['wallets.getBalance', [0], { tenantId: 't', ownerType: 'user', ownerId: 'u' }],
+    ['budgets.status', [1], { type: 'user', id: 'u' }],
+    ['budgets.list', [1], { type: 'user', id: 'u' }],
+  ] as const)('is read by %s at %j', async (name, path, source) => {
+    const { run, args } = await callOf(name)
+    const own = { ...at(args, path.slice(0, -1))[path.at(-1)!] as object, ...source }
+    setAt(args, [...path], lazy(own))
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('is read by pricing.resolveRate', async () => {
+    const { run, args } = await callOf('pricing.resolveRate')
+    setAt(args, [0], lazy({ ...(args[0] as object), model: 'gpt-4o' }))
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('keeps a field of a filter, so that a value that is not valid is refused and not dropped', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], lazy({ limit: 'many' }))
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
+  })
+
+  it('keeps the elements of a list whose length and elements are answered by the trap', async () => {
+    const { run, args } = await callOf('ledger.query')
+    const answered = (items: string[]): object => new Proxy([], { get: (_target, key) => (key === 'length' ? items.length : items[Number(key)]) })
+    setAt(args, [0, 'features'], answered(['f']))
+    expect(((await run(args)) as unknown[]).length).toBeGreaterThan(0)
+    setAt(args, [0, 'features'], answered(['no-such-feature']))
+    expect(await run(args)).toEqual([])
+  })
+})
+
+describe('a chain that ends in an object the host built', () => {
+  it('keeps the fields of a null-prototype ancestor, listed and read by name', () => {
+    const ancestor = Object.assign(Object.create(null) as object, { surcharge: 7 })
+    const child = Object.create(ancestor) as object
+    expect(keysOf(child, 'input')).toEqual(['surcharge'])
+    expect(readDeep(child, 'unitRates', 1)).toEqual(expect.objectContaining({ surcharge: 7 }))
+    expect(readField(child, 'surcharge', 'input')).toBe(7)
+  })
+
+  it('keeps the fields of a null-prototype ancestor whose constructor is not a root, and a method a class shares with the root', () => {
+    const ancestor = Object.assign(Object.create(null) as object, { constructor: function Own() { return 1 }, surcharge: 7 })
+    expect(readField(Object.create(ancestor) as object, 'surcharge', 'input')).toBe(7)
+    expect(readField(Object.create(ancestor) as object, 'constructor', 'input')).toBe(ancestor.constructor)
+    class Shared {
+      toString(): string {
+        return 'own'
+      }
+    }
+    expect(readField(new Shared(), 'toString', 'input')).toBe(Shared.prototype.toString)
+    expect(readField(Object.prototype, 'hasOwnProperty', 'input')).toBe(Object.prototype.hasOwnProperty)
+  })
+
+  it('still skips the Object.prototype of the realm and of another realm', () => {
+    expect(readField(runInNewContext('({})') as object, 'toString', 'input')).toBeUndefined()
+    expect(readField({}, 'toString', 'input')).toBeUndefined()
+    expect(keysOf(Object.create(runInNewContext('({ a: 1 })') as object) as object, 'input')).toEqual(['a'])
   })
 })
