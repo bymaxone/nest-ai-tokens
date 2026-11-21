@@ -503,4 +503,45 @@ describe('a list or an object nested in an input', () => {
     const copy = snapshotOf({ inner: { b: 1, c: 2 } })
     expect(Object.keys(copy.inner).sort()).toEqual(['b', 'c'])
   })
+
+  /** A key of the host's object is the host's, or an end user's: it never reaches a refusal as it is. */
+  describe('a hostile key of a nested object', () => {
+    const HOSTILE_KEYS: readonly (readonly [string, string])[] = [
+      ['a line break', 'bad\nkey SENTINEL'],
+      ['a bidirectional control', 'bad\u202Ekey SENTINEL'],
+      ['10000 characters', `${'k'.repeat(10_000)}SENTINEL`],
+    ]
+
+    it.each(HOSTILE_KEYS)('is written as a marker when it holds %s and its getter throws', async (_label, key) => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      const scope: Record<string, unknown> = { type: 'user', id: 'u' }
+      Object.defineProperty(scope, key, { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      at(args, [0]).scope = scope
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.<key> could not be read')
+    })
+
+    it.each(HOSTILE_KEYS)('is written as a marker when it holds %s and the nesting under it is too deep', async (_label, key) => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      let deep: Record<string, unknown> = {}
+      for (let level = 0; level < 9; level += 1) deep = { [key]: deep }
+      at(args, [0]).scope = { type: 'user', id: 'u', ...deep }
+      const reason = (await reasonOf(() => run(args))) ?? ''
+      expect(reason).toMatch(/^AI_TOKENS_INVALID_CONFIG scope(\.<key>)+ could not be read$/)
+      expect(reason).not.toContain('SENTINEL')
+    })
+
+    it('is written as it is when it is a plain key', async () => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      const scope: Record<string, unknown> = { type: 'user', id: 'u' }
+      Object.defineProperty(scope, 'plainKey1', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      at(args, [0]).scope = scope
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG scope.plainKey1 could not be read')
+    })
+
+    it('is written as a marker at the top of the input too', async () => {
+      const { run, args } = await callOf('budgets.upsertBudget')
+      Object.defineProperty(at(args, [0]), 'bad\nkey SENTINEL', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
+      expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG <key> could not be read')
+    })
+  })
 })

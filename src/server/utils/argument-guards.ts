@@ -64,6 +64,20 @@ export function keysOf(value: object, name: string): string[] {
   }
 }
 
+/** A key that can be written in a refusal as it is: letters and digits, starting with a letter, of a bounded length. */
+const PLAIN_KEY = /^[A-Za-z][A-Za-z0-9]{0,63}$/
+
+/**
+ * How a key of the host's object is written in a refusal. A key is the host's, or an end user's through the host, so it can hold line
+ * breaks, control or bidirectional characters, or be of any length: only a plain key is written, and every other one is a fixed marker.
+ *
+ * @param key A key of an object the host supplied.
+ * @returns The key, or `<key>`.
+ */
+export function labelOf(key: string): string {
+  return PLAIN_KEY.test(key) ? key : '<key>'
+}
+
 /** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
 const MAX_NESTING = 8
 
@@ -91,7 +105,7 @@ export function readDeep(value: unknown, name: string, depth: number): unknown {
   }
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of keysOf(value, name)) {
-    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${key}`), `${name}.${key}`, depth + 1), enumerable: true })
+    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1), enumerable: true })
   }
   return copy
 }
