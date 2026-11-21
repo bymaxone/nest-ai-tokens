@@ -26,6 +26,13 @@ const FAILURES: readonly (readonly [string, () => unknown])[] = [
   ['returns a value whose then getter throws', (): unknown => Object.defineProperty({}, 'then', { get: (): never => { throw new Error(SECRET) } })],
 ]
 
+/** Errors a host can throw whose own reads throw: a describing line must survive them. */
+const HOSTILE_ERRORS: readonly (readonly [string, () => unknown])[] = [
+  ['an error whose code getter throws', (): unknown => Object.defineProperty(new Error('x'), 'code', { get: (): never => { throw new Error(SECRET) } })],
+  ['an error whose name getter throws', (): unknown => Object.defineProperty(new Error('x'), 'name', { get: (): never => { throw new Error(SECRET) } })],
+  ['a Proxy whose prototype read throws', (): unknown => new Proxy(new Error('x'), { getPrototypeOf: (): never => { throw new Error(SECRET) } })],
+]
+
 const record = { id: 'r1', provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard', inputTokens: 1, outputTokens: 1 } as unknown as UsageRecord
 
 let warned: string[] = []
@@ -82,5 +89,36 @@ describe('an onThrottle callback that fails', () => {
     expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toHaveLength(1)
     expect(warned.join('\n')).not.toContain(SECRET)
     expect((await store.getWindow(budget.id, new Date('2026-06-01T00:00:00.000Z')))?.spentNanoUsd).toBe(150n)
+  })
+})
+
+describe('a host error that cannot be read', () => {
+  it.each(HOSTILE_ERRORS)('is absorbed by a sink that throws %s, and by one that rejects with it', async (_label, make) => {
+    const failure = make()
+    const throws = { recordUsage: (): never => { throw failure } } as unknown as ITelemetrySink
+    const rejects = { recordUsage: (): unknown => ({ then: (_ok: unknown, no: (error: unknown) => void): void => { no(failure) } }) } as unknown as ITelemetrySink
+    expect(() => { new TelemetryEmitter(throws).recordUsage(record) }).not.toThrow()
+    expect(() => { new TelemetryEmitter(rejects).recordUsage(record) }).not.toThrow()
+    await settle()
+    expect(warned).toHaveLength(2)
+    expect(warned.join('\n')).not.toContain(SECRET)
+  })
+
+  it.each(HOSTILE_ERRORS)('is absorbed by an onThrottle callback that throws %s', async (_label, make) => {
+    const failure = make()
+    const { service } = makeService({ options: { onThrottle: (): never => { throw failure } } })
+    await service.upsertBudget(budgetInput({ policy: 'throttle', limitNanoUsd: 100n }))
+    await expect(service.consume(context(), { nanoUsd: 150n, tokens: 0, count: 1 })).resolves.toBeUndefined()
+    expect(warned.filter((line) => line.startsWith(THROTTLE_LINE))).toHaveLength(1)
+  })
+
+  it('does not fail recordDuration when the method getter throws, and calls nothing when the method is left out', () => {
+    const unreadable = Object.defineProperty({ recordUsage: (): void => undefined }, 'recordDuration', { get: (): never => { throw new Error(SECRET) } }) as unknown as ITelemetrySink
+    expect(() => { new TelemetryEmitter(unreadable).recordDuration(record, 5) }).not.toThrow()
+    expect(warned).toHaveLength(1)
+    expect(warned[0]).toBe(`${SINK_LINE} name=Error`)
+    const withoutDuration: ITelemetrySink = { recordUsage: (): void => undefined }
+    expect(() => { new TelemetryEmitter(withoutDuration).recordDuration(record, 5) }).not.toThrow()
+    expect(warned).toHaveLength(1)
   })
 })

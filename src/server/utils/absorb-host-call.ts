@@ -55,7 +55,11 @@ export async function absorbHostCallAndWait(logger: Logger, key: string, call: (
  * @param target The host object.
  * @param method The name of its method.
  * @param args The arguments of the call.
+ * @param optional Whether the host may leave the method out, in which case nothing is called.
  */
-export function absorbHostMethod(logger: Logger, key: string, target: object, method: string, args: readonly unknown[]): void {
-  absorbHostCall(logger, key, () => Reflect.apply(Reflect.get(target, method) as () => unknown, target, args))
+export function absorbHostMethod(logger: Logger, key: string, target: object, method: string, args: readonly unknown[], optional = false): void {
+  absorbHostCall(logger, key, () => {
+    const fn = Reflect.get(target, method) as (() => unknown) | undefined
+    return optional && fn === undefined ? undefined : Reflect.apply(fn as () => unknown, target, args)
+  })
 }

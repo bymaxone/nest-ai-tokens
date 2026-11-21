@@ -64,8 +64,7 @@ export class TelemetryEmitter {
    * @param milliseconds The measured operation duration.
    */
   recordDuration(record: UsageRecord, milliseconds: number): void {
-    const sink = this.sink
-    if (sink?.recordDuration === undefined) return
-    absorbHostMethod(this.logger, SINK_FAILED_LOG_KEY, sink, 'recordDuration', [buildGenAiAttributes(record), milliseconds])
+    if (this.sink === null) return
+    absorbHostMethod(this.logger, SINK_FAILED_LOG_KEY, this.sink, 'recordDuration', [buildGenAiAttributes(record), milliseconds], true)
   }
 }
