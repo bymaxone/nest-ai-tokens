@@ -39,7 +39,8 @@ export function readField(value: object, key: string, name: string): unknown {
 const MAX_PROTOTYPE_DEPTH = 32
 
 /**
- * The fields of an argument object: its own enumerable keys, and the accessors and data its class or prototype chain defines up to
+ * The fields of an argument object: its own keys, enumerable or not (a field defined with `enumerable: false` is read by name by the
+ * services, so it is a field), and the accessors and data its class or prototype chain defines up to
  * `Object.prototype`, which an instance of a class holds as getters. A Proxy whose trap throws would put the host's own error in the
  * caller's hands, so it is refused as an argument that cannot be read.
  *
@@ -50,7 +51,7 @@ const MAX_PROTOTYPE_DEPTH = 32
  */
 export function keysOf(value: object, name: string): string[] {
   try {
-    const keys = new Set(Object.keys(value))
+    const keys = new Set(Object.getOwnPropertyNames(value))
     let proto = Object.getPrototypeOf(value) as object | null
     for (let depth = 0; proto !== null && proto !== Object.prototype; depth += 1) {
       // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.

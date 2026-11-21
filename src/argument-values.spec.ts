@@ -390,6 +390,13 @@ describe('the fields a snapshot lists', () => {
     expect(keysOf(new Derived(), 'input').sort()).toEqual(['inherited', 'own'])
   })
 
+  it('lists a field the host defined as not enumerable, own or in a nested object', () => {
+    const hidden = Object.defineProperty({ shown: 1 }, 'hiddenOwn', { get: () => Number('2'), enumerable: false })
+    expect(keysOf(hidden, 'input').sort()).toEqual(['hiddenOwn', 'shown'])
+    const copy = snapshotOf({ nested: hidden })
+    expect(Object.keys(copy.nested).sort()).toEqual(['hiddenOwn', 'shown'])
+  })
+
   it('does not list the constructor of a class', () => {
     expect(keysOf(new Derived(), 'input')).not.toContain('constructor')
   })
@@ -543,5 +550,24 @@ describe('a list or an object nested in an input', () => {
       Object.defineProperty(at(args, [0]), 'bad\nkey SENTINEL', { get: (): never => { throw new Error('host-private-text') }, enumerable: true })
       expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG <key> could not be read')
     })
+  })
+})
+
+describe('a field the host defines as not enumerable', () => {
+  /** The services read a field by name, so a field defined without enumerability is still the caller's field and must reach the check and the store. */
+  it.each([['ledger.query', 'tenantId', 5, 'AI_TOKENS_INVALID_CONFIG tenantId must be a string'], ['wallets.getEntries', 'limit', 'many', 'AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more']] as const)('reaches the check of %s for %s', async (name, field, value, reason) => {
+    const { run, args } = await callOf(name)
+    const target = name === 'ledger.query' ? at(args, [0]) : at(args, [1])
+    Object.defineProperty(target, field, { value, enumerable: false, configurable: true })
+    expect(await reasonOf(() => run(args))).toBe(reason)
+  })
+
+  it('keeps a non-enumerable field that is valid, as the same value the store sees', async () => {
+    const getEntries = (await rig()).calls['wallets.getEntries']
+    if (getEntries === undefined) throw new Error('no call')
+    const [ref] = await getEntries.base()
+    const filter = Object.defineProperty({}, 'from', { value: new Date('2100-01-01T00:00:00Z'), enumerable: false })
+    const page = (await getEntries.run([ref, filter])) as { entries: unknown[] }
+    expect(page.entries).toHaveLength(0)
   })
 })
