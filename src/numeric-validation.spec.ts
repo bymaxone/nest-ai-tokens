@@ -214,9 +214,8 @@ describe('usage token counts of a normalized usage', () => {
   it.each([Number.NaN, Number.POSITIVE_INFINITY, MARKER, null])('refuses a count of %p', async (value) => {
     await refusal(() => recordWith({ inputTokens: value }))
   })
-  /** A negative count keeps its documented floor at zero. */
-  it('floors a negative count at zero', async () => {
-    const result = (await recordWith({ inputTokens: -5 })) as { inputTokens: number }
-    expect(result.inputTokens).toBe(0)
+  /** A negative count is refused: it would credit back more than was reserved. */
+  it('refuses a negative count', async () => {
+    await refusal(() => recordWith({ inputTokens: -5 }))
   })
 })

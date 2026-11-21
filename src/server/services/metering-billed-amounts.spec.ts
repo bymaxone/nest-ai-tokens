@@ -3,7 +3,8 @@
  * its total and also in one of its categories is billed once, at the rate of the category.
  * @layer test
  */
-import { normalizeVercelAiSdkUsage } from '../../shared'
+import { normalizeVercelAiSdkUsage, type AiTokensErrorResponse } from '../../shared'
+import type { AiTokensException } from '../errors'
 import { providerPresets } from '../config/provider-presets'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
@@ -161,5 +162,20 @@ describe('a token that is counted twice by a provider is billed once', () => {
       context: context(),
     })
     expect(record.billedCostNanoUsd).toBe(3_100_000n)
+  })
+
+  /** A call of more tokens than a ledger row stores is refused before the wallet is debited; 2,147,483,647 is the most a row holds. */
+  it('refuses a call over 2,147,483,647 tokens before it debits, and accepts one of exactly that many', async () => {
+    const built = build({ wallets: true, strict: false })
+    const ref = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
+    await built.wallets!.grant(ref, { amountNanoUsd: 10_000_000_000_000n, idempotencyKey: 'grant-1', reason: 'seed' })
+    const before = await built.wallets!.getBalance(ref)
+    const usage = (inputTokens: number): unknown => ({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens, outputTokens: 0, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 })
+    const error = await built.service.record({ usage: usage(2_147_483_648), context: context({ enforce: true }) }).catch((e: unknown) => e)
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error).toMatchObject({ code: 'AI_TOKENS_USAGE_MALFORMED', details: { reason: 'the tokens of a usage add up to more than a ledger row stores (2147483647)' } })
+    expect((await built.wallets!.getBalance(ref)).nanoUsd).toBe(before.nanoUsd)
+    expect(await built.ledgerStore.query({ tenantId: 'tenant-1' })).toEqual([])
+    const stored = await built.service.record({ usage: usage(2_147_483_647), context: context({ enforce: true }) })
+    expect(stored.totalTokens).toBe(2_147_483_647)
   })
 })
