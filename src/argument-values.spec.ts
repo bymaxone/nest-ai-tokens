@@ -156,6 +156,27 @@ const SNAPSHOT_ROWS: readonly (readonly [string, (string | number)[]])[] = [
   ['ledger.query', [0]],
   ['ledger.sumCost', [0]],
   ['reports.summarize', [0]],
+  ['metering.hold', [0]],
+  ['metering.hold', [0, 'scope']],
+  ['metering.hold', [1]],
+  ['metering.hold(amount)', [1]],
+  ['metering.record', [0]],
+  ['metering.record', [0, 'context']],
+  ['metering.record', [0, 'context', 'scope']],
+  ['metering.record', [0, 'preset']],
+  ['metering.estimateCost', [0]],
+  ['metering.getStatus', [1]],
+  ['metering.capture', [0]],
+  ['metering.capture', [0, 'scope']],
+  ['metering.capture', [1]],
+  ['metering.capture', [1, 'scope']],
+  ['metering.capture', [3]],
+  ['metering.release', [0]],
+  ['metering.release', [0, 'scope']],
+  ['metering.release', [1]],
+  ['metering.release', [1, 'scope']],
+  ['wallets.settleAdjustment', [0]],
+  ['wallets.settleAdjustment', [1]],
 ]
 
 function at(args: unknown[], path: (string | number)[]): Record<string | number, unknown> {
@@ -664,10 +685,10 @@ describe('the reference of a wallet', () => {
     expect(refusal({ tenantId: 't', ownerType: 'user', ownerId: 'u' })).toBeUndefined()
   })
 
-  it.each(['tenantId', 'ownerType', 'ownerId'])('is refused naming %s when reading it throws', (field) => {
-    const ref = { tenantId: 't', ownerType: 'user', ownerId: 'u' }
-    Object.defineProperty(ref, field, { get: (): never => { throw new Error('host-private-text') } })
-    expect(refusal(ref)).toBe(`wallet.${field} could not be read`)
+  it.each(['tenantId', 'ownerType', 'ownerId'])('is refused by wallets.getBalance naming %s when reading it throws', async (field) => {
+    const { run, args } = await callOf('wallets.getBalance')
+    Object.defineProperty(args[0], field, { get: (): never => { throw new Error('host-private-text') } })
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG wallet.${field} could not be read`)
   })
 })
 

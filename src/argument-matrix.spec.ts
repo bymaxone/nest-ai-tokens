@@ -82,7 +82,7 @@ function problemWith(error: unknown, hostile: string): string | undefined {
 }
 
 describe('every public method, given an argument of the wrong kind', () => {
-  const names = ['metering.hold', 'metering.hold(amount)', 'metering.record', 'metering.estimateCost', 'metering.getStatus', 'metering.reverse', 'metering.capture', 'metering.release', 'wallets.getBalance', 'wallets.grant', 'wallets.debit', 'wallets.refund', 'wallets.adjust', 'wallets.getEntries', 'wallets.reconcile', 'budgets.upsertBudget', 'budgets.rotateWindow', 'budgets.reconcileWindow', 'budgets.list', 'budgets.status', 'budgets.removeBudget', 'ledger.findById', 'ledger.findByIdempotencyKey', 'ledger.query', 'ledger.sumCost', 'ledger.verifyChain', 'reports.summarize', 'pricing.resolveRate', 'pricing.upsertPrice', 'pricing.getPriceHistory']
+  const names = ['metering.hold', 'metering.hold(amount)', 'metering.record', 'metering.estimateCost', 'metering.getStatus', 'metering.reverse', 'metering.capture', 'metering.release', 'wallets.getBalance', 'wallets.grant', 'wallets.debit', 'wallets.refund', 'wallets.adjust', 'wallets.settleAdjustment', 'wallets.getEntries', 'wallets.reconcile', 'budgets.upsertBudget', 'budgets.rotateWindow', 'budgets.reconcileWindow', 'budgets.list', 'budgets.status', 'budgets.removeBudget', 'ledger.findById', 'ledger.findByIdempotencyKey', 'ledger.query', 'ledger.sumCost', 'ledger.verifyChain', 'reports.summarize', 'pricing.resolveRate', 'pricing.upsertPrice', 'pricing.getPriceHistory']
 
   it('has a call for every method the matrix names', async () => {
     expect(Object.keys((await rig()).calls).sort()).toEqual([...names].sort())

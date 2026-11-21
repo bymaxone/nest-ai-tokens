@@ -80,6 +80,7 @@ const STORE_ROWS: Row[] = [
   ['wallets.getEntries', [1], NUMBER, OBJECT('filter')],
   ['wallets.getEntries', [1, 'limit'], STRING, COUNT('limit')],
   ['wallets.getEntries', [1, 'offset'], STRING, COUNT('offset')],
+  ['wallets.settleAdjustment', [1], NUMBER, OBJECT('input')],
   ['reports.summarize', [0], NUMBER, OBJECT('input')],
   ['reports.summarize', [0, 'groupBy'], NUMBER, 'groupBy must be an array'],
   ['reports.summarize', [0, 'groupBy'], ['nonsense'], 'groupBy must name only the documented dimensions'],

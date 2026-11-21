@@ -106,33 +106,85 @@ export function labelOf(key: string): string {
 /** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
 const MAX_NESTING = 8
 
-/** The longest list read from an argument. */
+/** The deepest nesting read from the usage of a provider, whose response can carry the JSON arguments of a tool call. */
+export const MAX_USAGE_NESTING = 64
+
+/** The longest list, and the most keys of one object, read from an argument. */
 const MAX_LIST_LENGTH = 100_000
+
+/** The most different lists and objects one read copies; each costs the reads of its keys, about 30 microseconds. */
+const MAX_CONTAINERS = 10_000
+
+/** The most values one call reads, counting every value reached, a shared one each time it is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
+const MAX_VISITS = 1_000_000
+
+/** What the reads of one call have used up: the lists and objects being copied above the value, the copies made so far, and the containers and values visited. */
+export interface Visit {
+  readonly path: Set<object>
+  readonly copies: Map<object, unknown>
+  containers: number
+  visits: number
+}
+
+/**
+ * The accounts of a new call, shared by every field and every argument that call reads, so that the budgets bound the call and not each
+ * of its fields.
+ *
+ * @returns The accounts, with nothing used up.
+ */
+export function newVisit(): Visit {
+  return { path: new Set<object>(), copies: new Map<object, unknown>(), containers: 0, visits: 0 }
+}
 
 /**
  * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
  * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
- * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype.
+ * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A list or an
+ * object reached again, through another branch, is not read again: the copy already made is the one returned, so the work follows the
+ * number of different values and a value that shares a child between its branches costs no more than a tree of its size. A value that
+ * contains itself is refused, whatever the limit, and so is a call that reaches more values, shared ones each time, or copies more
+ * different lists and objects, than a batch of provider responses holds.
+ * The copy is only read, never changed, by the consumers of an argument, which read fields by name, so a child shared by two branches may
+ * be one object in it.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
  * @param depth How deep in the argument the value is, counted from the argument itself as 0.
+ * @param limit The depth at which a nested value is refused.
+ * @param visit What the call has used up, shared by every value it reads.
  * @returns The copy.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, is nested too deep or is too long.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep, is too long or is too large.
  */
-export function readDeep(value: unknown, name: string, depth: number): unknown {
-  if (typeof value !== 'object' || value === null || isDate(value)) return value
-  if (depth >= MAX_NESTING) throw refused(`${name} could not be read`)
-  if (Array.isArray(value)) {
-    const length = readField(value, 'length', name)
-    if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
-    return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1))
+export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, visit = newVisit()): unknown {
+  visit.visits += 1
+  if (visit.visits > MAX_VISITS) throw refused(`${name} could not be read`)
+  if (typeof value !== 'object' || value === null) return value
+  if (visit.path.has(value)) throw refused(`${name} could not be read`)
+  // Before the test of a date, which throws for every other object: a value reached again must cost no more than a lookup.
+  if (visit.copies.has(value)) return visit.copies.get(value)
+  if (isDate(value)) return value
+  visit.containers += 1
+  if (visit.containers > MAX_CONTAINERS || depth >= limit) throw refused(`${name} could not be read`)
+  visit.path.add(value)
+  try {
+    if (Array.isArray(value)) {
+      const length = readField(value, 'length', name)
+      if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
+      const items = Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, visit))
+      visit.copies.set(value, items)
+      return items
+    }
+    const keys = keysOf(value, name)
+    if (keys.length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
+    const copy = Object.create(null) as Record<string, unknown>
+    for (const key of keys) {
+      Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
+    }
+    visit.copies.set(value, copy)
+    return copy
+  } finally {
+    visit.path.delete(value)
   }
-  const copy = Object.create(null) as Record<string, unknown>
-  for (const key of keysOf(value, name)) {
-    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1), enumerable: true })
-  }
-  return copy
 }
 
 /** Whether a value is a plain object: an object that is neither `null` nor an array. */
@@ -197,18 +249,6 @@ export function assertTexts(values: Readonly<Record<string, unknown>>): void {
 }
 
 /**
- * Throw unless the arguments of a lookup are a tenant id and a scope.
- *
- * @param tenantId The tenant the caller passed.
- * @param scope The scope the caller passed.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the argument that is not valid.
- */
-export function assertLookup(tenantId: unknown, scope: unknown): void {
-  assertText('tenantId', tenantId)
-  assertScope('scope', scope)
-}
-
-/**
  * Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key.
  *
  * @param tenantId What the caller passed.
@@ -251,7 +291,7 @@ export function assertTextList(name: string, value: unknown): asserts value is s
  */
 export function assertHold(value: unknown): void {
   assertObject('hold', value)
-  assertText('hold.id', readField(value, 'id', 'hold.id'))
+  assertText('hold.id', value.id)
 }
 
 /**
@@ -285,8 +325,8 @@ export function assertOptionalCount(name: string, value: unknown): asserts value
  */
 export function assertScope(name: string, value: unknown): void {
   assertObject(name, value)
-  assertText(`${name}.type`, readField(value, 'type', `${name}.type`))
-  assertText(`${name}.id`, readField(value, 'id', `${name}.id`))
+  assertText(`${name}.type`, value.type)
+  assertText(`${name}.id`, value.id)
 }
 
 /**
@@ -297,9 +337,9 @@ export function assertScope(name: string, value: unknown): void {
  */
 export function assertWalletRef(value: unknown): void {
   assertObject('wallet', value)
-  assertText('wallet.tenantId', readField(value, 'tenantId', 'wallet.tenantId'))
-  assertText('wallet.ownerType', readField(value, 'ownerType', 'wallet.ownerType'))
-  assertText('wallet.ownerId', readField(value, 'ownerId', 'wallet.ownerId'))
+  assertText('wallet.tenantId', value.tenantId)
+  assertText('wallet.ownerType', value.ownerType)
+  assertText('wallet.ownerId', value.ownerId)
 }
 
 /** The optional text fields of a metering context. */
@@ -313,12 +353,11 @@ const CONTEXT_TEXT_FIELDS = ['requestedBy', 'baseModel', 'idempotencyKey', 'corr
  */
 export function assertMeteringContext(value: unknown): void {
   assertObject('context', value)
-  assertText('context.tenantId', readField(value, 'tenantId', 'context.tenantId'))
-  assertScope('context.scope', readField(value, 'scope', 'context.scope'))
-  const beneficiary = readField(value, 'beneficiary', 'context.beneficiary')
-  if (beneficiary !== undefined) assertScope('context.beneficiary', beneficiary)
-  assertText('context.feature', readField(value, 'feature', 'context.feature'))
-  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, readField(value, field, `context.${field}`))
+  assertText('context.tenantId', value.tenantId)
+  assertScope('context.scope', value.scope)
+  if (value.beneficiary !== undefined) assertScope('context.beneficiary', value.beneficiary)
+  assertText('context.feature', value.feature)
+  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, value[field])
 }
 
 /**
@@ -330,10 +369,9 @@ export function assertMeteringContext(value: unknown): void {
  */
 export function assertEstimateCostInput(value: unknown): void {
   assertObject('input', value)
-  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, readField(value, field, field))
-  assertOptionalText('feature', readField(value, 'feature', 'feature'))
-  const scope = readField(value, 'scope', 'scope')
-  if (scope !== undefined) assertScope('scope', scope)
-  assertCount('inputTokens', readField(value, 'inputTokens', 'inputTokens'))
-  assertCount('maxOutputTokens', readField(value, 'maxOutputTokens', 'maxOutputTokens'))
+  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, value[field])
+  assertOptionalText('feature', value.feature)
+  if (value.scope !== undefined) assertScope('scope', value.scope)
+  assertCount('inputTokens', value.inputTokens)
+  assertCount('maxOutputTokens', value.maxOutputTokens)
 }

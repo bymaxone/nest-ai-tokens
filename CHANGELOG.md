@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+- **Apply:** no migration and no option change is needed. The arguments of the metering calls are read once with the call and by the names of their type. An estimate is read by the names of the variant it is, so a getter named like a field of another variant is not run. A `StreamUsageCollector` passed to `capture()` is used as it is. The usage of `record()` and `capture()` is read deeper than other arguments; a usage that contains itself is refused.
+
 - **Apply:** no migration and no option change is needed. The reference of a wallet, the scope of a budget lookup and the input of a rate lookup are read once with the call, like the other inputs, and every input read once is read by the names of its type: a getter of a class and a field defined as not enumerable are read, a key planted on `Object.prototype`, of any realm, is not. A field the host's object does not have is absent, whatever else the object holds.
 
 - **Apply:** no migration and no option change is needed. A list or an object nested in an input is copied once with the input, element by element, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, can no longer fail a call after it has begun or put the host's own error in the caller's hands: it is refused as `AI_TOKENS_INVALID_CONFIG`, `<field> could not be read`. A list or nesting beyond the limits is refused the same way, and a key of the host's object that is not a short plain name is written in the refusal as `<key>`.
