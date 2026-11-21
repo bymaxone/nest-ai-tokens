@@ -34,7 +34,7 @@ export function readField(value: object, key: string, name: string): unknown {
   }
 }
 
-/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is a Proxy. */
+/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
 const MAX_PROTOTYPE_DEPTH = 32
 
 /**
@@ -52,7 +52,7 @@ export function keysOf(value: object, name: string): string[] {
     const keys = new Set(Object.keys(value))
     let proto = Object.getPrototypeOf(value) as object | null
     for (let depth = 0; proto !== null && proto !== Object.prototype; depth += 1) {
-      // A chain this long, or one that returns to an object it has visited, is a Proxy: it is refused, not walked.
+      // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError('prototype chain')
       for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
       proto = Object.getPrototypeOf(proto) as object | null
