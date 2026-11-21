@@ -8,7 +8,7 @@
 import { AiTokensException } from '../errors'
 import type { MeteringScope } from '../../shared'
 import { assertObject, assertScope, assertText, newVisit, readDeep, readField, type Visit } from './argument-guards'
-import { AMOUNT_ESTIMATE_FIELDS, RATED_ESTIMATE_FIELDS, SCOPE_FIELDS, TOKEN_ESTIMATE_FIELDS, type FieldList, type Shape } from './input-fields'
+import { AMOUNT_ESTIMATE_FIELDS, RATED_ESTIMATE_FIELDS, SCOPE_FIELDS, type FieldList, type Shape } from './input-fields'
 import { isDate } from '../../shared/utils/is-date'
 import { isValidDate } from './numeric-guards'
 
@@ -147,9 +147,14 @@ export function readDatedArgument<T>(argument: T, shape: Shape, dates: readonly 
  */
 export function readHoldEstimate<T>(estimate: T, visit: Visit): T {
   if (!isRecord(estimate)) return estimate
-  // The variant is told by the name that has a value, read like any field, so that an object that answers by a `get` trap is the variant it answers for.
-  const fields = readField(estimate, 'provider', 'estimate.provider') !== undefined ? RATED_ESTIMATE_FIELDS : readField(estimate, 'tokens', 'estimate.tokens') !== undefined ? TOKEN_ESTIMATE_FIELDS : AMOUNT_ESTIMATE_FIELDS
-  return readShape(estimate, { fields }, 'estimate.', visit) as T
+  // The names that tell the variants apart are read once, as any field is, and what they answered is the field of the snapshot.
+  const provider = readField(estimate, 'provider', 'estimate.provider')
+  const tokens = provider === undefined ? readField(estimate, 'tokens', 'estimate.tokens') : undefined
+  const { provider: _provider, ...rated } = RATED_ESTIMATE_FIELDS
+  const copy = readShape(estimate, { fields: provider !== undefined ? rated : tokens !== undefined ? {} : AMOUNT_ESTIMATE_FIELDS }, 'estimate.', visit)
+  const answered = provider !== undefined ? { provider } : tokens !== undefined ? { tokens } : {}
+  for (const [key, value] of Object.entries(answered)) Object.defineProperty(copy, key, { value: readDeep(value, `estimate.${key}`, 1, undefined, visit), enumerable: true, writable: true })
+  return copy as T
 }
 
 /**

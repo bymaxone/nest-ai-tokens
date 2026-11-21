@@ -77,6 +77,16 @@ describe('the estimate of a hold', () => {
     expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG estimate.${field} could not be read`)
   })
 
+  it.each(['provider', 'tokens'] as const)('reads the %s of an estimate once: a getter that answers a value and then throws settles on the first', async (field) => {
+    const { run, args } = await callOf('metering.hold')
+    let reads = 0
+    const base = field === 'provider' ? { model: 'gpt-4o', operation: 'chat', inputTokens: 10, maxOutputTokens: 10 } : {}
+    const estimate = Object.defineProperty({ ...base }, field, { enumerable: true, get: (): unknown => { reads += 1; if (reads > 1) throw new Error('host-private-text'); return field === 'provider' ? 'openai' : 100 } })
+    setAt(args, [1], estimate)
+    expect((await reasonOf(() => run(args))) ?? '').not.toContain('could not be read')
+    expect(reads).toBe(1)
+  })
+
   it('tells a tokens estimate that answers by its get trap from an amount, and refuses it only for the preset a tokens estimate needs', async () => {
     const { run, args } = await callOf('metering.hold')
     setAt(args, [1], new Proxy({}, { get: (_target, key) => ({ tokens: 10 } as Record<string, unknown>)[key as string] }))
@@ -274,6 +284,15 @@ describe('the usage of a call', () => {
     expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_USAGE_MALFORMED the usage holds an object that lists no field')
     at(args, [0]).usage = anthropic({ server_tool_use: { web_search_requests: 5 } })
     expect((await run(args) as { extraUnits?: Record<string, number> }).extraUnits).toEqual({ web_search_requests: 5 })
+  })
+
+  it('bills the server tool counts an Anthropic response defines as a getter of a class or as a field that is not enumerable', async () => {
+    class Tools { get web_search_requests(): number { return Number('5') } }
+    const hidden = Object.defineProperty({}, 'web_search_requests', { value: 7, enumerable: false })
+    const viaClass = await recorded(providerPresets.anthropic, anthropic({ server_tool_use: new Tools() }))
+    const viaHidden = await recorded(providerPresets.anthropic, anthropic({ server_tool_use: hidden }))
+    expect(viaClass.extraUnits).toEqual({ web_search_requests: 5 })
+    expect(viaHidden.extraUnits).toEqual({ web_search_requests: 7 })
   })
 
   it('refuses the unit rates of a price that list nothing, and never stores a tool as free', async () => {

@@ -10,6 +10,7 @@
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
+import { fieldNamesOf, isRealmRoot, MAX_PROTOTYPE_DEPTH } from './field-names'
 import { isView } from './usage-view'
 import { isCount, isNonNegativeBigint } from './numeric-guards'
 
@@ -17,18 +18,6 @@ import { isCount, isNonNegativeBigint } from './numeric-guards'
 function refused(reason: string): AiTokensException {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the argument name
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
-}
-
-/** The longest prototype chain read as the fields of an argument: a class hierarchy is a handful of levels, so a longer chain is refused. */
-const MAX_PROTOTYPE_DEPTH = 32
-
-/**
- * Whether `value` is the `Object.prototype` of some realm: the object that ends every ordinary chain, whose own `constructor` is a function
- * whose `prototype` is that object. A null-prototype object a host built is not, so its fields are the host's own.
- */
-function isRealmRoot(value: object): boolean {
-  const constructor = Object.getOwnPropertyDescriptor(value, 'constructor')?.value as { prototype?: unknown } | undefined
-  return typeof constructor === 'function' && constructor.prototype === value
 }
 
 /**
@@ -74,18 +63,7 @@ export function readField(value: object, key: string, name: string): unknown {
  */
 export function keysOf(value: object, name: string): string[] {
   try {
-    const keys = new Set(Object.getOwnPropertyNames(value))
-    let proto = Object.getPrototypeOf(value) as object | null
-    for (let depth = 0; proto !== null; depth += 1) {
-      // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
-      if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
-      const next = Object.getPrototypeOf(proto) as object | null
-      // The `Object.prototype` of whichever realm adds nothing; a null-prototype object of the host's own that ends the chain does.
-      if (next === null && isRealmRoot(proto)) break
-      for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
-      proto = next
-    }
-    return [...keys]
+    return fieldNamesOf(value)
   } catch {
     throw refused(`${name} could not be read`)
   }

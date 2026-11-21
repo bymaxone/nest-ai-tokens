@@ -11,6 +11,7 @@
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { isDate } from '../../shared/utils/is-date'
+import { fieldNamesOf } from './field-names'
 
 /** The typed refusal of a map that cannot be listed, which names nothing the host wrote. */
 function unlistable(): AiTokensException {
@@ -91,11 +92,13 @@ export function viewOf<T extends object>(raw: T, viewed = new WeakMap<object, ob
       guarded(() => {
         const found = Reflect.getOwnPropertyDescriptor(raw, key)
         // The length of a list is the one property its stand-in cannot give up; every other property is reported as one that can be redefined.
-        return found === undefined ? undefined : { ...found, configurable: isList && key === 'length' ? false : true }
+        if (isList) return found === undefined ? undefined : { ...found, configurable: key === 'length' ? false : true }
+        // A field of an object is listed whichever way it is defined, so it is reported as enumerable; one a class defines has no descriptor of its own.
+        return found === undefined && !(typeof key === 'string' && Reflect.has(raw, key)) ? undefined : { ...(found ?? { value: undefined, writable: true }), enumerable: true, configurable: true }
       }),
     ownKeys: () =>
       guarded(() => {
-        const keys = Reflect.ownKeys(raw)
+        const keys = isList ? Reflect.ownKeys(raw) : fieldNamesOf(raw)
         if (keys.length === 0 && types.isProxy(raw)) throw unlistable()
         return keys
       }),

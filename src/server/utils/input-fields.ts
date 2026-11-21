@@ -210,9 +210,6 @@ export const RATED_ESTIMATE_FIELDS: FieldList<RatedHoldEstimate> = {
   maxOutputTokens: true,
 }
 
-/** The fields of the estimate of a hold that is sized in tokens. */
-export const TOKEN_ESTIMATE_FIELDS: FieldList<{ tokens: number }> = { tokens: true }
-
 /** The fields of the estimate of a hold that is sized in nano-USD. */
 export const AMOUNT_ESTIMATE_FIELDS: FieldList<{ amountNanoUsd: bigint }> = { amountNanoUsd: true }
 
