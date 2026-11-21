@@ -1,63 +1,40 @@
 /**
- * Pins the mutation-testing scope to the code that ships. The shipped source is the closure of the relative imports
+ * @fileoverview Pins the mutation-testing scope to the code that ships. The shipped source is the closure of the relative imports
  * of the package entries in `tsup.config.ts`; every file in it must either be matched by `mutate` in
- * `stryker.config.json` or be listed below with the reason it is not. A file that is neither, a listed file that no
- * longer exists, a listed file that `mutate` still matches, and a listed file whose kind no longer holds all fail,
- * so an exclusion cannot go stale or hide runtime code behind a name such as `index.ts`.
+ * `stryker.config.json` or be listed in `./stryker-scope.data` with the reason it is not. A file that is neither, a
+ * listed file that no longer exists, a listed file that `mutate` still matches, and a listed file whose kind no
+ * longer holds all fail, so an exclusion cannot go stale or hide runtime code behind a name such as `index.ts`.
  *
- * Layer: repository tooling, tests.
+ * This file is a template of the shared CI repository and is copied byte for byte. Everything that differs between
+ * libraries lives in `./stryker-scope.data`, which is not compared.
+ *
+ * @layer tests
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, posix, resolve } from 'node:path'
 import * as ts from 'typescript'
+import { E2E_OWNED, EXCLUSIONS, EXPECTED, SHIPPED_DATA } from './stryker-scope.data'
 
-const ROOT = resolve(__dirname, '..')
+/**
+ * Why shipped files are not mutated, and the property that justifies it, checked against the files:
+ * - `barrel`: re-exports only.
+ * - `types`: compiles to nothing.
+ * - `constants`: constant data with no logic, checked by the constants-logic check below.
+ * - `const-table`: types and frozen `as const` literals only.
+ * - `e2e-owned`: judged by an end-to-end suite, not by a unit spec.
+ */
+export type ExclusionKind = 'barrel' | 'types' | 'constants' | 'const-table' | 'e2e-owned'
 
-/** Why shipped files are not mutated, and the property that justifies it, checked against the files. */
-type ExclusionKind = 'barrel' | 'types' | 'e2e-owned'
-
-interface Exclusion {
+/** One reason a group of shipped files is not mutated. */
+export interface Exclusion {
   readonly kind: ExclusionKind
   readonly reason: string
   readonly files: readonly string[]
+  /** A script that owns the excluded files, when the exclusion is only honest while that script exists. */
+  readonly ownedBy?: { readonly packageScript: string; readonly file: string }
 }
 
-/** Every shipped source file that `mutate` leaves out. */
-const EXCLUSIONS: readonly Exclusion[] = [
-  {
-    kind: 'barrel',
-    reason:
-      'Re-exports only: there is no statement to mutate, and a barrel that gains logic fails this spec.',
-    files: [
-      'src/prices/index.ts',
-      'src/shared/index.ts',
-      'src/shared/normalizers/index.ts',
-      'src/server/index.ts',
-      'src/server/config/index.ts',
-      'src/server/enforcement/index.ts',
-      'src/server/errors/index.ts',
-      'src/server/interfaces/index.ts',
-      'src/server/services/index.ts',
-    ],
-  },
-  {
-    kind: 'types',
-    reason:
-      'Types only: it compiles to nothing, and a runtime declaration added to it fails this spec.',
-    files: ['src/server/config/resolved-options.ts', 'src/server/interfaces/*.interface.ts'],
-  },
-  {
-    kind: 'e2e-owned',
-    reason:
-      'The store runs its statements against PostgreSQL, so a mutant needs a database to be judged: it has no unit spec, ' +
-      'and the Testcontainers suite on the four Prisma cells pins its behaviour. Mutating it would start one database ' +
-      'per mutant, hours per cell.',
-    files: ['src/prisma/index.ts'],
-  },
-]
-
-/** Shipped files that are data, not TypeScript, copied next to the Prisma bundle by `tsup.config.ts`. */
-const SHIPPED_DATA = ['src/prisma/schema.prisma.fragment', 'src/prisma/migrations/0001_init.sql', 'src/prisma/migrations/0002_budget_applications.sql', 'src/prisma/migrations/0003_effects_owed.sql']
+const ROOT = resolve(__dirname, '..')
 
 /** The text of a file under the repository root. */
 function read(path: string): string {
@@ -94,11 +71,17 @@ function mutated(path: string, mutate: readonly string[]): boolean {
   return selected
 }
 
+/** The entry files an `entry: { name: 'path', ... }` object of a tsup config text names. */
+function entriesOf(text: string): string[] {
+  const pair = /(?:'[^']+'|"[^"]+"|[A-Za-z_$][\w$-]*)\s*:\s*(?:'([^']+)'|"([^"]+)")/g
+  return [...text.matchAll(/entry:\s*\{([^}]*)\}/g)].flatMap((object) =>
+    [...object[1]!.matchAll(pair)].map((match) => match[1] ?? match[2]!),
+  )
+}
+
 /** The package entry files named by `tsup.config.ts`. */
 function entries(): string[] {
-  return [...read('tsup.config.ts').matchAll(/entry:\s*\{\s*'[^']+':\s*'([^']+)'/g)].map(
-    (match) => match[1]!,
-  )
+  return entriesOf(read('tsup.config.ts'))
 }
 
 /** The relative module specifiers a source file imports or re-exports, as written. */
@@ -108,10 +91,30 @@ function relativeSpecifiers(text: string): string[] {
   )
 }
 
-/** The file a relative specifier resolves to from `from`, or `undefined` when it is not TypeScript source. */
-function resolveSpecifier(from: string, specifier: string): string | undefined {
+/** The runtime extension a TypeScript source file is imported by, and the source extensions that can back it. */
+const SOURCE_FOR_RUNTIME: Readonly<Record<string, readonly string[]>> = {
+  '.js': ['.ts', '.tsx'],
+  '.jsx': ['.tsx'],
+  '.mjs': ['.mts'],
+  '.cjs': ['.cts'],
+}
+
+/**
+ * The file a relative specifier resolves to from `from`, or `undefined` when it is not TypeScript source: the
+ * specifier as written, a runtime extension (`./a.js`) backed by its source, or a directory index.
+ */
+function resolveSpecifier(
+  from: string,
+  specifier: string,
+  exists: (path: string) => boolean = (path) => existsSync(join(ROOT, path)),
+): string | undefined {
   const base = posix.normalize(posix.join(posix.dirname(from), specifier))
-  return [`${base}.ts`, `${base}/index.ts`].find((candidate) => existsSync(join(ROOT, candidate)))
+  const runtime = Object.keys(SOURCE_FOR_RUNTIME).find((extension) => base.endsWith(extension))
+  const candidates =
+    runtime === undefined
+      ? [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]
+      : SOURCE_FOR_RUNTIME[runtime]!.map((source) => `${base.slice(0, -runtime.length)}${source}`)
+  return candidates.find((candidate) => exists(candidate))
 }
 
 /** The source closure of the package entries: every non-spec file they reach through relative imports. */
@@ -168,18 +171,146 @@ function withoutComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
+/** The syntax kinds that make a file logic rather than data. */
+const LOGIC_KINDS: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.ConditionalExpression,
+  ts.SyntaxKind.IfStatement,
+  ts.SyntaxKind.BinaryExpression,
+  ts.SyntaxKind.ForStatement,
+  ts.SyntaxKind.ForOfStatement,
+  ts.SyntaxKind.ForInStatement,
+  ts.SyntaxKind.WhileStatement,
+  ts.SyntaxKind.SwitchStatement,
+  ts.SyntaxKind.TryStatement,
+  ts.SyntaxKind.NewExpression,
+  ts.SyntaxKind.CallExpression,
+  ts.SyntaxKind.TaggedTemplateExpression,
+  ts.SyntaxKind.DeleteExpression,
+  ts.SyntaxKind.PostfixUnaryExpression,
+  ts.SyntaxKind.MethodDeclaration,
+  ts.SyntaxKind.GetAccessor,
+  ts.SyntaxKind.SetAccessor,
+])
+
+/** Arithmetic over number literals alone (`24 * 3600`): a constant written out, not a decision. */
+function isLiteralArithmetic(node: ts.Node): boolean {
+  if (ts.isNumericLiteral(node)) return true
+  if (ts.isParenthesizedExpression(node)) return isLiteralArithmetic(node.expression)
+  return (
+    ts.isBinaryExpression(node) &&
+    [ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken].includes(
+      node.operatorToken.kind,
+    ) &&
+    isLiteralArithmetic(node.left) &&
+    isLiteralArithmetic(node.right)
+  )
+}
+
+/** A `Symbol('description')` call: the one runtime call a constants file may make, since it builds a metadata key. */
+function isSymbolToken(node: ts.Node): boolean {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'Symbol'
+  )
+}
+
+/** The runtime globals whose use makes a value depend on the environment rather than on the file. */
+const RUNTIME_GLOBALS: ReadonlySet<string> = new Set([
+  'process',
+  'globalThis',
+  'Date',
+  'Math',
+  'Reflect',
+  'Object',
+  'JSON',
+  'Promise',
+])
+
+/** A read of a runtime global, such as `process.env.X` or `Date.now`, which is not constant data. */
+function isRuntimeLookup(node: ts.Node): boolean {
+  return ts.isIdentifier(node) && RUNTIME_GLOBALS.has(node.text)
+}
+
+/** A prefix `++x` or `--x`: an update, unlike the prefix minus of `-1`, which is a constant written out. */
+function isIncrementOrDecrement(node: ts.Node): boolean {
+  return (
+    ts.isPrefixUnaryExpression(node) &&
+    (node.operator === ts.SyntaxKind.PlusPlusToken ||
+      node.operator === ts.SyntaxKind.MinusMinusToken)
+  )
+}
+
+/** The names of the logic constructs a source file contains: none for a file that is only constant data. */
+function logicIn(text: string): string[] {
+  const found: string[] = []
+  const visit = (node: ts.Node): void => {
+    if (isRuntimeLookup(node)) found.push(`global ${node.getText()}`)
+    if (isIncrementOrDecrement(node)) found.push('update expression')
+    if (LOGIC_KINDS.has(node.kind) && !isLiteralArithmetic(node) && !isSymbolToken(node)) {
+      found.push(ts.SyntaxKind[node.kind])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ts.createSourceFile('file.ts', text, ts.ScriptTarget.ES2022, true))
+  return found
+}
+
+/** Whether an expression is a literal made of strings, numbers and nested object literals only, with plain keys. */
+function isPlainLiteral(node: ts.Expression): boolean {
+  if (ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) return true
+  if (ts.isObjectLiteralExpression(node)) {
+    return node.properties.every(
+      (property) =>
+        ts.isPropertyAssignment(property) &&
+        !ts.isComputedPropertyName(property.name) &&
+        isPlainLiteral(property.initializer),
+    )
+  }
+  return false
+}
+
+/** The top-level statements of a file that are neither a type declaration nor an exported `as const` table. */
+function nonTableStatements(text: string): string[] {
+  const file = ts.createSourceFile('table.ts', text, ts.ScriptTarget.ES2022, true)
+  return file.statements
+    .filter((statement) => {
+      if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) return false
+      if (ts.isVariableStatement(statement)) {
+        return !statement.declarationList.declarations.every(
+          (declaration) =>
+            (statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+            declaration.initializer !== undefined &&
+            ts.isAsExpression(declaration.initializer) &&
+            ts.isTypeReferenceNode(declaration.initializer.type) &&
+            declaration.initializer.type.typeName.getText(file) === 'const' &&
+            isPlainLiteral(declaration.initializer.expression),
+        )
+      }
+      return true
+    })
+    .map((statement) => statement.getText(file))
+}
+
 const mutateList = (JSON.parse(read('stryker.config.json')) as { mutate: string[] }).mutate
 const shipped = shippedSource()
 const listed = excluded(shipped)
 
+/** The listed files of one kind. */
+function listedOfKind(kind: ExclusionKind): string[] {
+  return [...listed].filter(([, exclusion]) => exclusion.kind === kind).map(([path]) => path)
+}
+
 describe('mutation scope', () => {
   /** An empty closure would make every other check pass vacuously. */
   it('finds the shipped source from the package entries', () => {
-    expect(entries()).toHaveLength(5)
-    expect(shipped).toEqual(
-      expect.arrayContaining(['src/server/index.ts', 'src/redis/index.ts', 'src/prisma/index.ts']),
-    )
-    expect(shipped.length).toBeGreaterThan(60)
+    expect(entries()).toHaveLength(EXPECTED.entries)
+    expect(shipped).toEqual(expect.arrayContaining([...EXPECTED.includes]))
+    expect(shipped.length).toBeGreaterThan(EXPECTED.minShipped)
   })
 
   /** A shipped file is mutated or its absence is explained; nothing is left out by accident. */
@@ -215,7 +346,13 @@ describe('mutation scope', () => {
       /(?:export|import)\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+'[^']+'/g
     for (const [path, exclusion] of listed) {
       if (exclusion.kind !== 'barrel') continue
-      expect({ path, rest: withoutComments(read(path)).replace(reexport, '').trim() }).toEqual({
+      expect({
+        path,
+        rest: withoutComments(read(path))
+          .replace(/^\s*'use client'\s*;?/m, '')
+          .replace(reexport, '')
+          .trim(),
+      }).toEqual({
         path,
         rest: '',
       })
@@ -243,19 +380,137 @@ describe('mutation scope', () => {
     expect(emittedStatements('Object.freeze({})')).not.toEqual([])
   })
 
-  /** An end-to-end-owned file is only excused while an end-to-end suite exercises its subpath. */
-  it('keeps every end-to-end-owned file exercised by an end-to-end suite', () => {
-    const e2e = ['wallet-plan-stability', 'prisma-wallet-budget', 'prisma-migrations'].map((name) =>
-      read(`test/e2e/${name}.e2e-spec.ts`),
+  /** A constants file holds data only: any logic in it is code the exclusion would hide from the mutation run. */
+  it('keeps every listed constants file free of logic', () => {
+    for (const [path, exclusion] of listed) {
+      if (exclusion.kind !== 'constants') continue
+      expect({ path, logic: logicIn(read(path)) }).toEqual({ path, logic: [] })
+    }
+  })
+
+  /** The check sees logic a name-based scan cannot: a function, a branch or a constructor call. */
+  it('detects logic in a constants file that a name scan misses', () => {
+    expect(logicIn("export const A = { a: 'a' } as const\nexport const B = Symbol('b')")).toEqual(
+      [],
     )
-    expect(e2e.some((text) => text.includes('@bymax-one/nest-ai-tokens/prisma'))).toBe(true)
-    expect([...listed.values()].some((exclusion) => exclusion.kind === 'e2e-owned')).toBe(true)
+    expect(logicIn('export const A = () => 1')).not.toEqual([])
+    expect(logicIn("export const A = process.env.X ? 'a' : 'b'")).not.toEqual([])
+    expect(logicIn('export const A = new Map()')).not.toEqual([])
+    expect(logicIn('export const A = Math.random()')).not.toEqual([])
+    expect(logicIn('export const A = process.env.X')).not.toEqual([])
+    expect(logicIn('export const A = { value() { return 1 } } as const')).not.toEqual([])
+    expect(logicIn('export const A = { get value() { return 1 } }')).not.toEqual([])
+    expect(logicIn('export const A = { set value(v: number) {} }')).not.toEqual([])
+    expect(logicIn('export const A = tag`x`')).not.toEqual([])
+    expect(logicIn("export const A = Symbol('a')")).toEqual([])
+    expect(logicIn('export const A = 24 * 3600')).toEqual([])
+    expect(logicIn('export const A = B * 3600')).not.toEqual([])
+    expect(logicIn('export const A = 1 < 2')).not.toEqual([])
+    expect(logicIn('export const A = counter++')).not.toEqual([])
+    expect(logicIn('export const A = ++counter')).not.toEqual([])
+    expect(logicIn('export const A = --counter')).not.toEqual([])
+    expect(logicIn('export const A = delete table.key')).not.toEqual([])
+    expect(logicIn('export const A = -1')).toEqual([])
+  })
+
+  /** A runtime extension is resolved to the source that backs it, and a directory to its index, `.tsx` included. */
+  it('resolves a .js specifier to its TypeScript source and a directory to its index', () => {
+    const files = new Set([
+      'src/runtime.ts',
+      'src/view.tsx',
+      'src/component/index.tsx',
+      'src/util/index.ts',
+    ])
+    const resolve = (specifier: string): string | undefined =>
+      resolveSpecifier('src/index.ts', specifier, (path) => files.has(path))
+
+    expect(resolve('./runtime.js')).toBe('src/runtime.ts')
+    expect(resolve('./view.js')).toBe('src/view.tsx')
+    expect(resolve('./component')).toBe('src/component/index.tsx')
+    expect(resolve('./util')).toBe('src/util/index.ts')
+    expect(resolve('./runtime')).toBe('src/runtime.ts')
+    expect(resolve('./missing.js')).toBeUndefined()
+  })
+
+  /** The entries are read from the config text: every pair of an entry object counts, whatever its key is spelled like. */
+  it('reads every entry of a tsup entry object, with quoted or bare keys', () => {
+    expect(entriesOf("entry: { 'index': 'src/index.ts' }")).toEqual(['src/index.ts'])
+    expect(entriesOf("entry: { 'a': 'src/a.ts', 'b': 'src/b.ts' }")).toEqual([
+      'src/a.ts',
+      'src/b.ts',
+    ])
+    expect(entriesOf("entry: { index: 'src/index.ts', server: 'src/server.ts' }")).toEqual([
+      'src/index.ts',
+      'src/server.ts',
+    ])
+    expect(entriesOf('entry: {\n  "a/b": "src/a/b.ts",\n  c: "src/c.ts",\n}')).toEqual([
+      'src/a/b.ts',
+      'src/c.ts',
+    ])
+    expect(entriesOf("entry: { 'a': 'src/a.ts' }, x: 1, entry: { 'b': 'src/b.ts' }")).toEqual([
+      'src/a.ts',
+      'src/b.ts',
+    ])
+  })
+
+  /** A const-table file holds types and `as const` literals only: any other statement is code the exclusion would hide. */
+  it('keeps every listed const-table file to as-const tables and types', () => {
+    for (const [path, exclusion] of listed) {
+      if (exclusion.kind !== 'const-table') continue
+      expect({ path, other: nonTableStatements(read(path)) }).toEqual({ path, other: [] })
+    }
+  })
+
+  /** The table check rejects a function, a mutable literal and a computed value, and accepts the real shape. */
+  it('detects a statement that is not an as-const table', () => {
+    expect(
+      nonTableStatements(
+        "export const A = { a: 'x' } as const\nexport type B = (typeof A)[keyof typeof A]",
+      ),
+    ).toEqual([])
+    expect(nonTableStatements("export const A = { a: 'x' }")).toHaveLength(1)
+    expect(nonTableStatements('export function f() { return 1 }')).toHaveLength(1)
+    expect(nonTableStatements('export const A = f() as const')).toHaveLength(1)
+    expect(nonTableStatements('export const A = { a: g() } as const')).toHaveLength(1)
+    expect(
+      nonTableStatements("export const A = { [String(Date.now())]: 'x' } as const"),
+    ).toHaveLength(1)
+    expect(nonTableStatements("export const A = { ['a']: 'x' } as const")).toHaveLength(1)
+    expect(nonTableStatements('export const A = { ...B } as const')).toHaveLength(1)
+    expect(nonTableStatements("export const A = { 'a-b': 'x', 1: 'y', c: 'z' } as const")).toEqual(
+      [],
+    )
+    expect(nonTableStatements("export const A = { a: 'x' } as const\nA.a")).toHaveLength(1)
+  })
+
+  /** An exclusion that names an owning script is only honest while the script and its package entry exist. */
+  it('keeps the script that owns an exclusion', () => {
+    for (const exclusion of EXCLUSIONS) {
+      if (exclusion.ownedBy === undefined) continue
+      expect(read('package.json')).toContain(`"${exclusion.ownedBy.packageScript}"`)
+      expect(existsSync(join(ROOT, exclusion.ownedBy.file))).toBe(true)
+    }
+  })
+
+  /** An end-to-end-owned file is only excused while an end-to-end suite exercises its subpath. */
+  it('keeps an end-to-end suite that exercises the subpath of the end-to-end-owned files', () => {
+    if (E2E_OWNED === null) {
+      expect(listedOfKind('e2e-owned')).toEqual([])
+      return
+    }
+    const { suites, subpath } = E2E_OWNED
+    const e2e = suites.map((suite) => read(suite))
+    expect(e2e.length).toBeGreaterThan(0)
+    expect(e2e.some((text) => text.includes(subpath))).toBe(true)
+    expect(listedOfKind('e2e-owned').length).toBeGreaterThan(0)
   })
 
   /** The shipped data files are not code; they must still be the files the build copies. */
   it('names the data files the build ships', () => {
-    for (const path of SHIPPED_DATA) expect(existsSync(join(ROOT, path))).toBe(true)
-    expect(read('tsup.config.ts')).toContain("'src/prisma/schema.prisma.fragment'")
-    expect(read('tsup.config.ts')).toContain("'src/prisma/migrations'")
+    const tsup = read('tsup.config.ts')
+    for (const { path, tsupNeedle } of SHIPPED_DATA) {
+      expect(existsSync(join(ROOT, path))).toBe(true)
+      expect(tsup).toContain(`'${tsupNeedle}'`)
+    }
   })
 })

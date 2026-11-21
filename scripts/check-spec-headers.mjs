@@ -40,7 +40,7 @@ const MIN_PURPOSE_LENGTH = 20
 const LAYER_MARKER = /(?:\bLayer:|@layer)\s+([A-Za-z-]+)/i
 
 /** The layers a spec may declare: the package's subpaths, its tests, the docs fixtures and the repository checks. */
-export const LAYERS = ['server', 'shared', 'prices', 'prisma', 'redis', 'test', 'docs', 'repository', 'scripts']
+export const LAYERS = ['server', 'shared', 'prices', 'prisma', 'redis', 'test', 'tests', 'docs', 'repository', 'scripts']
 
 /** Tracked files named like a spec: `*.spec.ts` and the end-to-end `*-spec.ts`. */
 const SPEC_FILE = /(?:\.spec\.ts|-spec\.ts)$/
