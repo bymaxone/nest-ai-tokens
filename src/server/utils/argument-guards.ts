@@ -39,9 +39,10 @@ export function readField(value: object, key: string, name: string): unknown {
     for (let depth = 0; ; depth += 1) {
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
       const next = Object.getPrototypeOf(holder) as object | null
-      // The object itself is always asked; a prototype is asked unless it is the root of the chain.
-      if ((depth === 0 || next !== null) && Object.hasOwn(holder, key)) return Reflect.get(value, key)
-      if (next === null) return undefined
+      // The root of the chain holds a key only when another library planted it, so a key found nowhere else is not read; a key found
+      // nowhere at all is still asked of the object, which a Proxy answers by its `get` trap without having a key of its own.
+      if (next === null) return depth > 0 && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
+      if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
       holder = next
     }
   } catch {
@@ -64,11 +65,14 @@ export function keysOf(value: object, name: string): string[] {
   try {
     const keys = new Set(Object.getOwnPropertyNames(value))
     let proto = Object.getPrototypeOf(value) as object | null
-    for (let depth = 0; proto !== null && Object.getPrototypeOf(proto) !== null; depth += 1) {
+    for (let depth = 0; proto !== null; depth += 1) {
       // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
       if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
+      const next = Object.getPrototypeOf(proto) as object | null
+      // The root of the chain, whichever realm it is of, adds nothing.
+      if (next === null) break
       for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
-      proto = Object.getPrototypeOf(proto) as object | null
+      proto = next
     }
     return [...keys]
   } catch {

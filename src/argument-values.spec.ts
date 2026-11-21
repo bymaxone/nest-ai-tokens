@@ -628,6 +628,13 @@ describe('the keys of a nested record', () => {
     expect(keysOf(runInNewContext('new (class { get g() { return 1 } })()') as object, 'input')).toEqual(['g'])
   })
 
+  it('reads the prototype of each level of the chain once', () => {
+    let reads = 0
+    const level = new Proxy({ inherited: 1 }, { getPrototypeOf: (target) => { reads += 1; return Reflect.getPrototypeOf(target) } })
+    expect(keysOf(Object.create(level) as object, 'input')).toEqual(['inherited'])
+    expect(reads).toBe(1)
+  })
+
   it('lists the own keys of an object with no prototype', () => {
     expect(keysOf(Object.assign(Object.create(null) as object, { only: 1 }), 'input')).toEqual(['only'])
   })
@@ -668,5 +675,39 @@ describe('a field the host does not have', () => {
   it('is absent from the snapshot, and so is one set to undefined', () => {
     const copy = snapshotOf<{ a: number; b?: number | undefined; c?: number }>({ a: 1, b: undefined }, { a: true, b: true, c: true })
     expect(Object.keys(copy)).toEqual(['a'])
+  })
+})
+
+describe('an object that answers by a get trap and holds no key of its own', () => {
+  /** A Proxy over an empty target: `Object.hasOwn` says it has no key, and only its `get` trap knows the values. */
+  const lazy = (source: Record<string, unknown>): object => new Proxy({}, { get: (_target, key) => source[key as string] })
+
+  it.each([
+    ['wallets.getBalance', [0], { tenantId: 't', ownerType: 'user', ownerId: 'u' }],
+    ['budgets.status', [1], { type: 'user', id: 'u' }],
+    ['budgets.list', [1], { type: 'user', id: 'u' }],
+  ] as const)('is read by %s at %j', async (name, path, source) => {
+    const { run, args } = await callOf(name)
+    const own = { ...at(args, path.slice(0, -1))[path.at(-1)!] as object, ...source }
+    setAt(args, [...path], lazy(own))
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('is read by pricing.resolveRate', async () => {
+    const { run, args } = await callOf('pricing.resolveRate')
+    setAt(args, [0], lazy({ ...(args[0] as object), model: 'gpt-4o' }))
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('keeps a field of a filter, so that a value that is not valid is refused and not dropped', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], lazy({ limit: 'many' }))
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
+  })
+
+  it('keeps the elements of a list whose length and elements are answered by the trap', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], { type: new Proxy([], { get: (_target, key) => (key === 'length' ? 1 : key === '0' ? 'grant' : undefined) }) })
+    expect(await reasonOf(() => run(args))).not.toBe('AI_TOKENS_INVALID_CONFIG type could not be read')
   })
 })
