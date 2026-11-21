@@ -39,6 +39,16 @@ describe('the view of a raw provider response', () => {
     expect(Object.getOwnPropertyDescriptor(view, 'z')).toBeUndefined()
   })
 
+  it('has one view for an object, whichever way it is reached, a cycle included', () => {
+    const shared = { n: 1 }
+    const cyclic: Record<string, unknown> = { shared, again: shared }
+    cyclic.self = cyclic
+    const view = viewOf(cyclic) as { shared: object; again: object; self: object }
+    expect(view.shared).toBe(view.again)
+    expect(view.self).toBe(view)
+    expect(viewOf(cyclic)).toBe(view)
+  })
+
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {
     const view = viewOf([{ ttl: '1h' }, { ttl: '5m' }])
     expect(Array.isArray(view)).toBe(true)

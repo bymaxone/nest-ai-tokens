@@ -71,6 +71,12 @@ describe('the estimate of a hold', () => {
     expect(await reasonOf(() => run(args))).toBeUndefined()
   })
 
+  it.each(['provider', 'tokens'] as const)('names the estimate field %s when it cannot be read', async (field) => {
+    const { run, args } = await callOf('metering.hold')
+    setAt(args, [1], Object.defineProperty({}, field, { get: (): never => { throw new Error('host-private-text') }, enumerable: true }))
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG estimate.${field} could not be read`)
+  })
+
   it('tells a tokens estimate that answers by its get trap from an amount, and refuses it only for the preset a tokens estimate needs', async () => {
     const { run, args } = await callOf('metering.hold')
     setAt(args, [1], new Proxy({}, { get: (_target, key) => ({ tokens: 10 } as Record<string, unknown>)[key as string] }))
@@ -326,6 +332,40 @@ describe('the usage of a call', () => {
     args[2] = make()
     const record = (await run(args)) as { inputTokens: number; outputTokens: number }
     expect([record.inputTokens, record.outputTokens]).toEqual([5, 5])
+  })
+
+  it('reads a normalized usage by name once when a record has no normalizer, and when it is a Proxy over an empty target', async () => {
+    const { run, args } = await callOf('metering.record')
+    delete at(args, [0]).preset
+    at(args, [0]).usage = lazy({ ...NORMALIZED })
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+
+  it('does not take the fields of a normalized usage from a raw response a normalizer reads: a cyclic raw there is the response\'s own business', async () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const builtIn = await callOf('metering.record')
+    at(builtIn.args, [0]).usage = { model: 'gpt-4o', raw: cyclic, usage: { prompt_tokens: 5, completion_tokens: 5 } }
+    expect(await reasonOf(() => builtIn.run(builtIn.args))).toBeUndefined()
+    const host = await callOf('metering.record')
+    delete at(host.args, [0]).preset
+    at(host.args, [0]).normalizer = (): unknown => ({ ...NORMALIZED })
+    at(host.args, [0]).usage = { raw: cyclic }
+    expect(await reasonOf(() => host.run(host.args))).toBeUndefined()
+  })
+
+  it('names the usage when a field of a normalized usage cannot be read', async () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const { run, args } = await callOf('metering.capture')
+    args[2] = { ...NORMALIZED, raw: cyclic }
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG usage.raw.self could not be read')
+  })
+
+  it('records a response that holds a null field, which is no object to give a view', async () => {
+    const { run, args } = await callOf('metering.record')
+    at(args, [0]).usage = { model: 'gpt-4o', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_tokens_details: null } }
+    expect(await reasonOf(() => run(args))).toBeUndefined()
   })
 
   it('tells the normalizers of the library from a normalizer of the host', () => {

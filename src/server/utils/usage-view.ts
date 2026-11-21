@@ -21,6 +21,9 @@ function unlistable(): AiTokensException {
 /** The views this module made: a view is a Proxy, and the test of a Proxy that lists nothing must not take the library's own for a host's. */
 const views = new WeakSet()
 
+/** The view of each object, so that an object reached twice, or one that contains itself, has the one view. */
+const viewed = new WeakMap<object, object>()
+
 /**
  * Whether `value` is a view this module made.
  *
@@ -55,7 +58,8 @@ function guarded<T>(read: () => T): T {
 }
 
 /**
- * A view of `raw` that answers every field with the value it answered the first time, and the objects in it with views of their own.
+ * A view of `raw` that answers every field with the value it answered the first time, and the objects in it with views of their own, one
+ * view for each object.
  * The Proxy stands on an empty object of its own, never on the host's object: the engine checks the answer of a trap against its target,
  * and that check would call the host's own traps, whose errors would escape the view.
  *
@@ -63,6 +67,8 @@ function guarded<T>(read: () => T): T {
  * @returns The view, which a normalizer reads like the object itself.
  */
 export function viewOf<T extends object>(raw: T): T {
+  const known = viewed.get(raw)
+  if (known !== undefined) return known as T
   const answered = new Map<string | symbol, unknown>()
   const isList = Array.isArray(raw)
   const view = new Proxy((isList ? [] : {}) as T, {
@@ -97,5 +103,6 @@ export function viewOf<T extends object>(raw: T): T {
       }),
   })
   views.add(view)
+  viewed.set(raw, view)
   return view
 }
