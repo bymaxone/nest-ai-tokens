@@ -221,6 +221,26 @@ describe('a tool unit the price lists no rate for is a missing price', () => {
     const captured = await built.service.capture(hold, CALLER, usage({ web_search_requests: 7, code_run: 2 }))
     expect(captured.priceMissing).toBe(true)
     expect(captured.surchargeNanoUsd).toBe(70_000_000n)
+    expect(built.events.priceMissing).toHaveBeenCalledTimes(2)
+    expect(built.events.priceMissing).toHaveBeenLastCalledWith(captured)
+  })
+
+  /** A unit named like an inherited property has no rate of its own: it is a missing price, never a crash of the cost arithmetic. */
+  it.each(['constructor', 'toString', 'hasOwnProperty'])('treats a unit named %s as a missing price, in strict and in non-strict mode', async (unit) => {
+    const strict = await world()
+    expect(await refusal(() => strict.service.record({ usage: usage({ [unit]: 1 }), context: context() }))).toEqual({ code: 'AI_TOKENS_PRICE_NOT_FOUND', reason: `the price lists no rate for the tool unit ${unit}` })
+    const lenient = await world({ strict: false })
+    const record = await lenient.service.record({ usage: usage({ [unit]: 1 }), context: context() })
+    expect(record.priceMissing).toBe(true)
+  })
+
+  /** An own rate under such a name is a rate. */
+  it('bills a unit named constructor that the price rates', async () => {
+    const built = build({ strict: true })
+    await built.pricingStore.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1_000_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, unitRates: { constructor: 3_000_000n }, effectiveFrom: new Date(0) })
+    const record = await built.service.record({ usage: usage({ constructor: 2 }), context: context() })
+    expect(record.priceMissing).toBe(false)
+    expect(record.surchargeNanoUsd).toBe(6_000_000n)
   })
 
   /** A unit of count 0 needs no rate. */

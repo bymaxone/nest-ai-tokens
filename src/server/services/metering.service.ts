@@ -468,6 +468,7 @@ export class MeteringService {
     const reservedTokens = record.totalTokens
     const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch, { reservedBilledNanoUsd: reservedBilled, reservedTokens })
     if (settled === null) return this.settledOrConflict(await this.reload(record.id))
+    if (settled.priceMissing) await this.events.priceMissing(settled)
     await this.events.usageRecorded(settled)
     this.telemetry.recordUsage(settled)
     await this.captureContent(settled.id, settled.tenantId, content)
