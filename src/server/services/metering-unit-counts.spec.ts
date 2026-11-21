@@ -243,6 +243,13 @@ describe('a tool unit the price lists no rate for is a missing price', () => {
     expect(record.surchargeNanoUsd).toBe(6_000_000n)
   })
 
+  /** A price that lists no unit rates at all has no rate for any unit. */
+  it('treats a unit as a missing price when the price lists no unit rates at all', async () => {
+    const built = build({ strict: true })
+    await built.pricingStore.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1_000_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
+    expect(await refusal(() => built.service.record({ usage: usage({ web_search_requests: 1 }), context: context() }))).toEqual({ code: 'AI_TOKENS_PRICE_NOT_FOUND', reason: 'the price lists no rate for the tool unit web_search_requests' })
+  })
+
   /** A unit of count 0 needs no rate. */
   it('needs no rate for a unit of 0', async () => {
     const built = await world()

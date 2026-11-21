@@ -7,9 +7,9 @@
  * @layer server
  */
 
-import type { NormalizedUsage } from '../../shared'
+import type { NormalizedUsage, PriceVersion } from '../../shared'
 import type { AiTokensException } from '../errors'
-import { isNormalizedUsage, normalizeCaptureUsage } from './hold-support'
+import { isNormalizedUsage, normalizeCaptureUsage, unpricedUnits } from './hold-support'
 
 /** A complete, well-typed normalized usage (all ten token fields present and finite). */
 function validUsage(): Record<string, unknown> {
@@ -128,5 +128,17 @@ describe('normalizeCaptureUsage', () => {
     })
 
     expect(result.providerReportedCostNanoUsd).toBe(5_000n)
+  })
+})
+
+describe('unpricedUnits', () => {
+  const rate: PriceVersion = { unitRates: { web_search_requests: 1n } } as never
+  const usage = (serverToolUse?: Record<string, number>): NormalizedUsage => ({ ...validUsage(), ...(serverToolUse === undefined ? {} : { serverToolUse }) }) as never
+
+  /** Only a unit with a count above 0 and no rate of its own is unpriced, and a usage with no units has none. */
+  it('lists the units that have a count and no rate of their own', () => {
+    expect(unpricedUnits(usage(), rate)).toEqual([])
+    expect(unpricedUnits(usage({ web_search_requests: 3, code_run: 2, idle: 0, constructor: 1 }), rate)).toEqual(['code_run', 'constructor'])
+    expect(unpricedUnits(usage({ code_run: 2 }), {} as never)).toEqual(['code_run'])
   })
 })
