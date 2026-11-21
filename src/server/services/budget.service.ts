@@ -28,6 +28,7 @@ import type {
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
+import { absorbHostCallAndWait } from '../utils/absorb-host-call'
 import { assertBudgetShape, assertLookup, assertObject, assertTenant, assertTexts } from '../utils/argument-guards'
 import { readDate, readOptionalDate, withReadDates } from '../utils/date-guards'
 import { effectivePolicy, isBudgetPolicy } from '../utils/enum-guards'
@@ -651,7 +652,8 @@ export class BudgetService {
       this.logger.warn(`budget ${located.budget.id} exceeded with policy 'throttle' but no onThrottle callback is configured`)
       return
     }
-    await this.options.onThrottle({ context, budget: located.budget, status })
+    const onThrottle = this.options.onThrottle
+    await absorbHostCallAndWait(this.logger, 'ai_tokens.budget.on_throttle_failed', () => onThrottle({ context, budget: located.budget, status }))
   }
 
   /** Emit each soft threshold crossed by this delta, once per window (per-instance dedupe). */

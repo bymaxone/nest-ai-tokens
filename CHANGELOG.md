@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+- **Apply:** no migration and no option change is needed. A telemetry sink (`recordUsage`, `recordDuration`) or an `onThrottle` callback that throws, returns a promise that rejects, or returns a thenable whose `then` throws no longer fails the call that had already done its work (`record`, `capture`, a consumption that throttles): the failure is one log line, `ai_tokens.telemetry.sink_failed` or `ai_tokens.budget.on_throttle_failed`, with the error's name and code and never its message, and a rejection nobody handles is no longer left behind. A throttled consumption is allowed, as the policy says. A sink that does not return, or a callback that never settles, is not guarded: `onThrottle` is awaited.
+
 - **Apply:** no migration and no option change is needed. A date a caller supplies is read once at the call and used as a copy, so a `Date` subclass that answers its first call and throws on later ones can no longer fail after the call has begun (`budgets.rotateWindow` threw the host's own error after it had persisted the rotation). A text argument that contains a NUL character, and an amount outside what a `BIGINT` column holds, is refused with `AI_TOKENS_INVALID_CONFIG` naming the argument, where the store answered `AI_TOKENS_STORE_ERROR` without naming it. An argument object whose getter throws is refused naming the field (`<field> could not be read`) and no longer surfaces the host's own error. The messages that refuse an amount now state the range, and `wallets.creditRateNanoUsd` and `wallets.overdraftNanoUsd` are refused above it.
 
 ## [1.1.19] - 2026-11-20

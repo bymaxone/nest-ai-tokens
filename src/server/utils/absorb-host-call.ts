@@ -1,0 +1,61 @@
+/**
+ * @fileoverview The one way a call into the host's own code that must not fail the library's operation is made: a sink, a callback.
+ * A host function that throws, returns a promise that rejects, or hands back a thenable whose `then` throws would otherwise end a
+ * metering call whose record is already written, or leave a rejection nobody handles. The failure is written as one log line
+ * that carries the error's name and code and never its message, and the operation goes on.
+ * @layer server
+ */
+
+import type { Logger } from '@nestjs/common'
+import { describeError } from '../errors/describe-error'
+
+/**
+ * Call a host function without letting its failure escape, and without waiting for it.
+ *
+ * @param logger The logger that writes the line of a failure.
+ * @param key The stable log key of the line.
+ * @param call The call into the host, which may throw or return a promise or thenable.
+ */
+export function absorbHostCall(logger: Logger, key: string, call: () => unknown): void {
+  try {
+    const result = call() as { then?: unknown } | null | undefined
+    if (typeof result?.then === 'function') {
+      const settled = Promise.resolve(result)
+      settled.catch((error: unknown) => {
+        logger.warn(`${key} ${describeError(error)}`)
+      })
+    }
+  } catch (error) {
+    logger.warn(`${key} ${describeError(error)}`)
+  }
+}
+
+/**
+ * Call a host function and wait for it, without letting its failure escape.
+ *
+ * @param logger The logger that writes the line of a failure.
+ * @param key The stable log key of the line.
+ * @param call The call into the host, which may throw or return a promise or thenable.
+ * @returns A promise that always resolves, once the host function has finished or failed.
+ */
+export async function absorbHostCallAndWait(logger: Logger, key: string, call: () => unknown): Promise<void> {
+  try {
+    await call()
+  } catch (error) {
+    logger.warn(`${key} ${describeError(error)}`)
+  }
+}
+
+/**
+ * Call a method of a host object without letting its failure escape, and without waiting for it. The method is looked up and called
+ * inside the guard, so a getter that throws is absorbed too.
+ *
+ * @param logger The logger that writes the line of a failure.
+ * @param key The stable log key of the line.
+ * @param target The host object.
+ * @param method The name of its method.
+ * @param args The arguments of the call.
+ */
+export function absorbHostMethod(logger: Logger, key: string, target: object, method: string, args: readonly unknown[]): void {
+  absorbHostCall(logger, key, () => Reflect.apply(Reflect.get(target, method) as () => unknown, target, args))
+}
