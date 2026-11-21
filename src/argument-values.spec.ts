@@ -400,3 +400,68 @@ describe('the fields a snapshot lists', () => {
     expect(Object.assign({}, copy)).toEqual({ inherited: 1, own: 2 })
   })
 })
+
+describe('a list or an object nested in an input', () => {
+  const throwing = (target: unknown[]): unknown[] => new Proxy(target, { get: (): never => { throw new Error('host-private-text') } })
+  const withLength = (target: unknown[], length: unknown): unknown[] => new Proxy(target, { get: (inner, key) => (key === 'length' ? length : (Reflect.get(inner, key) as unknown)) })
+
+  const LIST_ROWS: readonly (readonly [string, (string | number)[], string, string])[] = [
+    ['budgets.upsertBudget', [0], 'features', 'features'],
+    ['budgets.upsertBudget', [0], 'softThresholds', 'softThresholds'],
+    ['ledger.query', [0], 'status', 'status'],
+    ['reports.summarize', [0], 'groupBy', 'groupBy'],
+  ]
+
+  it.each(LIST_ROWS)('refuses a Proxy list that throws at %s %j for %s', async (name, path, field, named) => {
+    const { run, args } = await callOf(name)
+    at(args, path)[field] = throwing(['day'])
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+  })
+
+  it.each([['a negative length', -1], ['a length that is not a number', 'many'], ['a list of two million elements', 2_000_000], ['a fraction', 1.5]])('refuses a list with %s', async (_label, length) => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = withLength(['a'], length)
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG features could not be read')
+  })
+
+  it('reads each element of a list once', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    const reads = new Map<string, number>()
+    at(args, [0]).features = new Proxy(['a', 'b'], {
+      get(target, key): unknown {
+        reads.set(String(key), (reads.get(String(key)) ?? 0) + 1)
+        return Reflect.get(target, key) as unknown
+      },
+    })
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect([reads.get('length'), reads.get('0'), reads.get('1')]).toEqual([1, 1, 1])
+  })
+
+  it('reads a getter of a nested object once', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    let reads = 0
+    at(args, [0]).scope = { type: 'user', get id(): string { reads += 1; if (reads > 1) throw new Error('host-private-text'); return 'u1' } }
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect(reads).toBe(1)
+  })
+
+  it('refuses an object that contains itself, and nesting deeper than eight levels', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    const loop: Record<string, unknown> = { type: 'user', id: 'u' }
+    loop.self = loop
+    at(args, [0]).scope = loop
+    expect(await reasonOf(() => run(args))).toMatch(/^AI_TOKENS_INVALID_CONFIG scope.*could not be read$/)
+    let deep: Record<string, unknown> = { type: 'user', id: 'u' }
+    for (let level = 0; level < 9; level += 1) deep = { inner: deep }
+    at(args, [0]).scope = deep
+    expect(await reasonOf(() => run(args))).toMatch(/could not be read$/)
+  })
+
+  it('keeps the values of honest nested lists and objects', async () => {
+    const { run, args } = await callOf('budgets.upsertBudget')
+    at(args, [0]).features = ['f1', 'f2']
+    at(args, [0]).softThresholds = [0.5, 1]
+    at(args, [0]).scope = { type: 'user', id: 'nested' }
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
+})

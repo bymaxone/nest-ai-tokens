@@ -6,7 +6,7 @@
  */
 
 import { AiTokensException } from '../errors'
-import { keysOf, readField } from './argument-guards'
+import { keysOf, readDeep, readField } from './argument-guards'
 import { isValidDate } from './numeric-guards'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
@@ -77,7 +77,7 @@ export function withReadDates<T extends object>(input: T, fields: readonly (keyo
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of keysOf(input, `${prefix}input`)) {
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
-    Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true })
+    Object.defineProperty(copy, key, { value: readDeep(readField(input, key, `${prefix}${key}`), `${prefix}${key}`, 1), enumerable: true, writable: true })
   }
   for (const field of fields) {
     if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
