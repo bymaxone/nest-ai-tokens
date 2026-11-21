@@ -67,32 +67,35 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
 /**
  * A snapshot of an object read by the names of its type, once: each field the shape lists is read a single time, by its name; an
  * object among them that the shape describes is read the same way, and any other list or object is copied through {@link readDeep}.
- * The named date fields are replaced by {@link readDate} copies. The caller's object is not read again, so a getter or a Proxy trap that
- * answers once and throws afterwards cannot fail after the call has begun. A field the host left out, or set to `undefined`, is absent.
+ * The caller's object is not read again, so a getter or a Proxy trap that answers once and throws afterwards cannot fail after the call
+ * has begun. A field the host left out, or set to `undefined`, is absent.
  *
  * @param input The object the caller supplied.
  * @param shape The fields of its type, and of the objects nested in it.
- * @param dates The names of its date fields.
  * @param prefix Text put before a field's name in a refusal.
  * @returns A new object with no prototype, holding the values read.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
-export function readShape(input: object, shape: Shape, dates: readonly string[] = [], prefix = ''): Record<string, unknown> {
+export function readShape(input: object, shape: Shape, prefix: string): Record<string, unknown> {
   // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
   const copy = Object.create(null) as Record<string, unknown>
   for (const key of Object.keys(shape.fields)) {
     const name = `${prefix}${key}`
     const raw = readField(input, key, name)
     const inner = shape.nested?.[key]
-    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, [], `${name}.`) : readDeep(raw, name, 1, shape.limits?.[key])
+    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`) : readDeep(raw, name, 1, shape.limits?.[key])
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
     // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
     if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
   }
+  return copy
+}
+
+/** Replace the named date fields of a snapshot by {@link readDate} copies, so that a date is valid and read once. */
+function readDates(copy: Record<string, unknown>, dates: readonly string[], prefix: string): void {
   for (const field of dates) {
     if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
   }
-  return copy
 }
 
 /** Whether a value is an object that a shape can describe: not `null`, a list or a date. */
@@ -105,13 +108,28 @@ function isRecord(value: unknown): value is object {
  *
  * @param argument What the caller passed.
  * @param shape The fields of its type, and of the objects nested in it.
- * @param dates The names of its date fields.
  * @param prefix Text put before a field's name in a refusal.
  * @returns The snapshot of an object, or `argument` itself.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` as {@link readShape} does.
  */
-export function readArgument<T>(argument: T, shape: Shape, dates: readonly string[] = [], prefix = ''): T {
-  return isRecord(argument) ? (readShape(argument, shape, dates, prefix) as T) : argument
+export function readArgument<T>(argument: T, shape: Shape, prefix: string): T {
+  return isRecord(argument) ? (readShape(argument, shape, prefix) as T) : argument
+}
+
+/**
+ * {@link readArgument} for an argument with date fields, which are valid dates read once in the snapshot.
+ *
+ * @param argument What the caller passed.
+ * @param shape The fields of its type, and of the objects nested in it.
+ * @param dates The names of its date fields.
+ * @returns The snapshot of an object, or `argument` itself.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
+ */
+export function readDatedArgument<T>(argument: T, shape: Shape, dates: readonly string[]): T {
+  if (!isRecord(argument)) return argument
+  const copy = readShape(argument, shape, '')
+  readDates(copy, dates, '')
+  return copy as T
 }
 
 /**
@@ -131,11 +149,11 @@ export function readHoldEstimate<T>(estimate: T): T {
   } catch {
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'estimate could not be read' })
   }
-  return readShape(estimate, { fields }, [], 'estimate.') as T
+  return readShape(estimate, { fields }, 'estimate.') as T
 }
 
 /**
- * A snapshot of an input object, read once, by the names in `fields`; see {@link readShape}.
+ * A snapshot of an input object, read once, by the names in `fields`, with its date fields replaced by valid dates; see {@link readShape}.
  *
  * @param input The object the caller supplied.
  * @param fields The fields of its type, by name.
@@ -144,12 +162,14 @@ export function readHoldEstimate<T>(estimate: T): T {
  * @returns A new object with no prototype, holding the values read.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
-export function withReadDates<T extends object>(input: T, fields: FieldList<T>, dates: readonly (keyof T & string)[] = [], prefix = ''): T {
-  return readShape(input, { fields }, dates, prefix) as T
+export function withReadDates<T extends object>(input: T, fields: FieldList<T>, dates: readonly (keyof T & string)[], prefix = ''): T {
+  const copy = readShape(input, { fields }, prefix)
+  readDates(copy, dates, prefix)
+  return copy as T
 }
 
 /**
- * A snapshot of an input object that holds no date: each field of `fields` is read once, as {@link withReadDates} does.
+ * A snapshot of an input object that holds no date: each field of `fields` is read once, as {@link readShape} does.
  *
  * @param input The object the caller supplied.
  * @param fields The fields of its type, by name.
@@ -157,7 +177,7 @@ export function withReadDates<T extends object>(input: T, fields: FieldList<T>, 
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function snapshotOf<T extends object>(input: T, fields: FieldList<T>): T {
-  return withReadDates(input, fields)
+  return readShape(input, { fields }, '') as T
 }
 
 /**

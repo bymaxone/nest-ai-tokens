@@ -169,3 +169,49 @@ describe('the usage a call reads once', () => {
     expect(Date.now() - started).toBeLessThan(5000)
   })
 })
+
+/** The reason of the typed refusal `read` raises, or `undefined` when it returns. */
+function refusalOf(read: () => unknown): string | undefined {
+  try {
+    read()
+  } catch (error) {
+    if (!(error instanceof AiTokensException)) throw error
+    return (error.getResponse() as { error: { details?: { reason?: string } } }).error.details?.reason
+  }
+  return undefined
+}
+
+describe('what a refusal of a read names', () => {
+  it.each([
+    ['metering.capture', [1], 'tenantId', 'caller.tenantId'],
+    ['metering.release', [1], 'tenantId', 'caller.tenantId'],
+    ['metering.capture', [3], 'provider', 'preset.provider'],
+  ] as const)('names the field at %s %j when %s cannot be read', async (name, path, field, named) => {
+    const { run, args } = await callOf(name)
+    Object.defineProperty(at(args, path.slice(0, -1))[path.at(-1)!], field, { get: (): never => { throw new Error('host-private-text') } })
+    expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
+  })
+
+  it('names the content of a capture when a field of it cannot be read', async () => {
+    const { run, args } = await callOf('metering.capture')
+    args[4] = Object.defineProperty({}, 'prompt', { get: (): never => { throw new Error('host-private-text') } })
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG content.prompt could not be read')
+  })
+
+  it('does not list the keys of the scope of an estimate', async () => {
+    const { run, args } = await callOf('metering.estimateCost')
+    let listed = 0
+    at(args, [0]).scope = new Proxy({ type: 'user', id: 'u' }, { ownKeys(target) { listed += 1; return Reflect.ownKeys(target) } })
+    await reasonOf(() => run(args))
+    expect(listed).toBe(0)
+  })
+
+  it('names the value when a read has too many different lists and objects, too many keys, or contains itself', () => {
+    expect(refusalOf(() => readDeep(Array.from({ length: 10_000 }, () => ({})), 'usage', 0, 64))).toBe('usage[9999] could not be read')
+    expect(refusalOf(() => readDeep(Object.fromEntries(Array.from({ length: 100_001 }, (_, index) => [`k${String(index)}`, 0])), 'usage', 0, 64))).toBe('usage could not be read')
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(refusalOf(() => readDeep(cyclic, 'usage', 0, 64))).toBe('usage.self could not be read')
+  })
+})
+

@@ -239,18 +239,6 @@ export function assertTexts(values: Readonly<Record<string, unknown>>): void {
 }
 
 /**
- * Throw unless the arguments of a lookup are a tenant id and a scope.
- *
- * @param tenantId The tenant the caller passed.
- * @param scope The scope the caller passed.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the argument that is not valid.
- */
-export function assertLookup(tenantId: unknown, scope: unknown): void {
-  assertText('tenantId', tenantId)
-  assertScope('scope', scope)
-}
-
-/**
  * Throw unless `tenantId` is a non-empty string, so a plain-JavaScript caller never reaches the store with a coerced key.
  *
  * @param tenantId What the caller passed.
@@ -293,7 +281,7 @@ export function assertTextList(name: string, value: unknown): asserts value is s
  */
 export function assertHold(value: unknown): void {
   assertObject('hold', value)
-  assertText('hold.id', readField(value, 'id', 'hold.id'))
+  assertText('hold.id', value.id)
 }
 
 /**
@@ -327,8 +315,8 @@ export function assertOptionalCount(name: string, value: unknown): asserts value
  */
 export function assertScope(name: string, value: unknown): void {
   assertObject(name, value)
-  assertText(`${name}.type`, readField(value, 'type', `${name}.type`))
-  assertText(`${name}.id`, readField(value, 'id', `${name}.id`))
+  assertText(`${name}.type`, value.type)
+  assertText(`${name}.id`, value.id)
 }
 
 /**
@@ -339,9 +327,9 @@ export function assertScope(name: string, value: unknown): void {
  */
 export function assertWalletRef(value: unknown): void {
   assertObject('wallet', value)
-  assertText('wallet.tenantId', readField(value, 'tenantId', 'wallet.tenantId'))
-  assertText('wallet.ownerType', readField(value, 'ownerType', 'wallet.ownerType'))
-  assertText('wallet.ownerId', readField(value, 'ownerId', 'wallet.ownerId'))
+  assertText('wallet.tenantId', value.tenantId)
+  assertText('wallet.ownerType', value.ownerType)
+  assertText('wallet.ownerId', value.ownerId)
 }
 
 /** The optional text fields of a metering context. */
@@ -355,12 +343,11 @@ const CONTEXT_TEXT_FIELDS = ['requestedBy', 'baseModel', 'idempotencyKey', 'corr
  */
 export function assertMeteringContext(value: unknown): void {
   assertObject('context', value)
-  assertText('context.tenantId', readField(value, 'tenantId', 'context.tenantId'))
-  assertScope('context.scope', readField(value, 'scope', 'context.scope'))
-  const beneficiary = readField(value, 'beneficiary', 'context.beneficiary')
-  if (beneficiary !== undefined) assertScope('context.beneficiary', beneficiary)
-  assertText('context.feature', readField(value, 'feature', 'context.feature'))
-  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, readField(value, field, `context.${field}`))
+  assertText('context.tenantId', value.tenantId)
+  assertScope('context.scope', value.scope)
+  if (value.beneficiary !== undefined) assertScope('context.beneficiary', value.beneficiary)
+  assertText('context.feature', value.feature)
+  for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, value[field])
 }
 
 /**
@@ -372,10 +359,9 @@ export function assertMeteringContext(value: unknown): void {
  */
 export function assertEstimateCostInput(value: unknown): void {
   assertObject('input', value)
-  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, readField(value, field, field))
-  assertOptionalText('feature', readField(value, 'feature', 'feature'))
-  const scope = readField(value, 'scope', 'scope')
-  if (scope !== undefined) assertScope('scope', scope)
-  assertCount('inputTokens', readField(value, 'inputTokens', 'inputTokens'))
-  assertCount('maxOutputTokens', readField(value, 'maxOutputTokens', 'maxOutputTokens'))
+  for (const field of ['provider', 'model', 'operation'] as const) assertText(field, value[field])
+  assertOptionalText('feature', value.feature)
+  if (value.scope !== undefined) assertScope('scope', value.scope)
+  assertCount('inputTokens', value.inputTokens)
+  assertCount('maxOutputTokens', value.maxOutputTokens)
 }

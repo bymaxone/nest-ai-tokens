@@ -36,7 +36,7 @@ import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
 import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts } from '../utils/argument-guards'
-import { lookupScope, readArgument, readOptionalDate } from '../utils/date-guards'
+import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE, RECORD_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
 import { captureArguments, holdArguments, holdOwnerArguments } from '../utils/metering-arguments'
@@ -207,7 +207,7 @@ export class MeteringService {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
   async record(given: RecordInput): Promise<UsageRecord> {
-    const input = readArgument(given, RECORD_SHAPE, ['occurredAt'])
+    const input = readDatedArgument(given, RECORD_SHAPE, ['occurredAt'])
     assertObject('input', input)
     assertMeteringContext(input.context)
     return (await this.recordSettled(input)).record
@@ -244,7 +244,7 @@ export class MeteringService {
     const parsed = this.resolveNormalizedUsage(input)
     const normalized = withBaseModel(parsed, context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
-    const occurredAt = readOptionalDate('occurredAt', input.occurredAt) ?? this.now()
+    const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating: NormalizedUsage = { ...normalized, serverToolUse: ratedUnits }
@@ -346,10 +346,10 @@ export class MeteringService {
    * @returns The raw and billed nano-USD estimate.
    */
   async estimateCost(given: EstimateCostInput): Promise<CostEstimate> {
-    const input = readArgument(given, ESTIMATE_COST_SHAPE, ['at'])
+    const input = readDatedArgument(given, ESTIMATE_COST_SHAPE, ['at'])
     assertEstimateCostInput(input)
     const serviceTier = input.serviceTier ?? 'standard'
-    const at = readOptionalDate('at', input.at) ?? this.now()
+    const at = input.at ?? this.now()
     const usage: NormalizedUsage = {
       provider: input.provider,
       model: input.model,

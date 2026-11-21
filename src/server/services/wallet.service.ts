@@ -26,7 +26,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
-import { snapshotOf, withReadDates } from '../utils/date-guards'
+import { readShape, snapshotOf, withReadDates } from '../utils/date-guards'
 import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, SETTLE_ADJUSTMENT_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
@@ -422,7 +422,7 @@ export class WalletService {
   /** Snapshot the reference of a wallet and reject a `'key'` owner at runtime (`'key'` scopes cannot own money, §9.1). */
   private assertOwner(given: WalletRef): WalletRef {
     assertObject('wallet', given)
-    const ref = withReadDates(given, WALLET_REF_FIELDS, [], 'wallet.')
+    const ref = readShape(given, { fields: WALLET_REF_FIELDS }, 'wallet.') as unknown as WalletRef
     assertWalletRef(ref)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if ((ref.ownerType as string) === 'key') throw this.invalid("'key' scopes cannot own a wallet")

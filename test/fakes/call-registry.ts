@@ -21,7 +21,7 @@ import { UsageReportService } from '../../src/server/services/usage-report.servi
 import { WalletService } from '../../src/server/services/wallet.service'
 
 /** The arguments of a call as the call reads them; each is cast to the type the method takes, which is the point of the matrix. */
-type Args = [never, never, never, never]
+type Args = [never, never, never, never, never]
 
 /** The calls of the argument specs, by the name of the method: each runs the method with the arguments it is given and builds, fresh each time, the arguments that make it succeed. */
 export interface Rig {
@@ -83,7 +83,7 @@ function callsOf({ pricing, ledger, metering, wallets, budgets, reports, budget,
     'metering.estimateCost': call((a) => metering.estimateCost(a[0]), () => [{ ...estimate(), feature: 'f' }]),
     'metering.getStatus': call((a) => metering.getStatus(a[0], a[1]), () => [TENANT, scope()]),
     'metering.reverse': call((a) => metering.reverse(a[0], a[1]), () => [seeded.id, 'why']),
-    'metering.capture': call((a) => metering.capture(a[0], a[1], a[2], a[3]), async () => [await heldHold(), caller(), usage(), { ...preset }]),
+    'metering.capture': call((a) => metering.capture(a[0], a[1], a[2], a[3], a[4]), async () => [await heldHold(), caller(), usage(), { ...preset }, { prompt: 'p', completion: 'c' }]),
     'metering.release': call((a) => metering.release(a[0], a[1], a[2]), async () => [await heldHold(), caller(), 'why']),
     'wallets.getBalance': call((a) => wallets.getBalance(a[0]), () => [ref()]),
     'wallets.grant': call((a) => wallets.grant(a[0], a[1]), () => [ref(), entry()]),

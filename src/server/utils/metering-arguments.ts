@@ -36,7 +36,7 @@ function isCollector(value: unknown): value is StreamUsageCollector {
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdArguments(context: MeteringContext, estimate: HoldEstimate): { context: MeteringContext; estimate: HoldEstimate } {
-  return { context: readArgument(context, CONTEXT_SHAPE, [], 'context.'), estimate: readHoldEstimate(estimate) }
+  return { context: readArgument(context, CONTEXT_SHAPE, 'context.'), estimate: readHoldEstimate(estimate) }
 }
 
 /**
@@ -48,7 +48,7 @@ export function holdArguments(context: MeteringContext, estimate: HoldEstimate):
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold; caller: HoldCaller } {
-  return { hold: readArgument(hold, HOLD_SHAPE, [], 'hold.'), caller: readArgument(caller, HOLD_CALLER_SHAPE, [], 'caller.') }
+  return { hold: readArgument(hold, HOLD_SHAPE, 'hold.'), caller: readArgument(caller, HOLD_CALLER_SHAPE, 'caller.') }
 }
 
 /**
@@ -69,5 +69,5 @@ export function captureArguments(hold: Hold, caller: HoldCaller, usage: unknown,
   preset: ProviderPreset | undefined
   content: Content | undefined
 } {
-  return { ...holdOwnerArguments(hold, caller), usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, [], 'preset.'), content: readArgument(content, CONTENT_SHAPE, [], 'content.') }
+  return { ...holdOwnerArguments(hold, caller), usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, 'preset.'), content: readArgument(content, CONTENT_SHAPE, 'content.') }
 }
