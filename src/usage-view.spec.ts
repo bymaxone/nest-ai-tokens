@@ -83,6 +83,12 @@ describe('the view of a raw provider response', () => {
     expect(Object.getOwnPropertyDescriptor(viewOf({ [tag]: 1 }), tag)).toEqual({ value: 1, writable: true, enumerable: true, configurable: true })
   })
 
+  it('reads a list that is frozen like any other', () => {
+    const view = viewOf(Object.freeze([{ ttl: '1h' }, { ttl: '5m' }]))
+    expect(Object.entries(view).map(([, item]) => item.ttl)).toEqual(['1h', '5m'])
+    expect(Object.keys(view)).toEqual(['0', '1'])
+  })
+
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {
     const view = viewOf([{ ttl: '1h' }, { ttl: '5m' }])
     expect(Array.isArray(view)).toBe(true)

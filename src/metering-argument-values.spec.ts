@@ -441,6 +441,17 @@ describe('the usage of a call', () => {
     expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG usage.${field} could not be read`)
   })
 
+  it('reads the provider and the operation of a normalized usage under a host normalizer once each', async () => {
+    const reads = { provider: 0, operation: 0 }
+    const counted = (field: 'provider' | 'operation'): PropertyDescriptor => ({ enumerable: true, get: (): unknown => { reads[field] += 1; return NORMALIZED[field] } })
+    const usage = Object.defineProperties({ ...NORMALIZED }, { provider: counted('provider'), operation: counted('operation') })
+    const { run, args } = await callOf('metering.capture')
+    args[3] = { provider: 'openai', normalizer: (raw: unknown): unknown => raw, ratingMode: 'rate-table' }
+    args[2] = usage
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect(reads).toEqual({ provider: 1, operation: 1 })
+  })
+
   it('does not read a key another library added to Object.prototype as a field of a response, and bills a response as it is', async () => {
     const prototype = Object.prototype as Record<string, unknown>
     prototype.cached_tokens = 40

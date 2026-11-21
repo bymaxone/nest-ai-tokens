@@ -11,7 +11,7 @@ import type { RecordInput } from '../services/metering.service'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
 import { newVisit, readField, type Visit } from './argument-guards'
 import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './date-guards'
-import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_SHAPE, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
+import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_FIELDS, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
 import { isBuiltInNormalizer } from '../config/provider-presets'
 import { isNormalizedUsage } from '../services/hold-support'
 import { viewOf } from './usage-view'
@@ -76,13 +76,15 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
   // A built-in normalizer reads a view of it, so that a field it reads afterwards is the value read here.
   const ofHost = normalizer !== undefined && !isBuiltInNormalizer(normalizer)
   const source = ofHost ? usage : viewOf(usage)
+  if (!normalizedFirst) return source
   // A raw response of a provider names no `provider` and no `operation`, so the host's own object is read for the rest of a usage that is
-  // already normalized only when it names both; the fields its normalizer reads are then left to it.
-  if (normalizedFirst && (!ofHost || (readField(usage, 'provider', 'usage.provider') !== undefined && readField(usage, 'operation', 'usage.operation') !== undefined))) {
-    const own = readShape(source, NORMALIZED_USAGE_SHAPE, 'usage.', visit)
-    if (isNormalizedUsage(own)) return own
-  }
-  return source
+  // already normalized only when it names both; the two names are read once, and what they answered is the snapshot's own.
+  const identity = ofHost ? { provider: readField(usage, 'provider', 'usage.provider'), operation: readField(usage, 'operation', 'usage.operation') } : undefined
+  if (identity !== undefined && (identity.provider === undefined || identity.operation === undefined)) return source
+  const { provider: _provider, operation: _operation, ...rest } = NORMALIZED_USAGE_FIELDS
+  const own = readShape(source, { fields: identity === undefined ? NORMALIZED_USAGE_FIELDS : rest }, 'usage.', visit)
+  if (identity !== undefined) Object.assign(own, identity)
+  return isNormalizedUsage(own) ? own : source
 }
 
 /**

@@ -8,7 +8,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
 
 /**
  * Normalize an OpenAI-compatible chat response into {@link NormalizedUsage}.
@@ -27,10 +27,10 @@ export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-compatible', 'usage.completion_tokens')
 
-  const promptDetails = asObject(usage.prompt_tokens_details)
-  const completionDetails = asObject(usage.completion_tokens_details)
+  const promptDetails = detailsObject(usage.prompt_tokens_details, 'openai-compatible', 'usage.prompt_tokens_details')
+  const completionDetails = detailsObject(usage.completion_tokens_details, 'openai-compatible', 'usage.completion_tokens_details')
   // DeepSeek reports cache hits at the usage root; OpenAI-style gateways nest them.
-  const cacheReadTokens = num(usage.prompt_cache_hit_tokens) + num(promptDetails?.cached_tokens)
+  const cacheReadTokens = sumCounts(num(usage.prompt_cache_hit_tokens), num(promptDetails?.cached_tokens))
   const reasoningTokens = num(completionDetails?.reasoning_tokens)
 
   const serviceTier = openAiServiceTier(response.service_tier)
@@ -38,8 +38,8 @@ export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
     provider: '',
     model: str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: promptTokens - cacheReadTokens,
-    outputTokens: completionTokens - reasoningTokens,
+    inputTokens: remainder(promptTokens, [cacheReadTokens], 'openai-compatible', 'usage.prompt_tokens'),
+    outputTokens: remainder(completionTokens, [reasoningTokens], 'openai-compatible', 'usage.completion_tokens'),
     cacheReadTokens,
     reasoningTokens,
     serviceTier,

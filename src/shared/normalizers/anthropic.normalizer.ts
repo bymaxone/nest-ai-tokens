@@ -9,8 +9,8 @@
 
 import type { NormalizedUsage } from '../types/normalized-usage'
 import {
-  asObject,
   buildUsage,
+  detailsObject,
   knownServiceTier,
   num,
   readResponse,
@@ -37,7 +37,7 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
   const outputTokens = requireNum(usage.output_tokens, 'anthropic', 'usage.output_tokens')
 
   const cacheReadTokens = num(usage.cache_read_input_tokens)
-  const cacheCreation = asObject(usage.cache_creation)
+  const cacheCreation = detailsObject(usage.cache_creation, 'anthropic', 'usage.cache_creation')
   const cacheWrite5mTokens = cacheCreation
     ? num(cacheCreation.ephemeral_5m_input_tokens)
     : num(usage.cache_creation_input_tokens)
@@ -53,7 +53,7 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
     cacheWrite5mTokens,
     cacheWrite1hTokens,
     serviceTier: knownServiceTier(usage.service_tier),
-    serverToolUse: toolUseCounts(usage.server_tool_use),
+    serverToolUse: toolUseCounts(usage.server_tool_use, 'anthropic'),
     raw: usage,
   })
 }

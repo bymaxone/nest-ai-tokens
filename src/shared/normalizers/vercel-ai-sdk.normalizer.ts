@@ -10,7 +10,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asObject, buildUsage, num, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsObject, num, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
 
 /**
  * Normalize a Vercel AI SDK response into {@link NormalizedUsage}.
@@ -29,18 +29,18 @@ export function normalizeVercelAiSdkUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.outputTokens, 'vercel-ai-sdk', 'usage.outputTokens')
 
-  const inputDetails = asObject(usage.inputTokenDetails)
-  const outputDetails = asObject(usage.outputTokenDetails)
-  const cacheReadTokens = num(usage.cachedInputTokens) + num(inputDetails?.cacheReadTokens)
+  const inputDetails = detailsObject(usage.inputTokenDetails, 'vercel-ai-sdk', 'usage.inputTokenDetails')
+  const outputDetails = detailsObject(usage.outputTokenDetails, 'vercel-ai-sdk', 'usage.outputTokenDetails')
+  const cacheReadTokens = sumCounts(num(usage.cachedInputTokens), num(inputDetails?.cacheReadTokens))
   const cacheWrite5mTokens = num(inputDetails?.cacheWriteTokens)
-  const reasoningTokens = num(usage.reasoningTokens) + num(outputDetails?.reasoningTokens)
+  const reasoningTokens = sumCounts(num(usage.reasoningTokens), num(outputDetails?.reasoningTokens))
 
   return buildUsage({
     provider: '',
     model: str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: inputTokensTotal - cacheReadTokens - cacheWrite5mTokens,
-    outputTokens: outputTokensTotal - reasoningTokens,
+    inputTokens: remainder(inputTokensTotal, [cacheReadTokens, cacheWrite5mTokens], 'vercel-ai-sdk', 'usage.inputTokens'),
+    outputTokens: remainder(outputTokensTotal, [reasoningTokens], 'vercel-ai-sdk', 'usage.outputTokens'),
     cacheReadTokens,
     cacheWrite5mTokens,
     reasoningTokens,

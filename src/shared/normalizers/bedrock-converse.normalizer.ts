@@ -8,14 +8,14 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asArray, asObject, buildUsage, num, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsArray, detailsObject, num, readResponse, requireNum, str, sumCounts } from './usage-fields'
 
 /** Split Bedrock cache-write tokens into 5-minute and 1-hour categories. */
 function splitCacheWrite(usage: Record<string, unknown>): {
   cacheWrite5mTokens: number
   cacheWrite1hTokens: number
 } {
-  const details = asArray(usage.cacheDetails)
+  const details = detailsArray(usage.cacheDetails, 'bedrock-converse', 'usage.cacheDetails')
   if (details === undefined) {
     // An unsplit total defaults to the 5-minute cache.
     return { cacheWrite5mTokens: num(usage.cacheWriteInputTokens), cacheWrite1hTokens: 0 }
@@ -23,11 +23,11 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   let cacheWrite5mTokens = 0
   let cacheWrite1hTokens = 0
   for (const item of details) {
-    const entry = asObject(item)
+    const entry = detailsObject(item, 'bedrock-converse', 'usage.cacheDetails[]')
     if (entry === undefined) continue
     const count = num(entry.cacheWriteInputTokens)
-    if (str(entry.ttl) === '1h') cacheWrite1hTokens += count
-    else cacheWrite5mTokens += count
+    if (str(entry.ttl) === '1h') cacheWrite1hTokens = sumCounts(cacheWrite1hTokens, count)
+    else cacheWrite5mTokens = sumCounts(cacheWrite5mTokens, count)
   }
   return { cacheWrite5mTokens, cacheWrite1hTokens }
 }

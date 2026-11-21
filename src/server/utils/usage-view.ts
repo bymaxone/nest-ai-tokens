@@ -93,7 +93,8 @@ export function viewOf<T extends object>(raw: T, viewed = new WeakMap<object, ob
       guarded(() => {
         const found = Reflect.getOwnPropertyDescriptor(raw, key)
         // The length of a list is the one property its stand-in cannot give up; every other property is reported as one that can be redefined.
-        if (isList) return found === undefined ? undefined : { ...found, configurable: key === 'length' ? false : true }
+        // A list's `length` stays what its stand-in is, writable, whatever the host's list is: a frozen list is read like any other.
+        if (isList) return found === undefined ? undefined : { ...found, configurable: key === 'length' ? false : true, ...(key === 'length' ? { writable: true } : {}) }
         // A field of an object is listed whichever way it is defined, so it is reported as enumerable; one a class defines has no descriptor of its own.
         return found === undefined && !(typeof key === 'string' && Reflect.has(raw, key)) ? undefined : { ...(found ?? { value: undefined, writable: true }), enumerable: true, configurable: true }
       }),

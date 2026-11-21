@@ -8,7 +8,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { buildUsage, num, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, num, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
 
 /**
  * Normalize a Gemini / Vertex response into {@link NormalizedUsage}.
@@ -33,7 +33,7 @@ export function normalizeGeminiUsage(raw: unknown): NormalizedUsage {
     provider: 'gemini',
     model: str(response.modelVersion) ?? str(response.model) ?? '',
     operation: 'chat',
-    inputTokens: promptTokenCount - cacheReadTokens + toolUseInputTokens,
+    inputTokens: sumCounts(remainder(promptTokenCount, [cacheReadTokens], 'gemini', 'usageMetadata.promptTokenCount'), toolUseInputTokens),
     outputTokens: candidatesTokenCount,
     cacheReadTokens,
     reasoningTokens,

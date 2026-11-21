@@ -263,6 +263,3 @@ export const NORMALIZED_USAGE_FIELDS: FieldList<NormalizedUsage> = {
   providerReportedCostNanoUsd: true,
   raw: true,
 }
-
-/** A usage that is already normalized, read by name. */
-export const NORMALIZED_USAGE_SHAPE: Shape = { fields: NORMALIZED_USAGE_FIELDS }

@@ -7,7 +7,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { asObject, buildUsage, num, openAiServiceTier, readResponse, requireNum, str } from './usage-fields'
+import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remainder, requireNum, str } from './usage-fields'
 
 /**
  * Normalize an OpenAI Responses API response into {@link NormalizedUsage}.
@@ -26,8 +26,8 @@ export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
   // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.output_tokens, 'openai-responses', 'usage.output_tokens')
 
-  const inputDetails = asObject(usage.input_tokens_details)
-  const outputDetails = asObject(usage.output_tokens_details)
+  const inputDetails = detailsObject(usage.input_tokens_details, 'openai-responses', 'usage.input_tokens_details')
+  const outputDetails = detailsObject(usage.output_tokens_details, 'openai-responses', 'usage.output_tokens_details')
   const cacheReadTokens = num(inputDetails?.cached_tokens)
   const audioInTokens = num(inputDetails?.audio_tokens)
   const reasoningTokens = num(outputDetails?.reasoning_tokens)
@@ -38,8 +38,8 @@ export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
     provider: 'openai',
     model: str(response.model) ?? '',
     operation: 'responses',
-    inputTokens: inputTokensTotal - cacheReadTokens - audioInTokens,
-    outputTokens: outputTokensTotal - reasoningTokens,
+    inputTokens: remainder(inputTokensTotal, [cacheReadTokens, audioInTokens], 'openai-responses', 'usage.input_tokens'),
+    outputTokens: remainder(outputTokensTotal, [reasoningTokens], 'openai-responses', 'usage.output_tokens'),
     cacheReadTokens,
     reasoningTokens,
     audioInTokens,

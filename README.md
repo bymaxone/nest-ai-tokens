@@ -772,6 +772,13 @@ specific to security is below.
   through a view that answers each field the same way every time, and a Proxy in it that lists no key, where a normalizer lists keys, is refused as
   `AI_TOKENS_USAGE_MALFORMED`. A usage that is already normalized is read by the names of `NormalizedUsage`. A `StreamUsageCollector`
   passed to `capture()` is used as it is, and a repeated `capture()` of a settled hold returns its record without reading the usage.
+  A normalizer of the host receives the host's own object (it may call a method of it or rely on its class), and a function that wraps
+  a built-in normalizer is a normalizer of the host: it gets no view.
+- **The counts of a usage are counts.** Every built-in normalizer reads a count that is there as a whole number from 0 to the largest safe
+  integer, and a value that is not one (a string, `NaN`, `Infinity`, a negative, a fraction, a list) is refused as `AI_TOKENS_USAGE_MALFORMED`
+  where it used to be read as `0`, billing the call for less than it used, or as a negative, for more. A part of a total that is more than
+  its total (cached, audio or reasoning tokens past the prompt or the completion) is refused, a container of counts that is there must be an
+  object, and a count that is absent, or `null`, is `0`.
 
 ---
 
