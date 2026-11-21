@@ -235,6 +235,22 @@ describe('normalizeAnthropicUsage', () => {
     expect(() => normalizeAnthropicUsage(response({ ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 }, 600))).toThrow(new Error('anthropic: "usage.cache_creation_input_tokens" and the parts of "usage.cache_creation" differ'))
   })
 
+  /** Which cache-write counts a response reports: a part that is absent or null is not reported, a part that is there is, and a total that is absent or null names nothing to agree with. */
+  it.each([
+    ['only the 5-minute part, and a total that agrees', { ephemeral_5m_input_tokens: 300 }, 300, { cacheWrite5mTokens: 300, cacheWrite1hTokens: 0 }],
+    ['only the 1-hour part, and a total that agrees', { ephemeral_1h_input_tokens: 200 }, 200, { cacheWrite5mTokens: 0, cacheWrite1hTokens: 200 }],
+    ['a null 1-hour part next to the 5-minute part', { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: null }, 300, { cacheWrite5mTokens: 300, cacheWrite1hTokens: 0 }],
+    ['a null 5-minute part next to the 1-hour part', { ephemeral_5m_input_tokens: null, ephemeral_1h_input_tokens: 200 }, 200, { cacheWrite5mTokens: 0, cacheWrite1hTokens: 200 }],
+    ['two null parts, which report nothing, and a total', { ephemeral_5m_input_tokens: null, ephemeral_1h_input_tokens: null }, 500, { cacheWrite5mTokens: 500, cacheWrite1hTokens: 0 }],
+    ['only the 5-minute part and no total', { ephemeral_5m_input_tokens: 300 }, undefined, { cacheWrite5mTokens: 300, cacheWrite1hTokens: 0 }],
+    ['only the 1-hour part and no total', { ephemeral_1h_input_tokens: 200 }, undefined, { cacheWrite5mTokens: 0, cacheWrite1hTokens: 200 }],
+    ['both parts and no total', { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 }, undefined, { cacheWrite5mTokens: 300, cacheWrite1hTokens: 200 }],
+    ['both parts and a null total', { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 }, null, { cacheWrite5mTokens: 300, cacheWrite1hTokens: 200 }],
+  ])('reads the cache writes of %s', (_name, creation, total, expected) => {
+    const usage = { input_tokens: 1, output_tokens: 1, cache_creation: creation, ...(total === undefined ? {} : { cache_creation_input_tokens: total }) }
+    expect(normalizeAnthropicUsage({ usage })).toMatchObject(expected)
+  })
+
   /** A split cache_creation payload maps 5m/1h writes and reads the service tier and tool use. */
   it('normalizes split cache writes, service tier, and server tool use', () => {
     const usage = normalizeAnthropicUsage({
@@ -369,6 +385,7 @@ describe('normalizeBedrockConverseUsage', () => {
     expect(() => normalizeBedrockConverseUsage(response([{ ttl: '5m', cacheWriteInputTokens: 8 }], 9))).toThrow(new Error('bedrock-converse: "usage.cacheWriteInputTokens" and the entries of "usage.cacheDetails" differ'))
     expect(normalizeBedrockConverseUsage(response([{ ttl: '5m', cacheWriteInputTokens: 8 }, { ttl: '1h', cacheWriteInputTokens: 2 }], 10))).toMatchObject({ cacheWrite5mTokens: 8, cacheWrite1hTokens: 2 })
     expect(normalizeBedrockConverseUsage(response([], 500))).toMatchObject({ cacheWrite5mTokens: 500, cacheWrite1hTokens: 0 })
+    expect(normalizeBedrockConverseUsage({ usage: { inputTokens: 1, outputTokens: 1, cacheDetails: [{ ttl: '5m', cacheWriteInputTokens: 8 }], cacheWriteInputTokens: null } })).toMatchObject({ cacheWrite5mTokens: 8, cacheWrite1hTokens: 0 })
   })
 
   /** A split that lists entries is billed by its entries. */
