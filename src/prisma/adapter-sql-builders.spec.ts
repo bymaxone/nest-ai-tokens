@@ -174,6 +174,16 @@ describe('statusAssignments', () => {
     })
   })
 
+  /** The tool units a settlement bills are written as JSON cast to jsonb, the column's type, and a release may not set them. */
+  it('binds the extra units of a settlement as jsonb', () => {
+    const sql = statusAssignments('pending', 'posted', { extraUnits: { web_search_requests: 7 } }, null, null)
+    expect(rendered(sql)).toEqual({
+      text: `"status" = $1, "updatedAt" = ${DB_NOW_SQL.text}, "extraUnits" = $2::jsonb`,
+      values: ['posted', '{"web_search_requests":7}'],
+    })
+    expect(() => statusAssignments('pending', 'released', { extraUnits: { web_search_requests: 7 } }, null, null)).toThrow(AiTokensException)
+  })
+
   /** The chain hashes are written together, and only when a hash is given. */
   it('writes prevHash and hash when a hash is given, and neither otherwise', () => {
     expect(rendered(statusAssignments('pending', 'posted', undefined, 'p', 'h'))).toEqual({

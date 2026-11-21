@@ -403,7 +403,7 @@ export function statusAssignments(
           reason: `${from} → ${to} may not patch "${key}"`,
         })
       }
-      parts.push(sql`${identifier(key)} = ${value}`)
+      parts.push(key === 'extraUnits' ? sql`${identifier(key)} = ${JSON.stringify(value)}::jsonb` : sql`${identifier(key)} = ${value}`)
     }
   }
   if (hash !== null) {

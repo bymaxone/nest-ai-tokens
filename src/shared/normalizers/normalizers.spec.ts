@@ -34,7 +34,7 @@ const nat = fc.nat({ max: 1_000_000 })
 
 describe('normalizeOpenAiChatUsage', () => {
   /** A realistic non-streaming payload with cache + reasoning + audio details. */
-  it('normalizes a full payload and subtracts reasoning from output', () => {
+  it('normalizes a full payload and subtracts reasoning and audio from output', () => {
     const usage = normalizeOpenAiChatUsage({
       model: 'gpt-5.2',
       service_tier: 'default',
@@ -51,7 +51,7 @@ describe('normalizeOpenAiChatUsage', () => {
       operation: 'chat',
       serviceTier: 'standard',
       inputTokens: 100,
-      outputTokens: 60,
+      outputTokens: 55,
       cacheReadTokens: 20,
       reasoningTokens: 30,
       audioInTokens: 10,
@@ -79,14 +79,14 @@ describe('normalizeOpenAiChatUsage', () => {
         const usage = normalizeOpenAiChatUsage({
           usage: {
             prompt_tokens: input + cached + audioIn,
-            completion_tokens: out + reasoning,
+            completion_tokens: out + reasoning + audioOut,
             prompt_tokens_details: { cached_tokens: cached, audio_tokens: audioIn },
             completion_tokens_details: { reasoning_tokens: reasoning, audio_tokens: audioOut },
           },
         })
         expectInputInvariant(usage, input + cached + audioIn)
-        expectOutputInvariant(usage, out + reasoning)
-        expect(usage.outputTokens + usage.reasoningTokens).toBe(out + reasoning)
+        expect(usage.outputTokens).toBe(out)
+        expect(usage.outputTokens + usage.reasoningTokens + usage.audioOutTokens).toBe(out + reasoning + audioOut)
       }),
     )
   })
@@ -210,18 +210,13 @@ describe('normalizeOpenAiCompatibleUsage', () => {
     expect(() => normalizeOpenAiCompatibleUsage({ usage: { prompt_tokens: 1 } })).toThrow(Error)
   })
 
-  /** When BOTH root-level and nested cache-hit tokens are present, they are ADDED together (not subtracted). */
-  it('adds root-level and nested cache-hit tokens', () => {
-    const usage = normalizeOpenAiCompatibleUsage({
-      usage: {
-        prompt_tokens: 100,
-        completion_tokens: 50,
-        prompt_cache_hit_tokens: 20,
-        prompt_tokens_details: { cached_tokens: 15 },
-      },
-    })
-    expect(usage.cacheReadTokens).toBe(35)  // 20 + 15, not 20 - 15
-    expect(usage.inputTokens).toBe(65)       // 100 - 35
+  /** A cache hit that the usage reports at the root and again nested is the same tokens: billed once when the two agree, refused when they differ. */
+  it('bills a cache hit reported at the root and nested once, and refuses two that differ', () => {
+    const response = (root: number, nested: number): unknown => ({ usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: root, prompt_tokens_details: { cached_tokens: nested } } })
+    const usage = normalizeOpenAiCompatibleUsage(response(20, 20))
+    expect(usage.cacheReadTokens).toBe(20)
+    expect(usage.inputTokens).toBe(80)
+    expect(() => normalizeOpenAiCompatibleUsage(response(20, 15))).toThrow(new Error('openai-compatible: "usage.prompt_cache_hit_tokens" is reported twice and the two counts differ'))
   })
 
   /** When model is absent, model defaults to empty string. */
@@ -232,6 +227,14 @@ describe('normalizeOpenAiCompatibleUsage', () => {
 })
 
 describe('normalizeAnthropicUsage', () => {
+  /** The unsplit total and the split are the same tokens: an empty split bills the total, and a split that disagrees with its total is refused. */
+  it('bills a total next to an empty cache_creation, and refuses a total that differs from the split', () => {
+    const response = (creation: unknown, total?: number): unknown => ({ usage: { input_tokens: 1, output_tokens: 1, cache_creation: creation, ...(total === undefined ? {} : { cache_creation_input_tokens: total }) } })
+    expect(normalizeAnthropicUsage(response({}, 500))).toMatchObject({ cacheWrite5mTokens: 500, cacheWrite1hTokens: 0 })
+    expect(normalizeAnthropicUsage(response({ ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 }, 500))).toMatchObject({ cacheWrite5mTokens: 300, cacheWrite1hTokens: 200 })
+    expect(() => normalizeAnthropicUsage(response({ ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 }, 600))).toThrow(new Error('anthropic: "usage.cache_creation_input_tokens" and the parts of "usage.cache_creation" differ'))
+  })
+
   /** A split cache_creation payload maps 5m/1h writes and reads the service tier and tool use. */
   it('normalizes split cache writes, service tier, and server tool use', () => {
     const usage = normalizeAnthropicUsage({
@@ -360,6 +363,15 @@ describe('normalizeGeminiUsage', () => {
 
 describe('normalizeBedrockConverseUsage', () => {
   /** cacheDetails TTL entries split writes into 5m/1h; a non-object entry is skipped. */
+  it('refuses a null entry of the cache details, and a total that differs from its entries, and bills a total next to an empty split', () => {
+    const response = (details: unknown[], total?: number): unknown => ({ usage: { inputTokens: 1, outputTokens: 1, cacheDetails: details, ...(total === undefined ? {} : { cacheWriteInputTokens: total }) } })
+    expect(() => normalizeBedrockConverseUsage(response([{ ttl: '5m', cacheWriteInputTokens: 8 }, null]))).toThrow(new Error('bedrock-converse: "usage.cacheDetails[]" must be an object'))
+    expect(() => normalizeBedrockConverseUsage(response([{ ttl: '5m', cacheWriteInputTokens: 8 }], 9))).toThrow(new Error('bedrock-converse: "usage.cacheWriteInputTokens" and the entries of "usage.cacheDetails" differ'))
+    expect(normalizeBedrockConverseUsage(response([{ ttl: '5m', cacheWriteInputTokens: 8 }, { ttl: '1h', cacheWriteInputTokens: 2 }], 10))).toMatchObject({ cacheWrite5mTokens: 8, cacheWrite1hTokens: 2 })
+    expect(normalizeBedrockConverseUsage(response([], 500))).toMatchObject({ cacheWrite5mTokens: 500, cacheWrite1hTokens: 0 })
+  })
+
+  /** A split that lists entries is billed by its entries. */
   it('splits cacheDetails TTL entries', () => {
     const usage = normalizeBedrockConverseUsage({
       model: 'us.anthropic.claude',
@@ -370,7 +382,6 @@ describe('normalizeBedrockConverseUsage', () => {
         cacheDetails: [
           { ttl: '5m', cacheWriteInputTokens: 8 },
           { ttl: '1h', cacheWriteInputTokens: 6 },
-          null,
         ],
       },
     })
@@ -536,6 +547,16 @@ describe('normalizeVercelAiSdkUsage', () => {
       },
     })
     expect(usage).toMatchObject({ inputTokens: 70, outputTokens: 35, cacheReadTokens: 20, cacheWrite5mTokens: 10, reasoningTokens: 15 })
+  })
+
+  /** The AI SDK reports reasoning and cache reads at the root and in the details: the same tokens, billed once when the two agree and refused when they differ. */
+  it('bills a count reported at the root and in the details once, and refuses two that differ', () => {
+    const response = (root: number, nested: number): unknown => ({
+      usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: root, reasoningTokens: root, inputTokenDetails: { cacheReadTokens: nested }, outputTokenDetails: { reasoningTokens: nested } },
+    })
+    expect(normalizeVercelAiSdkUsage(response(20, 20))).toMatchObject({ inputTokens: 80, outputTokens: 30, cacheReadTokens: 20, reasoningTokens: 20 })
+    expect(() => normalizeVercelAiSdkUsage(response(20, 15))).toThrow(new Error('vercel-ai-sdk: "usage.cachedInputTokens" is reported twice and the two counts differ'))
+    expect(() => normalizeVercelAiSdkUsage({ usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 5, outputTokenDetails: { reasoningTokens: 4 } } })).toThrow(new Error('vercel-ai-sdk: "usage.reasoningTokens" is reported twice and the two counts differ'))
   })
 
   /** Both §5.5 invariants hold across the combined v5+v6 read. */
