@@ -187,7 +187,8 @@ describe('a logger that throws while an absorbed failure is written', () => {
   })
 
   it.each(FAILURES)('does not fail recordUsage or recordDuration when the sink %s', async (_label, fail) => {
-    const emitter = new TelemetryEmitter({ recordUsage: fail, recordDuration: fail } as unknown as ITelemetrySink)
+    const sink: ITelemetrySink = { recordUsage: fail, recordDuration: fail }
+    const emitter = new TelemetryEmitter(sink)
     expect(() => { emitter.recordUsage(record) }).not.toThrow()
     expect(() => { emitter.recordDuration(record, 5) }).not.toThrow()
     await settle()
@@ -196,7 +197,7 @@ describe('a logger that throws while an absorbed failure is written', () => {
   })
 
   it.each(FAILURES)('does not fail the consume that throttles when the callback %s', async (_label, fail) => {
-    const { service } = makeService({ options: { onThrottle: fail } })
+    const { service } = makeService({ options: { onThrottle: fail as never } })
     await service.upsertBudget(budgetInput({ policy: 'throttle', limitNanoUsd: 100n }))
     await expect(service.consume(context(), { nanoUsd: 150n, tokens: 0, count: 1 })).resolves.toBeUndefined()
     await settle()
