@@ -73,7 +73,8 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
 export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
-  const copy: Record<string, unknown> = {}
+  // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
+  const copy = Object.create(null) as Record<string, unknown>
   for (const key of keysOf(input, `${prefix}input`)) {
     // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
     Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true, configurable: true })

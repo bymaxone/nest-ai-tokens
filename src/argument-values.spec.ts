@@ -8,6 +8,8 @@
 
 import { rig } from '../test/fakes/call-registry'
 import { AiTokensException } from './server/errors'
+import { keysOf } from './server/utils/argument-guards'
+import { snapshotOf } from './server/utils/date-guards'
 
 const MAX = 9_223_372_036_854_775_807n
 /** The same bound as the text of a refusal. */
@@ -308,6 +310,7 @@ describe('an input whose fields are accessors of its class', () => {
   /** The walk stops before `Object.prototype`, so a key added to it by another library is not read as a field of the input. */
   it('does not read a key added to Object.prototype', async () => {
     const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], {})
     Object.defineProperty(Object.prototype, 'limit', { value: 'many', configurable: true, enumerable: false })
     try {
       expect(await reasonOf(() => run(args))).toBeUndefined()
@@ -369,5 +372,31 @@ describe('an input whose fields are accessors of its class', () => {
     }
     setAt(args, [1], new Throwing())
     expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG from could not be read')
+  })
+})
+
+describe('the fields a snapshot lists', () => {
+  class Base {
+    get inherited(): number {
+      return Number('1')
+    }
+  }
+  class Derived extends Base {
+    own = 2
+  }
+
+  it('lists the own fields and the accessors of the class chain, and nothing from Object.prototype', () => {
+    expect(keysOf({ a: 1, b: 2 }, 'input')).toEqual(['a', 'b'])
+    expect(keysOf(new Derived(), 'input').sort()).toEqual(['inherited', 'own'])
+  })
+
+  it('does not list the constructor of a class', () => {
+    expect(keysOf(new Derived(), 'input')).not.toContain('constructor')
+  })
+
+  it('copies the fields as enumerable data that a spread and Object.keys see', () => {
+    const copy = snapshotOf(new Derived())
+    expect(Object.keys(copy).sort()).toEqual(['inherited', 'own'])
+    expect({ ...(copy as Record<string, unknown>) }).toEqual({ inherited: 1, own: 2 })
   })
 })
