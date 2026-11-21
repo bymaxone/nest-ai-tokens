@@ -315,4 +315,22 @@ describe('an input whose fields are accessors of its class', () => {
       Reflect.deleteProperty(Object.prototype, 'limit')
     }
   })
+
+  /** A Proxy whose prototype is itself, or a chain too long to be a class hierarchy, is refused at once and never walked for ever. */
+  it.each([
+    ['a prototype that is the object itself', (): object => { const self: object = new Proxy({}, { getPrototypeOf: () => self }); return self }],
+    ['a chain of 40 prototypes', (): object => { let proto: object = {}; for (let level = 0; level < 40; level += 1) proto = Object.create(proto) as object; return proto }],
+  ])('refuses %s naming the input', async (_label, make) => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], make())
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG input could not be read')
+  })
+
+  it('accepts a class hierarchy of ten levels', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    let proto: object = { limit: 5 }
+    for (let level = 0; level < 9; level += 1) proto = Object.create(proto) as object
+    setAt(args, [1], Object.create(proto))
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+  })
 })

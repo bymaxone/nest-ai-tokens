@@ -85,7 +85,7 @@ export function withReadDates<T extends object>(input: T, fields: readonly (keyo
 }
 
 /**
- * A snapshot of an input object that holds no date: every own enumerable field is read once, as {@link withReadDates} does.
+ * A snapshot of an input object that holds no date: every field is read once, as {@link withReadDates} does.
  *
  * @param input The object the caller supplied.
  * @returns A new object holding the values read.
