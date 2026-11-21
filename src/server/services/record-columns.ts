@@ -5,11 +5,12 @@
  * @layer server
  */
 
-import type { NormalizedUsage, ServiceTier } from '../../shared'
+import type { NormalizedUsage, ServiceTier, UsageRecord } from '../../shared'
 import type { MeteringContext } from '../interfaces'
 import type { LedgerAppendInput } from './ledger.service'
 import type { ResolvedMarkup } from './markup.resolver'
 import type { RatingResult } from './record-replay'
+import { sumTokenCounts, type TokenCounts } from './hold-support'
 
 /** Build the ledger append input for a settled `record()` (§8.2 columns). */
 export function buildAppendInput(args: {
@@ -85,5 +86,23 @@ export function baseColumns(
     tags: context.tags ?? [],
     // Stryker disable next-line ConditionalExpression: CE true: spreading { correlationId: undefined } is equivalent to {} because it's only read via record.correlationId
     ...(context.correlationId !== undefined ? { correlationId: context.correlationId } : {}),
+  }
+}
+
+/**
+ * The settlement patch of a `pending → posted` transition: the actual token counts, the rated cost and the pricing metadata, and the
+ * tool units the call was billed for (none when it had none).
+ */
+export function settlementPatch(counts: TokenCounts, rating: RatingResult, markup: ResolvedMarkup, ratedUnits: Record<string, number>): Partial<UsageRecord> {
+  return {
+    ...counts,
+    totalTokens: sumTokenCounts(counts),
+    rawCostNanoUsd: rating.rawCostNanoUsd,
+    surchargeNanoUsd: rating.surchargeNanoUsd,
+    billedCostNanoUsd: markup.apply(rating.rawCostNanoUsd),
+    markupMultiplier: markup.multiplier,
+    priceVersionId: rating.priceVersionId,
+    priceMissing: rating.priceMissing,
+    ...(Object.keys(ratedUnits).length > 0 ? { extraUnits: ratedUnits } : {}),
   }
 }

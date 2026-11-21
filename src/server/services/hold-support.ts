@@ -22,7 +22,7 @@ import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../share
 import { AiTokensException } from '../errors'
 import { setErrorMessage } from '../errors/set-error-message'
 import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
-import { assertObject, assertOptionalText, assertText } from '../utils/argument-guards'
+import { assertObject, assertOptionalText, assertText, labelOf } from '../utils/argument-guards'
 import { isCount, isNonNegativeBigint } from '../utils/numeric-guards'
 import type { PricingService } from './pricing.service'
 
@@ -99,57 +99,53 @@ export function sumTokenCounts(counts: TokenCounts): number {
   return TOKEN_FIELDS.reduce((total, field) => total + counts[field], 0)
 }
 
-/** Floor every unit count of a record-unit map at zero. */
-function clampUnits(units: Record<string, number>): Record<string, number> {
-  const clamped: Record<string, number> = {}
-  for (const [unit, count] of Object.entries(units)) clamped[unit] = Math.max(0, count)
-  return clamped
-}
-
-/** Refuse a usage whose token or tool unit count is not a whole number: the cost arithmetic converts each count to a `BigInt`, which takes whole numbers only. */
-function assertWholeCounts(usage: NormalizedUsage): void {
+/**
+ * Refuse a usage whose counts or cost cannot be billed: every token count and tool unit count must be a whole number from 0 to the
+ * largest safe integer, and a provider-reported cost must not be negative. A count is never repaired: a negative one flowing into the
+ * signed settlement leg credits back more than was reserved and drives budget consumption negative, and the cost arithmetic converts
+ * each count to a `BigInt`, which takes whole numbers only. `isNormalizedUsage` only proves each field is finite, so the guarantee is
+ * enforced here, on the value every cost and settlement is computed from.
+ *
+ * @param usage The normalized usage, from a normalizer or from the host.
+ * @returns The same usage.
+ * @throws {AiTokensException} `AI_TOKENS_USAGE_MALFORMED` for a count that is not a whole number of 0 or more, a negative reported cost, or tokens that add up to more than a ledger row stores.
+ */
+export function checkUsageCounts(usage: NormalizedUsage): NormalizedUsage {
   const counts = tokenCountsOf(usage)
   const units = Object.values(usage.serverToolUse ?? {})
-  if (TOKEN_FIELDS.every((field) => Number.isInteger(counts[field])) && units.every((count) => Number.isInteger(count))) return
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code
-  throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'every token and tool unit count of a usage must be a whole number' })
+  const cost = usage.providerReportedCostNanoUsd
+  if (TOKEN_FIELDS.every((field) => isCount(counts[field])) && units.every(isCount) && (cost === undefined || isNonNegativeBigint(cost))) return checkStorableTokens(usage)
+  throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, {
+    reason: 'every token and tool unit count of a usage must be a whole number from 0 to the largest safe integer, and a reported cost must not be negative',
+  })
 }
 
 /**
- * Floor every token count — and the provider-reported cost — at zero.
+ * The tool units of a usage that have a count above 0 and no rate of their own in the price, by the name a refusal may carry. A unit named
+ * like an inherited property (`constructor`) has no rate of its own.
  *
- * A provider payload — or a normalizer that computes a field by subtraction, such
- * as OpenRouter's `prompt - cached` — can report a NEGATIVE token count. Left alone
- * it flows into the SIGNED settlement leg (`reservedBilled - actualBilled`), where a
- * negative `actual` credits back MORE than was reserved and drives budget
- * consumption negative — a usage report that mints money. `isNormalizedUsage` only
- * proves each field is finite, not that it is non-negative, so the guarantee is
- * enforced here, on the value every cost and settlement is computed from.
- *
- * `providerReportedCostNanoUsd` needs the same floor for the same reason: OpenRouter
- * preserves a negative `usage.cost`, and provider-reported rating uses it directly as
- * the raw cost, so a negative value credits the wallet/budget on capture just as a
- * negative token count would. Flooring it here covers both rating modes.
- *
- * The server-tool unit counts take the same floor: they are rated like tokens.
- *
- * @param usage - The normalized usage, whose counts or cost may include a negative.
- * @returns The same usage with every token count, tool unit count and the provider-reported cost floored at zero.
+ * @param usage The usage being rated.
+ * @param rate The price version it is rated at.
+ * @returns The unit names, in the order the usage lists them.
  */
-export function clampUsageCounts(usage: NormalizedUsage): NormalizedUsage {
-  assertWholeCounts(usage)
-  const counts = tokenCountsOf(usage)
-  const clamped = zeroTokenCounts()
-  for (const field of TOKEN_FIELDS) {
-    clamped[field] = Math.max(0, counts[field])
-  }
-  const result: NormalizedUsage = { ...usage, ...clamped, ...(usage.serverToolUse !== undefined ? { serverToolUse: clampUnits(usage.serverToolUse) } : {}) }
-  const cost = usage.providerReportedCostNanoUsd
-  // Stryker disable next-line EqualityOperator: `< 0n` and `<= 0n` differ only at exactly 0n, where both leave the cost 0n, so the mutant is behavior-equivalent.
-  if (cost !== undefined && cost < 0n) {
-    return { ...result, providerReportedCostNanoUsd: 0n }
-  }
-  return result
+export function unpricedUnits(usage: NormalizedUsage, rate: PriceVersion): string[] {
+  return Object.entries(usage.serverToolUse ?? {}).filter(([unit, count]) => count > 0 && !(rate.unitRates !== undefined && Object.hasOwn(rate.unitRates, unit))).map(([unit]) => labelOf(unit))
+}
+
+/** The most tokens one ledger row stores: its token columns are 32-bit integers. */
+const LEDGER_MAX_TOKENS = 2_147_483_647
+
+/**
+ * Refuse a usage whose tokens add up to more than a ledger row stores, before anything is debited: a row the store cannot hold would be
+ * refused after the wallet was charged, with no row to show for it.
+ *
+ * @param usage The usage whose counts passed {@link checkUsageCounts}.
+ * @returns The same usage.
+ * @throws {AiTokensException} `AI_TOKENS_USAGE_MALFORMED` when the tokens add up to more than {@link LEDGER_MAX_TOKENS}.
+ */
+function checkStorableTokens(usage: NormalizedUsage): NormalizedUsage {
+  if (sumTokenCounts(tokenCountsOf(usage)) <= LEDGER_MAX_TOKENS) return usage
+  throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the tokens of a usage add up to more than a ledger row stores (2147483647)' })
 }
 
 /** Whether a value is a complete, well-typed {@link NormalizedUsage} (every token field finite). */
@@ -307,10 +303,10 @@ async function resolveTokenEstimate(
  * @throws {AiTokensException} `AI_TOKENS_USAGE_MALFORMED` when the usage cannot be normalized.
  */
 export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown) => NormalizedUsage): NormalizedUsage {
-  if (isNormalizedUsage(usage)) return clampUsageCounts(usage)
+  if (isNormalizedUsage(usage)) return checkUsageCounts(usage)
   if (normalizer !== undefined) {
     try {
-      return clampUsageCounts(normalizer(usage))
+      return checkUsageCounts(normalizer(usage))
     } catch (error) {
       if (error instanceof AiTokensException) throw error
       // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics

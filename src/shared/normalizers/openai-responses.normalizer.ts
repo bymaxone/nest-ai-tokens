@@ -36,7 +36,7 @@ export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
     model: str(response.model) ?? '',
     operation: 'responses',
     inputTokens: remainder(inputTokensTotal, [cacheReadTokens, audioInTokens], 'openai-responses', 'usage.input_tokens'),
-    outputTokens: remainder(outputTokensTotal, [reasoningTokens], 'openai-responses', 'usage.output_tokens'),
+    outputTokens: remainder(outputTokensTotal, [reasoningTokens, audioOutTokens], 'openai-responses', 'usage.output_tokens'),
     cacheReadTokens,
     reasoningTokens,
     audioInTokens,

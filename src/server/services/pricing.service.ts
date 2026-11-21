@@ -70,6 +70,11 @@ export class PricingService implements OnModuleInit {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
+  /** Whether a missing price is refused (`true`) or billed at 0 and flagged (`false`). */
+  get strict(): boolean {
+    return this.options.pricing.strict
+  }
+
   /** Seed the registry on boot when enabled. */
   async onModuleInit(): Promise<void> {
     if (this.options.pricing.seedFromSnapshot) await this.seedFromSnapshot()

@@ -10,7 +10,7 @@
  */
 
 import type { NormalizedUsage } from '../types/normalized-usage'
-import { buildUsage, detailsObject, num, readResponse, remainder, requireNum, str, sumCounts } from './usage-fields'
+import { aliasCount, buildUsage, detailsObject, num, readResponse, remainder, requireNum, str } from './usage-fields'
 
 /**
  * Normalize a Vercel AI SDK response into {@link NormalizedUsage}.
@@ -28,9 +28,9 @@ export function normalizeVercelAiSdkUsage(raw: unknown): NormalizedUsage {
 
   const inputDetails = detailsObject(usage.inputTokenDetails, 'vercel-ai-sdk', 'usage.inputTokenDetails')
   const outputDetails = detailsObject(usage.outputTokenDetails, 'vercel-ai-sdk', 'usage.outputTokenDetails')
-  const cacheReadTokens = sumCounts(num(usage.cachedInputTokens), num(inputDetails?.cacheReadTokens))
+  const cacheReadTokens = aliasCount(usage.cachedInputTokens, inputDetails?.cacheReadTokens, 'vercel-ai-sdk', 'usage.cachedInputTokens')
   const cacheWrite5mTokens = num(inputDetails?.cacheWriteTokens)
-  const reasoningTokens = sumCounts(num(usage.reasoningTokens), num(outputDetails?.reasoningTokens))
+  const reasoningTokens = aliasCount(usage.reasoningTokens, outputDetails?.reasoningTokens, 'vercel-ai-sdk', 'usage.reasoningTokens')
 
   return buildUsage({
     provider: '',

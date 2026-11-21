@@ -37,7 +37,7 @@ export function normalizeOpenAiChatUsage(raw: unknown): NormalizedUsage {
     model: str(response.model) ?? '',
     operation: 'chat',
     inputTokens: remainder(promptTokens, [cacheReadTokens, audioInTokens], 'openai-chat', 'usage.prompt_tokens'),
-    outputTokens: remainder(completionTokens, [reasoningTokens], 'openai-chat', 'usage.completion_tokens'),
+    outputTokens: remainder(completionTokens, [reasoningTokens, audioOutTokens], 'openai-chat', 'usage.completion_tokens'),
     cacheReadTokens,
     reasoningTokens,
     audioInTokens,

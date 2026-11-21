@@ -16,8 +16,26 @@ import {
   readResponse,
   requireNum,
   str,
+  sumCounts,
   toolUseCounts,
 } from './usage-fields'
+
+/**
+ * The cache writes of a response: the split of `cache_creation` when it reports one, else the unsplit total (which counts as the 5-minute
+ * cache). The total and the split are the same tokens twice, so a response that carries both must carry the same number.
+ */
+function cacheWrites(split: Record<string, unknown> | undefined, total: unknown): { cacheWrite5mTokens: number; cacheWrite1hTokens: number } {
+  const part5m = split?.ephemeral_5m_input_tokens
+  const part1h = split?.ephemeral_1h_input_tokens
+  const reported = (part5m !== undefined && part5m !== null) || (part1h !== undefined && part1h !== null)
+  if (!reported) return { cacheWrite5mTokens: num(total), cacheWrite1hTokens: 0 }
+  const cacheWrite5mTokens = num(part5m)
+  const cacheWrite1hTokens = num(part1h)
+  if (total !== undefined && total !== null && num(total) !== sumCounts(cacheWrite5mTokens, cacheWrite1hTokens)) {
+    throw new Error('anthropic: "usage.cache_creation_input_tokens" and the parts of "usage.cache_creation" differ')
+  }
+  return { cacheWrite5mTokens, cacheWrite1hTokens }
+}
 
 /**
  * Normalize an Anthropic Messages response into {@link NormalizedUsage}.
@@ -35,10 +53,7 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
 
   const cacheReadTokens = num(usage.cache_read_input_tokens)
   const cacheCreation = detailsObject(usage.cache_creation, 'anthropic', 'usage.cache_creation')
-  const cacheWrite5mTokens = cacheCreation
-    ? num(cacheCreation.ephemeral_5m_input_tokens)
-    : num(usage.cache_creation_input_tokens)
-  const cacheWrite1hTokens = cacheCreation ? num(cacheCreation.ephemeral_1h_input_tokens) : 0
+  const { cacheWrite5mTokens, cacheWrite1hTokens } = cacheWrites(cacheCreation, usage.cache_creation_input_tokens)
 
   return buildUsage({
     provider: 'anthropic',

@@ -20,9 +20,9 @@ const RESPONSES: readonly (readonly [string, { normalizer: (raw: unknown) => unk
   ['bedrock', providerPresets.bedrock, { model: 'claude', usage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheDetails: [{ ttl: '1h', cacheWriteInputTokens: 7 }, { ttl: '5m', cacheWriteInputTokens: 3 }] } }],
   ['bedrockUnsplit', providerPresets.bedrock, { model: 'claude', usage: { inputTokens: 100, outputTokens: 50, cacheWriteInputTokens: 9 } }],
   ['mistral', providerPresets.mistral, { model: 'mistral-large', usage: { prompt_tokens: 100, completion_tokens: 50 } }],
-  ['vercelAiSdk', providerPresets.vercelAiSdk, { model: 'gpt-4o', usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 10, reasoningTokens: 5, inputTokenDetails: { cacheReadTokens: 2, cacheWriteTokens: 3 }, outputTokenDetails: { reasoningTokens: 4 } } }],
+  ['vercelAiSdk', providerPresets.vercelAiSdk, { model: 'gpt-4o', usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 2, reasoningTokens: 4, inputTokenDetails: { cacheReadTokens: 2, cacheWriteTokens: 3 }, outputTokenDetails: { reasoningTokens: 4 } } }],
   ['openrouter', providerPresets.openrouter, { model: 'openai/gpt-4o', service_tier: 'default', usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.25, prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 10 } } }],
-  ['openaiCompatible', providerPresets.openaiCompatible('deepseek'), { model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 10, prompt_tokens_details: { cached_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 3 } } }],
+  ['openaiCompatible', providerPresets.openaiCompatible('deepseek'), { model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 5, prompt_tokens_details: { cached_tokens: 5 }, completion_tokens_details: { reasoning_tokens: 3 } } }],
 ]
 
 /** The reads of every getter of a rebuilt response, by path, and the response whose getters answer a valid value first and another after. */

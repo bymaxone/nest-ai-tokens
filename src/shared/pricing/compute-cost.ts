@@ -57,7 +57,8 @@ export function computeCostNanoUsd(usage: NormalizedUsage, rate: PriceVersion): 
 
   let surchargeNanoUsd = 0n
   for (const [unit, count] of Object.entries({ ...usage.serverToolUse })) {
-    const unitRate = rate.unitRates?.[unit]
+    // An own entry only: a unit named like an inherited property (`constructor`) has no rate.
+    const unitRate = rate.unitRates !== undefined && Object.hasOwn(rate.unitRates, unit) ? rate.unitRates[unit] : undefined
     if (unitRate != null) surchargeNanoUsd += BigInt(count) * unitRate
   }
 

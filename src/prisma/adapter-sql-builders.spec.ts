@@ -10,8 +10,8 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
-import { T0, T1, newRecord, rendered } from '../../test/fakes/prisma-rows'
+import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { T0, T1, bareUsageRow, newRecord, rendered, usageRow } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
 const UTC_PARAMETER = (number: number): string => `($${number.toString()}::timestamptz AT TIME ZONE 'UTC')`
@@ -172,6 +172,22 @@ describe('statusAssignments', () => {
       text: `"status" = $1, "updatedAt" = ${DB_NOW_SQL.text}, "billedCostNanoUsd" = $2, "totalTokens" = $3`,
       values: ['posted', 5n, 9],
     })
+  })
+
+  /** The tool units a settlement bills are written as JSON cast to jsonb, the column's type, and a release may not set them. */
+  it('binds the extra units of a settlement as jsonb', () => {
+    const sql = statusAssignments('pending', 'posted', { extraUnits: { web_search_requests: 7 } }, null, null)
+    expect(rendered(sql)).toEqual({
+      text: `"status" = $1, "updatedAt" = ${DB_NOW_SQL.text}, "extraUnits" = $2::jsonb`,
+      values: ['posted', '{"web_search_requests":7}'],
+    })
+    expect(() => statusAssignments('pending', 'released', { extraUnits: { web_search_requests: 7 } }, null, null)).toThrow(AiTokensException)
+  })
+
+  /** The column a settlement writes is the `extraUnits` JSONB column of the first migration, and a row read back carries the units it holds. */
+  it('reads the extra units of a settled row back, and none from a null column', () => {
+    expect(mapUsageRow(usageRow({ extraUnits: { web_search_requests: 7 } })).extraUnits).toEqual({ web_search_requests: 7 })
+    expect(mapUsageRow(bareUsageRow()).extraUnits).toBeUndefined()
   })
 
   /** The chain hashes are written together, and only when a hash is given. */

@@ -7,8 +7,9 @@
  * @layer server
  */
 
-import type { NormalizedUsage } from '../../shared'
-import { isNormalizedUsage, normalizeCaptureUsage } from './hold-support'
+import type { NormalizedUsage, PriceVersion } from '../../shared'
+import type { AiTokensException } from '../errors'
+import { isNormalizedUsage, normalizeCaptureUsage, unpricedUnits } from './hold-support'
 
 /** A complete, well-typed normalized usage (all ten token fields present and finite). */
 function validUsage(): Record<string, unknown> {
@@ -80,30 +81,27 @@ describe('isNormalizedUsage', () => {
   })
 })
 
+/** The code and reason of the typed refusal `run` raises, or `undefined` when it does not refuse. */
+function refusalOf(run: () => unknown): { code: string; reason: string | undefined } | undefined {
+  try {
+    run()
+  } catch (error) {
+    const { error: body } = (error as AiTokensException).getResponse() as { error: { code: string; details?: { reason?: string } } }
+    return { code: body.code, reason: body.details?.reason }
+  }
+  return undefined
+}
+
 describe('normalizeCaptureUsage', () => {
   /**
-   * A negative token count in an already-normalized usage is floored to zero.
-   * Left alone it flows into the signed settlement leg and credits back more than
-   * was reserved — a usage report that mints money. Positive fields are untouched.
+   * A negative token count in an already-normalized usage, or in a normalizer's output (a `prompt - cached` subtraction can produce one),
+   * is refused: left alone it flows into the signed settlement leg and credits back more than was reserved.
    */
-  it('clamps a negative count in an already-normalized usage to zero', () => {
-    const result = normalizeCaptureUsage({ ...validUsage(), outputTokens: -500 })
-
-    expect(result.outputTokens).toBe(0)
-    expect(result.inputTokens).toBe(1000)
-  })
-
-  /**
-   * The same flooring applies to a normalizer's output — the path where a
-   * `prompt - cached` subtraction can produce a negative.
-   */
-  it('clamps a negative count produced by the normalizer to zero', () => {
-    const normalizer = (): NormalizedUsage =>
-      ({ ...validUsage(), reasoningTokens: -10 }) as unknown as NormalizedUsage
-
-    const result = normalizeCaptureUsage({ raw: 'payload' }, normalizer)
-
-    expect(result.reasoningTokens).toBe(0)
+  it('refuses a negative count in an already-normalized usage and in the output of a normalizer', () => {
+    const reason = 'every token and tool unit count of a usage must be a whole number from 0 to the largest safe integer, and a reported cost must not be negative'
+    expect(refusalOf(() => normalizeCaptureUsage({ ...validUsage(), outputTokens: -500 }))).toEqual({ code: 'AI_TOKENS_USAGE_MALFORMED', reason })
+    const normalizer = (): NormalizedUsage => ({ ...validUsage(), reasoningTokens: -10 }) as unknown as NormalizedUsage
+    expect(refusalOf(() => normalizeCaptureUsage({ raw: 'payload' }, normalizer))).toEqual({ code: 'AI_TOKENS_USAGE_MALFORMED', reason })
   })
 
   /** A non-negative usage passes through with its counts intact. */
@@ -115,17 +113,11 @@ describe('normalizeCaptureUsage', () => {
   })
 
   /**
-   * A negative `providerReportedCostNanoUsd` is floored to zero. Provider-reported
-   * rating uses it directly as the raw cost, so a negative value (OpenRouter preserves
-   * a negative `usage.cost`) would credit the wallet/budget on capture.
+   * A negative `providerReportedCostNanoUsd` is refused. Provider-reported rating uses it directly as the raw cost, so a negative value
+   * (OpenRouter preserves a negative `usage.cost`) would credit the wallet and the budget on capture.
    */
-  it('clamps a negative providerReportedCostNanoUsd to zero', () => {
-    const result = normalizeCaptureUsage({
-      ...validUsage(),
-      providerReportedCostNanoUsd: -1_000n,
-    })
-
-    expect(result.providerReportedCostNanoUsd).toBe(0n)
+  it('refuses a negative providerReportedCostNanoUsd', () => {
+    expect(refusalOf(() => normalizeCaptureUsage({ ...validUsage(), providerReportedCostNanoUsd: -1_000n }))?.code).toBe('AI_TOKENS_USAGE_MALFORMED')
   })
 
   /** A non-negative provider-reported cost passes through untouched. */
@@ -136,5 +128,17 @@ describe('normalizeCaptureUsage', () => {
     })
 
     expect(result.providerReportedCostNanoUsd).toBe(5_000n)
+  })
+})
+
+describe('unpricedUnits', () => {
+  const rate: PriceVersion = { unitRates: { web_search_requests: 1n } } as never
+  const usage = (serverToolUse?: Record<string, number>): NormalizedUsage => ({ ...validUsage(), ...(serverToolUse === undefined ? {} : { serverToolUse }) }) as never
+
+  /** Only a unit with a count above 0 and no rate of its own is unpriced, and a usage with no units has none. */
+  it('lists the units that have a count and no rate of their own', () => {
+    expect(unpricedUnits(usage(), rate)).toEqual([])
+    expect(unpricedUnits(usage({ web_search_requests: 3, code_run: 2, idle: 0, constructor: 1 }), rate)).toEqual(['code_run', 'constructor'])
+    expect(unpricedUnits(usage({ code_run: 2 }), {} as never)).toEqual(['code_run'])
   })
 })

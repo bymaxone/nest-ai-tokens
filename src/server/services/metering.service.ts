@@ -46,7 +46,7 @@ import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
 import { clearOwed, reverseOrLeaveOwed, settleOwed } from './owed-effects'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
-import { baseColumns, buildAppendInput, withBaseModel } from './record-columns'
+import { baseColumns, buildAppendInput, settlementPatch, withBaseModel } from './record-columns'
 import type { RatingResult, RecordOutcome } from './record-replay'
 import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
@@ -57,15 +57,15 @@ import type { TelemetryEmitter } from '../telemetry/otel-emitter'
 import { NO_OP_TELEMETRY } from '../telemetry/no-op-telemetry'
 import { NO_OP_CONTENT_CAPTURE } from './content-capture'
 import type { ContentCapture } from './content-capture'
-import type { TokenCounts } from './hold-support'
 import {
   assertCaller,
   assertHoldEstimate,
-  clampUsageCounts,
+  checkUsageCounts,
   isNormalizedUsage,
   normalizeCaptureUsage,
   resolveHoldEstimate,
   sumTokenCounts,
+  unpricedUnits,
   tokenCountsOf,
 } from './hold-support'
 import type { WalletService } from './wallet.service'
@@ -247,7 +247,7 @@ export class MeteringService {
     const occurredAt = input.occurredAt ?? this.now()
     const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
-    const usageForRating: NormalizedUsage = { ...normalized, serverToolUse: ratedUnits }
+    const usageForRating = checkUsageCounts({ ...normalized, serverToolUse: ratedUnits })
 
     const basis: ReplayBasis = { providerReported: mode === 'provider-reported', occurredAtSupplied: input.occurredAt !== undefined, responseModel: parsed.model }
     if (key !== undefined) {
@@ -450,23 +450,25 @@ export class MeteringService {
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const { usage, preset, content } = captureInputs(givenUsage, givenPreset, givenContent)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
-    const usageForRating: NormalizedUsage = {
+    const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...record.extraUnits }
+    const usageForRating = checkUsageCounts({
       ...normalized,
       provider: record.provider,
       model: record.model,
       operation: record.operation,
       serviceTier: record.serviceTier,
-      serverToolUse: record.extraUnits ?? {},
-    }
+      serverToolUse: ratedUnits,
+    })
     const mode = preset?.ratingMode ?? this.options.ratingMode
     const rating = await this.rate(usageForRating, record.serviceTier, record.occurredAt, mode, record.requestedModel)
     const markup = await this.markup.resolve({ scope: record.scope, provider: record.provider, model: record.model, operation: record.operation, serviceTier: record.serviceTier, feature: record.feature })
     const counts = tokenCountsOf(usageForRating)
-    const patch = this.settlementPatch(counts, rating, markup)
+    const patch = settlementPatch(counts, rating, markup, ratedUnits)
     const reservedBilled = record.billedCostNanoUsd
     const reservedTokens = record.totalTokens
     const settled = await this.ledger.transition(record.id, 'pending', 'posted', patch, { reservedBilledNanoUsd: reservedBilled, reservedTokens })
     if (settled === null) return this.settledOrConflict(await this.reload(record.id))
+    if (settled.priceMissing) await this.events.priceMissing(settled)
     await this.events.usageRecorded(settled)
     this.telemetry.recordUsage(settled)
     await this.captureContent(settled.id, settled.tenantId, content)
@@ -626,6 +628,7 @@ export class MeteringService {
         {
           ...baseColumns(resolved, context, resolved.serviceTier),
           ...resolved.tokenCounts,
+          ...(context.extraUnits !== undefined && Object.keys(context.extraUnits).length > 0 ? { extraUnits: context.extraUnits } : {}),
           priceVersionId: null,
           rawCostNanoUsd: resolved.rawEstimateNanoUsd,
           surchargeNanoUsd: 0n,
@@ -725,20 +728,6 @@ export class MeteringService {
     return normalizeCaptureUsage(usage, preset?.normalizer)
   }
 
-  /** Build the settlement patch for a `pending → posted` transition. */
-  private settlementPatch(counts: TokenCounts, rating: RatingResult, markup: ResolvedMarkup): Partial<UsageRecord> {
-    return {
-      ...counts,
-      totalTokens: sumTokenCounts(counts),
-      rawCostNanoUsd: rating.rawCostNanoUsd,
-      surchargeNanoUsd: rating.surchargeNanoUsd,
-      billedCostNanoUsd: markup.apply(rating.rawCostNanoUsd),
-      markupMultiplier: markup.multiplier,
-      priceVersionId: rating.priceVersionId,
-      priceMissing: rating.priceMissing,
-    }
-  }
-
   /** Build the wallet section of an {@link AccessStatus}, or `undefined` when wallets are off / scope is a key. */
   private async walletSection(tenantId: string, scope: MeteringScope): Promise<AccessStatus['wallet'] | undefined> {
     if (this.wallets === undefined || !scopeOwnsWallet(scope)) return undefined
@@ -752,8 +741,8 @@ export class MeteringService {
   /** Resolve the normalizer chain and produce the normalized usage. */
   private resolveNormalizedUsage(input: RecordInput): NormalizedUsage {
     const normalizer = input.normalizer ?? input.preset?.normalizer
-    if (normalizer !== undefined) return clampUsageCounts(this.normalize(normalizer, input.usage))
-    if (isNormalizedUsage(input.usage)) return clampUsageCounts(input.usage)
+    if (normalizer !== undefined) return checkUsageCounts(this.normalize(normalizer, input.usage))
+    if (isNormalizedUsage(input.usage)) return checkUsageCounts(input.usage)
     // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER', undefined, {
       // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
@@ -792,7 +781,10 @@ export class MeteringService {
       ...(baseModel !== undefined ? { baseModel } : {}),
     })
     if (rate === null) return { rawCostNanoUsd: 0n, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: true }
+    // A tool unit the price lists no rate for is a missing price, as an unpriced model is: refused in strict mode, billed at 0 and flagged otherwise.
+    const unpriced = unpricedUnits(usage, rate)
+    if (unpriced.length > 0 && this.pricing.strict) throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, { reason: `the price lists no rate for the tool unit ${unpriced.join(', ')}` })
     const breakdown = computeCostNanoUsd(usage, rate)
-    return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: false }
+    return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: unpriced.length > 0 }
   }
 }
