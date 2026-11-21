@@ -130,7 +130,7 @@ async function seedGpt5(store: InMemoryPricingStore, model = 'gpt-5'): Promise<v
     operation: 'chat',
     serviceTier: 'standard',
     inputNanoUsdPerMillion: 1_250_000_000n,
-    outputNanoUsdPerMillion: 10_000_000_000n,
+    outputNanoUsdPerMillion: 10_000_000_000n, unitRates: { web_search_requests: 1n },
     effectiveFrom: new Date(0),
   })
 }

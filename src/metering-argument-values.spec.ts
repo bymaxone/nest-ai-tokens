@@ -271,7 +271,7 @@ describe('the usage of a call', () => {
     const record = calls['metering.record']
     if (price === undefined || record === undefined) throw new Error('no call')
     const priceArgs = await price.base()
-    Object.assign(at(priceArgs, [0]), { provider: 'anthropic', model: 'claude-opus' })
+    Object.assign(at(priceArgs, [0]), { provider: 'anthropic', model: 'claude-opus', unitRates: { web_search_requests: 1n } })
     await price.run(priceArgs)
     return { run: record.run, args: await record.base() }
   }

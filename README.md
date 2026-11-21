@@ -779,6 +779,14 @@ specific to security is below.
   where it used to be read as `0`, billing the call for less than it used, or as a negative, for more. A part of a total that is more than
   its total (cached, audio or reasoning tokens past the prompt or the completion) is refused, a container of counts that is there must be an
   object, and a count that is absent, or `null`, is `0`.
+- **Tool units are counts, billed the same on `record()` and on `capture()`, and the host's count wins.** The tool units of a call are
+  the ones the provider reported in the usage and the ones the host puts on the context as `extraUnits`, merged. For a unit both name, the
+  host's count replaces the provider's, because the host is the billing caller: a host that passes `{ web_search_requests: 0 }` bills 0
+  for that unit whatever the provider reported. A hold stores its `extraUnits`, and `capture()` bills them with the units of the usage.
+  A unit count that is not a whole number from 0 to the largest safe integer (a negative, a fraction, `NaN`, `Infinity`, a string, `2**53`)
+  is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. A unit with a count above 0 and no rate in the price's `unitRates`
+  is a missing price, like an unpriced model: refused as `AI_TOKENS_PRICE_NOT_FOUND` when `pricing.strict` is on, and otherwise billed for
+  what has a price, with `priceMissing` set on the record and `ai_tokens.price.missing` raised.
 
 ---
 

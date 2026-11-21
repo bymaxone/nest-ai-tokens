@@ -22,7 +22,7 @@ import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../share
 import { AiTokensException } from '../errors'
 import { setErrorMessage } from '../errors/set-error-message'
 import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
-import { assertObject, assertOptionalText, assertText } from '../utils/argument-guards'
+import { assertObject, assertOptionalText, assertText, labelOf } from '../utils/argument-guards'
 import { isCount, isNonNegativeBigint } from '../utils/numeric-guards'
 import type { PricingService } from './pricing.service'
 
@@ -121,6 +121,17 @@ export function checkUsageCounts(usage: NormalizedUsage): NormalizedUsage {
 }
 
 /** The most tokens one ledger row stores: its token columns are 32-bit integers. */
+/**
+ * The tool units of a usage that have a count above 0 and no rate in the price, by the name a refusal may carry.
+ *
+ * @param usage The usage being rated.
+ * @param rate The price version it is rated at.
+ * @returns The unit names, in the order the usage lists them.
+ */
+export function unpricedUnits(usage: NormalizedUsage, rate: PriceVersion): string[] {
+  return Object.entries(usage.serverToolUse ?? {}).filter(([unit, count]) => count > 0 && rate.unitRates?.[unit] == null).map(([unit]) => labelOf(unit))
+}
+
 const LEDGER_MAX_TOKENS = 2_147_483_647
 
 /**

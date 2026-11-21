@@ -60,8 +60,8 @@ export function keysOf(value: object, name: string): string[] {
   }
 }
 
-/** A key that can be written in a refusal as it is: letters and digits, starting with a letter, of a bounded length. */
-const PLAIN_KEY = /^[A-Za-z][A-Za-z0-9]{0,63}$/
+/** A key that can be written in a refusal as it is: letters, digits and underscores, starting with a letter, of a bounded length. */
+const PLAIN_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
 
 /**
  * How a key of the host's object is written in a refusal. A key is the host's, or an end user's through the host, so it can hold line
@@ -321,6 +321,22 @@ export function assertMeteringContext(value: unknown): void {
   if (value.beneficiary !== undefined) assertScope('context.beneficiary', value.beneficiary)
   assertText('context.feature', value.feature)
   for (const field of CONTEXT_TEXT_FIELDS) assertOptionalText(`context.${field}`, value[field])
+  if (value.extraUnits !== undefined) assertUnitCounts(value.extraUnits)
+}
+
+/**
+ * Throw unless the tool units a host puts on a call are a map of whole numbers from 0 to the largest safe integer: each is rated like a
+ * token, so a negative one would credit the wallet and a fraction or a number past the safe range cannot be priced.
+ *
+ * @param value The `extraUnits` of a metering context.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not an object, `AI_TOKENS_USAGE_MALFORMED` naming the first unit that is not a count.
+ */
+function assertUnitCounts(value: unknown): void {
+  assertObject('context.extraUnits', value)
+  for (const [unit, count] of Object.entries(value)) {
+    if (isCount(count)) continue
+    throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: `context.extraUnits.${labelOf(unit)} must be a whole number from 0 to the largest safe integer` })
+  }
 }
 
 /**
