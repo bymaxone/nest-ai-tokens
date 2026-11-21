@@ -265,3 +265,54 @@ describe('an object whose keys cannot be listed', () => {
     expect(await reasonOf(() => run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${named} could not be read`)
   })
 })
+
+describe('an input whose fields are accessors of its class', () => {
+  /** The documented fields of a filter class that holds them as getters reach the store: the date bound still applies. */
+  it('keeps a date bound that a class holds as a getter', async () => {
+    const getEntries = (await rig()).calls['wallets.getEntries']
+    if (getEntries === undefined) throw new Error('no call')
+    const [ref] = await getEntries.base()
+    class LaterThan2100 {
+      get from(): Date {
+        return new Date('2100-01-01T00:00:00Z')
+      }
+    }
+    const everything = (await getEntries.run([ref, {}])) as { entries: unknown[] }
+    const bounded = (await getEntries.run([ref, new LaterThan2100()])) as { entries: unknown[] }
+    expect(everything.entries.length).toBeGreaterThan(0)
+    expect(bounded.entries).toHaveLength(0)
+  })
+
+  /** An accessor of the class is read exactly once, whatever the checks and the uses of the call do with the field. */
+  it('reads a getter of the class once', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    let reads = 0
+    class Counting {
+      get limit(): number {
+        reads += 1
+        if (reads > 1) throw new Error('host-private-text')
+        return 5
+      }
+    }
+    setAt(args, [1], new Counting())
+    expect(await reasonOf(() => run(args))).toBeUndefined()
+    expect(reads).toBe(1)
+  })
+
+  it('keeps the fields of an object created from a prototype', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    setAt(args, [1], Object.create({ limit: 'many' }))
+    expect(await reasonOf(() => run(args))).toBe('AI_TOKENS_INVALID_CONFIG limit must be a whole number of 0 or more')
+  })
+
+  /** The walk stops before `Object.prototype`, so a key added to it by another library is not read as a field of the input. */
+  it('does not read a key added to Object.prototype', async () => {
+    const { run, args } = await callOf('wallets.getEntries')
+    Object.defineProperty(Object.prototype, 'limit', { value: 'many', configurable: true, enumerable: false })
+    try {
+      expect(await reasonOf(() => run(args))).toBeUndefined()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'limit')
+    }
+  })
+})

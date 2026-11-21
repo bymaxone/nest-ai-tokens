@@ -62,7 +62,7 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
 }
 
 /**
- * A snapshot of an input object, read once: every own enumerable field is read a single time, and the named date fields are replaced by
+ * A snapshot of an input object, read once: every field is read a single time (the own enumerable fields and the accessors of its class), and the named date fields are replaced by
  * {@link readDate} copies. The caller's object is not read again, so a getter or a Proxy trap that answers once and throws afterwards
  * cannot fail after the call has begun, and every check and every use works on the same values.
  *
@@ -74,7 +74,10 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
  */
 export function withReadDates<T extends object>(input: T, fields: readonly (keyof T & string)[], prefix = ''): T {
   const copy: Record<string, unknown> = {}
-  for (const key of keysOf(input, `${prefix}input`)) copy[key] = readField(input, key, `${prefix}${key}`)
+  for (const key of keysOf(input, `${prefix}input`)) {
+    // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
+    Object.defineProperty(copy, key, { value: readField(input, key, `${prefix}${key}`), enumerable: true, writable: true, configurable: true })
+  }
   for (const field of fields) {
     if (copy[field] !== undefined) copy[field] = readDate(`${prefix}${field}`, copy[field])
   }

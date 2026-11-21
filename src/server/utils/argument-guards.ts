@@ -35,17 +35,22 @@ export function readField(value: object, key: string, name: string): unknown {
 }
 
 /**
- * The own enumerable keys of an argument object. A Proxy whose `ownKeys` trap throws would put the host's own error in the caller's
- * hands, so it is refused as an argument that cannot be read.
+ * The fields of an argument object: its own enumerable keys, and the accessors and data its class or prototype chain defines up to
+ * `Object.prototype`, which an instance of a class holds as getters. A Proxy whose trap throws would put the host's own error in the
+ * caller's hands, so it is refused as an argument that cannot be read.
  *
  * @param value The argument object.
  * @param name What the refusal calls the object.
- * @returns The keys.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the object when listing its keys throws.
+ * @returns The names of the fields.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the object when listing its fields throws.
  */
 export function keysOf(value: object, name: string): string[] {
   try {
-    return Object.keys(value)
+    const keys = new Set(Object.keys(value))
+    for (let proto: object | null = Object.getPrototypeOf(value) as object | null; proto !== null && proto !== Object.prototype; proto = Object.getPrototypeOf(proto) as object | null) {
+      for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
+    }
+    return [...keys]
   } catch {
     throw refused(`${name} could not be read`)
   }
