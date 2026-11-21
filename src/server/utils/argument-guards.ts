@@ -134,6 +134,8 @@ interface Visit {
  * number of different values and a value that shares a child between its branches costs no more than a tree of its size. A value that
  * contains itself is refused, whatever the limit, and so is a read of more different lists and objects, or of more other values, than a
  * batch of provider responses holds.
+ * The copy is only read, never changed, by the consumers of an argument, which read fields by name, so a child shared by two branches may
+ * be one object in it.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
