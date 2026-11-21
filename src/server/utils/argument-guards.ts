@@ -113,7 +113,7 @@ export const MAX_USAGE_NESTING = 64
 const MAX_LIST_LENGTH = 100_000
 
 /** The most lists and objects one read copies, counting each time a shared one is reached; each costs the reads of its keys. */
-const MAX_CONTAINERS = 10_000
+const MAX_CONTAINERS = 2_500
 
 /** The most other values one read visits, counting each time a shared list is reached: a batch of 100 embeddings of 3072 numbers is 307_200. */
 const MAX_LEAVES = 1_000_000

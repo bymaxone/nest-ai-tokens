@@ -130,8 +130,8 @@ describe('the usage a call reads once', () => {
 
   it('reads exactly as many lists and objects as the budget holds, and refuses one more', () => {
     const objects = (count: number): unknown[] => Array.from({ length: count }, () => ({}))
-    expect(() => readDeep(objects(9_999), 'usage', 0, 64)).not.toThrow()
-    expect(() => readDeep(objects(10_000), 'usage', 0, 64)).toThrow()
+    expect(() => readDeep(objects(2_499), 'usage', 0, 64)).not.toThrow()
+    expect(() => readDeep(objects(2_500), 'usage', 0, 64)).toThrow()
   })
 
   it('reads exactly as many other values as the budget holds, and refuses one more', () => {
