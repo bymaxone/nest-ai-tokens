@@ -29,15 +29,11 @@ import {
  * normalizeAnthropicUsage({ model: 'claude-opus', usage: { input_tokens: 100, output_tokens: 40 } })
  */
 export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'anthropic')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const inputTokens = requireNum(usage.input_tokens, 'anthropic', 'usage.input_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokens = requireNum(usage.output_tokens, 'anthropic', 'usage.output_tokens')
 
   const cacheReadTokens = num(usage.cache_read_input_tokens)
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const cacheCreation = detailsObject(usage.cache_creation, 'anthropic', 'usage.cache_creation')
   const cacheWrite5mTokens = cacheCreation
     ? num(cacheCreation.ephemeral_5m_input_tokens)
@@ -54,7 +50,6 @@ export function normalizeAnthropicUsage(raw: unknown): NormalizedUsage {
     cacheWrite5mTokens,
     cacheWrite1hTokens,
     serviceTier: knownServiceTier(usage.service_tier),
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     serverToolUse: toolUseCounts(usage.server_tool_use, 'anthropic'),
     raw: usage,
   })

@@ -37,7 +37,6 @@ function isCount(value: unknown): value is number {
 export function num(value: unknown): number {
   if (value === undefined || value === null) return 0
   if (isCount(value)) return value
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   throw new Error('a count of the usage is not a whole number from 0 to the largest safe integer')
 }
 
@@ -69,7 +68,6 @@ export function detailsArray(value: unknown, provider: string, field: string): u
 /** The sum of counts, which must itself be a count: two counts a provider reports cannot add up past the largest safe integer. */
 export function sumCounts(...counts: number[]): number {
   const sum = counts.reduce((total, count) => total + count, 0)
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   if (!isCount(sum)) throw new Error('the counts of the usage add up past the largest safe integer')
   return sum
 }
@@ -105,7 +103,6 @@ export function openAiServiceTier(value: unknown): ServiceTier | undefined {
 
 /** Extract the counts of a server-tool-use object, or `undefined` when there is none: an entry that is there must be a count (see {@link num}). */
 export function toolUseCounts(value: unknown, provider: string): Record<string, number> | undefined {
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const source = detailsObject(value, provider, 'server_tool_use')
   if (source === undefined) return undefined
   const counts: Record<string, number> = {}

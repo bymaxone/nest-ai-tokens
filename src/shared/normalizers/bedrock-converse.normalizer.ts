@@ -15,7 +15,6 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   cacheWrite5mTokens: number
   cacheWrite1hTokens: number
 } {
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const details = detailsArray(usage.cacheDetails, 'bedrock-converse', 'usage.cacheDetails')
   if (details === undefined) {
     // An unsplit total defaults to the 5-minute cache.
@@ -24,7 +23,6 @@ function splitCacheWrite(usage: Record<string, unknown>): {
   let cacheWrite5mTokens = 0
   let cacheWrite1hTokens = 0
   for (const item of details) {
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     const entry = detailsObject(item, 'bedrock-converse', 'usage.cacheDetails[]')
     if (entry === undefined) continue
     const count = num(entry.cacheWriteInputTokens)
@@ -44,11 +42,8 @@ function splitCacheWrite(usage: Record<string, unknown>): {
  * normalizeBedrockConverseUsage({ model: 'us.anthropic.claude', usage: { inputTokens: 100, outputTokens: 40 } })
  */
 export function normalizeBedrockConverseUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'bedrock-converse')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const inputTokens = requireNum(usage.inputTokens, 'bedrock-converse', 'usage.inputTokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokens = requireNum(usage.outputTokens, 'bedrock-converse', 'usage.outputTokens')
   const { cacheWrite5mTokens, cacheWrite1hTokens } = splitCacheWrite(usage)
 

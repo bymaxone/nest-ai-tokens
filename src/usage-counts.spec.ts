@@ -113,3 +113,91 @@ describe('the counts of every normalizer', () => {
     expect(() => providerPresets.vercelAiSdk.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: Number.MAX_SAFE_INTEGER, inputTokenDetails: { cacheReadTokens: 1 } } })).toThrow()
   })
 })
+
+/** The text of a refusal reaches the operator who reads why billing refused a response, so each refusal is asserted by its exact text. */
+const MISSING = (provider: string, field: string): string => `${provider}: missing or invalid count "${field}"`
+const NOT_OBJECT = (provider: string, field: string): string => `${provider}: "${field}" must be an object`
+const NOT_LIST = (provider: string, field: string): string => `${provider}: "${field}" must be a list`
+const PARTS_PAST_TOTAL = (provider: string, field: string): string => `${provider}: the parts of "${field}" are more than the whole`
+const NO_USAGE = (provider: string, key = 'usage'): string => `${provider}: missing "${key}" object`
+const NOT_WHOLE = 'a count of the usage is not a whole number from 0 to the largest safe integer'
+const PAST_SAFE_RANGE = 'the counts of the usage add up past the largest safe integer'
+const TOO_MANY = 200
+const MAX = Number.MAX_SAFE_INTEGER
+
+/** One refusal: the response it is made of, the value put at a path in it, and the exact text of the error. */
+type Refusal = readonly [response: string, path: (string | number)[], value: unknown, message: string]
+
+const REFUSALS: readonly Refusal[] = [
+  ['openaiChat', ['usage'], undefined, NO_USAGE('openai-chat')],
+  ['openaiChat', ['usage', 'prompt_tokens'], undefined, MISSING('openai-chat', 'usage.prompt_tokens')],
+  ['openaiChat', ['usage', 'completion_tokens'], undefined, MISSING('openai-chat', 'usage.completion_tokens')],
+  ['openaiChat', ['usage', 'prompt_tokens_details'], 5, NOT_OBJECT('openai-chat', 'usage.prompt_tokens_details')],
+  ['openaiChat', ['usage', 'completion_tokens_details'], 5, NOT_OBJECT('openai-chat', 'usage.completion_tokens_details')],
+  ['openaiChat', ['usage', 'prompt_tokens_details', 'cached_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-chat', 'usage.prompt_tokens')],
+  ['openaiChat', ['usage', 'completion_tokens_details', 'reasoning_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-chat', 'usage.completion_tokens')],
+  ['openaiChat', ['usage', 'prompt_tokens_details', 'cached_tokens'], 'x', NOT_WHOLE],
+  ['openaiResponses', ['usage'], undefined, NO_USAGE('openai-responses')],
+  ['openaiResponses', ['usage', 'input_tokens'], undefined, MISSING('openai-responses', 'usage.input_tokens')],
+  ['openaiResponses', ['usage', 'output_tokens'], undefined, MISSING('openai-responses', 'usage.output_tokens')],
+  ['openaiResponses', ['usage', 'input_tokens_details'], 5, NOT_OBJECT('openai-responses', 'usage.input_tokens_details')],
+  ['openaiResponses', ['usage', 'output_tokens_details'], 5, NOT_OBJECT('openai-responses', 'usage.output_tokens_details')],
+  ['openaiResponses', ['usage', 'input_tokens_details', 'cached_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-responses', 'usage.input_tokens')],
+  ['openaiResponses', ['usage', 'output_tokens_details', 'reasoning_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-responses', 'usage.output_tokens')],
+  ['anthropic', ['usage'], undefined, NO_USAGE('anthropic')],
+  ['anthropic', ['usage', 'input_tokens'], undefined, MISSING('anthropic', 'usage.input_tokens')],
+  ['anthropic', ['usage', 'output_tokens'], undefined, MISSING('anthropic', 'usage.output_tokens')],
+  ['anthropic', ['usage', 'cache_creation'], 5, NOT_OBJECT('anthropic', 'usage.cache_creation')],
+  ['anthropic', ['usage', 'server_tool_use'], 5, NOT_OBJECT('anthropic', 'server_tool_use')],
+  ['anthropic', ['usage', 'server_tool_use', 'web_search_requests'], 'x', NOT_WHOLE],
+  ['gemini', ['usageMetadata'], undefined, NO_USAGE('gemini', 'usageMetadata')],
+  ['gemini', ['usageMetadata', 'promptTokenCount'], undefined, MISSING('gemini', 'usageMetadata.promptTokenCount')],
+  ['gemini', ['usageMetadata', 'cachedContentTokenCount'], TOO_MANY, PARTS_PAST_TOTAL('gemini', 'usageMetadata.promptTokenCount')],
+  ['bedrock', ['usage'], undefined, NO_USAGE('bedrock-converse')],
+  ['bedrock', ['usage', 'inputTokens'], undefined, MISSING('bedrock-converse', 'usage.inputTokens')],
+  ['bedrock', ['usage', 'outputTokens'], undefined, MISSING('bedrock-converse', 'usage.outputTokens')],
+  ['bedrock', ['usage', 'cacheDetails'], 5, NOT_LIST('bedrock-converse', 'usage.cacheDetails')],
+  ['bedrock', ['usage', 'cacheDetails', 0], 5, NOT_OBJECT('bedrock-converse', 'usage.cacheDetails[]')],
+  ['mistral', ['usage'], undefined, NO_USAGE('mistral')],
+  ['mistral', ['usage', 'prompt_tokens'], undefined, MISSING('mistral', 'usage.prompt_tokens')],
+  ['mistral', ['usage', 'completion_tokens'], undefined, MISSING('mistral', 'usage.completion_tokens')],
+  ['vercelAiSdk', ['usage'], undefined, NO_USAGE('vercel-ai-sdk')],
+  ['vercelAiSdk', ['usage', 'inputTokens'], undefined, MISSING('vercel-ai-sdk', 'usage.inputTokens')],
+  ['vercelAiSdk', ['usage', 'outputTokens'], undefined, MISSING('vercel-ai-sdk', 'usage.outputTokens')],
+  ['vercelAiSdk', ['usage', 'inputTokenDetails'], 5, NOT_OBJECT('vercel-ai-sdk', 'usage.inputTokenDetails')],
+  ['vercelAiSdk', ['usage', 'outputTokenDetails'], 5, NOT_OBJECT('vercel-ai-sdk', 'usage.outputTokenDetails')],
+  ['vercelAiSdk', ['usage', 'inputTokenDetails', 'cacheWriteTokens'], TOO_MANY, PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.inputTokens')],
+  ['vercelAiSdk', ['usage', 'outputTokenDetails', 'reasoningTokens'], TOO_MANY, PARTS_PAST_TOTAL('vercel-ai-sdk', 'usage.outputTokens')],
+  ['openrouter', ['usage'], undefined, NO_USAGE('openrouter')],
+  ['openrouter', ['usage', 'prompt_tokens'], undefined, MISSING('openrouter', 'usage.prompt_tokens')],
+  ['openrouter', ['usage', 'completion_tokens'], undefined, MISSING('openrouter', 'usage.completion_tokens')],
+  ['openrouter', ['usage', 'prompt_tokens_details'], 5, NOT_OBJECT('openrouter', 'usage.prompt_tokens_details')],
+  ['openrouter', ['usage', 'completion_tokens_details'], 5, NOT_OBJECT('openrouter', 'usage.completion_tokens_details')],
+  ['openrouter', ['usage', 'prompt_tokens_details', 'cached_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openrouter', 'usage.prompt_tokens')],
+  ['openrouter', ['usage', 'completion_tokens_details', 'reasoning_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openrouter', 'usage.completion_tokens')],
+  ['openaiCompatible', ['usage'], undefined, NO_USAGE('openai-compatible')],
+  ['openaiCompatible', ['usage', 'prompt_tokens'], undefined, MISSING('openai-compatible', 'usage.prompt_tokens')],
+  ['openaiCompatible', ['usage', 'completion_tokens'], undefined, MISSING('openai-compatible', 'usage.completion_tokens')],
+  ['openaiCompatible', ['usage', 'prompt_tokens_details'], 5, NOT_OBJECT('openai-compatible', 'usage.prompt_tokens_details')],
+  ['openaiCompatible', ['usage', 'completion_tokens_details'], 5, NOT_OBJECT('openai-compatible', 'usage.completion_tokens_details')],
+  ['openaiCompatible', ['usage', 'prompt_cache_hit_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-compatible', 'usage.prompt_tokens')],
+  ['openaiCompatible', ['usage', 'completion_tokens_details', 'reasoning_tokens'], TOO_MANY, PARTS_PAST_TOTAL('openai-compatible', 'usage.completion_tokens')],
+]
+
+describe('the exact text of every refusal of a usage', () => {
+  it.each(REFUSALS)('%s: %j set to %j is refused with the text it names', (name, path, value, message) => {
+    const row = RESPONSES.find(([known]) => known === name)
+    if (row === undefined) throw new Error(`no response named ${name}`)
+    expect(() => row[1].normalizer(withValue(row[2], path, value))).toThrow(new Error(message))
+  })
+
+  it('refuses the counts of Bedrock that add up past the safe range with the text it names', () => {
+    const entries = [{ ttl: '1h', cacheWriteInputTokens: MAX }, { ttl: '1h', cacheWriteInputTokens: 1 }]
+    expect(() => providerPresets.bedrock.normalizer({ model: 'm', usage: { inputTokens: 1, outputTokens: 1, cacheDetails: entries } })).toThrow(new Error(PAST_SAFE_RANGE))
+  })
+
+  it('refuses the counts of Gemini that add up past the safe range with the text it names', () => {
+    const response = { modelVersion: 'gemini', usageMetadata: { promptTokenCount: MAX, toolUsePromptTokenCount: 4 } }
+    expect(() => providerPresets.gemini.normalizer(response)).toThrow(new Error(PAST_SAFE_RANGE))
+  })
+})

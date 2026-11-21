@@ -20,16 +20,11 @@ import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remain
  * normalizeOpenAiCompatibleUsage({ model: 'deepseek-chat', usage: { prompt_tokens: 100, completion_tokens: 40 } })
  */
 export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-compatible')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openai-compatible', 'usage.prompt_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openai-compatible', 'usage.completion_tokens')
 
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const promptDetails = detailsObject(usage.prompt_tokens_details, 'openai-compatible', 'usage.prompt_tokens_details')
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const completionDetails = detailsObject(usage.completion_tokens_details, 'openai-compatible', 'usage.completion_tokens_details')
   // DeepSeek reports cache hits at the usage root; OpenAI-style gateways nest them.
   const cacheReadTokens = sumCounts(num(usage.prompt_cache_hit_tokens), num(promptDetails?.cached_tokens))
@@ -40,9 +35,7 @@ export function normalizeOpenAiCompatibleUsage(raw: unknown): NormalizedUsage {
     provider: '',
     model: str(response.model) ?? '',
     operation: 'chat',
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(promptTokens, [cacheReadTokens], 'openai-compatible', 'usage.prompt_tokens'),
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(completionTokens, [reasoningTokens], 'openai-compatible', 'usage.completion_tokens'),
     cacheReadTokens,
     reasoningTokens,

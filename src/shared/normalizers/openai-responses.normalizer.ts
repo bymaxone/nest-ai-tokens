@@ -19,16 +19,11 @@ import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remain
  * normalizeOpenAiResponsesUsage({ model: 'gpt-5.2', usage: { input_tokens: 100, output_tokens: 40 } })
  */
 export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openai-responses')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const inputTokensTotal = requireNum(usage.input_tokens, 'openai-responses', 'usage.input_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const outputTokensTotal = requireNum(usage.output_tokens, 'openai-responses', 'usage.output_tokens')
 
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const inputDetails = detailsObject(usage.input_tokens_details, 'openai-responses', 'usage.input_tokens_details')
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const outputDetails = detailsObject(usage.output_tokens_details, 'openai-responses', 'usage.output_tokens_details')
   const cacheReadTokens = num(inputDetails?.cached_tokens)
   const audioInTokens = num(inputDetails?.audio_tokens)
@@ -40,9 +35,7 @@ export function normalizeOpenAiResponsesUsage(raw: unknown): NormalizedUsage {
     provider: 'openai',
     model: str(response.model) ?? '',
     operation: 'responses',
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(inputTokensTotal, [cacheReadTokens, audioInTokens], 'openai-responses', 'usage.input_tokens'),
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(outputTokensTotal, [reasoningTokens], 'openai-responses', 'usage.output_tokens'),
     cacheReadTokens,
     reasoningTokens,

@@ -21,16 +21,11 @@ import { buildUsage, detailsObject, num, openAiServiceTier, readResponse, remain
  * normalizeOpenRouterUsage({ model: 'gpt-5.2', usage: { prompt_tokens: 100, completion_tokens: 40, cost: 0.0123 } })
  */
 export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
-  // Stryker disable next-line StringLiteral: provider name in error messages is internal diagnostics; tests only check toThrow(Error)
   const { response, usage } = readResponse(raw, 'openrouter')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const promptTokens = requireNum(usage.prompt_tokens, 'openrouter', 'usage.prompt_tokens')
-  // Stryker disable next-line StringLiteral: provider and field names in error messages are internal diagnostics
   const completionTokens = requireNum(usage.completion_tokens, 'openrouter', 'usage.completion_tokens')
 
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const promptDetails = detailsObject(usage.prompt_tokens_details, 'openrouter', 'usage.prompt_tokens_details')
-  // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
   const completionDetails = detailsObject(usage.completion_tokens_details, 'openrouter', 'usage.completion_tokens_details')
   const cacheReadTokens = num(promptDetails?.cached_tokens)
   const cacheWrite5mTokens = num(promptDetails?.cache_write_tokens)
@@ -44,9 +39,7 @@ export function normalizeOpenRouterUsage(raw: unknown): NormalizedUsage {
     provider: 'openrouter',
     model: str(response.model) ?? '',
     operation: 'chat',
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     inputTokens: remainder(promptTokens, [cacheReadTokens, cacheWrite5mTokens], 'openrouter', 'usage.prompt_tokens'),
-    // Stryker disable next-line StringLiteral: provider and field names and the text of a plain error are internal diagnostics; tests check that the usage is refused
     outputTokens: remainder(completionTokens, [reasoningTokens], 'openrouter', 'usage.completion_tokens'),
     cacheReadTokens,
     cacheWrite5mTokens,
