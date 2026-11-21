@@ -206,6 +206,11 @@ describe('what a refusal of a read names', () => {
     expect(listed).toBe(0)
   })
 
+  it('names the value that goes past the budget of other values', () => {
+    const lists = Object.fromEntries(Array.from({ length: 11 }, (_, index) => [`l${String(index)}`, Array.from({ length: 100_000 }, () => 0)]))
+    expect(refusalOf(() => readDeep(lists, 'usage', 0, 64))).toBe('usage.l10[0] could not be read')
+  })
+
   it('names the value when a read has too many different lists and objects, too many keys, or contains itself', () => {
     expect(refusalOf(() => readDeep(Array.from({ length: 10_000 }, () => ({})), 'usage', 0, 64))).toBe('usage[9999] could not be read')
     expect(refusalOf(() => readDeep(Object.fromEntries(Array.from({ length: 100_001 }, (_, index) => [`k${String(index)}`, 0])), 'usage', 0, 64))).toBe('usage could not be read')
