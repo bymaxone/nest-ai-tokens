@@ -43,10 +43,20 @@ describe('the view of a raw provider response', () => {
     const shared = { n: 1 }
     const cyclic: Record<string, unknown> = { shared, again: shared }
     cyclic.self = cyclic
-    const view = viewOf(cyclic) as { shared: object; again: object; self: object }
+    const views = new WeakMap<object, object>()
+    const view = viewOf(cyclic, views) as { shared: object; again: object; self: object }
     expect(view.shared).toBe(view.again)
     expect(view.self).toBe(view)
-    expect(viewOf(cyclic)).toBe(view)
+    expect(viewOf(cyclic, views)).toBe(view)
+  })
+
+  it('keeps nothing of one call for the next: the same response, changed between two reads, answers its new value', () => {
+    const raw = { input_tokens: 1 }
+    expect(viewOf(raw).input_tokens).toBe(1)
+    raw.input_tokens = 2
+    expect(viewOf(raw).input_tokens).toBe(2)
+    const views = new WeakMap<object, object>()
+    expect(viewOf(raw, views)).toBe(viewOf(raw, views))
   })
 
   it('is a list when the object is a list, with its length, its elements and its iteration', () => {
