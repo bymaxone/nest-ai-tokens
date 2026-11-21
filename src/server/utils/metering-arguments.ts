@@ -8,7 +8,7 @@
 import type { ProviderPreset } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
 import { StreamUsageCollector } from '../streaming/stream-usage-collector'
-import { readDeep } from './argument-guards'
+import { MAX_USAGE_NESTING, readDeep } from './argument-guards'
 import { readArgument, readHoldEstimate } from './date-guards'
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, PRESET_SHAPE } from './input-fields'
 
@@ -69,5 +69,5 @@ export function captureArguments(hold: Hold, caller: HoldCaller, usage: unknown,
   preset: ProviderPreset | undefined
   content: Content | undefined
 } {
-  return { ...holdOwnerArguments(hold, caller), usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0), preset: readArgument(preset, PRESET_SHAPE, [], 'preset.'), content: readArgument(content, CONTENT_SHAPE, [], 'content.') }
+  return { ...holdOwnerArguments(hold, caller), usage: isCollector(usage) ? usage : readDeep(usage, 'usage', 0, MAX_USAGE_NESTING), preset: readArgument(preset, PRESET_SHAPE, [], 'preset.'), content: readArgument(content, CONTENT_SHAPE, [], 'content.') }
 }

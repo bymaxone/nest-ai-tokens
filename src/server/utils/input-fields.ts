@@ -7,6 +7,7 @@
  */
 
 // Stryker disable BooleanLiteral: equivalent: a list is read for its names, and the `true` of each is never looked at; this file must stay data-only, so that no boolean with a meaning is ever hidden under this directive
+import { MAX_USAGE_NESTING } from './argument-guards'
 import type { MeteringScope, PriceVersion, ProviderId, ProviderPreset, ReportFilter, WalletRef, LedgerFilter } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext, WalletEntryFilter } from '../interfaces'
 import type { EstimateCostInput, RecordInput } from '../services/metering.service'
@@ -23,6 +24,8 @@ export type FieldList<T> = { readonly [K in keyof Required<T>]: true }
 export interface Shape {
   readonly fields: object
   readonly nested?: Readonly<Record<string, Shape>>
+  /** The depth at which a field that is no object of the shape is refused, where the default of 8 is too low. */
+  readonly limits?: Readonly<Record<string, number>>
 }
 
 /** The variant of a hold estimate that is rated by model. */
@@ -233,7 +236,7 @@ export const CONTENT_SHAPE: Shape = { fields: CONTENT_FIELDS }
 export const CONTEXT_SHAPE: Shape = { fields: METERING_CONTEXT_FIELDS, nested: { scope: SCOPE_SHAPE, beneficiary: SCOPE_SHAPE, preset: PRESET_SHAPE } }
 
 /** The input of a record read by name, its context, preset and content by name. */
-export const RECORD_SHAPE: Shape = { fields: RECORD_INPUT_FIELDS, nested: { context: CONTEXT_SHAPE, preset: PRESET_SHAPE, content: CONTENT_SHAPE } }
+export const RECORD_SHAPE: Shape = { fields: RECORD_INPUT_FIELDS, nested: { context: CONTEXT_SHAPE, preset: PRESET_SHAPE, content: CONTENT_SHAPE }, limits: { usage: MAX_USAGE_NESTING } }
 
 /** The input of a cost estimate read by name. */
 export const ESTIMATE_COST_SHAPE: Shape = { fields: ESTIMATE_COST_FIELDS, nested: { scope: SCOPE_SHAPE } }

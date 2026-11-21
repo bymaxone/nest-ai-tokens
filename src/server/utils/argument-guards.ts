@@ -106,33 +106,44 @@ export function labelOf(key: string): string {
 /** The deepest nesting of lists and objects read from an argument: a longer one is a cycle or not an argument. */
 const MAX_NESTING = 8
 
+/** The deepest nesting read from the usage of a provider, whose response can carry the JSON arguments of a tool call. */
+export const MAX_USAGE_NESTING = 64
+
 /** The longest list read from an argument. */
 const MAX_LIST_LENGTH = 100_000
 
 /**
  * A copy of a value read once, all the way down: a list or an object nested in an argument is copied element by element through
  * {@link readField}, so a Proxy list whose `get` or `length` throws, or a nested getter that answers once, cannot fail the call after
- * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype.
+ * it has begun. A date, a primitive and a function are returned as they are; an object is copied to one with no prototype. A value that
+ * contains itself is refused, whatever the limit.
  *
  * @param value The value to copy.
  * @param name What the refusal calls the value.
  * @param depth How deep in the argument the value is, counted from the argument itself as 0.
+ * @param limit The depth at which a nested value is refused.
+ * @param path The lists and objects being copied above this one.
  * @returns The copy.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, is nested too deep or is too long.
+ * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the value when it cannot be read, contains itself, is nested too deep or is too long.
  */
-export function readDeep(value: unknown, name: string, depth: number): unknown {
+export function readDeep(value: unknown, name: string, depth: number, limit = MAX_NESTING, path = new Set<object>()): unknown {
   if (typeof value !== 'object' || value === null || isDate(value)) return value
-  if (depth >= MAX_NESTING) throw refused(`${name} could not be read`)
-  if (Array.isArray(value)) {
-    const length = readField(value, 'length', name)
-    if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
-    return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1))
+  if (depth >= limit || path.has(value)) throw refused(`${name} could not be read`)
+  path.add(value)
+  try {
+    if (Array.isArray(value)) {
+      const length = readField(value, 'length', name)
+      if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > MAX_LIST_LENGTH) throw refused(`${name} could not be read`)
+      return Array.from({ length }, (_, index) => readDeep(readField(value, String(index), `${name}[${String(index)}]`), `${name}[${String(index)}]`, depth + 1, limit, path))
+    }
+    const copy = Object.create(null) as Record<string, unknown>
+    for (const key of keysOf(value, name)) {
+      Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, path), enumerable: true })
+    }
+    return copy
+  } finally {
+    path.delete(value)
   }
-  const copy = Object.create(null) as Record<string, unknown>
-  for (const key of keysOf(value, name)) {
-    Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1), enumerable: true })
-  }
-  return copy
 }
 
 /** Whether a value is a plain object: an object that is neither `null` nor an array. */
