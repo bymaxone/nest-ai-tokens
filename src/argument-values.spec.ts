@@ -469,7 +469,10 @@ describe('a list or an object nested in an input', () => {
     at(args, [0]).features = ['f1', 'f2']
     at(args, [0]).softThresholds = [0.5, 1]
     at(args, [0]).scope = { type: 'user', id: 'nested' }
-    expect(await reasonOf(() => run(args))).toBeUndefined()
+    const budget = (await run(args)) as { features?: string[]; softThresholds: number[]; scope: { type: string; id: string } }
+    expect(budget.features).toEqual(['f1', 'f2'])
+    expect(budget.softThresholds).toEqual([0.5, 1])
+    expect({ ...budget.scope }).toEqual({ type: 'user', id: 'nested' })
   })
 
   /** The caps are refusals with the library code and the field named, on the line and one step past it, never a silent cut. */
