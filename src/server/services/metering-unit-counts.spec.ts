@@ -250,6 +250,22 @@ describe('a tool unit the price lists no rate for is a missing price', () => {
     expect(await refusal(() => built.service.record({ usage: usage({ web_search_requests: 1 }), context: context() }))).toEqual({ code: 'AI_TOKENS_PRICE_NOT_FOUND', reason: 'the price lists no rate for the tool unit web_search_requests' })
   })
 
+  /** Every unpriced unit is named, in the order the usage lists them, separated by a comma and a space. */
+  it('names every unit that has no rate', async () => {
+    const built = await world()
+    const outcome = await refusal(() => built.service.record({ usage: usage({ code_run: 2, image_gen: 1, web_search_requests: 4 }), context: context() }))
+    expect(outcome).toEqual({ code: 'AI_TOKENS_PRICE_NOT_FOUND', reason: 'the price lists no rate for the tool unit code_run, image_gen' })
+  })
+
+  /** A capture whose units are all priced raises no price-missing event, and flags no price. */
+  it('raises no price-missing event for a capture whose units are all priced', async () => {
+    const built = await world({ strict: false })
+    const hold = await built.service.hold(context(), ESTIMATE)
+    const captured = await built.service.capture(hold, CALLER, usage({ web_search_requests: 7 }))
+    expect(captured.priceMissing).toBe(false)
+    expect(built.events.priceMissing).not.toHaveBeenCalled()
+  })
+
   /** A unit of count 0 needs no rate. */
   it('needs no rate for a unit of 0', async () => {
     const built = await world()
