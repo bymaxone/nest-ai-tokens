@@ -10,6 +10,7 @@ import { makeFullStore } from '../test/fakes/full-store'
 import { validateOptions } from './server/config'
 import type { BymaxAiTokensModuleOptions } from './server/interfaces'
 import { AiTokensException } from './server/errors'
+import { AI_TOKENS_ERROR_MESSAGES } from './server/errors/ai-tokens-error-messages'
 import { setRealmGuard } from './server/utils/prototype-guard'
 
 const OPTIONS = { store: makeFullStore(), scopeResolver: (): never => undefined as never } as BymaxAiTokensModuleOptions
@@ -122,8 +123,9 @@ describe('the refusal of the guard and the exception it throws', () => {
       const error = plantedAs(key, descriptor, () => new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, { walletId: 'w1' }))
       expect(error.getStatus()).toBe(402)
       expect((error.getResponse() as { error: { code: string; message: string; details: unknown } }).error).toEqual({ code: 'AI_TOKENS_INSUFFICIENT_CREDITS', message: error.message, details: { walletId: 'w1' } })
-      expect(error.message).not.toContain('planted')
+      expect(error.message).toBe(AI_TOKENS_ERROR_MESSAGES.AI_TOKENS_INSUFFICIENT_CREDITS)
       expect(error.name).toBe('AiTokensException')
+      expect(Object.getPrototypeOf(error.getResponse())).toBeNull()
     } finally {
       setRealmGuard(true)
     }
@@ -146,7 +148,11 @@ describe('the refusal of the guard and the exception it throws', () => {
     const body = (error.getResponse() as { error: { code: string; details: { reason: string } } }).error
     expect(body.code).toBe('AI_TOKENS_INVALID_CONFIG')
     expect(body.details.reason).toContain('1 name(s)')
-    expect(error.message).not.toContain('planted')
+    expect(error.message).toBe(AI_TOKENS_ERROR_MESSAGES.AI_TOKENS_INVALID_CONFIG)
+    expect(error.name).toBe('AiTokensException')
+    expect(Object.getPrototypeOf(error.getResponse())).toBeNull()
+    expect(Object.getPrototypeOf(body)).toBeNull()
+    expect(Object.getPrototypeOf(body.details)).toBeNull()
   })
 
   it('refuses with the typed error when the global String or Object is rebound after the library loaded', async () => {
