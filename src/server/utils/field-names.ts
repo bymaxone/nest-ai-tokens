@@ -81,7 +81,9 @@ export function methodOf(host: object, name: string): ((...args: never[]) => unk
  * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
  */
 export function fieldsOf<T extends object>(source: T, names: { readonly [K in keyof Required<T>]: true }): T
+/** An object that may be absent: the copy, or `undefined` when there was none. */
 export function fieldsOf<T extends object>(source: T | undefined, names: { readonly [K in keyof Required<T>]: true }): T | undefined
+/** The implementation of the two signatures above. */
 export function fieldsOf<T extends object>(source: T | undefined, names: { readonly [K in keyof Required<T>]: true }): T | undefined {
   if (source === undefined) return undefined
   const kept = Object.create(null) as Record<string, unknown>

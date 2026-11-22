@@ -144,7 +144,9 @@ const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
  * @returns The copy, or `null`.
  */
 export function budgetRow(row: Budget): Budget
+/** A budget the store may not have: the copy, or `null` when it returned none. */
 export function budgetRow(row: Budget | null): Budget | null
+/** The implementation of the two signatures above. */
 export function budgetRow(row: Budget | null): Budget | null {
   return row === null ? null : fieldsOf(row, BUDGET_FIELDS)
 }
