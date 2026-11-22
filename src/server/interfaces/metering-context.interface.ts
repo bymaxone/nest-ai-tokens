@@ -26,7 +26,11 @@ export interface MeteringContext {
   baseModel?: string
   /** Declared tier when it cannot come from the response (e.g. Batch API result files). */
   serviceTier?: ServiceTier
-  /** Non-token line items the provider does not report in usage. */
+  /**
+   * Tool units to bill besides the ones the provider reports in usage, by name (`web_search_requests`). Each count is a whole number from
+   * 0 to the largest safe integer, or the call is refused before anything is debited. A hold stores them and `capture()` bills them with
+   * the units of the usage; for a unit both name, this count replaces the provider's, so `0` bills nothing for that unit.
+   */
   extraUnits?: Record<string, number>
   /** Strongly recommended; derive with `deriveIdempotencyKey(payload)` (§8.4). */
   idempotencyKey?: string

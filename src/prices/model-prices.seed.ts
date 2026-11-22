@@ -98,7 +98,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheReadNanoUsdPerMillion: 125_000_000n,
       reasoningNanoUsdPerMillion: 10_000_000_000n,
     },
-    unitRates: { web_search_requests: 10_000_000n }, // VERIFY: $0.01 per built-in web-search call.
+    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls; the search content tokens arrive as input tokens, billed at the model's rate.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: OpenAI pricing snapshot 2026-07 — Batch API ~50% of standard.
   makeRow({
@@ -122,6 +123,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheReadNanoUsdPerMillion: 25_000_000n,
       reasoningNanoUsdPerMillion: 2_000_000_000n,
     },
+    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls, not priced per model; the search content tokens arrive as input tokens, billed at the model's rate.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: OpenAI pricing snapshot 2026-07 — text-embedding-3-small $0.02/M.
   makeRow({
@@ -151,7 +154,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheWrite1hNanoUsdPerMillion: 30_000_000_000n,
       reasoningNanoUsdPerMillion: 75_000_000_000n,
     },
-    unitRates: { web_search_requests: 10_000_000n }, // source: Anthropic web search $10 / 1,000 requests.
+    // source: Claude API web search tool docs, read 2026-11-21 (https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — $10 per 1,000 searches.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: Anthropic pricing snapshot 2026-07 — Sonnet $3/$15 per M.
   makeRow({
@@ -165,6 +169,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheWrite1hNanoUsdPerMillion: 6_000_000_000n,
       reasoningNanoUsdPerMillion: 15_000_000_000n,
     },
+    // source: Claude API web search tool docs, read 2026-11-21 (https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — $10 per 1,000 searches.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: Anthropic pricing snapshot 2026-07 — Haiku $0.80/$4 per M.
   makeRow({
@@ -178,6 +184,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheWrite1hNanoUsdPerMillion: 1_600_000_000n,
       reasoningNanoUsdPerMillion: 4_000_000_000n,
     },
+    // source: Claude API web search tool docs, read 2026-11-21 (https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — $10 per 1,000 searches.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: Anthropic pricing snapshot 2026-07 — Sonnet Batch API ~50% of standard.
   makeRow({
@@ -192,6 +200,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheWrite1hNanoUsdPerMillion: 3_000_000_000n,
       reasoningNanoUsdPerMillion: 7_500_000_000n,
     },
+    // source: Claude API web search tool docs, read 2026-11-21 (https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — Batch API web search "priced the same as" regular requests.
+    unitRates: { web_search_requests: 10_000_000n },
   }),
 
   // ── Google Gemini ────────────────────────────────────────────────────────
@@ -264,6 +274,8 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       outputNanoUsdPerMillion: 15_000_000_000n,
       reasoningNanoUsdPerMillion: 15_000_000_000n,
     },
+    // source: xAI API pricing, Tools Pricing, read 2026-11-21 (https://docs.x.ai/docs/pricing) — Web Search $5 / 1k calls, not priced per model.
+    unitRates: { web_search_requests: 5_000_000n },
   }),
   // source: Groq pricing snapshot 2026-07 — Llama 3.3 70B $0.59/$0.79 per M. VERIFY.
   makeRow({
