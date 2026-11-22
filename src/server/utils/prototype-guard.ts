@@ -10,6 +10,8 @@
 
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from '../errors'
+import { AI_TOKENS_ERROR_MESSAGES } from '../errors/ai-tokens-error-messages'
+import { AI_TOKENS_ERROR_STATUS } from '../errors/ai-tokens-error-status'
 
 /** What a fresh realm holds: the descriptors of its `Object.prototype` and a reader of function text. */
 interface Pristine {
@@ -66,6 +68,11 @@ const getDescriptors = Object.getOwnPropertyDescriptors
 const ownKeysOf = Reflect.ownKeys
 const hasOwn = Object.hasOwn
 const getOf = Reflect.get
+const root = Object.prototype
+const stringOf = String
+const createObject = Object.create
+const define = Object.defineProperty
+const captureStack = Error.captureStackTrace.bind(Error)
 
 /** The item of a list at an index, read by a plain property read, so that no iterator of the realm is run to reach it. */
 function item<T>(list: ArrayLike<T>, index: number): T {
@@ -123,7 +130,7 @@ export function pollutedNames(): number {
   pristine ??= build()
   if (pristine === undefined) return 1
   const { descriptors, sourceOf } = pristine
-  const now = getDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
+  const now = getDescriptors(root) as Record<string | symbol, PropertyDescriptor>
   const nowKeys = ownKeysOf(now)
   const wantKeys = ownKeysOf(descriptors)
   let found = 0
@@ -152,6 +159,44 @@ export function pollutedNames(): number {
 let active = true
 
 /**
+ * The refusal: an `AiTokensException` built without running the constructor of `HttpException`, which assigns `response`, `status`, `options`,
+ * `message` and `name` on the new instance and so reads and writes through the prototype chain a planted key lives on (a text planted as
+ * `message` becomes the exception's text, an accessor under `response` swallows the body, a key that is read-only makes the constructor throw
+ * and name it). The fields are defined as the instance's own, from references captured when the module loaded, and the body has no prototype.
+ *
+ * @param found The count of names the realm differs in.
+ * @returns The exception, with the code `AI_TOKENS_INVALID_CONFIG` and no name or value of the realm.
+ */
+function refusal(found: number): AiTokensException {
+  const code = 'AI_TOKENS_INVALID_CONFIG'
+  const message = AI_TOKENS_ERROR_MESSAGES[code]
+  const details = createObject(null) as Record<string, unknown>
+  details.reason = `the Object.prototype and the built-ins of this process differ from the engine's in ${stringOf(found)} name(s); the library will not bill beside them`
+  const fields = createObject(null) as { code: string; message: string; details: unknown }
+  fields.code = code
+  fields.message = message
+  fields.details = details
+  const body = createObject(null) as { error: unknown }
+  body.error = fields
+  const error = createObject(AiTokensException.prototype) as AiTokensException
+  // A descriptor with no prototype, built by assignment: nothing the realm adds is read as part of it.
+  const own = (value: unknown): PropertyDescriptor => {
+    const made = createObject(null) as PropertyDescriptor
+    made.value = value
+    made.writable = true
+    made.configurable = true
+    made.enumerable = false
+    return made
+  }
+  define(error, 'response', own(body))
+  define(error, 'status', own(AI_TOKENS_ERROR_STATUS[code]))
+  define(error, 'message', own(message))
+  define(error, 'name', own('AiTokensException'))
+  captureStack(error, refusal)
+  return error
+}
+
+/**
  * Refuses, with the library's error and a count, while this realm's prototypes are not the engine's. Called at boot and before every
  * operation that moves or reports money.
  *
@@ -161,8 +206,7 @@ export function assertCleanRealm(): void {
   if (!active) return
   const found = pollutedNames()
   if (found === 0) return
-  // Stryker disable next-line ObjectLiteral,StringLiteral: the wording is diagnostics; the row asserts the code and that no name is in it
-  throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `the Object.prototype and the built-ins of this process differ from the engine's in ${String(found)} name(s); the library will not bill beside them` })
+  throw refusal(found)
 }
 
 /**

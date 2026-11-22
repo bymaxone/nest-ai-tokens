@@ -10,6 +10,7 @@ import { makeFullStore } from '../test/fakes/full-store'
 import { validateOptions } from './server/config'
 import type { BymaxAiTokensModuleOptions } from './server/interfaces'
 import { AiTokensException } from './server/errors'
+import { setRealmGuard } from './server/utils/prototype-guard'
 
 const OPTIONS = { store: makeFullStore(), scopeResolver: (): never => undefined as never } as BymaxAiTokensModuleOptions
 
@@ -81,5 +82,94 @@ describe('every public method of the services under a polluted realm', () => {
     expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
     expect(refused?.reason).not.toContain('zzSecretName')
     expect(await refusalOf(() => validateOptions(OPTIONS))).toBeUndefined()
+  })
+})
+
+describe('the refusal of the guard and the exception it throws', () => {
+  /** What a planted key could put into an exception: its text, the body it carries, its status and its name. */
+  const PLANTS: [string, PropertyDescriptor][] = [
+    ['message', { value: 'planted-text', enumerable: true, writable: true }],
+    ['message', { set(): void { /* swallows the write */ }, get: (): string => 'planted-text' }],
+    ['response', { set(): void { /* swallows the write */ }, get: (): undefined => undefined }],
+    ['status', { set(): void { /* swallows the write */ }, get: (): number => 200 }],
+    ['name', { value: 'PlantedName', enumerable: true, writable: true }],
+    ['options', { value: { cause: 'planted' }, enumerable: true, writable: true }],
+    ['cause', { value: 'planted-cause', enumerable: true, writable: true }],
+  ]
+
+  /** Keys planted read-only (`defineProperty` without `writable`): NestJS's own constructor throws on them, which only the guard's refusal is built to survive. */
+  const READ_ONLY: [string, PropertyDescriptor][] = [
+    ['options', { value: { cause: 'planted' }, enumerable: true }],
+    ['message', { value: 'planted-text', enumerable: true }],
+    ['response', { value: 'planted-body', enumerable: true }],
+    ['status', { value: 200, enumerable: true }],
+    ['name', { value: 'PlantedName', enumerable: true }],
+  ]
+
+  /** Plant `key` as `descriptor` on `Object.prototype`, run `run`, remove it. */
+  function plantedAs<T>(key: string, descriptor: PropertyDescriptor, run: () => T): T {
+    Object.defineProperty(Object.prototype, key, { ...descriptor, configurable: true })
+    try {
+      return run()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, key)
+    }
+  }
+
+  it.each(PLANTS)('keeps its own code, status, text and name when %s is planted on Object.prototype', (key, descriptor) => {
+    setRealmGuard(false)
+    try {
+      const error = plantedAs(key, descriptor, () => new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, { walletId: 'w1' }))
+      expect(error.getStatus()).toBe(402)
+      expect((error.getResponse() as { error: { code: string; message: string; details: unknown } }).error).toEqual({ code: 'AI_TOKENS_INSUFFICIENT_CREDITS', message: error.message, details: { walletId: 'w1' } })
+      expect(error.message).not.toContain('planted')
+      expect(error.name).toBe('AiTokensException')
+    } finally {
+      setRealmGuard(true)
+    }
+  })
+
+  it.each([...PLANTS, ...READ_ONLY])('refuses with the typed code and a count, and no planted value, when %s is planted on Object.prototype', async (key, descriptor) => {
+    const { calls } = await rig()
+    const hold = calls['metering.hold']!
+    const base = await hold.base()
+    let thrown: unknown
+    Object.defineProperty(Object.prototype, key, { ...descriptor, configurable: true })
+    try {
+      await Promise.resolve(hold.run(base)).catch((error: unknown) => (thrown = error))
+    } finally {
+      Reflect.deleteProperty(Object.prototype, key)
+    }
+    const error = thrown as AiTokensException
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect(error.getStatus()).toBe(500)
+    const body = (error.getResponse() as { error: { code: string; details: { reason: string } } }).error
+    expect(body.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(body.details.reason).toContain('1 name(s)')
+    expect(error.message).not.toContain('planted')
+  })
+
+  it('refuses with the typed error when the global String or Object is rebound after the library loaded', async () => {
+    const { calls } = await rig()
+    const hold = calls['metering.hold']!
+    const base = await hold.base()
+    const original = { String: globalThis.String, Object: globalThis.Object }
+    Object.defineProperty(Object.prototype, 'zzPlantedName', { value: 1, configurable: true, writable: true, enumerable: false })
+    let thrown: unknown
+    try {
+      ;(globalThis as { String: unknown }).String = (): never => { throw new Error('rebound String') }
+      ;(globalThis as { Object: unknown }).Object = { prototype: {} }
+      try {
+        await Promise.resolve(hold.run(base)).catch((error: unknown) => (thrown = error))
+      } catch (error) {
+        thrown = error
+      }
+    } finally {
+      ;(globalThis as { String: unknown }).String = original.String
+      ;(globalThis as { Object: unknown }).Object = original.Object
+      Reflect.deleteProperty(Object.prototype, 'zzPlantedName')
+    }
+    expect(thrown).toBeInstanceOf(AiTokensException)
+    expect((thrown as AiTokensException).message).not.toContain('rebound')
   })
 })
