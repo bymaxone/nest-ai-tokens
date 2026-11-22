@@ -8,6 +8,7 @@
 
 import type { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
+import { fieldOf } from './field-names'
 
 /**
  * Write the line of an absorbed failure. The logger is the host's too (a `LoggerService` of Nest can throw), and a line that cannot be
@@ -72,7 +73,7 @@ export async function absorbHostCallAndWait(logger: Logger, key: string, call: (
  */
 export function absorbHostMethod(logger: Logger, key: string, target: object, method: string, args: readonly unknown[], optional = false): void {
   absorbHostCall(logger, key, () => {
-    const fn = Reflect.get(target, method) as (() => unknown) | undefined
+    const fn = fieldOf(target, method) as (() => unknown) | undefined
     return optional && fn === undefined ? undefined : Reflect.apply(fn as () => unknown, target, args)
   })
 }

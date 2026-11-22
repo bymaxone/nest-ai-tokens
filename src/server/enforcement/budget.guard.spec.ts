@@ -221,3 +221,47 @@ describe('BudgetGuard', () => {
     expect(request.aiTokens?.context.preset?.provider).toBe('openai')
   })
 })
+
+/** Plant `value` as `key` on `Object.prototype`, run `run`, and remove it, whatever `run` does. */
+async function planted<T>(key: string, value: unknown, run: () => Promise<T>): Promise<T> {
+  Object.defineProperty(Object.prototype, key, { value, configurable: true, writable: true, enumerable: false })
+  try {
+    return await run()
+  } finally {
+    Reflect.deleteProperty(Object.prototype, key)
+  }
+}
+
+describe('BudgetGuard reads the decorators of a handler as the handler\'s own', () => {
+  /** A key on Object.prototype named like an option of @RequireBudget is not one: it places no hold and re-attributes nothing. */
+  it('places no hold for a handler without an estimate when estimate is planted on Object.prototype', async () => {
+    const { guard, ledgerStore } = makeGuard()
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await planted('estimate', { amountNanoUsd: 5_000_000n }, () => guard.canActivate(executionContext(fixture.bare, request)))
+    expect(request.aiTokens?.hold).toBeUndefined()
+    expect(await ledgerStore.query({ tenantId: TENANT })).toEqual([])
+  })
+
+  it('keeps the feature of the context for a handler that names none when feature is planted', async () => {
+    const { guard } = makeGuard()
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await planted('feature', 'planted.feat', () => guard.canActivate(executionContext(fixture.bare, request)))
+    expect(request.aiTokens?.context.feature).toBe('default.feat')
+  })
+
+  it('carries no preset into the context of a handler that declares none when preset is planted', async () => {
+    const { guard } = makeGuard()
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await planted('preset', providerPresets.openaiChat, () => guard.canActivate(executionContext(fixture.required, request)))
+    expect(request.aiTokens?.context.preset).toBeUndefined()
+  })
+
+  /** What the handler declared still wins over a planted key. */
+  it('still places the hold a handler declares when a different estimate is planted', async () => {
+    const { guard } = makeGuard()
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await planted('estimate', { amountNanoUsd: 1n }, () => guard.canActivate(executionContext(fixture.withEstimate, request)))
+    expect(request.aiTokens?.hold?.estimatedCostNanoUsd).toBe(5_000_000n)
+  })
+})
+

@@ -27,7 +27,7 @@ import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
 import type { BudgetService, MeteringService } from '../services'
 import { suppliedDetails } from '../utils/detail-text'
-import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA } from './decorators'
+import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA, meterConfigOf, requireBudgetOf } from './decorators'
 import type { MeterConfig, RequireBudgetConfig } from './decorators'
 
 /** The request enrichment the guard attaches (the `AIGenerationGuard` parity contract). */
@@ -81,8 +81,8 @@ export class BudgetGuard implements CanActivate {
   async canActivate(executionContext: ExecutionContext): Promise<boolean> {
     const context = await this.scopeResolver(executionContext)
     const targets = [executionContext.getHandler(), executionContext.getClass()]
-    const meter = this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets)
-    const requireBudget = this.reflector.getAllAndOverride<RequireBudgetConfig | undefined>(REQUIRE_BUDGET_METADATA, targets)
+    const meter = meterConfigOf(this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets))
+    const requireBudget = requireBudgetOf(this.reflector.getAllAndOverride<RequireBudgetConfig | undefined>(REQUIRE_BUDGET_METADATA, targets))
     const aiFeature = this.reflector.getAllAndOverride<string | undefined>(AI_FEATURE_METADATA, targets)
     const feature = requireBudget?.feature ?? meter?.feature ?? aiFeature ?? context.feature
     const statuses = await this.budgets.status(context.tenantId, context.scope)

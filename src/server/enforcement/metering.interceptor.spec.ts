@@ -391,3 +391,68 @@ describe('MeteringInterceptor', () => {
     warnSpy.mockRestore()
   })
 })
+
+/** Plant `value` as `key` on `Object.prototype`, run `run`, and remove it, whatever `run` does. */
+async function planted<T>(key: string, value: unknown, run: () => Promise<T>): Promise<T> {
+  Object.defineProperty(Object.prototype, key, { value, configurable: true, writable: true, enumerable: false })
+  try {
+    return await run()
+  } finally {
+    Reflect.deleteProperty(Object.prototype, key)
+  }
+}
+
+describe('MeteringInterceptor reads the config of @Meter as the handler\'s own', () => {
+  const WALLET = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
+
+  /** A world with a funded wallet, the interceptor and a record spy. */
+  async function world(): Promise<{ built: ReturnType<typeof makeMetering>; interceptor: MeteringInterceptor }> {
+    const built = makeMetering(() => CONTEXT)
+    await seed(built.pricingStore)
+    await built.wallets.grant(WALLET, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    return { built, interceptor: new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT }) }
+  }
+
+  /** A key on Object.prototype named like an option is not an option of the handler: it must not make every metered call free. */
+  it('bills a handler that omits isSystemCost although isSystemCost is planted on Object.prototype', async () => {
+    const { built, interceptor } = await world()
+    await planted('isSystemCost', true, () => lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: normalized() }))))
+    expect((await built.wallets.getBalance(WALLET)).nanoUsd).toBe(93_750_000n)
+  })
+
+  /** What the handler declared still wins over a planted key. */
+  it('still records a handler that declares isSystemCost without a debit when false is planted', async () => {
+    const { built, interceptor } = await world()
+    await planted('isSystemCost', false, () => lastValueFrom(interceptor.intercept(executionContext(fixture.systemCost), handlerOf({ usage: normalized() }))))
+    expect((await built.wallets.getBalance(WALLET)).nanoUsd).toBe(100_000_000n)
+  })
+
+  /** A planted tags, preset or extract is not read as the handler's. */
+  it.each([
+    ['tags', ['planted']],
+    ['preset', providerPresets.openaiChat],
+  ])('passes no %s to record() when %s is planted and the handler declares none', async (key, value) => {
+    const { built, interceptor } = await world()
+    const record = jest.spyOn(built.metering, 'record')
+    await planted(key, value, () => lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: normalized() }))))
+    const input = record.mock.calls[0]![0]
+    expect(Object.keys(input.context)).not.toContain('tags')
+    expect(input.preset).toBeUndefined()
+    expect((await built.wallets.getBalance(WALLET)).nanoUsd).toBe(93_750_000n)
+  })
+
+  it('extracts the usage of a handler by the default when extract is planted', async () => {
+    const { built, interceptor } = await world()
+    await planted('extract', () => undefined, () => lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: normalized() }))))
+    expect((await built.wallets.getBalance(WALLET)).nanoUsd).toBe(93_750_000n)
+  })
+
+  it('sets no cost header on a handler that does not ask for them when exposeHeaders is planted', async () => {
+    const { interceptor } = await world()
+    const headers = new Map<string, string>()
+    const response = { setHeader: (name: string, value: string): void => void headers.set(name, value) }
+    await planted('exposeHeaders', true, () => lastValueFrom(interceptor.intercept(executionContext(fixture.metered, {}, response), handlerOf({ usage: normalized() }))))
+    expect([...headers.keys()]).toEqual([])
+  })
+})
+

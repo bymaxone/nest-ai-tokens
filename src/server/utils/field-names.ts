@@ -63,3 +63,24 @@ export function fieldOf(value: object, key: string): unknown {
     holder = next
   }
 }
+
+/**
+ * A copy of the named fields of an object the host supplied, read as fields (see {@link fieldOf}) and held by an object with no
+ * prototype: a field the host left out, or set to `undefined` or `null`, is absent, and a key planted on `Object.prototype` is neither
+ * read nor found by a later read of the copy.
+ *
+ * @param source The object, or `undefined`.
+ * @param names Every field of `T`, mapped to `true` so that the compiler keeps the list complete.
+ * @returns The copy, or `undefined` when there was no object.
+ * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
+ */
+export function fieldsOf<T extends object>(source: T | undefined, names: { readonly [K in keyof Required<T>]: true }): T | undefined {
+  if (source === undefined) return undefined
+  const kept = Object.create(null) as Record<string, unknown>
+  for (const name of Object.keys(names)) {
+    const value = fieldOf(source, name)
+    if (value !== undefined && value !== null) kept[name] = value
+  }
+  return kept as T
+}
+

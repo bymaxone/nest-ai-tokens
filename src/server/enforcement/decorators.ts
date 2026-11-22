@@ -13,6 +13,7 @@ import { SetMetadata } from '@nestjs/common'
 import type { CustomDecorator } from '@nestjs/common'
 import type { ProviderPreset, ScopeType } from '../../shared'
 import type { HoldEstimate } from '../interfaces'
+import { fieldsOf } from '../utils/field-names'
 
 // Stryker disable StringLiteral: these reflector metadata keys are used symmetrically (SetMetadata + getAllAndOverride); any unique string is equivalent
 /** Reflector key for {@link Meter} metadata. */
@@ -49,6 +50,33 @@ export interface RequireBudgetConfig {
   feature?: string
   /** A static estimate → the guard places a hold the interceptor settles. */
   estimate?: HoldEstimate
+}
+
+/** Every field of {@link MeterConfig}, so that a copy of the config names each one and the compiler keeps the list complete. */
+const METER_FIELDS: { readonly [K in keyof Required<MeterConfig>]: true } = { feature: true, scope: true, preset: true, extract: true, exposeHeaders: true, isSystemCost: true, tags: true }
+
+/** Every field of {@link RequireBudgetConfig}. */
+const REQUIRE_BUDGET_FIELDS: { readonly [K in keyof Required<RequireBudgetConfig>]: true } = { scope: true, feature: true, estimate: true }
+
+/**
+ * The `@Meter` config of a handler as the handler's own: a copy that holds the fields the decorator was given, so a key planted on
+ * `Object.prototype` (an `isSystemCost` that would make every call free) is not one of them.
+ *
+ * @param config What the reflector returned, or `undefined` when the handler has none.
+ * @returns The copy, or `undefined`.
+ */
+export function meterConfigOf(config: MeterConfig | undefined): MeterConfig | undefined {
+  return fieldsOf(config, METER_FIELDS)
+}
+
+/**
+ * The `@RequireBudget` config of a handler as the handler's own, copied as {@link meterConfigOf} does.
+ *
+ * @param config What the reflector returned, or `undefined` when the handler has none.
+ * @returns The copy, or `undefined`.
+ */
+export function requireBudgetOf(config: RequireBudgetConfig | undefined): RequireBudgetConfig | undefined {
+  return fieldsOf(config, REQUIRE_BUDGET_FIELDS)
 }
 
 /**
