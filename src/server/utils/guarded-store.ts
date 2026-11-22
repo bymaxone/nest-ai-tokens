@@ -17,6 +17,10 @@ import { assertCleanRealm } from './prototype-guard'
 /** Every proxy this module made, so that a store handed to two services is guarded once. */
 const GUARDED = new WeakSet()
 
+/** The `Promise.resolve` and `Promise.prototype.then` this module met when it loaded: a store result is settled through them, never through the live global. */
+const settle = Promise.resolve.bind(Promise) as (value: unknown) => Promise<unknown>
+const chain = Reflect.get(Promise.prototype, 'then') as (...args: unknown[]) => Promise<unknown>
+
 /**
  * Whether a value is what an asynchronous store method returns: a promise, or an object that is no record and has a `then` of its own or its
  * class's (a query builder of a client). A row is a record, so a row with a `then` of its own is a row and is never awaited.
@@ -62,7 +66,7 @@ export function guardedStore<T extends object>(store: T): T {
         // No call reaches a store beside a polluted realm, so nothing is written or reported there.
         assertCleanRealm()
         const result: unknown = Reflect.apply(value as (...parameters: unknown[]) => unknown, store, args.map((argument) => copied(argument)))
-        return isThenable(result) ? Promise.resolve(result).then((resolved) => copied(resolved)) : copied(result)
+        return isThenable(result) ? Reflect.apply(chain, settle(result), [(resolved: unknown) => copied(resolved)]) : copied(result)
       }
     },
     has: (_target, property) => Reflect.has(store, property),

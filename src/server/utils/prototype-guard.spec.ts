@@ -42,7 +42,7 @@ describe('the realm guard', () => {
       expect(pollutedNames()).toBe(1)
       const refused = refusal(() => assertCleanRealm())
       expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-      expect(refused?.reason).toContain('1 name(s)')
+      expect(refused?.reason).toContain('1 name(s) on the Object.prototype')
       expect(refused?.reason).not.toContain(name)
       expect(refused?.reason).not.toContain('secret-value')
     } finally {
@@ -191,7 +191,7 @@ describe('the realm guard', () => {
    * method of the realm back. Comments are removed first, so that prose may name what the code avoids. */
   it('is written with plain loops, captured references and no list, iterator, spread, destructuring of an array or method of the realm', () => {
     const source = readFileSync(join(__dirname, 'prototype-guard.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-    const start = source.indexOf('export function pollutedNames')
+    const start = source.indexOf('function countKeys')
     const body = source.slice(start, source.indexOf('let active', start))
     expect(body.length).toBeGreaterThan(200)
     for (const forbidden of [/\bfor\s*\(\s*(?:const|let)\s+[\w$[\]{},\s]+\s+of\b/, /\.\.\./, /\bnew\s+(?:Set|Map|WeakSet|WeakMap|Array)\b/, /\b(?:const|let)\s*\[/, /\]\s*=[^=]/, /\.(?:push|map|filter|forEach|some|every|includes|indexOf|slice|concat|entries|keys|values)\(/, /\bObject\.(?:keys|entries|values|assign)\b/]) {
@@ -200,7 +200,7 @@ describe('the realm guard', () => {
   })
 
   /** A name rebound to another object leaves every function of the original as it was: the baseline compares the binding. */
-  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Promise', 'Set', 'Map', 'WeakMap', 'ArrayBuffer', 'BigInt', 'Proxy', 'Error'])('counts the global %s rebound to another object, with nothing planted', (name) => {
+  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Set', 'Map', 'WeakMap', 'ArrayBuffer', 'BigInt', 'Proxy', 'Error', 'Date'])('counts the global %s rebound to another object, with nothing planted', (name) => {
     const original = getOf(globalThis, name) as unknown
     let counted = -1
     try {
@@ -265,7 +265,7 @@ describe('the realm guard', () => {
   it('records the functions that money, hashes and dates go through', () => {
     const wanted: [object, string][] = [
       [BigInt, 'asIntN'], [BigInt.prototype, 'toString'], [DataView.prototype, 'setUint32'], [TextEncoder.prototype, 'encode'], [Date, 'UTC'], [Date.prototype, 'toISOString'],
-      [Math, 'round'], [Object, 'values'], [Promise, 'all'], [Reflect, 'getPrototypeOf'], [Array.prototype, 'forEach'], [Array.prototype, 'reduce'], [String.prototype, 'padStart'],
+      [Math, 'round'], [Object, 'values'], [Reflect, 'getPrototypeOf'], [Array.prototype, 'forEach'], [Array.prototype, 'reduce'], [String.prototype, 'padStart'],
       [Map.prototype, 'set'], [Set.prototype, 'add'], [Number, 'isSafeInteger'], [JSON, 'stringify'], [Object.getPrototypeOf(Uint8Array.prototype) as object, 'fill'], [ArrayBuffer, 'isView'],
     ]
     for (const [owner, name] of wanted) expect(BUILT_INS.some((entry) => entry.owner === owner && entry.name === name)).toBe(true)

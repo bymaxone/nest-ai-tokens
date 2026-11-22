@@ -270,6 +270,102 @@ describe('the realm guard in the step of the arithmetic', () => {
   })
 })
 
+describe('the realm guard and Promise', () => {
+  /** Tracing and monitoring agents wrap the global `Promise` and its methods after load on healthy hosts: that is not a polluted realm. */
+  it('does not count a Promise wrapped as an agent wraps it, and a store call still works', async () => {
+    const { calls } = await rig()
+    const query = calls['ledger.query']!
+    const args = await query.base()
+    const original = { Promise: globalThis.Promise, then: Promise.prototype.then, resolve: Promise.resolve, all: Promise.all }
+    let counted = -1
+    let code: string | undefined = 'unset'
+    try {
+      Promise.prototype.then = function wrapped(this: Promise<unknown>, ...given: Parameters<Promise<unknown>['then']>): Promise<unknown> {
+        return original.then.apply(this, given)
+      } as never
+      Promise.resolve = ((value: unknown): Promise<unknown> => original.resolve.call(Promise, value)) as never
+      Promise.all = ((values: Iterable<unknown>): Promise<unknown[]> => original.all.call(Promise, values as never)) as never
+      ;(globalThis as { Promise: unknown }).Promise = class Traced extends original.Promise<unknown> {}
+      counted = pollutedNames()
+      code = await codeOf(() => query.run(args))
+    } finally {
+      ;(globalThis as { Promise: unknown }).Promise = original.Promise
+      Promise.prototype.then = original.then
+      Promise.resolve = original.resolve
+      Promise.all = original.all
+    }
+    expect(counted).toBe(0)
+    expect(code).toBeUndefined()
+  })
+
+  it('records no function of Promise or of its prototype', () => {
+    expect(BUILT_INS.some((entry) => (entry.owner as unknown) === Promise || (entry.owner as unknown) === Promise.prototype)).toBe(false)
+    expect(BUILT_INS.some((entry) => entry.owner === globalThis && entry.name === 'Promise')).toBe(false)
+  })
+})
+
+describe('the reason of the refusal', () => {
+  it('counts the names of Object.prototype and the built-ins apart, and names none', async () => {
+    const { calls } = await rig()
+    const record = calls['metering.record']!
+    const args = await record.base()
+    const reasonOf = async (): Promise<string> => {
+      try {
+        await record.run(args)
+      } catch (error) {
+        return ((error as AiTokensException).getResponse() as { error: { details: { reason: string } } }).error.details.reason
+      }
+      return ''
+    }
+    Object.defineProperty(Object.prototype, 'zzSecretName', { value: 'zzSecretValue', configurable: true, writable: true, enumerable: false })
+    const values = Object.values
+    let planted = ''
+    let replaced = ''
+    try {
+      planted = await reasonOf()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'zzSecretName')
+    }
+    try {
+      ;(Object as { values: unknown }).values = (): unknown[] => []
+      replaced = await reasonOf()
+    } finally {
+      ;(Object as { values: unknown }).values = values
+    }
+    expect(planted).toContain('1 name(s) on the Object.prototype')
+    expect(planted).toContain('and 0 built-in(s)')
+    expect(replaced).toContain('0 name(s) on the Object.prototype')
+    expect(replaced).toContain('and 1 built-in(s)')
+    expect(planted + replaced).not.toContain('zzSecret')
+  })
+})
+
+describe('the own fields of a typed error', () => {
+  /** The instance holds its response, status, message and name as its own, writable and configurable but not enumerable, whatever sits on a prototype. */
+  it.each([
+    ['response', undefined],
+    ['status', 402],
+    ['message', undefined],
+    ['name', 'AiTokensException'],
+  ])('defines %s as an own, hidden, writable and configurable field', (field, expected) => {
+    const error = new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS')
+    const described = Object.getOwnPropertyDescriptor(error, field)!
+    expect(described.writable).toBe(true)
+    expect(described.configurable).toBe(true)
+    expect(described.enumerable).toBe(false)
+    if (expected !== undefined) expect(described.value).toBe(expected)
+    expect(Object.keys(described).sort()).toEqual(['configurable', 'enumerable', 'value', 'writable'])
+  })
+
+  it('names itself and its text, and keeps its body', () => {
+    const error = new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS')
+    expect(error.name).toBe('AiTokensException')
+    expect(String(error)).toBe(`AiTokensException: ${error.message}`)
+    expect(error.message.length).toBeGreaterThan(0)
+    expect((error.getResponse() as { error: { code: string } }).error.code).toBe('AI_TOKENS_INSUFFICIENT_CREDITS')
+  })
+})
+
 describe('the realm guard and the modules it records', () => {
   it('reads descriptors only, so no getter of the owner runs while its functions are recorded', () => {
     let reads = 0

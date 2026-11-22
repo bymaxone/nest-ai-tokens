@@ -46,7 +46,7 @@ describe('every public method of the services under a polluted realm', () => {
       const call = calls[name]!
       const refused = await planted(async () => refusalOf(async () => call.run(await call.base())))
       expect({ name, code: refused?.code }).toEqual({ name, code: 'AI_TOKENS_INVALID_CONFIG' })
-      expect(refused?.reason).toContain('1 name(s)')
+      expect(refused?.reason).toContain('1 name(s) on the Object.prototype')
       expect(refused?.reason).not.toContain('zzSecretName')
       expect(refused?.reason).not.toContain('zzSecretValue')
       expect({ name, refused: await refusalOf(async () => call.run(await call.base())) }).toEqual({ name, refused: undefined })
@@ -75,7 +75,7 @@ describe('every public method of the services under a polluted realm', () => {
       ;(Object as { keys: unknown }).keys = keys
     }
     expect(refused?.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(refused?.reason).toContain('1 name(s)')
+    expect(refused?.reason).toContain('1 built-in(s)')
   })
 
   it('does not let the module start beside a planted key', async () => {
@@ -147,7 +147,7 @@ describe('the refusal of the guard and the exception it throws', () => {
     expect(error.getStatus()).toBe(500)
     const body = (error.getResponse() as { error: { code: string; details: { reason: string } } }).error
     expect(body.code).toBe('AI_TOKENS_INVALID_CONFIG')
-    expect(body.details.reason).toContain('1 name(s)')
+    expect(body.details.reason).toContain('1 name(s) on the Object.prototype')
     expect(error.message).toBe(AI_TOKENS_ERROR_MESSAGES.AI_TOKENS_INVALID_CONFIG)
     expect(error.name).toBe('AiTokensException')
     expect(Object.getPrototypeOf(error.getResponse())).toBeNull()

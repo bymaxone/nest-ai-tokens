@@ -34,15 +34,17 @@ const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<stri
  * The standard namespaces and constructors the library's call sites rely on. Every function-valued data property of each of them, and of its
  * prototype, is recorded when the module loads and compared by identity at every check, so no list of the functions the library calls has to be
  * kept: a function replaced after import, whichever it is, is counted. `Object.prototype` is left out, because it is compared by descriptor.
+ * `Promise` is left out too, and so are its prototype and its binding: tracing and monitoring agents wrap it after load on healthy hosts, so the
+ * code that reads a store result holds the one it met when it loaded.
  */
-const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
+const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
 /**
  * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
  * changes every call that goes through the name. `Date` is in the list: a fake-timer library replaces it, so a spec that installs one turns the
  * guard off through the test seam for as long as it runs.
  */
-const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
+const BOUND = 'Object Reflect Array JSON Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
 /** What the baseline compares: an owner, a name on it, and the function or object that name held when this module loaded. */
 interface Met {
@@ -192,12 +194,11 @@ function unchanged(have: PropertyDescriptor | undefined, want: PropertyDescripto
 
 /**
  * Counts the names of this realm's `Object.prototype` that a fresh realm's does not hold, that it lacks, or that it holds changed (its
- * enumerability, or a function whose text is not the engine's, or is not the one this module met), and the built-ins that are no longer the
- * ones it met.
+ * enumerability, or a function whose text is not the engine's, or is not the one this module met).
  *
- * @returns Zero for a clean realm.
+ * @returns Zero for a clean prototype.
  */
-export function pollutedNames(): number {
+function countKeys(): number {
   pristine ??= build()
   if (pristine === undefined) return 1
   const { descriptors, sourceOf } = pristine
@@ -217,11 +218,30 @@ export function pollutedNames(): number {
     // A name the fresh realm has and this one lacks is a standard name that was deleted.
     if (!hasOwn(now, item(wantKeys, index))) found += 1
   }
+  return found
+}
+
+/**
+ * Counts the built-ins that are no longer the ones this module met when it loaded.
+ *
+ * @returns Zero when every recorded function and binding is as it was.
+ */
+function countBuiltIns(): number {
+  let found = 0
   for (let index = 0; index < BUILT_INS.length; index += 1) {
     const entry = item(BUILT_INS, index)
     if (entry.owner[entry.name] !== entry.met) found += 1
   }
   return found
+}
+
+/**
+ * Counts what differs from the engine: the names of `Object.prototype` and the built-ins.
+ *
+ * @returns Zero for a clean realm.
+ */
+export function pollutedNames(): number {
+  return countKeys() + countBuiltIns()
 }
 
 /** Whether the guard is on. It is off only for the specs that prove the reads beneath it, through {@link withoutRealmGuard}. */
@@ -233,14 +253,15 @@ let active = true
  * `message` becomes the exception's text, an accessor under `response` swallows the body, a key that is read-only makes the constructor throw
  * and name it). The fields are defined as the instance's own, from references captured when the module loaded, and the body has no prototype.
  *
- * @param found The count of names the realm differs in.
+ * @param keys The count of names of `Object.prototype` that differ.
+ * @param builtIns The count of built-ins that are no longer the ones the library loaded with.
  * @returns The exception, with the code `AI_TOKENS_INVALID_CONFIG` and no name or value of the realm.
  */
-function refusal(found: number): AiTokensException {
+function refusal(keys: number, builtIns: number): AiTokensException {
   const code = 'AI_TOKENS_INVALID_CONFIG'
   const message = AI_TOKENS_ERROR_MESSAGES[code]
   const details = createObject(null) as Record<string, unknown>
-  details.reason = `the Object.prototype and the built-ins of this process differ from the engine's in ${stringOf(found)} name(s); the library will not bill beside them`
+  details.reason = `${stringOf(keys)} name(s) on the Object.prototype of this process differ from the engine's and ${stringOf(builtIns)} built-in(s) are not the ones the library loaded with; the library will not bill beside them`
   const fields = createObject(null) as { code: string; message: string; details: unknown }
   fields.code = code
   fields.message = message
@@ -273,9 +294,10 @@ function refusal(found: number): AiTokensException {
  */
 export function assertCleanRealm(): void {
   if (!active) return
-  const found = pollutedNames()
-  if (found === 0) return
-  throw refusal(found)
+  const keys = countKeys()
+  const builtIns = countBuiltIns()
+  if (keys + builtIns === 0) return
+  throw refusal(keys, builtIns)
 }
 
 /**
