@@ -98,7 +98,7 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheReadNanoUsdPerMillion: 125_000_000n,
       reasoningNanoUsdPerMillion: 10_000_000_000n,
     },
-    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls.
+    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls; the search content tokens arrive as input tokens, billed at the model's rate.
     unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: OpenAI pricing snapshot 2026-07 — Batch API ~50% of standard.
@@ -123,7 +123,7 @@ export const MODEL_PRICES_SEED: readonly SeedPriceRow[] = [
       cacheReadNanoUsdPerMillion: 25_000_000n,
       reasoningNanoUsdPerMillion: 2_000_000_000n,
     },
-    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls, not priced per model.
+    // source: OpenAI API pricing, Tools table, read 2026-11-21 (https://developers.openai.com/api/docs/pricing) — web search $10.00 / 1k calls, not priced per model; the search content tokens arrive as input tokens, billed at the model's rate.
     unitRates: { web_search_requests: 10_000_000n },
   }),
   // source: OpenAI pricing snapshot 2026-07 — text-embedding-3-small $0.02/M.
