@@ -803,7 +803,7 @@ specific to security is below.
   host normalized itself are refused, never clamped. A hold estimate above that bound is refused as `AI_TOKENS_INVALID_CONFIG` before
   anything is reserved.
 - **A process whose prototypes are not the engine's is refused.** The module does not start, and no call that moves, reads or reports money
-  runs (`record`, `hold`, `capture`, `release`, `reverse`, the wallet, budget, ledger, pricing and report methods, the sweeps), while this
+  runs, while this
   realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its enumerability, or a function
   that is not the engine's), or while a built-in the library calls (`Object.keys`, `Reflect.get`, `JSON.stringify`, `Array.prototype.map`,
   `Date.prototype.getTime`, `Promise.resolve`, and the others it relies on) is no longer the function it met when it loaded, or the name of a namespace or constructor it calls (`Object`, `Reflect`, `JSON`, `Math`, `Promise`, and the others it relies on) is rebound to another object. The refusal is
