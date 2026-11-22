@@ -10,6 +10,25 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.22] - 2026-11-22
+
+**Apply:** no migration and no option change is needed. This release closes one class of defect, found in every earlier release: a key put on `Object.prototype` (by another library, or by prototype pollution) was read as a value the host had supplied, in the options of the module, the metadata of `@Meter` and `@RequireBudget`, the usage a handler returns, the rows and optional methods of a store and the inputs the PostgreSQL adapter binds. Read the **Changed** entries: the records the services hand back are now copies, and a few inputs that were read through the prototype are refused or ignored.
+
+### Fixed
+
+- A planted key can no longer change what is billed or blocked. A key on `Object.prototype` named like an option (`strict`, `failClosed`, `settlement.enabled`, `wallets.overdraftNanoUsd`, `holds.ttlSeconds`, `ratingMode`, `markup`), like a field of `@Meter` or `@RequireBudget` (`isSystemCost`, `estimate`, `feature`, `preset`, `tags`, `extract`, `exposeHeaders`), like a field of the handler's result (`usage`), like a model (`constructor`, `toString`) or like a field of the request the guard enriched (`hold`) was taken for something the host set: a planted `isSystemCost` made every metered call free, a planted `strict=false` turned off the missing-price refusal, a planted `usage` was billed instead of refused with `AI_TOKENS_USAGE_MALFORMED`, and a planted `hold` was captured when the guard had placed none. They are read as the host's own fields (an own field, or one the host's class defines; a getter of a class still counts) and never from the root of the prototype chain.
+- A planted key can no longer be persisted by the PostgreSQL adapter. The adapter binds the optional names of its inputs from plain objects, so a planted `limitTokens` of 0 became a hard token limit on a budget (every later call blocked), a planted `cacheReadNanoUsdPerMillion`, `tier*` or `unitRates` became the price of a model (also on the seed path of `seedFromSnapshot`), and a planted `extraUnits`, `requestedModel`, `beneficiary` or `expiresAt` went into a usage row or a wallet entry. Every argument a store takes is copied first, and the price snapshot builds its rows from their own keys, so a key planted before the first import no longer ends up in a seeded row.
+- A planted key can no longer change how a service reads a row a store returned. A planted `extraUnits` on a stored hold billed a captured call at the table rate plus the planted units (10,006,250,000 nano-USD instead of 6,250,000), a planted `reversesRecordId` reconciled a budget count wrongly, a planted `features` exempted an exhausted budget, and a stored budget row with no `tenantId` and a planted `tenantId` passed the tenant check. The services read the rows of every store, the library's and the host's, as copies that hold only what the row has.
+- A function planted under the name of an optional method of a store (`findStaleReferences`, `pruneApplication`, `pruneGivenBack`, `pruneGivenBackExcept`, `findDebitsBefore`, `findEffectsOwed`, `findEffectsOwedFor`, `clearEffectsOwed`, `seedPrice`, `summarize`) or of a sink is no longer called as the host's.
+- A hold estimate above what a ledger row stores (2,147,483,647 tokens) is refused with `AI_TOKENS_INVALID_CONFIG` before anything is reserved, and a pending hold replayed with different tool units is refused with `AI_TOKENS_IDEMPOTENCY_CONFLICT`, as `record()` does.
+
+### Changed
+
+- The records a service returns as a store returned them (`UsageRecord`, `Budget`, wallet entries and price versions) are copies that have no prototype: they carry the same fields and serialize the same, but `record.hasOwnProperty(...)`, `record.toString()` and `record instanceof Class` are no longer available on them (use `Object.hasOwn(record, name)` and read the fields). A getter of a class a store's row is an instance of is read once and counts as a field; a field defined as not enumerable is still a field. A host that mutated a returned record expecting the store to change must call the store.
+- A record or list nested deeper than 8 levels, in an argument a store takes or a row it returns, is refused with `AI_TOKENS_INVALID_CONFIG` instead of being handed on. Records a store keeps are two or three levels deep.
+- A frozen or sealed store object can be given to the services; its methods are wrapped, and a method it lacks stays absent.
+- A key that another library put on `Object.prototype` under the name of an optional field of a host option or input (`limitTokens`, `features`, `expiresAt`, a rate) no longer counts. A host that relied on an inherited default put on `Object.prototype` must set the option or the field itself.
+
 ## [1.1.21] - 2026-11-21
 
 **Apply:** no migration and no option change is needed. This release fixes billing defects in the usage of a call, all of them present in earlier releases, and some of its changes refuse a usage or a call that an earlier release billed (see Changed). Check a host that passes its own normalized usage or normalizer, and a host that bills tool units.
@@ -1292,4 +1311,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.19]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.18...v1.1.19
 [1.1.20]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.19...v1.1.20
 [1.1.21]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.20...v1.1.21
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...HEAD
+[1.1.22]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...v1.1.22
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...HEAD
