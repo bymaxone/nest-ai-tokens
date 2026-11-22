@@ -7,7 +7,7 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
-import { runInNewContext } from 'node:vm'
+import { createContext, runInContext, runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
 import { assertWalletRef, keysOf, readField } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
@@ -757,16 +757,21 @@ describe('a chain that ends in an object the host built', () => {
     expect(readField(Object.prototype, 'hasOwnProperty', 'input')).toBe(Object.prototype.hasOwnProperty)
   })
 
-  it.each([
-    ['this realm', (): object => Object.prototype],
-    ['another realm', (): object => runInNewContext('Object.prototype') as object],
-  ])('does not read a key planted on the Object.prototype of %s after its constructor is overwritten or deleted', (_name, root) => {
-    const prototype = root() as Record<string, unknown>
+  /** A realm: its `Object.prototype`, and a host object that is made in that same realm, so that the pollution is the one the object inherits. */
+  function realmOf(name: 'this realm' | 'another realm'): { root: Record<string, unknown>; host: () => object } {
+    if (name === 'this realm') return { root: Object.prototype as unknown as Record<string, unknown>, host: () => ({ a: 1 }) }
+    const context = createContext({})
+    return { root: runInContext('Object.prototype', context) as Record<string, unknown>, host: () => runInContext('({ a: 1 })', context) as object }
+  }
+
+  it.each(['this realm', 'another realm'] as const)('does not read a key planted on the Object.prototype of %s after its constructor is overwritten or deleted', (name) => {
+    const { root: prototype, host } = realmOf(name)
     const saved = Object.getOwnPropertyDescriptor(prototype, 'constructor')
     const planted = ['isSystemCost', 'limit']
     try {
       for (const key of planted) Object.defineProperty(prototype, key, { value: 1, configurable: true, writable: true, enumerable: false })
-      const host = (): object => (root() === Object.prototype ? { a: 1 } : (runInNewContext('({ a: 1 })') as object))
+      expect(Object.getPrototypeOf(host())).toBe(prototype)
+      expect((host() as Record<string, unknown>).isSystemCost).toBe(1)
       for (const change of [() => Object.defineProperty(prototype, 'constructor', { value: 5, configurable: true, writable: true }), () => Reflect.deleteProperty(prototype, 'constructor')]) {
         change()
         expect(readField(host(), 'isSystemCost', 'input')).toBeUndefined()
