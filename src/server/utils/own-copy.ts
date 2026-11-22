@@ -21,13 +21,29 @@ function isPlain(value: object): boolean {
 }
 
 /**
- * Whether `value` is a built-in object that is handed on whole. It is known by its internal slot, which `util.types` reads without running
- * anything on the value, never by the tag it claims: an own `Symbol.toStringTag`, or one planted on `Object.prototype`, names any record a
- * Date or a Map, and a call such as `RegExp.prototype.test` would change the `lastIndex` of the value it tests. A plain object is none, so
- * only the other objects are tested.
+ * The tests of the built-in objects that are handed on whole. Each reads the internal slot of the value through `util.types` and runs nothing
+ * on it, which a call such as `RegExp.prototype.test` would (it changes the `lastIndex` of a global RegExp), and none consults the tag the
+ * value claims: an own `Symbol.toStringTag`, or one planted on `Object.prototype`, names any record a Date or a Map.
  */
+const BUILT_INS: readonly ((value: object) => boolean)[] = [
+  types.isDate,
+  types.isRegExp,
+  types.isMap,
+  types.isSet,
+  types.isWeakMap,
+  types.isWeakSet,
+  types.isAnyArrayBuffer,
+  types.isArrayBufferView,
+  types.isPromise,
+  types.isBoxedPrimitive,
+  types.isGeneratorObject,
+  types.isMapIterator,
+  types.isSetIterator,
+]
+
+/** Whether `value` is one of the {@link BUILT_INS}. A plain object is none, so only the other objects are tested. */
 function isBuiltIn(value: object): boolean {
-  return types.isDate(value) || types.isMap(value) || types.isSet(value) || types.isWeakMap(value) || types.isWeakSet(value) || types.isRegExp(value) || types.isAnyArrayBuffer(value) || ArrayBuffer.isView(value)
+  return BUILT_INS.some((is) => is(value))
 }
 
 /**

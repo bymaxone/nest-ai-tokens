@@ -8,6 +8,11 @@
 import { runInNewContext } from 'node:vm'
 import { ownCopy } from './own-copy'
 
+/** The wrapper object of a primitive. */
+function boxed(value: unknown): object {
+  return Object(value) as object
+}
+
 describe('ownCopy', () => {
   /** The copy has no prototype, so a name it lacks is undefined however it is read. */
   it('copies a plain object into one with no prototype and keeps its own keys', () => {
@@ -134,10 +139,64 @@ describe('ownCopy and a spoofed type tag', () => {
     }
   })
 
-  /** The built-in objects are recognised by what they are, not by what they say: each is handed on whatever the root says. */
-  it('hands on a Date, a Map, a Set, a typed array and a buffer, of this realm and of another', () => {
-    const values = [new Date(0), new Map(), new Set(), new WeakMap(), new WeakSet(), new Uint8Array(2), new ArrayBuffer(2), /x/u, runInNewContext('new Date(0)') as Date, runInNewContext('new Map()') as Map<unknown, unknown>]
-    for (const value of values) expect(ownCopy(value)).toBe(value)
+  /** Every built-in object is recognised by its internal slot, in this realm and in another, and handed on whatever tag the root claims. */
+  const BUILT_INS: [string, () => object][] = [
+    ['a Date', () => new Date(0)],
+    ['a RegExp', () => /x/gu],
+    ['a sticky RegExp', () => /x/y],
+    ['a Map', () => new Map([['k', 1]])],
+    ['a Set', () => new Set([1])],
+    ['a WeakMap', () => new WeakMap()],
+    ['a WeakSet', () => new WeakSet()],
+    ['an ArrayBuffer', () => new ArrayBuffer(2)],
+    ['a SharedArrayBuffer', () => new SharedArrayBuffer(2)],
+    ['a Uint8Array', () => new Uint8Array(2)],
+    ['a Float64Array', () => new Float64Array(2)],
+    ['a BigInt64Array', () => new BigInt64Array(2)],
+    ['a DataView', () => new DataView(new ArrayBuffer(2))],
+    ['a Buffer', () => Buffer.from('ab')],
+    ['a Promise', () => Promise.resolve(1)],
+    ['a boxed Number', () => boxed(1)],
+    ['a boxed String', () => boxed('s')],
+    ['a boxed Boolean', () => boxed(true)],
+    ['a boxed BigInt', () => boxed(1n)],
+    ['a boxed Symbol', () => boxed(Symbol('s'))],
+    ['a generator object', () => (function* () { yield 1 })()],
+    ['a Map iterator', () => new Map([['k', 1]]).keys()],
+    ['a Set iterator', () => new Set([1]).values()],
+  ]
+  const FOREIGN: Record<string, string> = {
+    'a Date': 'new Date(0)', 'a RegExp': '/x/g', 'a Map': 'new Map()', 'a Set': 'new Set()', 'a Uint8Array': 'new Uint8Array(2)', 'an ArrayBuffer': 'new ArrayBuffer(2)', 'a Promise': 'Promise.resolve(1)', 'a boxed Number': 'Object(1)',
+  }
+
+  it.each(BUILT_INS)('hands on %s as the same object, whatever the root claims to be', (_name, make) => {
+    const value = make()
+    expect(ownCopy(value)).toBe(value)
+    expect(ownCopy({ nested: value }).nested).toBe(value)
+    Object.defineProperty(Object.prototype, Symbol.toStringTag, { value: 'Object', configurable: true, writable: true, enumerable: false })
+    try {
+      expect(ownCopy(value)).toBe(value)
+    } finally {
+      Reflect.deleteProperty(Object.prototype, Symbol.toStringTag)
+    }
+  })
+
+  it.each(Object.entries(FOREIGN))('hands on %s of another realm as the same object', (_name, source) => {
+    const value = runInNewContext(source) as object
+    expect(ownCopy(value)).toBe(value)
+  })
+
+  /** What only looks like a built-in is a record: it is copied by its fields, and nothing it claims makes it otherwise. */
+  it.each([
+    ['an object made on the prototype of Date', () => Object.create(Date.prototype) as object],
+    ['an object that claims to be a Map', () => ({ [Symbol.toStringTag]: 'Map', id: 'r1' })],
+    ['an instance of a class that defines getTime and has', () => new (class Row { readonly id = 'r1'; getTime(): number { return 1 }; has(): boolean { return true } })()],
+    ['a Proxy of a record', () => new Proxy({ id: 'r1' }, {})],
+  ])('copies %s as a record', (_name, make) => {
+    const value = make()
+    const copy = ownCopy(value)
+    expect(copy).not.toBe(value)
+    expect(Object.getPrototypeOf(copy)).toBeNull()
   })
 })
 
