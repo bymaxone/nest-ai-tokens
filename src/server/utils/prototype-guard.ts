@@ -126,26 +126,20 @@ export function pollutedNames(): number {
   const now = getDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
   const nowKeys = ownKeysOf(now)
   const wantKeys = ownKeysOf(descriptors)
-  // A symbol counts when it is enumerable, as an assignment through a polluted path plants it; a symbol made with defineProperty and hidden
-  // needs code that already runs in the process.
-  const names: (string | symbol)[] = []
+  let found = 0
+  // The scan builds no list and writes no array: an element assigned to an array goes through the setters of its prototype chain, where an
+  // index accessor planted on `Object.prototype` or `Array.prototype` would swallow it. A name is counted once: the names of this realm first,
+  // then the names of the fresh realm that this realm lacks.
   for (let index = 0; index < nowKeys.length; index += 1) {
     const name = item(nowKeys, index)
-    if (typeof name === 'string' || field(now[name], 'enumerable') === true) names[names.length] = name
+    // A symbol counts when it is enumerable, as an assignment through a polluted path plants it; a symbol made with defineProperty and hidden
+    // needs code that already runs in the process.
+    if (typeof name !== 'string' && field(now[name], 'enumerable') !== true) continue
+    if (!unchanged(now[name], hasOwn(descriptors, name) ? descriptors[name] : undefined, name, sourceOf)) found += 1
   }
   for (let index = 0; index < wantKeys.length; index += 1) {
-    const name = item(wantKeys, index)
-    let seen = false
-    for (let other = 0; other < names.length; other += 1) if (item(names, other) === name) seen = true
-    if (!seen) names[names.length] = name
-  }
-  let found = 0
-  for (let index = 0; index < names.length; index += 1) {
-    const name = item(names, index)
-    // An absent descriptor reads every field as undefined, so a deleted name and a planted one differ at once.
-    const have = hasOwn(now, name) ? now[name] : undefined
-    const want = hasOwn(descriptors, name) ? descriptors[name] : undefined
-    if (!unchanged(have, want, name, sourceOf)) found += 1
+    // A name the fresh realm has and this one lacks is a standard name that was deleted.
+    if (!hasOwn(now, item(wantKeys, index))) found += 1
   }
   for (let index = 0; index < BUILT_INS.length; index += 1) {
     const entry = item(BUILT_INS, index)

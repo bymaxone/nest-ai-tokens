@@ -6,6 +6,8 @@
  */
 
 import type * as RealVm from 'node:vm'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
 import { assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
@@ -150,6 +152,36 @@ describe('the realm guard', () => {
     }
     expect(counted).toBeGreaterThanOrEqual(1)
     expect(pollutedNames()).toBe(0)
+  })
+
+  /** An element assigned to an array goes through the setters of its prototype chain: an index accessor planted there must not swallow what the scan keeps. */
+  it.each([
+    ['Object.prototype', Object.prototype],
+    ['Array.prototype', Array.prototype],
+  ])('still counts a planted key when an index accessor that swallows every write is planted on %s', (_name, owner) => {
+    Object.defineProperty(owner, '0', { set(): void { /* swallows the write */ }, get: (): undefined => undefined, configurable: true })
+    Object.defineProperty(Object.prototype, 'zzPlantedName', { value: 1, configurable: true, writable: true, enumerable: false })
+    let counted = 0
+    try {
+      counted = pollutedNames()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'zzPlantedName')
+      Reflect.deleteProperty(owner, '0')
+    }
+    expect(counted).toBeGreaterThanOrEqual(1)
+    expect(pollutedNames()).toBe(0)
+  })
+
+  /** The scan is built from a few things no polluter can replace: pinned in its text, so that a later edit cannot bring an iterator, a list or a
+   * method of the realm back. Comments are removed first, so that prose may name what the code avoids. */
+  it('is written with plain loops, captured references and no list, iterator, spread, destructuring of an array or method of the realm', () => {
+    const source = readFileSync(join(__dirname, 'prototype-guard.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const start = source.indexOf('export function pollutedNames')
+    const body = source.slice(start, source.indexOf('let active', start))
+    expect(body.length).toBeGreaterThan(200)
+    for (const forbidden of [/\bfor\s*\(\s*(?:const|let)\s+[\w$[\]{},\s]+\s+of\b/, /\.\.\./, /\bnew\s+(?:Set|Map|WeakSet|WeakMap|Array)\b/, /\b(?:const|let)\s*\[/, /\]\s*=[^=]/, /\.(?:push|map|filter|forEach|some|every|includes|indexOf|slice|concat|entries|keys|values)\(/, /\bObject\.(?:keys|entries|values|assign)\b/]) {
+      expect(forbidden.test(body)).toBe(false)
+    }
   })
 
   it('compares with the Object.prototype of a fresh realm, so it holds in a process that runs another realm too', () => {
