@@ -10,6 +10,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
+import { fieldOf } from '../utils/field-names'
 import { isBudgetPolicy, isRatingMode } from '../utils/enum-guards'
 import { withoutNullish } from './without-nullish'
 import { isFraction, isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
@@ -127,15 +128,15 @@ const NULL_REFUSED_GROUPS = ['budgets', 'wallets', 'ledger'] as const
  */
 function validateProtections(given: BymaxAiTokensModuleOptions): void {
   for (const group of NULL_REFUSED_GROUPS) {
-    const value: unknown = Reflect.get(given, group)
+    const value: unknown = fieldOf(given, group)
     if (value === null) {
       // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       throw invalidConfig(`${group} must be an object, or left out`)
     }
   }
-  const ledger: unknown = Reflect.get(given, 'ledger')
+  const ledger: unknown = fieldOf(given, 'ledger')
   if (typeof ledger !== 'object' || ledger === null) return
-  const hashChain: unknown = Reflect.get(ledger, 'hashChain')
+  const hashChain: unknown = fieldOf(ledger, 'hashChain')
   // The flag is read as truthy, so a string such as 'false' would switch the chain on, and null is not a way to leave it off.
   if (hashChain !== undefined && typeof hashChain !== 'boolean') {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
@@ -173,7 +174,7 @@ function validateShapes(options: BymaxAiTokensModuleOptions): void {
     if (value !== undefined && (typeof value !== 'object' || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
   }
   for (const [group, name] of SWITCH_OPTIONS) {
-    const value: unknown = Reflect.get(Reflect.get(options, group) ?? {}, name)
+    const value: unknown = Reflect.get(Reflect.get(options, group) ?? Object.create(null), name)
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (value !== undefined && typeof value !== 'boolean') throw invalidConfig(`${group}.${name} must be true or false`)
   }
