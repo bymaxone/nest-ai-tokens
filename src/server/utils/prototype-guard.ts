@@ -22,25 +22,53 @@ interface Pristine {
 /** What the prototype held when this module loaded, so a name swapped for another native function is caught by identity. */
 const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
 
-/** The built-ins the library calls, by owner and name: each is compared with the function this module met when it loaded. */
-const BUILT_INS: readonly (readonly [object, string])[] = [
-  [Object, 'hasOwn'], [Object, 'getPrototypeOf'], [Object, 'keys'], [Object, 'getOwnPropertyNames'], [Object, 'create'], [Object, 'entries'],
-  [Object, 'defineProperty'], [Object, 'getOwnPropertyDescriptor'], [Object, 'getOwnPropertyDescriptors'], [Object, 'assign'], [Object, 'fromEntries'], [Object, 'freeze'],
-  [Reflect, 'get'], [Reflect, 'ownKeys'], [Reflect, 'apply'], [Reflect, 'has'], [Array, 'isArray'], [Array, 'from'],
-  [Number, 'isSafeInteger'], [Number, 'isInteger'], [Number, 'isFinite'], [JSON, 'stringify'], [Object.prototype, 'hasOwnProperty'],
-  [Array.prototype, 'map'], [Array.prototype, 'filter'], [Array.prototype, 'includes'], [Array.prototype, 'find'], [Array.prototype, 'some'],
-  [Array.prototype, 'every'], [Array.prototype, 'sort'], [Array.prototype, 'slice'], [Array.prototype, 'join'], [Array.prototype, 'push'],
-  [String.prototype, 'startsWith'], [String.prototype, 'includes'], [Date.prototype, 'getTime'], [Date, 'now'], [Math, 'floor'],
-  [ArrayBuffer, 'isView'], [Set.prototype, 'has'], [Map.prototype, 'get'], [WeakMap.prototype, 'get'], [Promise, 'resolve'], [Function.prototype, 'call'],
-  [Function.prototype, 'apply'], [Function.prototype, 'bind'],
-  // The bindings of the namespaces and constructors the library calls, which its call sites resolve when they run: a name rebound to another
-  // object leaves every function above as it was and changes every call that goes through the name.
-  [globalThis, 'Object'], [globalThis, 'Reflect'], [globalThis, 'Array'], [globalThis, 'JSON'], [globalThis, 'Math'], [globalThis, 'Number'],
-  [globalThis, 'String'], [globalThis, 'Promise'], [globalThis, 'Set'], [globalThis, 'Map'], [globalThis, 'WeakMap'], [globalThis, 'ArrayBuffer'],
-]
+/**
+ * The standard namespaces and constructors the library's call sites rely on. Every function-valued data property of each of them, and of its
+ * prototype, is recorded when the module loads and compared by identity at every check, so no list of the functions the library calls has to be
+ * kept: a function replaced after import, whichever it is, is counted. `Object.prototype` is left out, because it is compared by descriptor.
+ */
+const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array'
 
-/** The built-ins as this module met them. */
-const metBuiltIns: readonly unknown[] = BUILT_INS.map(([owner, name]) => (owner as Record<string, unknown>)[name])
+/**
+ * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
+ * changes every call that goes through the name. `Date` is left out: a fake-timer library replaces the global as a whole and leaves the
+ * object, and every function on it, as it was.
+ */
+const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Symbol RegExp Function Uint8Array'
+
+/** What the baseline compares: an owner, a name on it, and the function or object that name held when this module loaded. */
+interface Met {
+  readonly owner: Record<string | symbol, unknown>
+  readonly name: string | symbol
+  readonly met: unknown
+}
+
+/**
+ * Everything the baseline compares: the functions of {@link STANDARD}, then the bindings of {@link BOUND}. Exported for the specs only; no entry
+ * of the package re-exports it.
+ */
+export const BUILT_INS: readonly Met[] = (() => {
+  const owners: object[] = []
+  const typedArray = Object.getPrototypeOf(Uint8Array) as { prototype: object }
+  for (const name of STANDARD.split(' ')) {
+    const constructor = Reflect.get(globalThis, name) as { prototype?: unknown }
+    owners.push(constructor)
+    if (typeof constructor.prototype === 'object' && constructor.prototype !== null && constructor.prototype !== Object.prototype) owners.push(constructor.prototype)
+  }
+  owners.push(typedArray, typedArray.prototype)
+  const found: Met[] = []
+  for (const owner of owners) {
+    for (const name of Reflect.ownKeys(owner)) {
+      const value: unknown = Object.getOwnPropertyDescriptor(owner, name)?.value
+      if (typeof value === 'function') found.push({ owner: owner as Met['owner'], name, met: value })
+    }
+  }
+  for (const name of BOUND.split(' ')) {
+    const bound: unknown = Reflect.get(globalThis, name)
+    found.push({ owner: globalThis, name, met: bound })
+  }
+  return found
+})()
 
 /**
  * Builds a fresh realm and reads its `Object.prototype` and a reader of function text. The `vm` module reads its options from objects it
@@ -154,7 +182,7 @@ export function pollutedNames(): number {
   }
   for (let index = 0; index < BUILT_INS.length; index += 1) {
     const entry = item(BUILT_INS, index)
-    if ((item(entry, 0) as Record<string, unknown>)[item(entry, 1) as string] !== item(metBuiltIns, index)) found += 1
+    if (entry.owner[entry.name] !== entry.met) found += 1
   }
   return found
 }

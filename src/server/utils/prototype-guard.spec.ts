@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
-import { assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
+import { BUILT_INS, assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
 
 /** Captured here, because the rows below rebind `Reflect` and must still be able to put it back. */
 const getOf = Reflect.get
@@ -200,6 +200,40 @@ describe('the realm guard', () => {
     }
     expect(counted).toBe(1)
     expect(pollutedNames()).toBe(0)
+  })
+
+  /** No list of the functions the library calls is kept: every function of the standard namespaces and constructors is recorded, and replacing any
+   * one of them, whichever, is counted. */
+  it('counts every recorded function that is replaced, one at a time', () => {
+    const defineOf = Object.defineProperty
+    const descriptorOf = Object.getOwnPropertyDescriptor
+    const missed: string[] = []
+    let replaced = 0
+    for (const { owner, name } of BUILT_INS) {
+      const original = descriptorOf(owner, name)
+      if (!original?.configurable) continue
+      let counted = -1
+      try {
+        defineOf(owner, name, { ...original, value: function lying(): void { /* replaced */ } })
+        counted = pollutedNames()
+      } finally {
+        defineOf(owner, name, original)
+      }
+      replaced += 1
+      if (counted !== 1) missed.push(String(name) + ':' + String(counted))
+    }
+    expect(replaced).toBeGreaterThan(300)
+    expect(missed).toEqual([])
+    expect(pollutedNames()).toBe(0)
+  })
+
+  it('records the functions that money, hashes and dates go through', () => {
+    const wanted: [object, string][] = [
+      [BigInt, 'asIntN'], [BigInt.prototype, 'toString'], [DataView.prototype, 'setUint32'], [TextEncoder.prototype, 'encode'], [Date, 'UTC'], [Date.prototype, 'toISOString'],
+      [Math, 'round'], [Object, 'values'], [Promise, 'all'], [Reflect, 'getPrototypeOf'], [Array.prototype, 'forEach'], [Array.prototype, 'reduce'], [String.prototype, 'padStart'],
+      [Map.prototype, 'set'], [Set.prototype, 'add'], [Number, 'isSafeInteger'], [JSON, 'stringify'], [Object.getPrototypeOf(Uint8Array.prototype) as object, 'fill'], [ArrayBuffer, 'isView'],
+    ]
+    for (const [owner, name] of wanted) expect(BUILT_INS.some((entry) => entry.owner === owner && entry.name === name)).toBe(true)
   })
 
   it('compares with the Object.prototype of a fresh realm, so it holds in a process that runs another realm too', () => {
