@@ -42,20 +42,32 @@ function copied<T>(value: T): T {
 /**
  * The store, with each method wrapped so that its arguments and what it resolves with are copies that hold only what they have.
  *
+ * The proxy stands on an empty object of its own, not on the store, so that a store whose properties cannot be changed (a frozen object, a
+ * property that is not configurable) can still be given a wrapper for a method: a proxy may not answer a property of its target with another
+ * value when that property is neither writable nor configurable. Every other question about the store (its keys, its prototype, whether it has
+ * a name) is put to the store itself, so a method it lacks is still absent.
+ *
  * @param store The store a service was given.
  * @returns The guarded store, which answers every property as the store does.
  */
 export function guardedStore<T extends object>(store: T): T {
   if (GUARDED.has(store)) return store
-  const guarded = new Proxy(store, {
-    get(target, property) {
-      if (typeof property !== 'string') return Reflect.get(target, property) as unknown
-      const value = fieldOf(target, property)
+  const guarded = new Proxy({} as T, {
+    get(_target, property) {
+      if (typeof property !== 'string') return Reflect.get(store, property) as unknown
+      const value = fieldOf(store, property)
       if (typeof value !== 'function') return value
       return (...args: unknown[]): unknown => {
-        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(target, args.map((argument) => copied(argument)))
+        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(store, args.map((argument) => copied(argument)))
         return isThenable(result) ? Promise.resolve(result).then((resolved) => copied(resolved)) : copied(result)
       }
+    },
+    has: (_target, property) => Reflect.has(store, property),
+    ownKeys: () => Reflect.ownKeys(store),
+    getPrototypeOf: () => Reflect.getPrototypeOf(store),
+    getOwnPropertyDescriptor(_target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(store, property)
+      return descriptor === undefined ? undefined : { ...descriptor, configurable: true }
     },
   })
   GUARDED.add(guarded)

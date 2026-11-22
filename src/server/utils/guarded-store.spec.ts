@@ -134,6 +134,35 @@ describe('guardedStore', () => {
     expect(nameOf(() => guarded.broken())).toBe('TypeError')
   })
 
+  /** A store the host froze cannot have its properties changed, and the proxy must not have to: its methods are still wrapped. */
+  it('guards a frozen plain-object store and a store with a method that is not configurable', async () => {
+    const frozen = Object.freeze({ findById: (id: string): Promise<{ id: string }> => Promise.resolve({ id }), label: 'frozen' })
+    const guarded = guardedStore(frozen)
+    const row = await guarded.findById('r1')
+    expect(Object.getPrototypeOf(row)).toBeNull()
+    expect(row.id).toBe('r1')
+    expect(guarded.label).toBe('frozen')
+    const sealed = Object.defineProperty({}, 'find', { value: (): { id: string } => ({ id: 's1' }), writable: false, configurable: false, enumerable: true }) as { find(): { id: string } }
+    expect(Object.getPrototypeOf(guardedStore(sealed).find())).toBeNull()
+  })
+
+  it('answers the questions about its keys and its names as the store does', () => {
+    class Store {
+      readonly label = 'store'
+      find(): { id: string } {
+        return { id: 'c1' }
+      }
+    }
+    const store = new Store()
+    const guarded = guardedStore(store)
+    expect('find' in guarded).toBe(true)
+    expect('absent' in guarded).toBe(false)
+    expect(Object.keys(guarded)).toEqual(['label'])
+    expect(Object.getPrototypeOf(guarded)).toBe(Store.prototype)
+    expect(Object.getOwnPropertyDescriptor(guarded, 'label')?.value).toBe('store')
+    expect(Object.getOwnPropertyDescriptor(guarded, 'absent')).toBeUndefined()
+  })
+
   it('lets what a method throws through, as the store raised it', () => {
     const store = { fail: (): never => { throw new Error('boom') } }
     expect(() => guardedStore(store).fail()).toThrow('boom')
