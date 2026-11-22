@@ -55,7 +55,7 @@ export const GROUP_KEYS: { readonly [G in GroupName]: Keys<NonNullable<Options[G
   content: { store: true, mask: true, ttlSeconds: true },
 }
 
-/** A copy of `source` with the entries of `names` that it holds a value for, read by property access so a getter of the prototype counts. */
+/** A copy of `source` with the entries of `names` that it holds a value for, read as fields (see `fieldOf`): a getter of the host's class counts, a key of `Object.prototype` does not. */
 function valuesOf<T extends object>(source: T, names: Keys<T>): T {
   // No prototype: a key that another library planted on `Object.prototype` is not an option the host gave, and a read of this copy never finds one.
   const kept = Object.create(null) as Record<string, unknown>
