@@ -58,8 +58,7 @@ function invalidConfig(reason: string): AiTokensException {
 
 /** The first method name in `methods` that is not a function on `store`, or `undefined`. */
 function firstMissingMethod(store: object, methods: readonly string[]): string | undefined {
-  const record = store as Record<string, unknown>
-  return methods.find((method) => typeof record[method] !== 'function')
+  return methods.find((method) => typeof fieldOf(store, method) !== 'function')
 }
 
 /** Assert the store exists and implements the always-required ledger + pricing ports. */
@@ -112,7 +111,7 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
     }
     return
   }
-  if (typeof markup.resolve !== 'function') {
+  if (typeof fieldOf(markup, 'resolve') !== 'function') {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('markup policy must implement a resolve() method')
   }

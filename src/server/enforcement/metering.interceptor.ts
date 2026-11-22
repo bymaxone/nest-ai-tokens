@@ -25,7 +25,7 @@ import { AiTokensException } from '../errors'
 import type { MeteringContext } from '../interfaces'
 import { MeteringService } from '../services'
 import type { RequestAiTokens } from './budget.guard'
-import { METER_METADATA } from './decorators'
+import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
 
 /** The response shape the interceptor writes headers through (adapter-agnostic). */
@@ -70,7 +70,7 @@ export class MeteringInterceptor implements NestInterceptor {
    */
   intercept(executionContext: ExecutionContext, next: CallHandler): Observable<unknown> {
     const targets = [executionContext.getHandler(), executionContext.getClass()]
-    const config = this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets)
+    const config = meterConfigOf(this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets))
     if (config === undefined) return next.handle()
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
     const enrichment = request.aiTokens
