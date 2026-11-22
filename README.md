@@ -787,6 +787,21 @@ specific to security is below.
   is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. When rated from prices, a unit above 0 with no `unitRates` rate
   is a missing price: refused as `AI_TOKENS_PRICE_NOT_FOUND` when `pricing.strict` is on, and otherwise billed for
   what has a price, with `priceMissing` set on the record and `ai_tokens.price.missing` raised.
+  The seeded snapshot lists a `web_search_requests` rate for GPT-5 and GPT-5 mini, Claude Opus 4, Sonnet 4 (standard and batch) and Haiku 4,
+  and Grok 4, each from the provider's own pricing page; the other seeded models list none, so a call with web searches on one of them is
+  refused under `pricing.strict` until the host lists a rate with `upsertPrice`. `-0` is 0, not a negative count. A capture's units can
+  push the settled amount past the hold, whose reservation covers the token estimate and not the units: a host with a strict credit
+  policy sizes the estimate with them.
+- **What else a usage must satisfy.** The tokens of one call may not add up to more than 2,147,483,647, the most a ledger row stores: a
+  larger call is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. A count a response reports twice (the AI SDK's
+  reasoning tokens and cache reads, at the root of the usage and in its details; the cache hit of an OpenAI-compatible gateway, at the
+  root and nested) is one count: two equal values are billed once and two that differ are refused as `AI_TOKENS_USAGE_MALFORMED`, and
+  `0` beside a non-zero value differs, so a gateway that zero-fills one of the two is refused on every call that cached. A cache write
+  named by a total and by a split (Anthropic `cache_creation_input_tokens` and `cache_creation`, Bedrock `cacheWriteInputTokens` and
+  `cacheDetails`) is billed by the total when the split reports nothing, and a total that disagrees with a non-empty split, or a null
+  entry of `cacheDetails`, is refused. OpenAI chat and Responses audio output tokens are part of the completion tokens and are billed
+  once, at the audio rate. A negative count, a count past the largest safe integer and a negative provider-reported cost in a usage a
+  host normalized itself are refused, never clamped.
 
 ---
 

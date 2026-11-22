@@ -165,6 +165,17 @@ describe('the tool units a host puts on a call are counts', () => {
     expect(outcome?.reason).toBe(REASON(unit))
   })
 
+  /** `-0` is not a negative count: it is accepted as 0 on every path and bills nothing for the unit. */
+  it('accepts a unit count of -0 as 0 on hold(), record() and capture()', async () => {
+    const built = await world({ strict: false })
+    const ctx = context({ extraUnits: { web_search_requests: -0 } })
+    const record = await built.service.record({ usage: usage(), context: ctx })
+    expect(record.surchargeNanoUsd).toBe(0n)
+    const hold = await built.service.hold(ctx, ESTIMATE)
+    const captured = await built.service.capture(hold, CALLER, usage())
+    expect(captured.surchargeNanoUsd).toBe(0n)
+  })
+
   /** A map that is no object is refused as a malformed argument. */
   it('refuses extra units that are not an object', async () => {
     const built = await world()
