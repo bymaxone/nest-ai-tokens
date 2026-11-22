@@ -79,7 +79,8 @@ export class MeteringInterceptor implements NestInterceptor {
     const request = executionContext.switchToHttp().getRequest<object>()
     // The guard's enrichment is a field of the request and its three fields are read as fields: a key planted on Object.prototype is neither
     // an enrichment nor the hold the guard did not place.
-    const enrichment = fieldsOf(fieldOf(request, 'aiTokens') as RequestAiTokens | undefined, ENRICHMENT_FIELDS)
+    const given = fieldOf(request, 'aiTokens')
+    const enrichment = typeof given === 'object' && given !== null ? fieldsOf(given as RequestAiTokens, ENRICHMENT_FIELDS) : undefined
     return next.handle().pipe(
       mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result))),
       catchError((error: unknown) => this.onError(enrichment, error)),

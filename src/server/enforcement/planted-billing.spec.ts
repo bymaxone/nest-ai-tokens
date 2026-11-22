@@ -7,7 +7,7 @@
 import type { CallHandler, ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { lastValueFrom, of } from 'rxjs'
-import type { AiTokensErrorResponse, NormalizedUsage } from '../../shared'
+import type { AiTokensErrorResponse, Budget, NormalizedUsage } from '../../shared'
 import { InMemoryBudgetStore } from '../../../test/fakes/in-memory-budget-store'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
@@ -69,7 +69,7 @@ function handlerOf(value: unknown): CallHandler {
 }
 
 /** A world: a funded wallet, a priced model, the guard, the interceptor and the services. */
-async function world(): Promise<{ metering: MeteringService; wallets: WalletService; budgets: BudgetService; guard: BudgetGuard; interceptor: MeteringInterceptor }> {
+async function world(): Promise<{ metering: MeteringService; wallets: WalletService; budgets: BudgetService; budgetStore: InMemoryBudgetStore; guard: BudgetGuard; interceptor: MeteringInterceptor }> {
   const now = (): Date => new Date()
   const options = {
     ratingMode: 'rate-table',
@@ -86,10 +86,11 @@ async function world(): Promise<{ metering: MeteringService; wallets: WalletServ
   await pricingStore.upsertPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1_250_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
   const wallets = new WalletService(new InMemoryWalletStore({ now }), options.wallets as never)
   await wallets.grant(WALLET, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
-  const budgets = new BudgetService(new InMemoryBudgetStore({ now }), ledger, options.budgets as never, now)
+  const budgetStore = new InMemoryBudgetStore({ now })
+  const budgets = new BudgetService(budgetStore, ledger, options.budgets as never, now)
   const metering = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, undefined, wallets, budgets, now)
   const guard = new BudgetGuard(budgets, metering, new Reflector(), { scopeResolver: () => CONTEXT })
-  return { metering, wallets, budgets, guard, interceptor: new MeteringInterceptor(new Reflector(), metering, { scopeResolver: () => CONTEXT }) }
+  return { metering, wallets, budgets, budgetStore, guard, interceptor: new MeteringInterceptor(new Reflector(), metering, { scopeResolver: () => CONTEXT }) }
 }
 
 describe('what a handler returned', () => {
@@ -139,6 +140,26 @@ describe('the budgets a store returned', () => {
     const { budgets, guard } = await world()
     await budgets.upsertBudget({ tenantId: 'tenant-1', scope: CONTEXT.scope, limitNanoUsd: 100_000_000n, window: 'month' })
     await expect(planted('tokens', 0, () => guard.canActivate(executionContext(fixture.metered)))).resolves.toBe(true)
+  })
+})
+
+describe('the tenant of a budget a store returned', () => {
+  /** A row that names no tenant is not the tenant's, whatever tenant is planted on `Object.prototype`. */
+  it('does not match a budget row that has no tenantId when the caller\'s tenant is planted', async () => {
+    const { budgets, budgetStore } = await world()
+    await budgets.upsertBudget({ tenantId: 'tenant-1', scope: CONTEXT.scope, limitNanoUsd: 100n, window: 'month' })
+    const find = budgetStore.findMatching.bind(budgetStore)
+    jest.spyOn(budgetStore, 'findMatching').mockImplementation(async (...args) => (await find(...args)).map(({ tenantId: _tenant, ...rest }) => rest as Budget))
+    await expect(planted('tenantId', 'tenant-1', () => budgets.status('tenant-1', CONTEXT.scope))).resolves.toEqual([])
+  })
+})
+
+describe('the request the guard enriched', () => {
+  /** An `aiTokens` of null is no enrichment: the call is settled as one with no guard. */
+  it('records and bills 6,250,000 when the request carries a null aiTokens', async () => {
+    const { wallets, interceptor } = await world()
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.metered, { aiTokens: null }), handlerOf({ usage: normalized() })))
+    expect((await wallets.getBalance(WALLET)).nanoUsd).toBe(93_750_000n)
   })
 })
 

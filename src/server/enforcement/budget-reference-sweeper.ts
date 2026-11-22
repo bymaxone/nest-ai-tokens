@@ -11,6 +11,7 @@
 import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 import { methodOf } from '../utils/field-names'
+import { budgetRow } from '../services/budget-math'
 import type { Budget, UsageRecord } from '../../shared'
 import type { IBudgetStore, StaleCursor, StaleReference, StaleReferenceQuery, StaleSelection } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
@@ -184,7 +185,8 @@ export class BudgetReferenceSweeper {
     if (kind === null) return
     let budget = budgets.get(reference.budgetId)
     if (budget === undefined) {
-      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId })
+      // The row is read as fields, so a key planted on Object.prototype is not one of the budget's: the verdict compares its features and scope with the call's.
+      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId }).then((found) => (found === null ? null : budgetRow(found)))
       budgets.set(reference.budgetId, budget)
     }
     const row: UsageRecord | null = await this.ledger.findByIdempotencyKey(reference.tenantId, ledgerKeyOf(reference.key, kind))
