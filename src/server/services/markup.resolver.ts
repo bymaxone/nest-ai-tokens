@@ -16,6 +16,7 @@ import { applyMarkup, resolveMultiplier4dp } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { IMarkupPolicy } from '../interfaces'
+import { assertCleanRealm } from '../utils/prototype-guard'
 
 /** The per-call context an `IMarkupPolicy` receives (spec §7.2). */
 export type MarkupContext = Parameters<IMarkupPolicy['resolve']>[0]
@@ -57,7 +58,10 @@ export class MarkupResolver {
   async resolve(context: MarkupContext): Promise<ResolvedMarkup> {
     const { markup } = this.options
     if (typeof markup === 'number') return buildResolvedMarkup(markup)
-    return buildResolvedMarkup(this.validate(await this.invokePolicy(markup, context)))
+    const multiplier = this.validate(await this.invokePolicy(markup, context))
+    // The host's policy has answered: the guard runs again before the multiplier is applied to an amount.
+    assertCleanRealm()
+    return buildResolvedMarkup(multiplier)
   }
 
   /** Invoke a host policy, wrapping any failure as an invalid-config error. */

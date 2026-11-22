@@ -6,9 +6,14 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
+import { InMemoryLedgerStore } from '../test/fakes/in-memory-ledger-store'
+import { InMemoryPricingStore } from '../test/fakes/in-memory-pricing-store'
+import { providerPresets } from './server/config/provider-presets'
+import { LedgerService } from './server/services/ledger.service'
 import { applyDefaults } from './server/config'
 import { AiTokensException } from './server/errors'
 import { MeteringService } from './server/services/metering.service'
+import { MarkupResolver } from './server/services/markup.resolver'
 import { PricingService } from './server/services/pricing.service'
 import { BUILT_INS, pollutedNames, recordFunctions } from './server/utils/prototype-guard'
 import { makeFullStore } from '../test/fakes/full-store'
@@ -143,6 +148,64 @@ describe('the realm guard after the last await', () => {
     } finally {
       ;(Object as { values: unknown }).values = values
       spy.mockRestore()
+    }
+    expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+})
+
+describe('the realm guard after the awaited read of a price and of a markup', () => {
+  /** The host's markup policy answers after the price was read: a built-in is replaced as it answers, and nothing is posted or reserved. */
+  it.each(['record', 'hold', 'estimateCost', 'capture'] as const)('refuses %s when a built-in is replaced while the markup policy runs', async (name) => {
+    let armed = false
+    const values = Object.values
+    const policy = {
+      resolve: (): Promise<number> => {
+        if (armed) (Object as { values: unknown }).values = (): unknown[] => []
+        return Promise.resolve(1)
+      },
+    }
+    const options = applyDefaults({ store: makeFullStore(), markup: policy, pricing: { seedFromSnapshot: false, strict: true, cacheTtlMs: 1 } })
+    const pricing = new PricingService(options, new InMemoryPricingStore())
+    const ledgerStore = new InMemoryLedgerStore()
+    const metering = new MeteringService(new LedgerService(ledgerStore, options), pricing, new MarkupResolver(options), options)
+    await pricing.upsertPrice({ provider: 'openai', model: 'gpt-4o', operation: 'chat', inputNanoUsdPerMillion: 2_500_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
+    const context = (): never => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f', idempotencyKey: `k${String(Math.random())}`, baseModel: 'gpt-4o' }) as never
+    const estimate = { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 10, maxOutputTokens: 10 } as never
+    const usage = { model: 'gpt-4o', usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } }
+    const held = name === 'capture' ? await metering.hold(context(), estimate) : undefined
+    const before = (await ledgerStore.query({ tenantId: 't' })).length
+    armed = true
+    let code: string | undefined
+    try {
+      code = await codeOf(() => {
+        if (name === 'record') return metering.record({ usage, preset: { ...providerPresets.openaiChat }, context: context() })
+        if (name === 'hold') return metering.hold(context(), estimate)
+        if (name === 'estimateCost') return metering.estimateCost(estimate)
+        return metering.capture(held as never, { tenantId: 't', scope: { type: 'user', id: 'u' } } as never, usage, { ...providerPresets.openaiChat })
+      })
+    } finally {
+      ;(Object as { values: unknown }).values = values
+      armed = false
+    }
+    expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect((await ledgerStore.query({ tenantId: 't' })).length).toBe(before)
+  })
+
+  it('refuses a markup whose host policy answers after a built-in was replaced', async () => {
+    const values = Object.values
+    const resolver = new MarkupResolver({
+      markup: {
+        resolve: (): Promise<number> => {
+          ;(Object as { values: unknown }).values = (): unknown[] => []
+          return Promise.resolve(2)
+        },
+      },
+    })
+    let code: string | undefined
+    try {
+      code = await codeOf(() => resolver.resolve({ scope: { type: 'user', id: 'u' }, provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard' }))
+    } finally {
+      ;(Object as { values: unknown }).values = values
     }
     expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
   })

@@ -122,6 +122,8 @@ export class PricingService implements OnModuleInit {
       this.cache.set(cacheKey, { value: resolved, expiresAt: this.now() + this.options.pricing.cacheTtlMs })
     }
 
+    // The awaited read is over: the guard runs again before the caller computes an amount from the price it returns.
+    assertCleanRealm()
     if (resolved === null && this.options.pricing.strict) {
       // Stryker disable next-line ObjectLiteral: error context fields are diagnostic; tests check error code (AI_TOKENS_PRICE_NOT_FOUND), not payload shape
       throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, suppliedDetails({ provider: input.provider, model: input.model, operation: input.operation, serviceTier }))
