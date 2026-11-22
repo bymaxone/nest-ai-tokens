@@ -27,7 +27,7 @@ import type {
   UsageNormalizer,
   UsageRecord,
 } from '../../shared'
-import { computeCostNanoUsd } from '../../shared'
+import { ratedCost } from '../utils/rated-cost'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
@@ -371,7 +371,7 @@ export class MeteringService {
     const rate = await this.pricing.resolveRate({ provider: input.provider, model: input.model, operation: input.operation, serviceTier, at })
     // The guard ran before the awaits above: it runs again before the amounts are computed, so a built-in replaced while they ran is refused.
     assertCleanRealm()
-    const rawCostNanoUsd = rate === null ? 0n : computeCostNanoUsd(usage, rate).totalNanoUsd
+    const rawCostNanoUsd = rate === null ? 0n : ratedCost(usage, rate).totalNanoUsd
     const markup = await this.markup.resolve({
       scope: input.scope ?? ESTIMATE_SCOPE,
       provider: input.provider,
@@ -794,7 +794,7 @@ export class MeteringService {
     // A tool unit the price lists no rate for is a missing price, as an unpriced model is: refused in strict mode, billed at 0 and flagged otherwise.
     const unpriced = unpricedUnits(usage, rate)
     if (unpriced.length > 0 && this.pricing.strict) throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, { reason: `the price lists no rate for the tool unit ${unpriced.join(', ')}` })
-    const breakdown = computeCostNanoUsd(usage, rate)
+    const breakdown = ratedCost(usage, rate)
     return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: unpriced.length > 0 }
   }
 }

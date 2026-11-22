@@ -13,6 +13,7 @@ import { LedgerService } from './server/services/ledger.service'
 import { applyDefaults } from './server/config'
 import { AiTokensException } from './server/errors'
 import { MeteringService } from './server/services/metering.service'
+import { ratedCost } from './server/utils/rated-cost'
 import { MarkupResolver } from './server/services/markup.resolver'
 import { PricingService } from './server/services/pricing.service'
 import { BUILT_INS, pollutedNames, recordFunctions } from './server/utils/prototype-guard'
@@ -208,6 +209,64 @@ describe('the realm guard after the awaited read of a price and of a markup', ()
       ;(Object as { values: unknown }).values = values
     }
     expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+})
+
+describe('the realm guard and Function.prototype', () => {
+  /** `call`, `apply` and `bind` run every call the library makes, so a replaced one rewrites the arguments and the results of each. */
+  it.each(['call', 'apply', 'bind'] as const)('counts Function.prototype.%s replaced', (name) => {
+    const kept = Object.getOwnPropertyDescriptor(Function.prototype, name)!
+    let counted = -1
+    try {
+      Object.defineProperty(Function.prototype, name, { ...kept, value: function replaced(): void { /* a replacement */ } })
+      counted = pollutedNames()
+    } finally {
+      Object.defineProperty(Function.prototype, name, kept)
+    }
+    expect(counted).toBe(1)
+    expect(pollutedNames()).toBe(0)
+  })
+
+  it('refuses a store call while Function.prototype.apply is replaced, and runs the store through Reflect.apply', async () => {
+    const { calls } = await rig()
+    const query = calls['ledger.query']!
+    const args = await query.base()
+    const kept = Object.getOwnPropertyDescriptor(Function.prototype, 'apply')!
+    let code: string | undefined
+    try {
+      Object.defineProperty(Function.prototype, 'apply', { ...kept, value: function replaced(): never { throw new Error('a replaced apply ran') } })
+      code = await codeOf(() => query.run(args))
+    } finally {
+      Object.defineProperty(Function.prototype, 'apply', kept)
+    }
+    expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+})
+
+describe('the realm guard in the step of the arithmetic', () => {
+  it('refuses the cost of a usage and the markup of an amount when a built-in was replaced after the last read', () => {
+    const resolver = new MarkupResolver({ markup: 2 })
+    const values = Object.values
+    let refused = 0
+    return resolver.resolve({ scope: { type: 'user', id: 'u' }, provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard' }).then((resolved) => {
+      try {
+        ;(Object as { values: unknown }).values = (): unknown[] => []
+        try {
+          resolved.apply(10n)
+        } catch (error) {
+          if (error instanceof AiTokensException) refused += 1
+        }
+        try {
+          ratedCost({} as never, {} as never)
+        } catch (error) {
+          if (error instanceof AiTokensException) refused += 1
+        }
+      } finally {
+        ;(Object as { values: unknown }).values = values
+      }
+      expect(refused).toBe(2)
+      expect(resolved.apply(10n)).toBe(20n)
+    })
   })
 })
 

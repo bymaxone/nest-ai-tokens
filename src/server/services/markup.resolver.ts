@@ -31,7 +31,14 @@ export interface ResolvedMarkup {
 
 /** Build a {@link ResolvedMarkup} for an already-validated 4-dp multiplier. */
 function buildResolvedMarkup(multiplier: number): ResolvedMarkup {
-  return { multiplier, apply: (rawCostNanoUsd: bigint): bigint => applyMarkup(rawCostNanoUsd, multiplier) }
+  // The guard runs in the same step as the multiplication, with no hop of the event loop between them.
+  return {
+    multiplier,
+    apply: (rawCostNanoUsd: bigint): bigint => {
+      assertCleanRealm()
+      return applyMarkup(rawCostNanoUsd, multiplier)
+    },
+  }
 }
 
 /**

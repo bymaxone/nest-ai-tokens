@@ -80,7 +80,8 @@ export const BUILT_INS: readonly Met[] = (() => {
   for (const name of STANDARD.split(' ')) {
     const constructor = Reflect.get(globalThis, name) as { prototype?: unknown }
     owners.push(constructor)
-    if (typeof constructor.prototype === 'object' && constructor.prototype !== null && constructor.prototype !== Object.prototype) owners.push(constructor.prototype)
+    // `Function.prototype` is itself a function, so its type is not tested: only `Object.prototype` (compared by descriptor) and an absent one are left out.
+    if (constructor.prototype !== undefined && constructor.prototype !== null && constructor.prototype !== Object.prototype) owners.push(constructor.prototype)
   }
   owners.push(typedArray, typedArray.prototype)
   const arrayIterator = Object.getPrototypeOf([][Symbol.iterator]()) as object

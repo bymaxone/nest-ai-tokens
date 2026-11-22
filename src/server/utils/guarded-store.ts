@@ -61,7 +61,7 @@ export function guardedStore<T extends object>(store: T): T {
       return (...args: unknown[]): unknown => {
         // No call reaches a store beside a polluted realm, so nothing is written or reported there.
         assertCleanRealm()
-        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(store, args.map((argument) => copied(argument)))
+        const result: unknown = Reflect.apply(value as (...parameters: unknown[]) => unknown, store, args.map((argument) => copied(argument)))
         return isThenable(result) ? Promise.resolve(result).then((resolved) => copied(resolved)) : copied(result)
       }
     },
