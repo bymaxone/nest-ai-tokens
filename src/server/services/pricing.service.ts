@@ -191,7 +191,8 @@ export class PricingService implements OnModuleInit {
       if (byBase !== null) return byBase
     }
 
-    const alias = this.options.pricing.modelAliases[model]
+    const aliases = this.options.pricing.modelAliases
+    const alias = Object.hasOwn(aliases, model) ? aliases[model] : undefined
     if (alias !== undefined) {
       const byAlias = await this.store.resolveRate(provider, alias, operation, serviceTier, at)
       if (byAlias !== null) return byAlias

@@ -3,13 +3,14 @@
  * group of options, so that an option left out, set to `undefined` or set to `null` all mean the same thing: the default. A
  * group set to `null` is absent, and an option inside a group set to `null` is absent from it; neither switches anything off.
  *
- * Each key the options define is read by property access, so a value that sits on the prototype (a getter of a class instance, a
- * group built by a factory) is read as one that sits on the object; the keys are listed once per group, and the compiler refuses
+ * Each key the options define is read as a field of the object (see `fieldOf`), so a value that sits on the prototype of the host's class (a
+ * getter of a class instance, a group built by a factory) is read as one that sits on the object, and a key on `Object.prototype` is not; the keys are listed once per group, and the compiler refuses
  * a list that misses an option or names one that does not exist.
  * @layer server
  */
 
 import type { BymaxAiTokensModuleOptions } from '../interfaces'
+import { fieldOf } from '../utils/field-names'
 
 type Options = BymaxAiTokensModuleOptions
 
@@ -19,7 +20,8 @@ type Keys<T> = { readonly [K in keyof Required<T>]: true }
 /** The groups of options, whose own keys are cleaned too. */
 type GroupName = 'pricing' | 'wallets' | 'budgets' | 'holds' | 'settlement' | 'ledger' | 'events' | 'telemetry' | 'reporting' | 'content'
 
-const OPTION_KEYS: Keys<Options> = {
+/** Every option the module takes at the top level. */
+export const OPTION_KEYS: Keys<Options> = {
   store: true,
   scopeResolver: true,
   ratingMode: true,
@@ -39,7 +41,8 @@ const OPTION_KEYS: Keys<Options> = {
   content: true,
 }
 
-const GROUP_KEYS: { readonly [G in GroupName]: Keys<NonNullable<Options[G]>> } = {
+/** Every option inside each group. */
+export const GROUP_KEYS: { readonly [G in GroupName]: Keys<NonNullable<Options[G]>> } = {
   pricing: { seedFromSnapshot: true, strict: true, cacheTtlMs: true, modelAliases: true },
   wallets: { creditRateNanoUsd: true, overdraftNanoUsd: true, burnOrder: true },
   budgets: { defaultPolicy: true, alertThresholds: true, counter: true, failClosed: true, onThrottle: true },
@@ -54,9 +57,10 @@ const GROUP_KEYS: { readonly [G in GroupName]: Keys<NonNullable<Options[G]>> } =
 
 /** A copy of `source` with the entries of `names` that it holds a value for, read by property access so a getter of the prototype counts. */
 function valuesOf<T extends object>(source: T, names: Keys<T>): T {
-  const kept: Record<string, unknown> = {}
+  // No prototype: a key that another library planted on `Object.prototype` is not an option the host gave, and a read of this copy never finds one.
+  const kept = Object.create(null) as Record<string, unknown>
   for (const name of Object.keys(names)) {
-    const value: unknown = Reflect.get(source, name)
+    const value: unknown = fieldOf(source, name)
     if (value !== undefined && value !== null) kept[name] = value
   }
   return kept as T
