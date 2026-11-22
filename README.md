@@ -787,9 +787,8 @@ specific to security is below.
   is refused as `AI_TOKENS_USAGE_MALFORMED` before anything is debited. When rated from prices, a unit above 0 with no `unitRates` rate
   is a missing price: refused as `AI_TOKENS_PRICE_NOT_FOUND` when `pricing.strict` is on, and otherwise billed for
   what has a price, with `priceMissing` set on the record and `ai_tokens.price.missing` raised.
-  The seeded snapshot lists a `web_search_requests` rate for GPT-5 and GPT-5 mini, Claude Opus 4, Sonnet 4 (standard and batch) and Haiku 4,
-  and Grok 4, each from the provider's own pricing page; the other seeded models list none, so a call with web searches on one of them is
-  refused under `pricing.strict` until the host lists a rate with `upsertPrice`. `-0` is 0, not a negative count. A capture's units can
+  The seeded snapshot lists a `web_search_requests` rate only for the models that carry one in `src/prices/model-prices.seed.ts`;
+  for the others a call with web searches is refused under `pricing.strict` until the host lists a rate with `upsertPrice`. `-0` is 0, not a negative count. A capture's units can
   push the settled amount past the hold, whose reservation covers the token estimate and not the units: a host with a strict credit
   policy sizes the estimate with them.
 - **What else a usage must satisfy.** The tokens of one call may not add up to more than 2,147,483,647, the most a ledger row stores: a
