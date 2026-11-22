@@ -24,8 +24,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Changed
 
-- The records a service returns as a store returned them (`UsageRecord`, `Budget`, wallet entries and price versions) are copies that have no prototype: they carry the same fields and serialize the same, but `record.hasOwnProperty(...)`, `record.toString()` and `record instanceof Class` are no longer available on them (use `Object.hasOwn(record, name)` and read the fields). A getter of a class a store's row is an instance of is read once and counts as a field; a field defined as not enumerable is still a field. A host that mutated a returned record expecting the store to change must call the store.
-- A record or list nested deeper than 8 levels, in an argument a store takes or a row it returns, is refused with `AI_TOKENS_INVALID_CONFIG` instead of being handed on. Records a store keeps are two or three levels deep.
+- The records a service returns as a store returned them (`UsageRecord`, `Budget`, wallet entries and price versions) are copies that have no prototype: they carry the fields of the row, but `record.hasOwnProperty(...)`, `record.toString()` and `record instanceof Class` are no longer available on them (use `Object.hasOwn(record, name)` and read the fields). A getter of a class a store's row is an instance of is read once and counts as a field; a field defined as not enumerable is still a field. A host that mutated a returned record expecting the store to change must call the store.
+- A record or list nested deeper than 8 levels, in an argument a store takes or a row it returns, is refused with `AI_TOKENS_INVALID_CONFIG` instead of being handed on.
 - A frozen or sealed store object can be given to the services; its methods are wrapped, and a method it lacks stays absent.
 - A key that another library put on `Object.prototype` under the name of an optional field of a host option or input (`limitTokens`, `features`, `expiresAt`, a rate) no longer counts. A host that relied on an inherited default put on `Object.prototype` must set the option or the field itself.
 
