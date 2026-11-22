@@ -234,6 +234,21 @@ export async function resolveHoldEstimate(
   estimate: HoldEstimate,
   at: Date,
 ): Promise<ResolvedHoldEstimate> {
+  const resolved = await rateHoldEstimate(pricing, context, estimate, at)
+  // A reservation is made before the row is appended: an estimate the row cannot store would be charged and then fail with no row to show for it.
+  if (resolved.estimatedTokens > LEDGER_MAX_TOKENS) {
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the tokens of a hold estimate add up to more than a ledger row stores (2147483647)' })
+  }
+  return resolved
+}
+
+/** The reservation an estimate rates to, before the bound of a ledger row is checked. */
+async function rateHoldEstimate(
+  pricing: PricingService,
+  context: MeteringContext,
+  estimate: HoldEstimate,
+  at: Date,
+): Promise<ResolvedHoldEstimate> {
   const serviceTier = context.serviceTier ?? 'standard'
   if (isRatedEstimate(estimate)) {
     const tier = estimate.serviceTier ?? serviceTier

@@ -73,6 +73,23 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 
+/** Whether two tool unit maps name the same units with the same counts, in any order: an absent map and an empty one are the same. */
+function sameUnits(first: Record<string, number> = {}, second: Record<string, number> = {}): boolean {
+  const names = Object.keys(first)
+  return names.length === Object.keys(second).length && names.every((name) => first[name] === second[name])
+}
+
+/**
+ * The stored hold when this call names the same tool units, else the idempotency conflict: a corrected retry must not be billed the first
+ * call's units. Only a pending hold is compared: its stored units are the ones it was placed with, where a captured one holds the units
+ * it was billed for, so a late retry of the original call still finds its hold; a captured or released hold is returned whatever units the
+ * replay names.
+ */
+export function heldReplay(stored: UsageRecord, extraUnits: Record<string, number> | undefined): UsageRecord {
+  if (stored.status !== 'pending' || sameUnits(stored.extraUnits, extraUnits)) return stored
+  throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
+}
+
 /**
  * The row the ledger holds for a key after an append failed: `null` when there is none, `undefined` when the lookup
  * failed as well, so the caller does not guess.
