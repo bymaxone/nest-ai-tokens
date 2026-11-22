@@ -10,6 +10,7 @@
 import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
+import { methodOf } from '../utils/field-names'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
@@ -164,8 +165,9 @@ export class PricingService implements OnModuleInit {
     const { MODEL_PRICES_SEED } = await import('@bymax-one/nest-ai-tokens/prices')
     for (const row of MODEL_PRICES_SEED) {
       const input = { ...row, effectiveFrom: SEED_EFFECTIVE_FROM }
-      if (typeof this.store.seedPrice === 'function') {
-        await this.store.seedPrice(input)
+      const seed = methodOf(this.store, 'seedPrice') as IPricingStore['seedPrice']
+      if (seed !== undefined) {
+        await seed(input)
         continue
       }
       const history = await this.store.getPriceHistory(row.provider, row.model, row.operation, row.serviceTier)

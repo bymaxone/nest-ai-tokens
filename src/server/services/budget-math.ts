@@ -6,6 +6,7 @@
 
 import { effectivePolicy } from '../utils/enum-guards'
 import type { Budget, BudgetStatus } from '../../shared'
+import { fieldsOf } from '../utils/field-names'
 import type { BudgetDelta, BudgetLimits, BudgetWindowSpend } from '../interfaces'
 import type { CounterDimensionName } from './budget.keys'
 
@@ -20,16 +21,16 @@ export function featureMatches(features: string[] | undefined, feature: string):
   return features === undefined || features.length === 0 || features.includes(feature)
 }
 
-/** The limits object for a budget (only defined dimensions). */
+/** The limits object for a budget (only defined dimensions), with no prototype: a dimension it does not limit is absent, not a key planted on `Object.prototype`. */
 export function limitsOf(budget: Budget): BudgetLimits {
-  return {
+  return Object.assign(Object.create(null) as BudgetLimits, {
     // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} because all consumers check limits.nanoUsd !== undefined
     ...(budget.limitNanoUsd !== undefined ? { nanoUsd: budget.limitNanoUsd } : {}),
     // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} because all consumers check limits.tokens !== undefined
     ...(budget.limitTokens !== undefined ? { tokens: budget.limitTokens } : {}),
     // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} because all consumers check limits.count !== undefined
     ...(budget.limitCount !== undefined ? { count: budget.limitCount } : {}),
-  }
+  })
 }
 
 /** Negate a delta across all three dimensions. */
@@ -116,6 +117,34 @@ export function remainingSnapshot(limits: BudgetLimits, spend: BudgetWindowSpend
     // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.count !== undefined ? { count: Math.max(0, limits.count - spend.spentCount) } : {}),
   }
+}
+
+/** Every field of a {@link Budget}, mapped to `true` so that the compiler keeps the list complete. */
+const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
+  id: true,
+  tenantId: true,
+  scope: true,
+  features: true,
+  limitNanoUsd: true,
+  limitTokens: true,
+  limitCount: true,
+  window: true,
+  anchorAt: true,
+  expiresAt: true,
+  softThresholds: true,
+  policy: true,
+  createdAt: true,
+}
+
+/**
+ * A budget a store returned, read as fields and held by an object with no prototype: a field the row leaves out (a dimension it does not
+ * limit, no feature filter) is absent, and a key planted on `Object.prototype` is neither read now nor found by a later read of the copy.
+ *
+ * @param row The budget the store returned.
+ * @returns The copy.
+ */
+export function budgetRow(row: Budget): Budget {
+  return fieldsOf(row, BUDGET_FIELDS)
 }
 
 /** Assemble a {@link BudgetStatus} from a budget and its located window (§10.6). */

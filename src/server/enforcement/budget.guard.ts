@@ -27,6 +27,7 @@ import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
 import type { BudgetService, MeteringService } from '../services'
 import { suppliedDetails } from '../utils/detail-text'
+import { fieldOf, fieldsOf } from '../utils/field-names'
 import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA, meterConfigOf, requireBudgetOf } from './decorators'
 import type { MeterConfig, RequireBudgetConfig } from './decorators'
 
@@ -98,6 +99,9 @@ export class BudgetGuard implements CanActivate {
   }
 }
 
+/** Every dimension a budget limits, mapped to `true` so that the compiler keeps the list complete. */
+const LIMIT_FIELDS: { readonly [K in keyof Required<BudgetStatus['limit']>]: true } = { nanoUsd: true, tokens: true, count: true }
+
 /** Whether a budget's feature filter matches the request feature (empty/absent = all). */
 function featureMatches(features: string[] | undefined, feature: string): boolean {
   return features === undefined || features.length === 0 || features.includes(feature)
@@ -109,18 +113,20 @@ function featureMatches(features: string[] | undefined, feature: string): boolea
  * when the budget is soft, does not apply to the feature, or still has headroom.
  */
 function exhaustedError(status: BudgetStatus, feature: string): AiTokensException | null {
-  if (effectivePolicy(status.policy) !== 'block' || !featureMatches(status.features, feature)) return null
-  if (status.limit.nanoUsd !== undefined && status.spent.nanoUsd >= status.limit.nanoUsd) {
+  if (effectivePolicy(status.policy) !== 'block' || !featureMatches(fieldOf(status, 'features') as string[] | undefined, feature)) return null
+  // A dimension the budget does not limit is absent from its limit, so the limit is read as fields: a key planted on Object.prototype is no limit.
+  const limit = fieldsOf(status.limit, LIMIT_FIELDS)
+  if (limit.nanoUsd !== undefined && status.spent.nanoUsd >= limit.nanoUsd) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check error code only
     return new AiTokensException('AI_TOKENS_BUDGET_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'cost' }))
   }
-  // Stryker disable next-line ConditionalExpression: CE true on `status.limit.tokens !== undefined` is equivalent: with it forced true, the remaining `status.spent.tokens >= status.limit.tokens` compares a number against `undefined` (NaN), which is always false, so a budget with no tokens limit never yields a spurious quota error
-  if (status.limit.tokens !== undefined && status.spent.tokens >= status.limit.tokens) {
+  // Stryker disable next-line ConditionalExpression: CE true on `limit.tokens !== undefined` is equivalent: with it forced true, the remaining `status.spent.tokens >= limit.tokens` compares a number against `undefined` (NaN), which is always false, so a budget with no tokens limit never yields a spurious quota error
+  if (limit.tokens !== undefined && status.spent.tokens >= limit.tokens) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics
     return new AiTokensException('AI_TOKENS_QUOTA_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'tokens' }))
   }
-  // Stryker disable next-line ConditionalExpression: CE true on `status.limit.count !== undefined` is equivalent: with it forced true, the remaining `status.spent.count >= status.limit.count` compares a number against `undefined` (NaN), which is always false, so a budget with no count limit never yields a spurious quota error
-  if (status.limit.count !== undefined && status.spent.count >= status.limit.count) {
+  // Stryker disable next-line ConditionalExpression: CE true on `limit.count !== undefined` is equivalent: with it forced true, the remaining `status.spent.count >= limit.count` compares a number against `undefined` (NaN), which is always false, so a budget with no count limit never yields a spurious quota error
+  if (limit.count !== undefined && status.spent.count >= limit.count) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics
     return new AiTokensException('AI_TOKENS_QUOTA_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'count' }))
   }
