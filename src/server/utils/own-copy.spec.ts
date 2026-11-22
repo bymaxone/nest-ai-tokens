@@ -1,7 +1,8 @@
 /**
- * @fileoverview What `ownCopy` keeps: the own enumerable string keys of every plain object, to a bounded depth, in objects with no
- * prototype, and nothing a prototype supplies. Dates, bigints, class instances and the values past the depth are handed on as they are.
- * @layer shared
+ * @fileoverview What `ownCopy` keeps: the own keys of every plain object and the fields an instance of a class defines, in objects with no
+ * prototype, to a bounded depth, and nothing the root of the realm supplies. Dates, Maps, bigints and the values past the depth are handed
+ * on as they are.
+ * @layer server
  */
 
 import { runInNewContext } from 'node:vm'
@@ -35,20 +36,53 @@ describe('ownCopy', () => {
     }
   })
 
-  /** A Date, a class instance and a primitive are not records: they are handed on as they are. */
-  it('hands on a Date, an instance of a class, a function and the primitives', () => {
-    class Box {
-      readonly n = 1
-    }
+  /** A Date, a Map, a function and a primitive are not records: they are handed on as they are. */
+  it('hands on a Date, a Map, a function and the primitives', () => {
     const date = new Date(0)
-    const box = new Box()
+    const map = new Map([['k', 1]])
+    const fn = (): number => 1
     expect(ownCopy(date)).toBe(date)
-    expect(ownCopy(box)).toBe(box)
+    expect(ownCopy(map)).toBe(map)
+    expect(ownCopy(fn)).toBe(fn)
     expect(ownCopy(5)).toBe(5)
     expect(ownCopy(null)).toBeNull()
     expect(ownCopy(undefined)).toBeUndefined()
     expect(ownCopy('s')).toBe('s')
     expect(ownCopy(3n)).toBe(3n)
+  })
+
+  /** An instance of a class is a record too: its absent fields resolve through the class to the same root, so it is copied by its fields. */
+  it('copies an instance of a class by its own fields and the getters and methods its class defines', () => {
+    class Row {
+      readonly id = 'r1'
+      get derived(): number {
+        return this.id.length
+      }
+
+      method(): number {
+        return 1
+      }
+    }
+    const copy = ownCopy(new Row()) as unknown as Record<string, unknown>
+    expect(Object.getPrototypeOf(copy)).toBeNull()
+    expect(copy.id).toBe('r1')
+    expect(copy.derived).toBe(2)
+    expect('method' in copy).toBe(true)
+    expect(Object.keys(copy).sort()).toEqual(['derived', 'id', 'method'])
+  })
+
+  it('does not find a key planted on Object.prototype on the copy of an instance of a class', () => {
+    class Row {
+      readonly id = 'r1'
+    }
+    Object.defineProperty(Object.prototype, 'planted', { value: 1, configurable: true, writable: true, enumerable: false })
+    try {
+      const copy = ownCopy(new Row()) as unknown as Record<string, unknown>
+      expect(copy.planted).toBeUndefined()
+      expect(Object.keys(copy)).toEqual(['id'])
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'planted')
+    }
   })
 
   it('copies a plain object of another realm and one with no prototype', () => {

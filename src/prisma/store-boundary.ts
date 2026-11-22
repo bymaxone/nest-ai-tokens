@@ -6,7 +6,7 @@
  * @layer prisma
  */
 
-import { ownCopy } from '../shared/utils/own-copy'
+import { ownCopy } from '../server/utils/own-copy'
 import { storeError } from './adapter-sql'
 
 /** Whether a value is a promise or a thenable, which a method returns when it is asynchronous. */

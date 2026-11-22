@@ -103,7 +103,9 @@ describe('LedgerService hash chain', () => {
     const b = await service.append(makeInput({ inputTokens: 5 }), 'b')
     await service.append(makeInput({ inputTokens: 9 }), 'c')
 
-    b.billedCostNanoUsd = 999_999_999n
+    // The service hands out copies, so the stored row is tampered with where it is kept.
+    const stored = await store.findById(b.id)
+    stored!.billedCostNanoUsd = 999_999_999n
 
     const result = await service.verifyChain('tenant-1')
     expect(result).toEqual({ valid: false, brokenAtRecordId: b.id, unchainedCount: 0 })
@@ -176,7 +178,7 @@ describe('LedgerService hash chain over a mixed ledger', () => {
     await service.append(makeInput(), 'a')
     const b = await service.append(makeInput({ inputTokens: 5 }), 'b')
     await service.append(makeInput({ inputTokens: 9 }), 'c')
-    strip(b, 'hash')
+    strip((await store.findById(b.id))!, 'hash')
     expect(await service.verifyChain('tenant-1')).toEqual({ valid: false, brokenAtRecordId: b.id, unchainedCount: 1 })
   })
 
@@ -187,7 +189,7 @@ describe('LedgerService hash chain over a mixed ledger', () => {
     await service.append(makeInput(), 'a')
     const b = await service.append(makeInput({ inputTokens: 5 }), 'b')
     const c = await service.append(makeInput({ inputTokens: 9 }), 'c')
-    strip(b, 'hash', 'prevHash')
+    strip((await store.findById(b.id))!, 'hash', 'prevHash')
     expect(await service.verifyChain('tenant-1')).toEqual({ valid: false, brokenAtRecordId: c.id, unchainedCount: 1 })
   })
 
@@ -197,7 +199,7 @@ describe('LedgerService hash chain over a mixed ledger', () => {
     const service = makeService(store, true)
     await service.append(makeInput(), 'a')
     const b = await service.append(makeInput({ inputTokens: 5 }), 'b')
-    b.inputTokens = 6
+    ;(await store.findById(b.id))!.inputTokens = 6
     expect(await service.verifyChain('tenant-1')).toEqual({ valid: false, brokenAtRecordId: b.id, unchainedCount: 0 })
   })
 

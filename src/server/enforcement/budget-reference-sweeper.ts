@@ -11,6 +11,7 @@
 import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 import { methodOf } from '../utils/field-names'
+import { guardedStore } from '../utils/guarded-store'
 import { budgetRow } from '../services/budget-math'
 import type { Budget, UsageRecord } from '../../shared'
 import type { IBudgetStore, StaleCursor, StaleReference, StaleReferenceQuery, StaleSelection } from '../interfaces'
@@ -58,13 +59,16 @@ export class BudgetReferenceSweeper {
   private readonly pageSize: number
   private readonly pages: number
 
+  private readonly store: IBudgetStore
+
   constructor(
-    private readonly store: IBudgetStore,
+    store: IBudgetStore,
     private readonly ledger: LedgerService,
     private readonly options: BudgetReferenceSweeperOptions,
     private readonly now: () => Date = (): Date => new Date(),
     tuning: BudgetReferenceSweepTuning = {},
   ) {
+    this.store = guardedStore(store)
     this.pageSize = tuning.pageSize ?? PAGE_SIZE
     this.pages = tuning.pages ?? PAGES_PER_TICK
   }

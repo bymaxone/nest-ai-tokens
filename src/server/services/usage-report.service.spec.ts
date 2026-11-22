@@ -290,7 +290,7 @@ describe('UsageReportService.summarize', () => {
     const canned: UsageSummary[] = [{ group: { model: 'gpt-5' }, records: 9, totalTokens: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, reasoning: 0, audioIn: 0, audioOut: 0, imageIn: 0, imageOut: 0 }, rawCostNanoUsd: 0n, surchargeNanoUsd: 0n, billedCostNanoUsd: 0n, cacheSavingsNanoUsd: 0n }]
     const store = Object.assign(new InMemoryLedgerStore(), { summarize: (): Promise<UsageSummary[]> => Promise.resolve(canned) })
     const built = build({ store })
-    expect(await built.service.summarize({ ...FILTER, groupBy: ['model'] })).toBe(canned)
+    expect(await built.service.summarize({ ...FILTER, groupBy: ['model'] })).toEqual(canned)
   })
 })
 

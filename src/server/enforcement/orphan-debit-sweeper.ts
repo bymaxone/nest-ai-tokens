@@ -14,6 +14,7 @@ import { describeError } from '../errors/describe-error'
 import type { UsageRecord } from '../../shared'
 import type { IWalletStore, OwedEffects, WalletDebit, WalletDebitCursor } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { guardedStore } from '../utils/guarded-store'
 import type { LedgerAppendInput, LedgerService } from '../services/ledger.service'
 import { isIdempotencyConflict } from '../services/record-replay'
 import {
@@ -63,14 +64,17 @@ export class OrphanDebitSweeper {
    * @param finish Runs the refund a claim owes; the owed-effects sweep repeats it when this fails.
    * @param tuning The page size and the pages per tick.
    */
+  private readonly wallets: Pick<IWalletStore, 'findDebitsBefore'>
+
   constructor(
-    private readonly wallets: Pick<IWalletStore, 'findDebitsBefore'>,
+    wallets: Pick<IWalletStore, 'findDebitsBefore'>,
     private readonly ledger: LedgerService,
     private readonly options: OrphanDebitSweeperOptions,
     private readonly now: () => Date,
     private readonly finish: (owed: OwedEffects) => Promise<void>,
     tuning: OrphanDebitSweepTuning = {},
   ) {
+    this.wallets = guardedStore(wallets)
     this.pageSize = tuning.pageSize ?? PAGE_SIZE
     this.pages = tuning.pages ?? PAGES_PER_TICK
   }

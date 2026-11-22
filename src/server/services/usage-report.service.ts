@@ -19,6 +19,7 @@ import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { guardedStore } from '../utils/guarded-store'
 import { assertObject, assertText } from '../utils/argument-guards'
 import { withReadDates } from '../utils/date-guards'
 import { REPORT_FILTER_FIELDS, SUMMARIZE_FIELDS } from '../utils/input-fields'
@@ -83,12 +84,18 @@ export class UsageReportService {
    * @param options The resolved currency/fx/reporting settings.
    * @param audit The audit hook; the module wires it to the dispatcher.
    */
+  private readonly store: ILedgerStore
+  private readonly pricing: IPricingStore
+
   constructor(
-    private readonly store: ILedgerStore,
-    private readonly pricing: IPricingStore,
+    store: ILedgerStore,
+    pricing: IPricingStore,
     private readonly options: UsageReportOptions,
     private readonly audit: ReportAuditHook = (): void => undefined,
-  ) {}
+  ) {
+    this.store = guardedStore(store)
+    this.pricing = guardedStore(pricing)
+  }
 
   /**
    * Aggregate `SUM … GROUP BY` across the report dimensions. Delegates to the
