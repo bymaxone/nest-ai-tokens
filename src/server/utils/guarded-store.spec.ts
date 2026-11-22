@@ -79,6 +79,49 @@ describe('guardedStore', () => {
     expect(guardedStore(store)).not.toBe(once)
   })
 
+  /** A row is a record: a `then` field of its own does not make it a promise, and it is not awaited. */
+  it('returns a row with a then of its own as a row, and awaits a promise and an object that is no record', async () => {
+    const row = { id: 'r1', then: (resolve: (value: string) => void): void => resolve('output') }
+    const store = {
+      row: (): unknown => row,
+      promise: (): Promise<{ id: string }> => Promise.resolve({ id: 'p1' }),
+      builder: (): unknown => new (class Query {
+        then(resolve: (value: { id: string }) => void): void {
+          resolve({ id: 'q1' })
+        }
+      })(),
+    }
+    const guarded = guardedStore(store)
+    const returned = guarded.row() as { id: string }
+    expect(returned.id).toBe('r1')
+    expect(await guarded.promise()).toEqual({ id: 'p1' })
+    expect(await (guarded.builder() as PromiseLike<{ id: string }>)).toEqual({ id: 'q1' })
+  })
+
+  /** A row nested deeper than a store returns is refused with the library's error and never handed on uncopied, in either direction. */
+  it('refuses a row and an argument nested too deep with the typed error, and passes a getter\'s own error through', () => {
+    let deep: unknown = { id: 'leaf' }
+    for (let level = 0; level < 10; level += 1) deep = { next: deep }
+    const guarded = guardedStore({
+      keep: (input: unknown): Promise<unknown> => Promise.resolve(input),
+      returns: (): unknown => deep,
+      scalar: (): number | null => null,
+      broken: (): unknown => ({ get id(): string { throw new TypeError('own getter failure') } }),
+    })
+    const nameOf = (run: () => unknown): string => {
+      try {
+        run()
+      } catch (error) {
+        return (error as Error).name
+      }
+      return 'none'
+    }
+    expect(nameOf(() => guarded.returns())).toBe('AiTokensException')
+    expect(nameOf(() => guarded.keep(deep))).toBe('AiTokensException')
+    expect(guarded.scalar()).toBeNull()
+    expect(nameOf(() => guarded.broken())).toBe('TypeError')
+  })
+
   it('lets what a method throws through, as the store raised it', () => {
     const store = { fail: (): never => { throw new Error('boom') } }
     expect(() => guardedStore(store).fail()).toThrow('boom')

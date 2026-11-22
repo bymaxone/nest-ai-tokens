@@ -100,27 +100,42 @@ describe('ownCopy', () => {
     expect(Object.getPrototypeOf(ownCopy(bare).inner)).toBeNull()
   })
 
-  /** A record is a few levels deep: what is deeper is handed on as it is, which also ends a chain that loops. */
-  it('copies to a bounded depth and hands on what is deeper', () => {
-    const deep: Record<string, unknown> = {}
-    let cursor = deep
-    for (let level = 0; level < 12; level += 1) {
-      const next: Record<string, unknown> = {}
-      cursor.next = next
-      cursor = next
-    }
-    let copy: Record<string, unknown> = ownCopy(deep)
-    let depth = 0
-    while (Object.getPrototypeOf(copy) === null && copy.next !== undefined) {
-      copy = copy.next as Record<string, unknown>
-      depth += 1
-    }
-    expect(depth).toBeGreaterThan(5)
-    expect(depth).toBeLessThan(12)
-  })
-})
+  /** A record is a few levels deep: what is nested deeper is refused, never handed on with the prototype it has, which would read the root again. */
+  function nest(levels: number, leaf: unknown = { id: 'leaf' }): Record<string, unknown> {
+    let value: unknown = leaf
+    for (let level = 0; level < levels; level += 1) value = { next: value }
+    return value as Record<string, unknown>
+  }
 
-describe('ownCopy and a spoofed type tag', () => {
+  it('copies a record to the deepest level it allows and refuses the one below it', () => {
+    expect(() => ownCopy(nest(7))).not.toThrow()
+    let copy: Record<string, unknown> = ownCopy(nest(7))
+    for (let level = 0; level < 7; level += 1) {
+      expect(Object.getPrototypeOf(copy)).toBeNull()
+      copy = copy.next as Record<string, unknown>
+    }
+    expect(Object.getPrototypeOf(copy)).toBeNull()
+    expect(() => ownCopy(nest(9))).toThrow(RangeError)
+  })
+
+  it('refuses a list nested too deep and a record that contains itself', () => {
+    let list: unknown = ['x']
+    for (let level = 0; level < 9; level += 1) list = [list]
+    expect(() => ownCopy(list)).toThrow()
+    const loop: Record<string, unknown> = {}
+    loop.self = loop
+    expect(() => ownCopy(loop)).toThrow()
+  })
+
+  it('refuses a planted-key reader a subtree it would leave uncopied', () => {
+    Object.defineProperty(Object.prototype, 'extraUnits', { value: { planted: 1 }, configurable: true, writable: true, enumerable: false })
+    try {
+      expect(() => ownCopy(nest(9))).toThrow()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'extraUnits')
+    }
+  })
+
   /** The tag a value claims is no brand: a row that names itself a Date is still a record, and a tag planted on the root is on every row. */
   it('copies a row that claims to be a Date, whether it says so itself or the root does', () => {
     const own = { id: 'r1', [Symbol.toStringTag]: 'Date' }
@@ -137,6 +152,16 @@ describe('ownCopy and a spoofed type tag', () => {
     } finally {
       Reflect.deleteProperty(Object.prototype, Symbol.toStringTag)
     }
+  })
+
+  /** A field defined as not enumerable is still a field of the row, as it is for the readers of the library and for an instance of a class. */
+  it('keeps a non-enumerable own field of a plain object, at the top and nested', () => {
+    const rate: { model: string; unitRates?: Record<string, bigint> } = { model: 'gpt-5' }
+    Object.defineProperty(rate, 'unitRates', { value: { web_search: 10_000_000n } })
+    const copy = ownCopy({ inner: rate })
+    expect(copy.inner.unitRates?.web_search).toBe(10_000_000n)
+    expect(copy.inner.model).toBe('gpt-5')
+    expect(ownCopy(rate).unitRates?.web_search).toBe(10_000_000n)
   })
 
   /** Every built-in object is recognised by its internal slot, in this realm and in another, and handed on whatever tag the root claims. */

@@ -34,8 +34,8 @@ function usage(): NormalizedUsage {
 const ESTIMATE: HoldEstimate = { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 1000, maxOutputTokens: 500 }
 const CONTEXT: MeteringContext = { tenantId: TENANT, scope: USER_SCOPE, feature: 'chat.reply' }
 
-/** A metering service over in-memory stores whose model has a price for a tool unit. */
-async function meteringWorld(): Promise<MeteringService> {
+/** A metering service over in-memory stores whose model has a price for a tool unit; `hide` defines the unit rates of the price row as not enumerable. */
+async function meteringWorld(hide = false): Promise<MeteringService> {
   const options = {
     ratingMode: 'rate-table',
     markup: 1,
@@ -51,6 +51,15 @@ async function meteringWorld(): Promise<MeteringService> {
     inputNanoUsdPerMillion: 1_250_000_000n, outputNanoUsdPerMillion: 10_000_000_000n,
     unitRates: { web_search: 10_000_000n }, effectiveFrom: new Date(0),
   })
+  if (hide) {
+    const resolve = pricing.resolveRate.bind(pricing)
+    jest.spyOn(pricing, 'resolveRate').mockImplementation(async (...args) => {
+      const row = await resolve(...args)
+      if (row === null) return null
+      const { unitRates, ...rest } = row
+      return Object.defineProperty({ ...rest }, 'unitRates', { value: unitRates, enumerable: false })
+    })
+  }
   return new MeteringService(new LedgerService(new InMemoryLedgerStore(), options), new PricingService(options, pricing), new MarkupResolver(options), options, undefined, undefined, undefined, () => NOW)
 }
 
@@ -62,6 +71,15 @@ describe('the units of a stored hold', () => {
     const captured = await planted('extraUnits', { web_search: 1_000 }, () => service.capture(hold, { tenantId: TENANT, scope: USER_SCOPE }, usage()))
     expect(captured.billedCostNanoUsd).toBe(6_250_000n)
     expect('extraUnits' in captured).toBe(false)
+  })
+})
+
+describe('the price row a store returned', () => {
+  /** A rate defined as a non-enumerable field is still the row's: 3 searches at 10,000,000 are billed on top of the 6,250,000 of the tokens. */
+  it('bills the unit rates of a price row that defines them as not enumerable', async () => {
+    const service = await meteringWorld(true)
+    const record = await service.record({ usage: { ...usage(), serverToolUse: { web_search: 3 } }, context: CONTEXT })
+    expect(record.billedCostNanoUsd).toBe(36_250_000n)
   })
 })
 

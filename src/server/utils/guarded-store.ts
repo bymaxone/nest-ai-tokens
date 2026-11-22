@@ -8,15 +8,35 @@
  * @layer server
  */
 
+import { types } from 'node:util'
+import { AiTokensException } from '../errors'
 import { fieldOf } from './field-names'
-import { ownCopy } from './own-copy'
+import { isPlain, ownCopy } from './own-copy'
 
 /** Every proxy this module made, so that a store handed to two services is guarded once. */
 const GUARDED = new WeakSet()
 
-/** Whether a value is a promise or a thenable, which a store method returns when it is asynchronous. */
+/**
+ * Whether a value is what an asynchronous store method returns: a promise, or an object that is no record and has a `then` of its own or its
+ * class's (a query builder of a client). A row is a record, so a row with a `then` of its own is a row and is never awaited.
+ */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function'
+  if (typeof value !== 'object' || value === null) return false
+  return types.isPromise(value) || (!isPlain(value) && typeof fieldOf(value, 'then') === 'function')
+}
+
+/**
+ * The copy of an argument or a row. A record nested deeper than a store takes, or a class chain longer than a class hierarchy, is refused with
+ * the library's error and is never handed on uncopied.
+ */
+function copied<T>(value: T): T {
+  try {
+    return ownCopy(value)
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
+    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a record a store takes or returns is nested too deep, or its class chain is too long' })
+  }
 }
 
 /**
@@ -33,8 +53,8 @@ export function guardedStore<T extends object>(store: T): T {
       const value = fieldOf(target, property)
       if (typeof value !== 'function') return value
       return (...args: unknown[]): unknown => {
-        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(target, args.map((argument) => ownCopy(argument)))
-        return isThenable(result) ? Promise.resolve(result).then((resolved) => ownCopy(resolved)) : ownCopy(result)
+        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(target, args.map((argument) => copied(argument)))
+        return isThenable(result) ? Promise.resolve(result).then((resolved) => copied(resolved)) : copied(result)
       }
     },
   })
