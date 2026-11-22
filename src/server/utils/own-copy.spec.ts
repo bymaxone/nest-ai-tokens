@@ -118,6 +118,12 @@ describe('ownCopy', () => {
     expect(() => ownCopy(nest(9))).toThrow(RangeError)
   })
 
+  /** The cap is exact: a record whose deepest level is the 8th below the top is copied, and the 9th is refused. */
+  it('copies a leaf at the deepest allowed level and refuses the one a level below', () => {
+    expect(() => ownCopy(nest(8))).not.toThrow()
+    expect(() => ownCopy(nest(9))).toThrow(RangeError)
+  })
+
   it('refuses a list nested too deep and a record that contains itself', () => {
     let list: unknown = ['x']
     for (let level = 0; level < 9; level += 1) list = [list]

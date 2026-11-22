@@ -4,6 +4,7 @@
  * @layer server
  */
 
+import { types } from 'node:util'
 import { guardedStore } from './guarded-store'
 
 /** A store whose rows are class instances and plain objects, and that keeps what it was handed. */
@@ -82,7 +83,11 @@ describe('guardedStore', () => {
   /** A row is a record: a `then` field of its own does not make it a promise, and it is not awaited. */
   it('returns a row with a then of its own as a row, and awaits a promise and an object that is no record', async () => {
     const row = { id: 'r1', then: (resolve: (value: string) => void): void => resolve('output') }
+    class Entity {
+      readonly id = 'e1'
+    }
     const store = {
+      entity: (): unknown => new Entity(),
       row: (): unknown => row,
       promise: (): Promise<{ id: string }> => Promise.resolve({ id: 'p1' }),
       builder: (): unknown => new (class Query {
@@ -93,9 +98,16 @@ describe('guardedStore', () => {
     }
     const guarded = guardedStore(store)
     const returned = guarded.row() as { id: string }
+    // An instance of a class with no then is a record: it comes back at once, as a copy, and is not wrapped in a promise.
+    const entity = guarded.entity()
+    expect(types.isPromise(entity)).toBe(false)
+    expect((entity as { id: string }).id).toBe('e1')
     expect(returned.id).toBe('r1')
     expect(await guarded.promise()).toEqual({ id: 'p1' })
-    expect(await (guarded.builder() as PromiseLike<{ id: string }>)).toEqual({ id: 'q1' })
+    // The guard itself awaits what is no record and has a then: it hands back a promise of the copy, not the builder.
+    const built = guarded.builder()
+    expect(types.isPromise(built)).toBe(true)
+    expect(await (built as Promise<{ id: string }>)).toEqual({ id: 'q1' })
   })
 
   /** A row nested deeper than a store returns is refused with the library's error and never handed on uncopied, in either direction. */
