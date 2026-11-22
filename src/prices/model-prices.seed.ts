@@ -60,23 +60,28 @@ interface SeedInput {
   unitRates?: Record<string, bigint>
 }
 
-/** Normalize a {@link SeedInput} into a full {@link SeedPriceRow} (fills zero rates and defaults). */
+/** The value a seed entry sets for `key` itself: a key found only on `Object.prototype` is not a rate or a tier the table sets. */
+function own<K extends keyof SeedInput>(input: SeedInput, key: K): SeedInput[K] | undefined {
+  return Object.hasOwn(input, key) ? input[key] : undefined
+}
+
+/** Normalize a {@link SeedInput} into a full {@link SeedPriceRow} (fills zero rates and defaults). Every optional name is read as the entry's own. */
 function makeRow(input: SeedInput): SeedPriceRow {
+  const tierThresholdTokens = own(input, 'tierThresholdTokens')
+  const tierInputNanoUsdPerMillion = own(input, 'tierInputNanoUsdPerMillion')
+  const tierOutputNanoUsdPerMillion = own(input, 'tierOutputNanoUsdPerMillion')
+  const unitRates = own(input, 'unitRates')
   return {
     provider: input.provider,
     model: input.model,
-    operation: input.operation ?? 'chat',
-    serviceTier: input.serviceTier ?? 'standard',
+    operation: own(input, 'operation') ?? 'chat',
+    serviceTier: own(input, 'serviceTier') ?? 'standard',
     ...ZERO_RATES,
     ...input.rates,
-    ...(input.tierThresholdTokens !== undefined ? { tierThresholdTokens: input.tierThresholdTokens } : {}),
-    ...(input.tierInputNanoUsdPerMillion !== undefined
-      ? { tierInputNanoUsdPerMillion: input.tierInputNanoUsdPerMillion }
-      : {}),
-    ...(input.tierOutputNanoUsdPerMillion !== undefined
-      ? { tierOutputNanoUsdPerMillion: input.tierOutputNanoUsdPerMillion }
-      : {}),
-    ...(input.unitRates !== undefined ? { unitRates: input.unitRates } : {}),
+    ...(tierThresholdTokens !== undefined ? { tierThresholdTokens } : {}),
+    ...(tierInputNanoUsdPerMillion !== undefined ? { tierInputNanoUsdPerMillion } : {}),
+    ...(tierOutputNanoUsdPerMillion !== undefined ? { tierOutputNanoUsdPerMillion } : {}),
+    ...(unitRates !== undefined ? { unitRates } : {}),
     currency: 'USD',
     source: 'snapshot',
   }

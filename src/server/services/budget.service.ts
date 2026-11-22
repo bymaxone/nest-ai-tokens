@@ -46,7 +46,7 @@ import type {
   IBudgetStore,
   MeteringContext,
 } from '../interfaces'
-import { addSpend, budgetRow, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
+import { addSpend, budgetInput, budgetRow, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
 import type { FailingDimension } from './budget-math'
 import { COMMITTED_REFERENCE } from '../utils/budget-references'
 import { guardOf, keyNamesAnotherCall, keyedOf, referenceOf, type CounterIncrement, type GuardResult, type Keyed } from './budget-keyed'
@@ -163,7 +163,7 @@ export class BudgetService {
       const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
       if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
     }
-    const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() })
+    const budget = await this.store.upsert(budgetInput({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() }))
     if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
@@ -215,7 +215,7 @@ export class BudgetService {
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const start = requested ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
-    await this.store.upsert({ ...budget, anchorAt: start })
+    await this.store.upsert(budgetInput({ ...budget, anchorAt: start }))
     await this.store.setWindowStart({ tenantId, id: budgetId }, windowStart)
     const counter = this.options.counter
     if (counter !== undefined) {
