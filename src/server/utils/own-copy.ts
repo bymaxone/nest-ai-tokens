@@ -8,6 +8,7 @@
  * @layer server
  */
 
+import { types } from 'node:util'
 import { fieldNamesOf, fieldOf } from './field-names'
 
 /** The deepest level copied: a record a store takes or returns has a record or a list in it, never a long chain. */
@@ -19,34 +20,14 @@ function isPlain(value: object): boolean {
   return prototype === null || Object.getPrototypeOf(prototype) === null
 }
 
-/** The brand tests of the built-in objects a record is never: each calls an intrinsic that throws unless its receiver has the internal slot. */
-const BRANDS: readonly ((value: object) => unknown)[] = [
-  (value) => Date.prototype.getTime.call(value),
-  (value) => Map.prototype.has.call(value, 0),
-  (value) => Set.prototype.has.call(value, 0),
-  (value) => WeakMap.prototype.has.call(value, BRANDS),
-  (value) => WeakSet.prototype.has.call(value, BRANDS),
-  (value) => RegExp.prototype.test.call(value, ''),
-  (value) => ArrayBuffer.prototype.slice.call(value, 0, 0),
-  (value) => {
-    if (!ArrayBuffer.isView(value)) throw new TypeError()
-  },
-]
-
 /**
- * Whether `value` is a built-in object that is handed on whole. It is known by its internal slot, never by the tag it claims: an own
- * `Symbol.toStringTag`, or one planted on `Object.prototype`, names any record a Date or a Map. A plain object is none, so only the other
- * objects are tested.
+ * Whether `value` is a built-in object that is handed on whole. It is known by its internal slot, which `util.types` reads without running
+ * anything on the value, never by the tag it claims: an own `Symbol.toStringTag`, or one planted on `Object.prototype`, names any record a
+ * Date or a Map, and a call such as `RegExp.prototype.test` would change the `lastIndex` of the value it tests. A plain object is none, so
+ * only the other objects are tested.
  */
 function isBuiltIn(value: object): boolean {
-  return BRANDS.some((brand) => {
-    try {
-      brand(value)
-      return true
-    } catch {
-      return false
-    }
-  })
+  return types.isDate(value) || types.isMap(value) || types.isSet(value) || types.isWeakMap(value) || types.isWeakSet(value) || types.isRegExp(value) || types.isAnyArrayBuffer(value) || ArrayBuffer.isView(value)
 }
 
 /**

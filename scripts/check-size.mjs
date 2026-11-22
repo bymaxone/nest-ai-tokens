@@ -42,15 +42,15 @@ const BUDGETS = [
   // bounds of a ledger, report or wallet-entry filter.
   // 53_610 holds the watchdog that abandons a hold-reaper sweep that never settles, and its stalled-tick line.
   // 53_604 holds the bound on an identifier that an error's details carry.
-  // 60_229 holds the argument guards of every public method (typed refusal of an argument of the wrong kind), the supported range and the cross-realm test of a date,
+  // 60_153 holds the argument guards of every public method (typed refusal of an argument of the wrong kind), the supported range and the cross-realm test of a date,
   // the shape checks of every option group and switch, the wallet reconcile mapping, the cap of two running reaper sweeps, the single read of every date a caller supplies, the NUL and range checks of text and amounts, the field reads that refuse a getter that throws, the copy of the lists and objects nested in an input with the plain-key label of a refusal, and the absorption of a failing sink or callback with the total description of an error.
   // It also holds the typed field list of every input of the metering calls, the wallet reference, the scopes and the rate lookup, read by name, the per-variant read of a hold estimate, the ancestor path and the depth of the usage read of a record and a capture, the budget of containers and values one read may visit, and the view that hands a raw provider response to its normalizer.
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
-  // that a store error repeats. 16_673 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 60_229 },
+  // that a store error repeats. 16_594 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 60_153 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_673 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_594 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

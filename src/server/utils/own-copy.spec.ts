@@ -140,3 +140,14 @@ describe('ownCopy and a spoofed type tag', () => {
     for (const value of values) expect(ownCopy(value)).toBe(value)
   })
 })
+
+describe('ownCopy and the state of a built-in it hands on', () => {
+  /** Telling a RegExp from a record must not run it: a global RegExp keeps the `lastIndex` its owner set. */
+  it('keeps the lastIndex of a global RegExp that crosses it', () => {
+    const pattern = /x/g
+    pattern.lastIndex = 3
+    const copy = ownCopy({ pattern })
+    expect(copy.pattern).toBe(pattern)
+    expect(pattern.lastIndex).toBe(3)
+  })
+})
