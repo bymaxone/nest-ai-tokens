@@ -40,6 +40,7 @@ import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
+import { assertCleanRealm } from '../utils/prototype-guard'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -580,6 +581,7 @@ export class MeteringService {
    * @returns The combined access status.
    */
   async getStatus(tenantId: string, scope: MeteringScope): Promise<AccessStatus> {
+    assertCleanRealm()
     const own = lookupScope(tenantId, scope)
     const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, own) : []
     const wallet = await this.walletSection(tenantId, own)

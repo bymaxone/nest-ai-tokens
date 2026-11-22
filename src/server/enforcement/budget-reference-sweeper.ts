@@ -10,7 +10,7 @@
 
 import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
-import { methodOf } from '../utils/field-names'
+import { fieldOf, methodOf } from '../utils/field-names'
 import { guardedStore } from '../utils/guarded-store'
 import { budgetRow } from '../services/budget-math'
 import type { Budget, UsageRecord } from '../../shared'
@@ -69,8 +69,8 @@ export class BudgetReferenceSweeper {
     tuning: BudgetReferenceSweepTuning = {},
   ) {
     this.store = guardedStore(store)
-    this.pageSize = tuning.pageSize ?? PAGE_SIZE
-    this.pages = tuning.pages ?? PAGES_PER_TICK
+    this.pageSize = (fieldOf(tuning, 'pageSize') as number | undefined) ?? PAGE_SIZE
+    this.pages = (fieldOf(tuning, 'pages') as number | undefined) ?? PAGES_PER_TICK
   }
 
   /** Walk one tick: a bounded number of pages of each selection, one summary line for what could not be settled. */

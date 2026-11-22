@@ -145,9 +145,11 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param options Optional key prefix.
    */
   constructor(redis: Redis | string, options: RedisBudgetCounterStoreOptions = {}) {
-    this.keyPrefix = options.keyPrefix ?? ''
-    this.closeTimeoutMs = requireMillis('closeTimeoutMs', options.closeTimeoutMs, DEFAULT_CLOSE_TIMEOUT_MS)
-    this.commandTimeoutMs = requireMillis('commandTimeoutMs', options.commandTimeoutMs, DEFAULT_COMMAND_TIMEOUT_MS)
+    // The options are read as the host's own: an option left out is not answered by a key planted on `Object.prototype`.
+    const own = <K extends keyof RedisBudgetCounterStoreOptions>(key: K): RedisBudgetCounterStoreOptions[K] | undefined => (Object.hasOwn(options, key) ? options[key] : undefined)
+    this.keyPrefix = own('keyPrefix') ?? ''
+    this.closeTimeoutMs = requireMillis('closeTimeoutMs', own('closeTimeoutMs'), DEFAULT_CLOSE_TIMEOUT_MS)
+    this.commandTimeoutMs = requireMillis('commandTimeoutMs', own('commandTimeoutMs'), DEFAULT_COMMAND_TIMEOUT_MS)
     this.#source = redis
   }
 

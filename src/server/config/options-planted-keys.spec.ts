@@ -9,6 +9,11 @@ import type { BymaxAiTokensModuleOptions, IAiTokensStore } from '../interfaces'
 import { applyDefaults } from './apply-defaults'
 import { validateOptions } from './validate-options'
 import { GROUP_KEYS, OPTION_KEYS, withoutNullish } from './without-nullish'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** A structurally complete store: validation checks the presence of the methods. */
 function store(): IAiTokensStore {

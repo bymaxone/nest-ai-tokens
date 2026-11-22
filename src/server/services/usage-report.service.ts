@@ -19,6 +19,7 @@ import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { ownCopy } from '../utils/own-copy'
 import { guardedStore } from '../utils/guarded-store'
 import { assertObject, assertText } from '../utils/argument-guards'
 import { withReadDates } from '../utils/date-guards'
@@ -211,7 +212,9 @@ export class UsageReportService {
 }
 
 /** Map a {@link ReportFilter} to a {@link LedgerFilter}, defaulting the settled statuses. */
-function toLedgerFilter(filter: ReportFilter, limit: number): LedgerFilter {
+function toLedgerFilter(given: ReportFilter, limit: number): LedgerFilter {
+  // The filter is a rest object of the caller's input and leaves optional names out: it is read as a copy that holds only what it has.
+  const filter = ownCopy(given)
   return {
     tenantId: filter.tenantId,
     // Stryker disable next-line ConditionalExpression: spreading { scope: undefined } is equivalent to {} because InMemoryLedgerStore uses truthiness; the 'false' variant is covered by the scope isolation test

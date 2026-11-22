@@ -12,6 +12,7 @@
  */
 
 import type { NewUsageRecord } from '../../shared'
+import { fieldOf } from './field-names'
 
 /** What a ledger record field describes. */
 export type FieldRole = 'identity' | 'request' | 'derived' | 'rated-cost' | 'occurred-at' | 'lifecycle'
@@ -61,11 +62,11 @@ export type UnclassifiedField = Exclude<keyof NewUsageRecord, (typeof ROLE_FIELD
 /** Compile-time proof that no record field is left without a role. */
 export const EVERY_FIELD_HAS_A_ROLE: [UnclassifiedField] extends [never] ? true : false = true
 
-/** The fields of a record whose roles are in `roles`. */
+/** The fields of a record whose roles are in `roles`, each read as the record's own (or its class's), never from a key planted on `Object.prototype`. */
 export function pickByRole(record: NewUsageRecord, roles: ReadonlySet<FieldRole>): Partial<NewUsageRecord> {
   const picked: Record<string, unknown> = {}
   for (const role of roles) {
-    for (const key of ROLE_FIELDS[role]) picked[key] = record[key]
+    for (const key of ROLE_FIELDS[role]) picked[key] = fieldOf(record, key)
   }
   return picked
 }

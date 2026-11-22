@@ -800,7 +800,24 @@ specific to security is below.
   `cacheDetails`) is billed by the total when the split reports nothing, and a total that disagrees with a non-empty split, or a null
   entry of `cacheDetails`, is refused. OpenAI chat and Responses audio output tokens are part of the completion tokens and are billed
   once, at the audio rate. A negative count, a count past the largest safe integer and a negative provider-reported cost in a usage a
-  host normalized itself are refused, never clamped.
+  host normalized itself are refused, never clamped. A hold estimate above that bound is refused as `AI_TOKENS_INVALID_CONFIG` before
+  anything is reserved.
+- **A process whose prototypes are not the engine's is refused.** The module does not start, and no call that moves, reads or reports money
+  runs (`record`, `hold`, `capture`, `release`, `reverse`, the wallet, budget, ledger, pricing and report methods, the sweeps), while this
+  realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its flags, or a function
+  that is not the engine's), or while a built-in the library calls (`Object.keys`, `Reflect.get`, `JSON.stringify`, `Array.prototype.map`,
+  `Date.prototype.getTime`, `Promise.resolve`, and the others it relies on) is no longer the function it met when it loaded. The refusal is
+  `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it carries a count, never a name or a value. A host that extends `Object.prototype` (a
+  `should`-style assertion library, a polyfill) cannot run the library. Beneath the check, the library still reads every option, decorator
+  field, usage, filter, row and descriptor as the host's own, so a name planted between the check and the read is not taken for a value the
+  host set.
+- **The records a service returns are copies, and a store is read through a copy.** Every argument a service hands a store, and every row
+  the store hands back, is copied (a plain object or an instance of a class, by its own fields and the getters of its class, into an object
+  with no prototype; a `Date`, a `Map`, a typed array and the other built-ins are handed on as they are). A `UsageRecord`, a `Budget`, a wallet
+  entry or a price version a service returns therefore has no `hasOwnProperty` or `toString` (`String(record)` throws; use
+  `Object.hasOwn(record, name)` and `JSON.stringify`, which are unchanged) and is not an `instanceof` anything. A record or list nested
+  deeper than 8 levels in a store argument or row is refused as `AI_TOKENS_INVALID_CONFIG`. A frozen or sealed store object is accepted. A
+  usage a built-in normalizer returns has no prototype either.
 
 ---
 

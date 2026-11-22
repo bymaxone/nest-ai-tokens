@@ -145,10 +145,18 @@ export function scopeOf(type: string | null, id: string | null): { type: 'tenant
   return { type: type as 'tenant' | 'team' | 'user' | 'key', id }
 }
 
+/**
+ * A row mapped for the services, with no prototype: a field the row leaves out (a `null` column) is `undefined` wherever it is read, never a key
+ * planted on `Object.prototype`, and a spread of it is the same.
+ */
+function bare<T extends object>(row: T): T {
+  return Object.assign(Object.create(null) as T, row)
+}
+
 /** Convert a `UsageRow` to the canonical {@link UsageRecord} (nulls → absent). */
 export function mapUsageRow(row: UsageRow): UsageRecord {
   const beneficiary = scopeOf(row.beneficiaryType, row.beneficiaryId)
-  return {
+  return bare({
     id: row.id,
     tenantId: row.tenantId,
     scope: { type: row.scopeType as 'tenant' | 'team' | 'user' | 'key', id: row.scopeId },
@@ -194,7 +202,7 @@ export function mapUsageRow(row: UsageRow): UsageRecord {
     occurredAt: row.occurredAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-  }
+  })
 }
 
 /** Serialize a bigint unit-rate map to JSON of decimal strings for storage. */
@@ -213,7 +221,7 @@ export function parseUnitRates(units: Record<string, string>): Record<string, bi
 
 /** Convert a `PriceRow` to the canonical {@link PriceVersion}. */
 export function mapPriceRow(row: PriceRow): PriceVersion {
-  return {
+  return bare({
     id: row.id,
     provider: row.provider,
     model: row.model,
@@ -237,7 +245,7 @@ export function mapPriceRow(row: PriceRow): PriceVersion {
     effectiveFrom: row.effectiveFrom,
     effectiveTo: row.effectiveTo,
     source: row.source,
-  }
+  })
 }
 
 /**
@@ -531,7 +539,7 @@ export function mapWalletRow(row: WalletRow): Wallet {
 
 /** Convert a `WalletEntryRow` to the canonical {@link WalletEntry} (nulls → absent). */
 export function mapWalletEntryRow(row: WalletEntryRow): WalletEntry {
-  return {
+  return bare({
     id: row.id,
     walletId: row.walletId,
     type: row.type as WalletEntry['type'],
@@ -543,12 +551,12 @@ export function mapWalletEntryRow(row: WalletEntryRow): WalletEntry {
     idempotencyKey: row.idempotencyKey,
     ...(row.reason !== null ? { reason: row.reason } : {}),
     createdAt: row.createdAt,
-  }
+  })
 }
 
 /** Convert an `OpenGrantRow` to an {@link OpenGrant}. */
 export function mapOpenGrantRow(row: OpenGrantRow): OpenGrant {
-  return { ...mapWalletEntryRow(row), remainingNanoUsd: row.remaining }
+  return bare({ ...mapWalletEntryRow(row), remainingNanoUsd: row.remaining })
 }
 
 /** Whether an entry auto-creates a missing wallet (grant, or a positive adjustment). */
@@ -690,7 +698,7 @@ export function parseWindow(value: string): BudgetWindowKind {
 
 /** Convert a `BudgetRow` to the canonical {@link Budget} (nulls → absent). */
 export function mapBudgetRow(row: BudgetRow): Budget {
-  return {
+  return bare({
     id: row.id,
     tenantId: row.tenantId,
     scope: { type: row.scopeType as MeteringScope['type'], id: row.scopeId },
@@ -704,7 +712,7 @@ export function mapBudgetRow(row: BudgetRow): Budget {
     softThresholds: row.softThresholds,
     policy: row.policy as Budget['policy'],
     createdAt: row.createdAt,
-  }
+  })
 }
 
 /** Convert a `BudgetWindowRow` to a {@link BudgetWindowSpend}. */

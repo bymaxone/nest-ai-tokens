@@ -11,6 +11,7 @@ import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
 import { methodOf, withEveryName } from '../utils/field-names'
+import { assertCleanRealm } from '../utils/prototype-guard'
 import { guardedStore } from '../utils/guarded-store'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
@@ -94,6 +95,8 @@ export class PricingService implements OnModuleInit {
    * @throws {AiTokensException} `AI_TOKENS_PRICE_NOT_FOUND` on a miss in strict mode.
    */
   async resolveRate(given: ResolveRateInput): Promise<PriceVersion | null> {
+    // A cached price never reaches the store, which is where every other read of the library is refused beside a polluted realm.
+    assertCleanRealm()
     assertObject('input', given)
     const input = snapshotOf(given, RESOLVE_RATE_FIELDS)
     assertText('provider', input.provider)

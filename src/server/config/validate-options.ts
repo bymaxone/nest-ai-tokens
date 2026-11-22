@@ -11,6 +11,7 @@ import { resolveMultiplier4dp } from '../../shared'
 import type { BymaxAiTokensModuleOptions, IMarkupPolicy } from '../interfaces'
 import { AiTokensException } from '../errors'
 import { fieldOf } from '../utils/field-names'
+import { assertCleanRealm } from '../utils/prototype-guard'
 import { isBudgetPolicy, isRatingMode } from '../utils/enum-guards'
 import { withoutNullish } from './without-nullish'
 import { isFraction, isNonNegativeBigint, isPositiveBigint } from '../utils/numeric-guards'
@@ -292,6 +293,8 @@ function validateWallets(options: BymaxAiTokensModuleOptions): void {
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` or `AI_TOKENS_FX_REQUIRED`.
  */
 export function validateOptions(given: BymaxAiTokensModuleOptions): void {
+  // The library does not start beside a polluted realm; the count is all the refusal says.
+  assertCleanRealm()
   validateProtections(given)
   const options = withoutNullish(given)
   validateShapes(options)

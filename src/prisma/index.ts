@@ -485,7 +485,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return rows.map(mapOpenGrantRow)
   }
 
-  async listEntries(ref: WalletRef, filter: WalletEntryFilter = {}): Promise<WalletEntryPage> {
+  async listEntries(ref: WalletRef, filter: WalletEntryFilter = Object.create(null) as WalletEntryFilter): Promise<WalletEntryPage> {
     const wallet = await this.getWallet(ref)
     if (wallet === null) return { entries: [], total: 0 }
     const where = walletEntryWhere(wallet.id, filter)
