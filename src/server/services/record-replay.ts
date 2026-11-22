@@ -74,10 +74,9 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
 }
 
 /** Whether two tool unit maps name the same units with the same counts, in any order: an absent map and an empty one are the same. */
-function sameUnits(first: Record<string, number> | undefined, second: Record<string, number> | undefined): boolean {
-  const kept = Object.entries(first ?? {})
-  const other = second ?? {}
-  return kept.length === Object.keys(other).length && kept.every(([unit, count]) => other[unit] === count)
+function sameUnits(first: Record<string, number> = {}, second: Record<string, number> = {}): boolean {
+  const names = Object.keys(first)
+  return names.length === Object.keys(second).length && names.every((name) => first[name] === second[name])
 }
 
 /**
