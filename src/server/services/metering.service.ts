@@ -48,7 +48,7 @@ import { clearOwed, reverseOrLeaveOwed, settleOwed } from './owed-effects'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import { baseColumns, buildAppendInput, settlementPatch, withBaseModel } from './record-columns'
 import type { RatingResult, RecordOutcome } from './record-replay'
-import { NEUTRAL_MARKUP, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
+import { NEUTRAL_MARKUP, heldReplay, isIdempotencyConflict, replayOf, requireReportedCost, rowAfterFailure, unratedFor } from './record-replay'
 import { MeteringEffects } from './metering-effects'
 import type { EffectDelta, Enforcement } from './metering-effects'
 import type { PricingService } from './pricing.service'
@@ -415,7 +415,7 @@ export class MeteringService {
     if (context.idempotencyKey !== undefined) {
       const existing = await this.ledger.findByIdempotencyKey(context.tenantId, context.idempotencyKey)
       if (existing !== null && isOrphanClaim(existing)) throw lateAppend(this.logger, existing)
-      if (existing !== null) return this.holdOf(existing)
+      if (existing !== null) return this.holdOf(heldReplay(existing, context.extraUnits))
     }
     const occurredAt = this.now()
     const resolved = await resolveHoldEstimate(this.pricing, context, estimate, occurredAt)
