@@ -36,15 +36,14 @@ const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<stri
  * kept: a function replaced after import, whichever it is, is counted. `Object.prototype` is left out, because it is compared by descriptor.
  * `Promise` is left out too, and so are its prototype and its binding: tracing and monitoring agents wrap it after load on healthy hosts, so
  * the code that settles a store result or serializes the writes of a call uses `await`, which does not look the global up. `JSON` is left out
- * because a host's own tests spy on it: every place that turns a value into a key, a statement parameter or a report holds the `JSON.stringify` of
- * load time.
+ * because a host's own tests spy on it: the library turns values into text with the `JSON.stringify` of load time instead.
  */
 const STANDARD = 'Object Reflect Array Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
 /**
  * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
- * changes every call that goes through the name. `Date` is in the list: a fake-timer library replaces it, so a spec that installs one turns the
- * guard off through the test seam for as long as it runs.
+ * changes every call that goes through the name. `Date` is in the list: a fake-timer library replaces it, so it must be restored before the
+ * library is called.
  */
 const BOUND = 'Object Reflect Array Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 

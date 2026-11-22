@@ -1,7 +1,6 @@
 /**
  * @fileoverview The `JSON.stringify` this module met when it loaded. A host's own tests spy on `JSON.stringify` and tracing agents wrap it, so
- * the realm guard does not compare it; every place that turns a value into the text of a key, a statement parameter or a report goes through
- * this reference and never through the live global.
+ * the realm guard does not compare it; the callers that import this reference turn a value into text without reading the live global.
  * @layer server
  */
 
