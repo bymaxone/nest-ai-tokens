@@ -155,6 +155,27 @@ describe('a hold replayed under the same idempotency key', () => {
     expect((await built.service.hold(context({ idempotencyKey: 'hold-key-2', extraUnits: {} }), rated(1000, 500))).id).toBe(none.id)
   })
 
+  /** A hold that is no longer pending holds the units it was billed for, so a late retry of the original call finds its hold, not a conflict. */
+  it('returns the hold of a late retry after it was captured or released, whatever units the settlement stored', async () => {
+    const built = await world()
+    const caller = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } } as const
+    const captured = await built.service.hold(ctx(undefined), rated(1000, 500))
+    await built.service.capture(captured, caller, { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0, serverToolUse: { web_search_requests: 2 } })
+    expect((await built.service.hold(ctx(undefined), rated(1000, 500))).id).toBe(captured.id)
+    const released = await built.service.hold(context({ idempotencyKey: 'hold-key-3', extraUnits: { web_search_requests: 3 } }), rated(1000, 500))
+    await built.service.release(released, caller, 'not needed')
+    expect((await built.service.hold(context({ idempotencyKey: 'hold-key-3', extraUnits: { web_search_requests: 3 } }), rated(1000, 500))).id).toBe(released.id)
+  })
+
+  /** Two names that collate as equal but are different keys are still one map in any order. */
+  it('treats the same units as the same in any insertion order, including names that collate as equal', async () => {
+    const built = await world()
+    const composed = '\u00e9'
+    const decomposed = 'e\u0301'
+    const first = await built.service.hold(ctx({ [composed]: 1, [decomposed]: 2 }), rated(1000, 500))
+    expect((await built.service.hold(ctx({ [decomposed]: 2, [composed]: 1 }), rated(1000, 500))).id).toBe(first.id)
+  })
+
   /** Different units are a conflict, never a silent replay of the first: a corrected retry would bill the stale units. */
   it.each([
     ['other counts', { web_search_requests: 3 }, { web_search_requests: 4 }],

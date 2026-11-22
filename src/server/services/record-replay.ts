@@ -75,12 +75,16 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
 
 /** The tool units of a call as the names and counts they carry, sorted: an absent map and an empty one are the same. */
 function unitsOf(units: Record<string, number> | undefined): string {
-  return JSON.stringify(Object.entries(units ?? {}).sort(([a], [b]) => a.localeCompare(b)))
+  return JSON.stringify(Object.entries(units ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)))
 }
 
-/** The stored hold when this call names the same tool units, else the idempotency conflict: a corrected retry must not be billed the first call's units. */
+/**
+ * The stored hold when this call names the same tool units, else the idempotency conflict: a corrected retry must not be billed the first
+ * call's units. Only a pending hold is compared: its stored units are the ones it was placed with, where a captured one holds the units
+ * it was billed for, so a late retry of the original call still finds its hold.
+ */
 export function heldReplay(stored: UsageRecord, extraUnits: Record<string, number> | undefined): UsageRecord {
-  if (unitsOf(stored.extraUnits) === unitsOf(extraUnits)) return stored
+  if (stored.status !== 'pending' || unitsOf(stored.extraUnits) === unitsOf(extraUnits)) return stored
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 

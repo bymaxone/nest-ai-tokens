@@ -388,7 +388,8 @@ export class MeteringService {
    * double-consuming budget/wallet over parameter-conflict detection, so a replay
    * with a CHANGED estimate silently keeps the original reservation (unlike
    * `record()`, whose payload hash rejects a changed payload with 409); settlement
-   * still corrects to actuals at capture. Holds sharing one key are serialized
+   * still corrects to actuals at capture; a replay of a pending hold with different `extraUnits` conflicts, since its units would be billed.
+   * Holds sharing one key are serialized
    * inside an instance; across instances they can both pass the pre-check and
    * reserve, and the loser of the ledger insert settles by the row the ledger holds
    * for the key (a brief over-reserve window under high contention).
@@ -396,7 +397,7 @@ export class MeteringService {
    * @param context The metering context (payer scope, feature).
    * @param estimate One of the three {@link HoldEstimate} variants.
    * @returns The plain, serializable {@link Hold}.
-   * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated).
+   * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `_QUOTA_EXCEEDED` / `_INSUFFICIENT_CREDITS` on a shortfall (prior steps compensated); `AI_TOKENS_IDEMPOTENCY_CONFLICT` for a pending hold replayed with other units.
    */
   async hold(givenContext: MeteringContext, givenEstimate: HoldEstimate): Promise<Hold> {
     const { context, estimate } = holdArguments(givenContext, givenEstimate)
