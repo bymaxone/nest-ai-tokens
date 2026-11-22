@@ -45,12 +45,13 @@ describe('the model aliases of the host', () => {
     expect(rate).toBeNull()
   })
 
-  /** A model named like a property of every object is a model with no alias: it asks the store about itself, never about a function. */
-  it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])('asks the store about a model named %s and about nothing else', async (model) => {
+  /** A model named like a property of every object is a model with no alias: the store is asked about its name and its lower-case form, never about a function or an alias. */
+  it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])('asks the store only about a model named %s and its lower-case form', async (model) => {
     const store = new InMemoryPricingStore()
     const asked = jest.spyOn(store, 'resolveRate')
     const rate = await new PricingService(options({}), store).resolveRate({ provider: 'openai', model, operation: 'chat', at: AT })
     expect(rate).toBeNull()
-    expect(asked.mock.calls.every((call) => typeof call[1] === 'string')).toBe(true)
+    expect(asked.mock.calls.length).toBeGreaterThan(0)
+    expect(asked.mock.calls.every((call) => call[1] === model || call[1] === model.toLowerCase())).toBe(true)
   })
 })
