@@ -40,6 +40,7 @@ import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
+import { fieldOf } from '../utils/field-names'
 import { assertCleanRealm } from '../utils/prototype-guard'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
@@ -246,7 +247,7 @@ export class MeteringService {
     const normalized = withBaseModel(parsed, context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
     const occurredAt = input.occurredAt ?? this.now()
-    const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
+    const mode = context.ratingMode ?? input.preset?.ratingMode ?? (fieldOf(this.options, 'ratingMode') as RatingMode)
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating = checkUsageCounts({ ...normalized, serverToolUse: ratedUnits })
 
@@ -368,6 +369,8 @@ export class MeteringService {
       imageOutTokens: 0,
     }
     const rate = await this.pricing.resolveRate({ provider: input.provider, model: input.model, operation: input.operation, serviceTier, at })
+    // The guard ran before the awaits above: it runs again before the amounts are computed, so a built-in replaced while they ran is refused.
+    assertCleanRealm()
     const rawCostNanoUsd = rate === null ? 0n : computeCostNanoUsd(usage, rate).totalNanoUsd
     const markup = await this.markup.resolve({
       scope: input.scope ?? ESTIMATE_SCOPE,
@@ -378,6 +381,7 @@ export class MeteringService {
       // Stryker disable next-line ConditionalExpression: CE true: spreading { feature: undefined } is equivalent to {} because markup.resolve treats absent and undefined feature the same
       ...(input.feature !== undefined ? { feature: input.feature } : {}),
     })
+    assertCleanRealm()
     return { rawCostNanoUsd, billedCostNanoUsd: markup.apply(rawCostNanoUsd) }
   }
 
@@ -450,6 +454,7 @@ export class MeteringService {
   async capture(givenHold: Hold, givenCaller: HoldCaller, givenUsage: unknown, givenPreset?: ProviderPreset, givenContent?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
     const { hold, caller } = holdOwnerArguments(givenHold, givenCaller)
     const record = await this.loadHoldRecord(hold, caller, 'capture(hold, caller, usage)')
+    assertCleanRealm()
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const { usage, preset, content } = captureInputs(givenUsage, givenPreset, givenContent)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
@@ -462,9 +467,10 @@ export class MeteringService {
       serviceTier: record.serviceTier,
       serverToolUse: ratedUnits,
     })
-    const mode = preset?.ratingMode ?? this.options.ratingMode
+    const mode = preset?.ratingMode ?? (fieldOf(this.options, 'ratingMode') as RatingMode)
     const rating = await this.rate(usageForRating, record.serviceTier, record.occurredAt, mode, record.requestedModel)
     const markup = await this.markup.resolve({ scope: record.scope, provider: record.provider, model: record.model, operation: record.operation, serviceTier: record.serviceTier, feature: record.feature })
+    assertCleanRealm()
     const counts = tokenCountsOf(usageForRating)
     const patch = settlementPatch(counts, rating, markup, ratedUnits)
     const reservedBilled = record.billedCostNanoUsd

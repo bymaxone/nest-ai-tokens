@@ -810,8 +810,9 @@ specific to security is below.
   met when it loaded, or the name of one of them is rebound to another object. The refusal is
   `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it carries a count, never a name or a value. A host that extends `Object.prototype` (a
   `should`-style assertion library, a polyfill) cannot run the library, and neither can a process that patches one of those built-ins in place
-  (`jest.spyOn(Date, 'now')` in a host's own tests, an agent that wraps `JSON.stringify`): restore the built-in before the call, or replace the
-  whole global instead (`jest.useFakeTimers()` replaces `Date` and is not counted). Beneath the check, the library still reads every option, decorator
+  (`jest.spyOn(Date, 'now')` in a host's own tests, an agent that wraps `JSON.stringify`): restore the built-in before the call. The global `Date`
+  is one of them, so a fake clock (`jest.useFakeTimers()`) must be restored before the library is called. A symbol on `Object.prototype` is
+  counted whether it is enumerable or not, except the one hidden mark that Jest puts there; the check costs about 70 microseconds a call. Beneath the check, the library still reads every option, decorator
   field, usage, filter, row and descriptor as the host's own, so a name planted between the check and the read is not taken for a value the
   host set.
 - **The records a service returns are copies, and a store is read through a copy.** Every argument a service hands a store, and every row

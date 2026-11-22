@@ -26,6 +26,7 @@ import {
 import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
+import { withoutRealmGuard } from './utils/prototype-guard'
 import { BudgetGuard } from './enforcement'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type { IAiTokensStore, IBudgetCounterStore } from './interfaces'
@@ -218,7 +219,8 @@ describe('BymaxAiTokensModule', () => {
       doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'],
     })
     try {
-      await moduleRef.get(HoldReaper).sweep()
+      // A fake-timer library replaces the global Date, which the guard counts, so the guard is off while the fake clock runs.
+      await withoutRealmGuard(() => moduleRef.get(HoldReaper).sweep())
     } finally {
       jest.useRealTimers()
     }

@@ -51,13 +51,23 @@ describe('the realm guard', () => {
     expect(pollutedNames()).toBe(0)
   })
 
-  it('counts an enumerable symbol and ignores a hidden one', () => {
+  it('counts a symbol enumerable or hidden, and exempts only the one hidden mark of the test runner', () => {
     const shown = Symbol('shown')
     const hidden = Symbol('hidden')
     Object.defineProperty(Object.prototype, shown, { value: 1, configurable: true, writable: true, enumerable: true })
     Object.defineProperty(Object.prototype, hidden, { value: 1, configurable: true, writable: true, enumerable: false })
     try {
-      expect(pollutedNames()).toBe(1)
+      expect(pollutedNames()).toBe(2)
+      // The mark of the runner is there and hidden: it is not counted. Made enumerable, it is.
+      const mark = Symbol.for('$$jest-protect-from-deletion')
+      const kept = Object.getOwnPropertyDescriptor(Object.prototype, mark)!
+      Object.defineProperty(Object.prototype, mark, { ...kept, enumerable: true })
+      try {
+        expect(pollutedNames()).toBe(3)
+      } finally {
+        Object.defineProperty(Object.prototype, mark, kept)
+      }
+      expect(pollutedNames()).toBe(2)
     } finally {
       Reflect.deleteProperty(Object.prototype, shown)
       Reflect.deleteProperty(Object.prototype, hidden)

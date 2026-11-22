@@ -8,7 +8,7 @@
  * @layer server
  */
 
-import * as nodeCrypto from 'node:crypto'
+import nodeCrypto from 'node:crypto'
 import { types } from 'node:util'
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from '../errors'
@@ -20,6 +20,12 @@ interface Pristine {
   readonly descriptors: Readonly<Record<string | symbol, PropertyDescriptor>>
   readonly sourceOf: (value: unknown) => string
 }
+
+/**
+ * The one hidden symbol a test runner puts on `Object.prototype` of every test it runs, and which no code of the library or of a host reads:
+ * counting it would refuse every host whose specs run under it. It is exempt only while it is not enumerable.
+ */
+const RUNNER_MARK = Symbol.for('$$jest-protect-from-deletion')
 
 /** What the prototype held when this module loaded, so a name swapped for another native function is caught by identity. */
 const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
@@ -33,10 +39,10 @@ const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Promise S
 
 /**
  * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
- * changes every call that goes through the name. `Date` is left out: a fake-timer library replaces the global as a whole and leaves the
- * object, and every function on it, as it was.
+ * changes every call that goes through the name. `Date` is in the list: a fake-timer library replaces it, so a spec that installs one turns the
+ * guard off through the test seam for as long as it runs.
  */
-const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Symbol Error RegExp Function Uint8Array Proxy'
+const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
 /** What the baseline compares: an owner, a name on it, and the function or object that name held when this module loaded. */
 interface Met {
@@ -46,8 +52,27 @@ interface Met {
 }
 
 /**
- * Everything the baseline compares: the functions of {@link STANDARD}, then the bindings of {@link BOUND}. Exported for the specs only; no entry
- * of the package re-exports it.
+ * Records the function-valued data properties of each owner, own names and symbols alike. Only descriptors are read, so no getter of a module
+ * or a prototype runs (`crypto.fips`, for one, warns when it is read).
+ *
+ * @param owners The objects whose functions are recorded.
+ * @returns One entry for each function.
+ */
+export function recordFunctions(owners: readonly object[]): Met[] {
+  const found: Met[] = []
+  for (const owner of owners) {
+    for (const name of Reflect.ownKeys(owner)) {
+      const value: unknown = Object.getOwnPropertyDescriptor(owner, name)?.value
+      if (typeof value === 'function') found.push({ owner: owner as Met['owner'], name, met: value })
+    }
+  }
+  return found
+}
+
+/**
+ * Everything the baseline compares: the functions of {@link STANDARD}, of the iterator intrinsics that `for...of` and spreads go through, of the
+ * Node modules the money path calls (the type tests of `util.types`, `crypto.randomUUID`), then the bindings of {@link BOUND}. Exported for the
+ * specs only; no entry of the package re-exports it.
  */
 export const BUILT_INS: readonly Met[] = (() => {
   const owners: object[] = []
@@ -58,21 +83,24 @@ export const BUILT_INS: readonly Met[] = (() => {
     if (typeof constructor.prototype === 'object' && constructor.prototype !== null && constructor.prototype !== Object.prototype) owners.push(constructor.prototype)
   }
   owners.push(typedArray, typedArray.prototype)
-  const found: Met[] = []
-  for (const owner of owners) {
-    for (const name of Reflect.ownKeys(owner)) {
-      const value: unknown = Object.getOwnPropertyDescriptor(owner, name)?.value
-      if (typeof value === 'function') found.push({ owner: owner as Met['owner'], name, met: value })
-    }
-  }
-  // The functions of the Node modules the money path calls (the type tests of `util.types`, `crypto.randomUUID`): a module object is read as it
-  // is at every check, so a function assigned to it after import is counted too.
-  for (const owner of [types, nodeCrypto] as unknown as Met['owner'][]) {
-    for (const name of Reflect.ownKeys(owner)) {
-      const value: unknown = owner[name]
-      if (typeof value === 'function') found.push({ owner, name, met: value })
-    }
-  }
+  const arrayIterator = Object.getPrototypeOf([][Symbol.iterator]()) as object
+  // A generator is started once, so that its body is a function the engine has run; only its prototypes are read.
+  const generated = function* (): Generator { yield 0 }
+  const started = generated()
+  started.next()
+  owners.push(
+    arrayIterator,
+    Object.getPrototypeOf(arrayIterator) as object,
+    Object.getPrototypeOf(new Set()[Symbol.iterator]()) as object,
+    Object.getPrototypeOf(new Map()[Symbol.iterator]()) as object,
+    Object.getPrototypeOf(''[Symbol.iterator]()) as object,
+    Object.getPrototypeOf(''.matchAll(/a/g)) as object,
+    Object.getPrototypeOf(generated) as object,
+    Object.getPrototypeOf(Object.getPrototypeOf(started)) as object,
+    types,
+    nodeCrypto,
+  )
+  const found = recordFunctions(owners)
   for (const name of BOUND.split(' ')) {
     const bound: unknown = Reflect.get(globalThis, name)
     found.push({ owner: globalThis, name, met: bound })
@@ -181,9 +209,7 @@ export function pollutedNames(): number {
   // then the names of the fresh realm that this realm lacks.
   for (let index = 0; index < nowKeys.length; index += 1) {
     const name = item(nowKeys, index)
-    // A symbol counts when it is enumerable, as an assignment through a polluted path plants it; a symbol made with defineProperty and hidden
-    // needs code that already runs in the process.
-    if (typeof name !== 'string' && field(now[name], 'enumerable') !== true) continue
+    if (name === RUNNER_MARK && field(now[name], 'enumerable') !== true) continue
     if (!unchanged(now[name], hasOwn(descriptors, name) ? descriptors[name] : undefined, name, sourceOf)) found += 1
   }
   for (let index = 0; index < wantKeys.length; index += 1) {
