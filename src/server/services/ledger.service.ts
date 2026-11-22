@@ -21,6 +21,7 @@ import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { guardedStore } from '../utils/guarded-store'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { assertObject, assertOptionalCount, assertText } from '../utils/argument-guards'
 import { readOptionalDate, withReadDates } from '../utils/date-guards'
@@ -91,11 +92,15 @@ export class LedgerService {
    * @param options The resolved options carrying the hash-chain flag (§8.6).
    * @param audit The audit hook for chain verification; wired by the module.
    */
+  private readonly store: ILedgerStore
+
   constructor(
-    private readonly store: ILedgerStore,
+    store: ILedgerStore,
     private readonly options: LedgerServiceOptions = { ledger: { hashChain: false } },
     private readonly audit: LedgerAuditHook = (): void => undefined,
-  ) {}
+  ) {
+    this.store = guardedStore(store)
+  }
 
   /** Whether the per-tenant tamper-evident hash chain is enabled (§8.6). */
   private get hashChainEnabled(): boolean {

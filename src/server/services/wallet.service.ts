@@ -31,6 +31,7 @@ import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, SETTLE_ADJUST
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
+import { guardedStore } from '../utils/guarded-store'
 import { isLedgerIdempotencyConflict } from './ledger-idempotency-conflict'
 
 /** The resolved wallet settings the service consumes (the enabled half of the union). */
@@ -114,12 +115,16 @@ export class WalletService {
    * @param events The event hooks; the module wires them to the dispatcher.
    * @param now The injected clock; every grant's effective and expiry instant is judged on it, by the store too.
    */
+  private readonly store: IWalletStore
+
   constructor(
-    private readonly store: IWalletStore,
+    store: IWalletStore,
     private readonly options: WalletServiceOptions,
     private readonly events: WalletEventHooks = NOOP_WALLET_HOOKS,
     private readonly now: () => Date = (): Date => new Date(),
-  ) {}
+  ) {
+    this.store = guardedStore(store)
+  }
 
   /**
    * The current balance (§9.2). Reads the materialized balance; crediting a grant that falls due

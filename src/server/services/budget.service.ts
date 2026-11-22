@@ -16,15 +16,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common'
-import type {
-  Budget,
-  BudgetExceededEventData,
-  BudgetPolicy,
-  BudgetProjectedExceededEventData,
-  BudgetStatus,
-  BudgetThresholdCrossedEventData,
-  MeteringScope,
-} from '../../shared'
+import type { Budget, BudgetPolicy, BudgetStatus, MeteringScope } from '../../shared'
 import type { ResolvedBudgetsOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
@@ -46,7 +38,7 @@ import type {
   IBudgetStore,
   MeteringContext,
 } from '../interfaces'
-import { addSpend, budgetRow, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
+import { addSpend, budgetInput, budgetRow, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
 import type { FailingDimension } from './budget-math'
 import { COMMITTED_REFERENCE } from '../utils/budget-references'
 import { guardOf, keyNamesAnotherCall, keyedOf, referenceOf, type CounterIncrement, type GuardResult, type Keyed } from './budget-keyed'
@@ -55,6 +47,11 @@ import { recordConsumesBudget } from './budget-predicate'
 import { suppliedDetails } from '../utils/detail-text'
 import { resetsAtFor, windowStartFor } from '../utils/window-anchor'
 import { assertWindowKind } from '../utils/window-kind'
+import { guardedStore } from '../utils/guarded-store'
+import { NOOP_BUDGET_HOOKS } from './budget-hooks'
+import type { BudgetEventHooks } from './budget-hooks'
+
+export type { BudgetEventHooks }
 
 /** The resolved budget settings the service consumes (the enabled half of the union). */
 export type BudgetServiceOptions = Extract<ResolvedBudgetsOptions, { enabled: true }>
@@ -68,22 +65,6 @@ export type UpsertBudgetInput = Omit<Budget, 'id' | 'createdAt' | 'softThreshold
 
 /** A zero window-spend snapshot. */
 const ZERO_SPEND: BudgetWindowSpend = { spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 }
-
-/** The event hooks `BudgetService` fires; the module wires them to the dispatcher. */
-export interface BudgetEventHooks {
-  thresholdCrossed(tenantId: string, scope: MeteringScope, data: BudgetThresholdCrossedEventData): void | Promise<void>
-  exceeded(tenantId: string, scope: MeteringScope, data: BudgetExceededEventData): void | Promise<void>
-  projectedExceeded(tenantId: string, scope: MeteringScope, data: BudgetProjectedExceededEventData): void | Promise<void>
-  audit(action: string, details: Record<string, unknown>): void | Promise<void>
-}
-
-/** The no-op hooks used until the event dispatcher is wired. */
-const NOOP_BUDGET_HOOKS: BudgetEventHooks = {
-  thresholdCrossed: (): void => undefined,
-  exceeded: (): void => undefined,
-  projectedExceeded: (): void => undefined,
-  audit: (): void => undefined,
-}
 
 /** A budget window located in time. */
 interface LocatedWindow {
@@ -130,13 +111,17 @@ export class BudgetService {
    * @param now The injected clock.
    * @param events The event hooks; the module wires them to the dispatcher.
    */
+  private readonly store: IBudgetStore
+
   constructor(
-    private readonly store: IBudgetStore,
+    store: IBudgetStore,
     private readonly ledger: LedgerService,
     private readonly options: BudgetServiceOptions,
     private readonly now: () => Date = (): Date => new Date(),
     private readonly events: BudgetEventHooks = NOOP_BUDGET_HOOKS,
-  ) {}
+  ) {
+    this.store = guardedStore(store)
+  }
 
   /**
    * Create or replace a budget (ADMIN PLANE — §14.4; restrict to privileged roles).
@@ -163,7 +148,7 @@ export class BudgetService {
       const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
       if (existing !== null && existing.tenantId !== input.tenantId) throw unavailableBudgetId()
     }
-    const budget = await this.store.upsert({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() })
+    const budget = await this.store.upsert(budgetInput({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() }))
     if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
     // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
@@ -215,7 +200,7 @@ export class BudgetService {
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const start = requested ?? this.now()
     const windowStart = windowStartFor({ ...budget, anchorAt: start }, start)
-    await this.store.upsert({ ...budget, anchorAt: start })
+    await this.store.upsert(budgetInput({ ...budget, anchorAt: start }))
     await this.store.setWindowStart({ tenantId, id: budgetId }, windowStart)
     const counter = this.options.counter
     if (counter !== undefined) {

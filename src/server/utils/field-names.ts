@@ -71,6 +71,22 @@ export function methodOf(host: object, name: string): ((...args: never[]) => unk
 }
 
 /**
+ * A copy of an object with an own key for every name of its type: the value the object has for the name, or `undefined` when it has none.
+ * The copy has no prototype, and a copy of it made with `{ ...copy }` keeps every key, so a store that re-copies what it is handed and then
+ * reads a name the caller did not set finds `undefined` there, never a key planted on `Object.prototype`.
+ *
+ * @param source The object to hand to a store.
+ * @param names Every field of `T`, mapped to `true` so that the compiler keeps the list complete.
+ * @returns The copy.
+ * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
+ */
+export function withEveryName<T extends object>(source: T, names: { readonly [K in keyof Required<T>]: true }): T {
+  const copy = Object.create(null) as Record<string, unknown>
+  for (const name of Object.keys(names)) copy[name] = fieldOf(source, name)
+  return copy as T
+}
+
+/**
  * A copy of the named fields of an object the host supplied, read as fields (see {@link fieldOf}) and held by an object with no
  * prototype: a field the host left out, or set to `undefined` or `null`, is absent, and a key planted on `Object.prototype` is neither
  * read nor found by a later read of the copy.

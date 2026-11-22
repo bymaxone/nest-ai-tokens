@@ -6,7 +6,7 @@
 
 import { effectivePolicy } from '../utils/enum-guards'
 import type { Budget, BudgetStatus } from '../../shared'
-import { fieldsOf } from '../utils/field-names'
+import { fieldsOf, withEveryName } from '../utils/field-names'
 import type { BudgetDelta, BudgetLimits, BudgetWindowSpend } from '../interfaces'
 import type { CounterDimensionName } from './budget.keys'
 
@@ -120,7 +120,7 @@ export function remainingSnapshot(limits: BudgetLimits, spend: BudgetWindowSpend
 }
 
 /** Every field of a {@link Budget}, mapped to `true` so that the compiler keeps the list complete. */
-const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
+export const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
   id: true,
   tenantId: true,
   scope: true,
@@ -134,6 +134,17 @@ const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
   softThresholds: true,
   policy: true,
   createdAt: true,
+}
+
+/**
+ * A budget to hand to a store, with an own key for every name of a budget (`undefined` for a name it has none of), so that a store that
+ * re-copies it and reads a limit or a feature list by name finds none there, never a key planted on `Object.prototype`.
+ *
+ * @param budget The budget, or the definition of one, to write.
+ * @returns The copy.
+ */
+export function budgetInput<T extends object>(budget: T): T {
+  return withEveryName(budget, BUDGET_FIELDS as { readonly [K in keyof Required<T>]: true })
 }
 
 /**

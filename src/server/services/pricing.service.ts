@@ -10,7 +10,8 @@
 import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
-import { methodOf } from '../utils/field-names'
+import { methodOf, withEveryName } from '../utils/field-names'
+import { guardedStore } from '../utils/guarded-store'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { IPricingStore } from '../interfaces'
@@ -65,11 +66,15 @@ export class PricingService implements OnModuleInit {
    * @param store The pricing store port.
    * @param now A clock returning epoch milliseconds; injected for testability.
    */
+  private readonly store: IPricingStore
+
   constructor(
     private readonly options: ResolvedAiTokensOptions,
-    private readonly store: IPricingStore,
+    store: IPricingStore,
     private readonly now: () => number = () => Date.now(),
-  ) {}
+  ) {
+    this.store = guardedStore(store)
+  }
 
   /** Whether a missing price is refused (`true`) or billed at 0 and flagged (`false`). */
   get strict(): boolean {
@@ -164,7 +169,7 @@ export class PricingService implements OnModuleInit {
   async seedFromSnapshot(): Promise<void> {
     const { MODEL_PRICES_SEED } = await import('@bymax-one/nest-ai-tokens/prices')
     for (const row of MODEL_PRICES_SEED) {
-      const input = { ...row, effectiveFrom: SEED_EFFECTIVE_FROM }
+      const input = withEveryName({ ...row, effectiveFrom: SEED_EFFECTIVE_FROM }, PRICE_FIELDS)
       const seed = methodOf(this.store, 'seedPrice') as IPricingStore['seedPrice']
       if (seed !== undefined) {
         await seed(input)
