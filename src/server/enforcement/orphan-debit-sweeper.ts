@@ -13,6 +13,7 @@ import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 import type { UsageRecord } from '../../shared'
 import type { IWalletStore, OwedEffects, WalletDebit, WalletDebitCursor } from '../interfaces'
+import { methodOf } from '../utils/field-names'
 import type { LedgerAppendInput, LedgerService } from '../services/ledger.service'
 import { isIdempotencyConflict } from '../services/record-replay'
 import {
@@ -76,12 +77,12 @@ export class OrphanDebitSweeper {
 
   /** Whether the sweep can run: the wallet store lists debits across wallets and the ledger keeps the marker. */
   get supported(): boolean {
-    return this.wallets.findDebitsBefore !== undefined && this.ledger.supportsOwedEffects()
+    return methodOf(this.wallets, 'findDebitsBefore') !== undefined && this.ledger.supportsOwedEffects()
   }
 
   /** Walk one tick; the cursor wraps on an empty page. */
   async sweep(): Promise<void> {
-    const list = this.wallets.findDebitsBefore?.bind(this.wallets)
+    const list = methodOf(this.wallets, 'findDebitsBefore') as IWalletStore['findDebitsBefore']
     if (list === undefined || !this.ledger.supportsOwedEffects()) return
     const now = this.now().getTime()
     const olderThan = new Date(now - this.options.graceSeconds * MS_PER_SECOND)

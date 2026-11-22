@@ -57,6 +57,20 @@ export function fieldOf(value: object, key: string): unknown {
 }
 
 /**
+ * A method of an object the host supplied, bound to it: the object's own or one its class defines (see {@link fieldOf}). A function of
+ * that name found only on the `Object.prototype` of a realm is not a method, and a field that is not a function is none either.
+ *
+ * @param host The object.
+ * @param name The name of the method.
+ * @returns The bound method, which the caller narrows to the type the port declares, or `undefined` when the host has none.
+ * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
+ */
+export function methodOf(host: object, name: string): ((...args: never[]) => unknown) | undefined {
+  const method = fieldOf(host, name)
+  return typeof method === 'function' ? (method as (...args: never[]) => unknown).bind(host) : undefined
+}
+
+/**
  * A copy of the named fields of an object the host supplied, read as fields (see {@link fieldOf}) and held by an object with no
  * prototype: a field the host left out, or set to `undefined` or `null`, is absent, and a key planted on `Object.prototype` is neither
  * read nor found by a later read of the copy.
@@ -66,6 +80,10 @@ export function fieldOf(value: object, key: string): unknown {
  * @returns The copy, or `undefined` when there was no object.
  * @throws {RangeError} When the prototype chain is longer than a class hierarchy; whatever the object's own traps and getters throw.
  */
+export function fieldsOf<T extends object>(source: T, names: { readonly [K in keyof Required<T>]: true }): T
+/** An object that may be absent: the copy, or `undefined` when there was none. */
+export function fieldsOf<T extends object>(source: T | undefined, names: { readonly [K in keyof Required<T>]: true }): T | undefined
+/** The implementation of the two signatures above. */
 export function fieldsOf<T extends object>(source: T | undefined, names: { readonly [K in keyof Required<T>]: true }): T | undefined {
   if (source === undefined) return undefined
   const kept = Object.create(null) as Record<string, unknown>

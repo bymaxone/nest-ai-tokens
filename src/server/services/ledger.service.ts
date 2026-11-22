@@ -20,6 +20,7 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
+import { methodOf } from '../utils/field-names'
 import { verifyChainRecords, type ChainVerification } from '../utils/hash-chain'
 import { assertObject, assertOptionalCount, assertText } from '../utils/argument-guards'
 import { readOptionalDate, withReadDates } from '../utils/date-guards'
@@ -239,7 +240,7 @@ export class LedgerService {
 
   /** Whether the store keeps the effects-owed marker, so the owed-effects sweep can run against it. */
   supportsOwedEffects(): boolean {
-    return this.store.findEffectsOwed !== undefined && this.store.findEffectsOwedFor !== undefined && this.store.clearEffectsOwed !== undefined
+    return methodOf(this.store, 'findEffectsOwed') !== undefined && methodOf(this.store, 'findEffectsOwedFor') !== undefined && methodOf(this.store, 'clearEffectsOwed') !== undefined
   }
 
   /**
@@ -249,7 +250,8 @@ export class LedgerService {
    * @param limit The most rows to return.
    */
   async findEffectsOwed(olderThan: Date, limit: number): Promise<OwedEffects[]> {
-    return this.store.findEffectsOwed === undefined ? [] : this.store.findEffectsOwed(olderThan, limit)
+    const find = methodOf(this.store, 'findEffectsOwed') as ILedgerStore['findEffectsOwed']
+    return find === undefined ? [] : find(olderThan, limit)
   }
 
   /**
@@ -258,7 +260,8 @@ export class LedgerService {
    * @param id The row id.
    */
   async findEffectsOwedFor(id: string): Promise<OwedEffects | null> {
-    return this.store.findEffectsOwedFor === undefined ? null : this.store.findEffectsOwedFor(id)
+    const find = methodOf(this.store, 'findEffectsOwedFor') as ILedgerStore['findEffectsOwedFor']
+    return find === undefined ? null : find(id)
   }
 
   /**
@@ -268,7 +271,8 @@ export class LedgerService {
    * @returns Whether the row had a marker.
    */
   async clearEffectsOwed(id: string): Promise<boolean> {
-    return this.store.clearEffectsOwed === undefined ? false : this.store.clearEffectsOwed(id)
+    const clear = methodOf(this.store, 'clearEffectsOwed') as ILedgerStore['clearEffectsOwed']
+    return clear === undefined ? false : clear(id)
   }
 
   /**

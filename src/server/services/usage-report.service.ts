@@ -18,6 +18,7 @@ import type { LedgerFilter, ProviderId, ReportFilter, TokenCategory, UsageRecord
 import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
+import { methodOf } from '../utils/field-names'
 import { assertObject, assertText } from '../utils/argument-guards'
 import { withReadDates } from '../utils/date-guards'
 import { REPORT_FILTER_FIELDS, SUMMARIZE_FIELDS } from '../utils/input-fields'
@@ -107,7 +108,8 @@ export class UsageReportService {
     assertText('tenantId', filter.tenantId)
     assertGroupBy(groupBy)
     const max = this.options.reporting.maxExportRows
-    if (this.store.summarize !== undefined) return this.store.summarize(toLedgerFilter(filter, max), groupBy)
+    const summarizeInStore = methodOf(this.store, 'summarize') as ILedgerStore['summarize']
+    if (summarizeInStore !== undefined) return summarizeInStore(toLedgerFilter(filter, max), groupBy)
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
     // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only
     this.assertWithinMaxRows(records.length, 'summarize')

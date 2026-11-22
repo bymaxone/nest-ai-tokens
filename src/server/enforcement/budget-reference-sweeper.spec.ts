@@ -119,6 +119,31 @@ describe('BudgetReferenceSweeper', () => {
     }
   })
 
+  /** The budget a reference names is read as the store returned it: a `features` planted on `Object.prototype` does not make the call another call. */
+  it('commits the reference of the same call when a features is planted on Object.prototype and the budget has none', async () => {
+    const r = await rig()
+    await arrange(r, 'reserve', 'attempt', 'posted', true)
+    r.advance(TTL + GRACE + 1)
+    Object.defineProperty(Object.prototype, 'features', { value: ['planted.feature'], configurable: true, writable: true, enumerable: false })
+    try {
+      await r.sweeper.sweep()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'features')
+    }
+    expect(await r.budgets.getWindow('b1', WINDOW)).toEqual({ spentNanoUsd: 25n, spentTokens: 100, spentCount: 1 })
+    expect(await references(r.budgets)).toEqual(['reserve:k1/row'])
+  })
+
+  /** A budget the store no longer has is nobody's: the reference is judged as another call's and given back. */
+  it('gives back the reference of an attempt whose budget no longer exists', async () => {
+    const r = await rig()
+    await arrange(r, 'reserve', 'attempt', 'posted', true)
+    jest.spyOn(r.budgets, 'findBudgetById').mockResolvedValue(null)
+    r.advance(TTL + GRACE + 1)
+    await r.sweeper.sweep()
+    expect(await references(r.budgets)).toEqual([])
+  })
+
   /** A reference that is not older than the grace belongs to an attempt that may still be running: it is not touched. */
   it('leaves a reference younger than the grace alone', async () => {
     const r = await rig()

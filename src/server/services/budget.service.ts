@@ -46,7 +46,7 @@ import type {
   IBudgetStore,
   MeteringContext,
 } from '../interfaces'
-import { addSpend, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
+import { addSpend, budgetRow, buildStatus, dimensionCode, failingDimension, failingDimensionOrNull, featureMatches, limitSnapshot, limitsOf, negate, remainingSnapshot, spendSnapshot, usedFraction } from './budget-math'
 import type { FailingDimension } from './budget-math'
 import { COMMITTED_REFERENCE } from '../utils/budget-references'
 import { guardOf, keyNamesAnotherCall, keyedOf, referenceOf, type CounterIncrement, type GuardResult, type Keyed } from './budget-keyed'
@@ -756,15 +756,15 @@ export class BudgetService {
     return budget
   }
 
-  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. */
+  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. The row is copied as fields before its tenant is compared, so a tenant planted on Object.prototype is not the row's. */
   private async findOwned(key: BudgetKey): Promise<Budget | null> {
-    const budget = await this.store.findBudgetById(key)
+    const budget = budgetRow(await this.store.findBudgetById(key))
     return budget !== null && budget.tenantId === key.tenantId ? budget : null
   }
 
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
-    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).filter((budget) => budget.tenantId === tenantId)
+    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).map((row) => budgetRow(row)).filter((budget) => budget.tenantId === tenantId)
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */

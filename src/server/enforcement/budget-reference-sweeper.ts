@@ -10,6 +10,8 @@
 
 import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
+import { methodOf } from '../utils/field-names'
+import { budgetRow } from '../services/budget-math'
 import type { Budget, UsageRecord } from '../../shared'
 import type { IBudgetStore, StaleCursor, StaleReference, StaleReferenceQuery, StaleSelection } from '../interfaces'
 import type { LedgerService } from '../services/ledger.service'
@@ -69,7 +71,7 @@ export class BudgetReferenceSweeper {
 
   /** Walk one tick: a bounded number of pages of each selection, one summary line for what could not be settled. */
   async sweep(): Promise<void> {
-    const list = this.store.findStaleReferences?.bind(this.store)
+    const list = methodOf(this.store, 'findStaleReferences') as ListStale | undefined
     if (list === undefined) return
     const failed = { count: 0 }
     const graceMs = this.options.graceSeconds * MS_PER_SECOND
@@ -120,7 +122,7 @@ export class BudgetReferenceSweeper {
     } catch {
       failed.count += 1
     }
-    if (this.store.pruneApplication === undefined) return
+    if (methodOf(this.store, 'pruneApplication') === undefined) return
     await this.walk(list, 'retained', before, failed, (reference) => this.pruneOne(reference, before))
   }
 
@@ -133,14 +135,16 @@ export class BudgetReferenceSweeper {
   private async pruneGivenBack(before: Date): Promise<void> {
     const owing = await this.tenantsOwingBefore(before)
     if (owing === null) {
-      if (this.store.pruneGivenBack === undefined && this.store.pruneGivenBackExcept === undefined) return
+      const prune = methodOf(this.store, 'pruneGivenBack') as IBudgetStore['pruneGivenBack']
+      const pruneExcept = methodOf(this.store, 'pruneGivenBackExcept') as IBudgetStore['pruneGivenBackExcept']
+      if (prune === undefined && pruneExcept === undefined) return
       if (await this.owesBefore(before)) this.logger.warn(PRUNE_SKIPPED_LOG_KEY)
-      else if (this.store.pruneGivenBack === undefined) await this.store.pruneGivenBackExcept?.(before, this.pageSize, [])
-      else await this.store.pruneGivenBack(before, this.pageSize)
+      else if (prune === undefined) await pruneExcept?.(before, this.pageSize, [])
+      else await prune(before, this.pageSize)
       return
     }
     if (owing.length > 0) this.logger.warn(`${PRUNE_SKIPPED_TENANTS_LOG_KEY} ${String(owing.length)} tenant(s): an owed marker is older than the retention`)
-    await this.store.pruneGivenBackExcept?.(before, this.pageSize, owing)
+    await (methodOf(this.store, 'pruneGivenBackExcept') as IBudgetStore['pruneGivenBackExcept'])?.(before, this.pageSize, owing)
   }
 
   /**
@@ -148,7 +152,7 @@ export class BudgetReferenceSweeper {
    * spare a tenant, the ledger keeps no marker, or the listing came back longer than a page and may have left tenants out.
    */
   private async tenantsOwingBefore(before: Date): Promise<string[] | null> {
-    if (this.store.pruneGivenBackExcept === undefined || !this.ledger.supportsOwedEffects()) return null
+    if (methodOf(this.store, 'pruneGivenBackExcept') === undefined || !this.ledger.supportsOwedEffects()) return null
     const owed = await this.ledger.findEffectsOwed(before, this.pageSize + 1)
     return owed.length > this.pageSize ? null : [...new Set(owed.map((item) => item.record.tenantId))]
   }
@@ -161,7 +165,7 @@ export class BudgetReferenceSweeper {
     if (row?.tenantId !== reference.tenantId || !lookup.ended(row.status)) return
     // A reversal's marker is on the compensating row, which the original names, so both rows are read.
     if (this.ledger.supportsOwedEffects() && (await this.owesEffects(row))) return
-    await this.store.pruneApplication?.(reference, before)
+    await (methodOf(this.store, 'pruneApplication') as IBudgetStore['pruneApplication'])?.(reference, before)
   }
 
   /** Whether any row has owed its effects since before `before`; a ledger that keeps no marker owes nothing. */
@@ -181,7 +185,8 @@ export class BudgetReferenceSweeper {
     if (kind === null) return
     let budget = budgets.get(reference.budgetId)
     if (budget === undefined) {
-      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId })
+      // The row is read as fields, so a key planted on Object.prototype is not one of the budget's: the verdict compares its features and scope with the call's.
+      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId }).then(budgetRow)
       budgets.set(reference.budgetId, budget)
     }
     const row: UsageRecord | null = await this.ledger.findByIdempotencyKey(reference.tenantId, ledgerKeyOf(reference.key, kind))

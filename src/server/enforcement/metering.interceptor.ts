@@ -23,10 +23,14 @@ import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { MeteringContext } from '../interfaces'
+import { fieldOf, fieldsOf } from '../utils/field-names'
 import { MeteringService } from '../services'
 import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
+
+/** Every field of the guard's enrichment, mapped to `true` so that the compiler keeps the list complete. */
+const ENRICHMENT_FIELDS: { readonly [K in keyof Required<RequestAiTokens>]: true } = { status: true, context: true, hold: true }
 
 /** The response shape the interceptor writes headers through (adapter-agnostic). */
 interface HeaderSink {
@@ -72,8 +76,11 @@ export class MeteringInterceptor implements NestInterceptor {
     const targets = [executionContext.getHandler(), executionContext.getClass()]
     const config = meterConfigOf(this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets))
     if (config === undefined) return next.handle()
-    const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
-    const enrichment = request.aiTokens
+    const request = executionContext.switchToHttp().getRequest<object>()
+    // The guard's enrichment is a field of the request and its three fields are read as fields: a key planted on Object.prototype is neither
+    // an enrichment nor the hold the guard did not place.
+    const given = fieldOf(request, 'aiTokens')
+    const enrichment = typeof given === 'object' && given !== null ? fieldsOf(given as RequestAiTokens, ENRICHMENT_FIELDS) : undefined
     return next.handle().pipe(
       mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result))),
       catchError((error: unknown) => this.onError(enrichment, error)),
@@ -139,7 +146,7 @@ export class MeteringInterceptor implements NestInterceptor {
 /** Extract the raw usage from the handler result, or fail as malformed. */
 function extractUsage(result: unknown, config: MeterConfig): unknown {
   // Stryker disable next-line ConditionalExpression: CE true on `typeof value === 'object'` is equivalent: the `value !== null` operand still excludes null, and for any non-object non-null primitive `.usage` is undefined — identical to the else branch — so the extracted value is unchanged
-  const extract = config.extract ?? ((value: unknown): unknown => (typeof value === 'object' && value !== null ? (value as { usage?: unknown }).usage : undefined))
+  const extract = config.extract ?? ((value: unknown): unknown => (typeof value === 'object' && value !== null ? fieldOf(value, 'usage') : undefined))
   const usage = extract(result)
   if (usage === undefined || usage === null) {
     // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
@@ -152,7 +159,7 @@ function extractUsage(result: unknown, config: MeterConfig): unknown {
 function minBudgetRemaining(enrichment: RequestAiTokens | undefined): bigint | undefined {
   let min: bigint | undefined
   for (const status of enrichment?.status ?? []) {
-    const remaining = status.remaining.nanoUsd
+    const remaining = fieldOf(status.remaining, 'nanoUsd') as bigint | undefined
     // Stryker disable next-line EqualityOperator: remaining <= min: if two budgets have identical remaining, updating min to the same value is a no-op; < and <= produce the same final minimum
     if (remaining !== undefined && (min === undefined || remaining < min)) min = remaining
   }
