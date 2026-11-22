@@ -41,6 +41,7 @@ import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
 import { fieldOf } from '../utils/field-names'
+import { jsonText } from '../utils/json-text'
 import { assertCleanRealm } from '../utils/prototype-guard'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
@@ -226,7 +227,7 @@ export class MeteringService {
   private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
     if (key === undefined) return this.recordOnce(input, undefined)
-    return this.inflight.run(JSON.stringify([input.context.tenantId, key]), () => this.recordOnce(input, key))
+    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key))
   }
 
   /**
@@ -369,8 +370,6 @@ export class MeteringService {
       imageOutTokens: 0,
     }
     const rate = await this.pricing.resolveRate({ provider: input.provider, model: input.model, operation: input.operation, serviceTier, at })
-    // The guard ran before the awaits above: it runs again before the amounts are computed, so a built-in replaced while they ran is refused.
-    assertCleanRealm()
     const rawCostNanoUsd = rate === null ? 0n : ratedCost(usage, rate).totalNanoUsd
     const markup = await this.markup.resolve({
       scope: input.scope ?? ESTIMATE_SCOPE,
@@ -381,7 +380,6 @@ export class MeteringService {
       // Stryker disable next-line ConditionalExpression: CE true: spreading { feature: undefined } is equivalent to {} because markup.resolve treats absent and undefined feature the same
       ...(input.feature !== undefined ? { feature: input.feature } : {}),
     })
-    assertCleanRealm()
     return { rawCostNanoUsd, billedCostNanoUsd: markup.apply(rawCostNanoUsd) }
   }
 
@@ -411,7 +409,7 @@ export class MeteringService {
     assertHoldEstimate(estimate)
     const key = context.idempotencyKey
     if (key === undefined) return this.holdOnce(context, estimate)
-    return this.inflight.run(JSON.stringify([context.tenantId, key]), () => this.holdOnce(context, estimate))
+    return this.inflight.run(jsonText([context.tenantId, key]), () => this.holdOnce(context, estimate))
   }
 
   /**

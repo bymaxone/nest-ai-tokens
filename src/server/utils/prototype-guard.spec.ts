@@ -200,7 +200,7 @@ describe('the realm guard', () => {
   })
 
   /** A name rebound to another object leaves every function of the original as it was: the baseline compares the binding. */
-  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Set', 'Map', 'WeakMap', 'ArrayBuffer', 'BigInt', 'Proxy', 'Error', 'Date'])('counts the global %s rebound to another object, with nothing planted', (name) => {
+  it.each(['Object', 'Reflect', 'Array', 'Math', 'Number', 'String', 'Set', 'Map', 'WeakMap', 'ArrayBuffer', 'BigInt', 'Proxy', 'Error', 'Date'])('counts the global %s rebound to another object, with nothing planted', (name) => {
     const original = getOf(globalThis, name) as unknown
     let counted = -1
     try {
@@ -266,7 +266,7 @@ describe('the realm guard', () => {
     const wanted: [object, string][] = [
       [BigInt, 'asIntN'], [BigInt.prototype, 'toString'], [DataView.prototype, 'setUint32'], [TextEncoder.prototype, 'encode'], [Date, 'UTC'], [Date.prototype, 'toISOString'],
       [Math, 'round'], [Object, 'values'], [Reflect, 'getPrototypeOf'], [Array.prototype, 'forEach'], [Array.prototype, 'reduce'], [String.prototype, 'padStart'],
-      [Map.prototype, 'set'], [Set.prototype, 'add'], [Number, 'isSafeInteger'], [JSON, 'stringify'], [Object.getPrototypeOf(Uint8Array.prototype) as object, 'fill'], [ArrayBuffer, 'isView'],
+      [Map.prototype, 'set'], [Set.prototype, 'add'], [Number, 'isSafeInteger'], [Object.getPrototypeOf(Uint8Array.prototype) as object, 'fill'], [ArrayBuffer, 'isView'],
     ]
     for (const [owner, name] of wanted) expect(BUILT_INS.some((entry) => entry.owner === owner && entry.name === name)).toBe(true)
   })

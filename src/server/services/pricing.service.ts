@@ -11,6 +11,7 @@ import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
 import { methodOf, withEveryName } from '../utils/field-names'
+import { jsonText } from '../utils/json-text'
 import { assertCleanRealm } from '../utils/prototype-guard'
 import { guardedStore } from '../utils/guarded-store'
 import { AiTokensException } from '../errors'
@@ -110,7 +111,7 @@ export class PricingService implements OnModuleInit {
     // Stryker disable next-line ArithmeticOperator: * instead of /: changes bucket to input.at.getTime() * cacheTtlMs (huge number), but since both calls use the same input.at, the cache key is still consistent across calls → cache still hits; only observable if two different input.at values are deliberately straddled across a bucket boundary, which no test does
     const bucket = Math.floor(at.getTime() / this.options.pricing.cacheTtlMs)
     // A JSON array escapes every string field, so no character inside provider, model or baseModel can move the boundary between fields.
-    const cacheKey = JSON.stringify([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
+    const cacheKey = jsonText([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
 
     let resolved: PriceVersion | null
     const cached = this.cache.get(cacheKey)

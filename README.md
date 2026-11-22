@@ -805,11 +805,11 @@ specific to security is below.
 - **A process whose prototypes are not the engine's is refused.** The module does not start, and no call that moves, reads or reports money
   runs, while this
   realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its enumerability, or a function
-  that is not the engine's), or while any function of the standard namespaces and constructors the library relies on (`Object`, `Reflect`, `Array`, `JSON`, `Math`, `Number`, `String`,
+  that is not the engine's), or while any function of the standard namespaces and constructors the library relies on (`Object`, `Reflect`, `Array`, `Math`, `Number`, `String`,
   `Set`, `Map`, `Date`, `BigInt`, `DataView`, `TextEncoder`, typed arrays and the others, with their prototypes) is no longer the function it
   met when it loaded, or the name of one of them is rebound to another object. `Promise`, its prototype and its binding are exempt: tracing and
-  monitoring agents (`dd-trace`, New Relic, `zone.js`) wrap them after load on healthy hosts, and the code that reads a store result holds the
-  `Promise` it met when it loaded. The refusal is `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it says how many names of `Object.prototype`
+  monitoring agents (`dd-trace`, New Relic, `zone.js`) wrap them after load on healthy hosts, and the code that settles a store result or serializes the writes of a
+  call uses `await`, which does not look the global up. `JSON` is exempt too, because a host's own tests spy on it: the keys, the statement parameters and the hashes are made with the `JSON.stringify` the library met when it loaded. The refusal is `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it says how many names of `Object.prototype`
   differ and how many built-ins do, with a count, never a name or a value. A host that extends `Object.prototype` (a
   `should`-style assertion library, a polyfill) cannot run the library, and neither can a process that patches one of those built-ins in place
   (`jest.spyOn(Date, 'now')` in a host's own tests, an agent that wraps `JSON.stringify`): restore the built-in before the call. The global `Date`

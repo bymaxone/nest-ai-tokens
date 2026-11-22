@@ -36,6 +36,7 @@ import { attachCause } from '../server/errors/attach-cause'
 import { isCodeShaped } from '../server/errors/error-code-shape'
 import { storeFailureCode } from '../server/errors/store-availability'
 import { identifier, identifiers, join, sql, type Sql } from './sql'
+import { jsonText } from '../server/utils/json-text'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
 /** A decimal as the database driver returns it: all the adapter needs of it is its value as a number. */
@@ -209,7 +210,7 @@ export function mapUsageRow(row: UsageRow): UsageRecord {
 export function serializeUnitRates(units: Record<string, bigint>): string {
   const out: Record<string, string> = {}
   for (const [unit, rate] of Object.entries(units)) out[unit] = rate.toString()
-  return JSON.stringify(out)
+  return jsonText(out)
 }
 
 /** Parse a stored decimal-string unit-rate map back to bigint. */
@@ -254,7 +255,7 @@ export function mapPriceRow(row: PriceRow): PriceVersion {
  * two different tuples never share a key.
  */
 export function priceLockKey(provider: string, model: string, operation: string, serviceTier: string): string {
-  return JSON.stringify([provider, model, operation, serviceTier])
+  return jsonText([provider, model, operation, serviceTier])
 }
 
 /** Return the first row, or raise a store error when a `RETURNING` query yielded none. */
@@ -333,7 +334,7 @@ export function rethrowAsStoreError(error: unknown): never {
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
 export function usageValues(id: string, record: NewUsageRecord, payloadHash: string, prevHash: string | null, hash: string | null): Sql[] {
   const extraUnits =
-    record.extraUnits === undefined ? sql`NULL` : sql`${JSON.stringify(record.extraUnits)}::jsonb`
+    record.extraUnits === undefined ? sql`NULL` : sql`${jsonText(record.extraUnits)}::jsonb`
   return [
     sql`${id}`, sql`${record.tenantId}`, sql`${record.scope.type}`, sql`${record.scope.id}`,
     sql`${record.beneficiary?.type ?? null}`, sql`${record.beneficiary?.id ?? null}`,
@@ -411,7 +412,7 @@ export function statusAssignments(
           reason: `${from} → ${to} may not patch "${key}"`,
         })
       }
-      parts.push(key === 'extraUnits' ? sql`${identifier(key)} = ${JSON.stringify(value)}::jsonb` : sql`${identifier(key)} = ${value}`)
+      parts.push(key === 'extraUnits' ? sql`${identifier(key)} = ${jsonText(value)}::jsonb` : sql`${identifier(key)} = ${value}`)
     }
   }
   if (hash !== null) {
@@ -741,7 +742,7 @@ export function budgetValues(id: string, input: Omit<Budget, 'id' | 'createdAt'>
     sql`${input.features ?? []}::text[]`, sql`${input.limitNanoUsd ?? null}`,
     sql`${tokenLimitSql(input.limitTokens)}`, sql`${input.limitCount ?? null}`,
     sql`${serializeWindow(input.window)}`, sql`${input.anchorAt ?? null}`, sql`${input.expiresAt ?? null}`,
-    sql`${JSON.stringify(input.softThresholds)}::jsonb`, sql`${input.policy}`,
+    sql`${jsonText(input.softThresholds)}::jsonb`, sql`${input.policy}`,
     input.createdAt === undefined ? DB_NOW_SQL : sql`${input.createdAt}`, DB_NOW_SQL,
   ]
 }
@@ -754,7 +755,7 @@ export function budgetUpdateAssignments(input: Omit<Budget, 'id' | 'createdAt'>)
       sql`"features" = ${input.features ?? []}::text[]`, sql`"limitNanoUsd" = ${input.limitNanoUsd ?? null}`,
       sql`"limitTokens" = ${tokenLimitSql(input.limitTokens)}`, sql`"limitCount" = ${input.limitCount ?? null}`,
       sql`"window" = ${serializeWindow(input.window)}`, sql`"anchorAt" = ${input.anchorAt ?? null}`,
-      sql`"expiresAt" = ${input.expiresAt ?? null}`, sql`"softThresholds" = ${JSON.stringify(input.softThresholds)}::jsonb`,
+      sql`"expiresAt" = ${input.expiresAt ?? null}`, sql`"softThresholds" = ${jsonText(input.softThresholds)}::jsonb`,
       sql`"policy" = ${input.policy}`, sql`"updatedAt" = ${DB_NOW_SQL}`,
     ],
     ', ',

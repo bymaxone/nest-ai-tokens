@@ -7,9 +7,6 @@
  * @layer server
  */
 
-/** Swallows a settled promise's value or rejection, so a chain built from it never rejects. */
-const noop = (): undefined => undefined
-
 /** Serializes work per key. */
 export class KeyedSerial {
   private readonly tails = new Map<string, Promise<void>>()
@@ -27,13 +24,24 @@ export class KeyedSerial {
    * @returns What `work` returns, or rejects with.
    */
   async run<T>(key: string, work: () => Promise<T>): Promise<T> {
-    const turn = (this.tails.get(key) ?? Promise.resolve()).then(work)
-    const settled = turn.then(noop, noop)
-    this.tails.set(key, settled)
+    // `await` settles a native promise without looking up its `then`, so a `Promise` that an agent wrapped after load is not reached.
+    const prior = this.tails.get(key)
+    const turn = (async (): Promise<T> => {
+      await prior
+      return await work()
+    })()
+    const tail = (async (): Promise<void> => {
+      try {
+        await turn
+      } catch {
+        // the next piece waits for the settlement of this one, whatever its outcome
+      }
+    })()
+    this.tails.set(key, tail)
     try {
       return await turn
     } finally {
-      if (this.tails.get(key) === settled) this.tails.delete(key)
+      if (this.tails.get(key) === tail) this.tails.delete(key)
     }
   }
 }

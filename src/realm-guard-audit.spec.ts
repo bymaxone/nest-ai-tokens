@@ -6,6 +6,7 @@
  */
 
 import { rig } from '../test/fakes/call-registry'
+import { deriveIdempotencyKey } from './shared'
 import { InMemoryLedgerStore } from '../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../test/fakes/in-memory-pricing-store'
 import { providerPresets } from './server/config/provider-presets'
@@ -13,6 +14,8 @@ import { LedgerService } from './server/services/ledger.service'
 import { applyDefaults } from './server/config'
 import { AiTokensException } from './server/errors'
 import { MeteringService } from './server/services/metering.service'
+import { guardedStore } from './server/utils/guarded-store'
+import { KeyedSerial } from './server/utils/keyed-serial'
 import { ratedCost } from './server/utils/rated-cost'
 import { MarkupResolver } from './server/services/markup.resolver'
 import { PricingService } from './server/services/pricing.service'
@@ -298,6 +301,38 @@ describe('the realm guard and Promise', () => {
     expect(code).toBeUndefined()
   })
 
+  /** A `resolve` and a `then` that count the calls made from the library's own files: it settles with `await`, so neither is reached. */
+  it('settles a store result and serializes keyed work without a lookup of the live Promise.resolve or Promise.prototype.then', async () => {
+    const original = { then: Promise.prototype.then, resolve: Promise.resolve }
+    const reached = { then: 0, resolve: 0 }
+    const store = guardedStore({ read: async (): Promise<{ a: number }> => ({ a: 1 }) })
+    const serial = new KeyedSerial()
+    let read: { a: number } | undefined
+    const order: number[] = []
+    try {
+      Promise.prototype.then = function counted(this: Promise<unknown>, ...given: Parameters<Promise<unknown>['then']>): Promise<unknown> {
+        if (new Error().stack?.includes('/src/server/')) reached.then += 1
+        return original.then.apply(this, given)
+      } as never
+      Promise.resolve = ((value: unknown): Promise<unknown> => {
+        if (new Error().stack?.includes('/src/server/')) reached.resolve += 1
+        return original.resolve.call(Promise, value)
+      }) as never
+      read = await store.read()
+      const first = serial.run('k', async () => order.push(1))
+      const second = serial.run('k', async () => order.push(2))
+      await first
+      await second
+    } finally {
+      Promise.prototype.then = original.then
+      Promise.resolve = original.resolve
+    }
+    expect(read).toEqual({ a: 1 })
+    expect(order).toEqual([1, 2])
+    expect(reached.then).toBe(0)
+    expect(reached.resolve).toBe(0)
+  })
+
   it('records no function of Promise or of its prototype', () => {
     expect(BUILT_INS.some((entry) => (entry.owner as unknown) === Promise || (entry.owner as unknown) === Promise.prototype)).toBe(false)
     expect(BUILT_INS.some((entry) => entry.owner === globalThis && entry.name === 'Promise')).toBe(false)
@@ -337,6 +372,38 @@ describe('the reason of the refusal', () => {
     expect(replaced).toContain('0 name(s) on the Object.prototype')
     expect(replaced).toContain('and 1 built-in(s)')
     expect(planted + replaced).not.toContain('zzSecret')
+  })
+})
+
+describe('the realm guard and JSON', () => {
+  /** A host's own tests spy on `JSON.stringify`: the keys, the statement parameters and the hashes are made with the one the library met at load. */
+  it('does not count a replaced JSON.stringify, and a record, a hold and a key still use the original', async () => {
+    const { calls } = await rig()
+    const record = calls['metering.record']!
+    const hold = calls['metering.hold']!
+    const recordArgs = await record.base()
+    const holdArgs = await hold.base()
+    const before = deriveIdempotencyKey({ b: 1n, a: [new Date(0), 'x'] })
+    const original = JSON.stringify
+    let counted = -1
+    let after = ''
+    let recordCode: string | undefined = 'unset'
+    let holdCode: string | undefined = 'unset'
+    try {
+      JSON.stringify = ((): string => {
+        throw new Error('a host spy ran')
+      }) as never
+      counted = pollutedNames()
+      after = deriveIdempotencyKey({ b: 1n, a: [new Date(0), 'x'] })
+      recordCode = await codeOf(() => record.run(recordArgs))
+      holdCode = await codeOf(() => hold.run(holdArgs))
+    } finally {
+      JSON.stringify = original
+    }
+    expect(counted).toBe(0)
+    expect(after).toBe(before)
+    expect(recordCode).toBeUndefined()
+    expect(holdCode).toBeUndefined()
   })
 })
 

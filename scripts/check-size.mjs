@@ -47,10 +47,10 @@ const BUDGETS = [
   // It also holds the typed field list of every input of the metering calls, the wallet reference, the scopes and the rate lookup, read by name, the per-variant read of a hold estimate, the ancestor path and the depth of the usage read of a record and a capture, the budget of containers and values one read may visit, and the view that hands a raw provider response to its normalizer.
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
-  // that a store error repeats. 16_746 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
+  // that a store error repeats. 16_786 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
   { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 62_016 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_746 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_786 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

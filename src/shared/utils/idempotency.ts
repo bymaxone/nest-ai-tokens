@@ -15,6 +15,9 @@
 import { isDate } from './is-date'
 import { sha256Hex } from './sha256'
 
+/** The `JSON.stringify` of load time: a host's own spy or a tracing agent does not reach the text a key is hashed from. */
+const jsonText = JSON.stringify.bind(JSON) as (value: unknown) => string
+
 /**
  * Serialize a value to a canonical JSON string: object keys are sorted so
  * `{a,b}` and `{b,a}` produce identical output; arrays keep their order;
@@ -26,10 +29,10 @@ import { sha256Hex } from './sha256'
 function canonicalize(value: unknown): string {
   // Stryker disable next-line ConditionalExpression: `value === undefined → false` is equivalent: dropping the operand leaves `value === null`, and a top-level `undefined` (or an `undefined` array element) that no longer short-circuits here falls through every type check to the final `return 'null'`, producing the identical canonical form
   if (value === null || value === undefined) return 'null'
-  if (typeof value === 'bigint') return JSON.stringify(`${value.toString()}n`)
-  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'bigint') return jsonText(`${value.toString()}n`)
+  if (typeof value === 'string' || typeof value === 'boolean') return jsonText(value)
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
-  if (isDate(value)) return JSON.stringify(Date.prototype.toISOString.call(value))
+  if (isDate(value)) return jsonText(Date.prototype.toISOString.call(value))
 
   if (Array.isArray(value)) {
     return `[${value.map((element: unknown) => canonicalize(element)).join(',')}]`
@@ -40,7 +43,7 @@ function canonicalize(value: unknown): string {
     const members = Object.keys(record)
       .filter((key) => record[key] !== undefined)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`)
+      .map((key) => `${jsonText(key)}:${canonicalize(record[key])}`)
     // Stryker disable next-line StringLiteral: object member separator is behavior-preserving: every member is self-delimited by its quoted key, so dropping the ',' keeps canonicalize injective and key-order-stable — no two distinct payloads can be made to collide
     return `{${members.join(',')}}`
   }
