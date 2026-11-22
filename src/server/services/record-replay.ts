@@ -81,7 +81,8 @@ function unitsOf(units: Record<string, number> | undefined): string {
 /**
  * The stored hold when this call names the same tool units, else the idempotency conflict: a corrected retry must not be billed the first
  * call's units. Only a pending hold is compared: its stored units are the ones it was placed with, where a captured one holds the units
- * it was billed for, so a late retry of the original call still finds its hold.
+ * it was billed for, so a late retry of the original call still finds its hold; a captured or released hold is returned whatever units the
+ * replay names.
  */
 export function heldReplay(stored: UsageRecord, extraUnits: Record<string, number> | undefined): UsageRecord {
   if (stored.status !== 'pending' || unitsOf(stored.extraUnits) === unitsOf(extraUnits)) return stored

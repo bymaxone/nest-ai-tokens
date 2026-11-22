@@ -388,7 +388,8 @@ export class MeteringService {
    * double-consuming budget/wallet over parameter-conflict detection, so a replay
    * with a CHANGED estimate silently keeps the original reservation (unlike
    * `record()`, whose payload hash rejects a changed payload with 409); settlement
-   * still corrects to actuals at capture; a replay of a pending hold with different `extraUnits` conflicts, since its units would be billed.
+   * still corrects to actuals at capture; a replay of a pending hold with different `extraUnits` conflicts, since its units would be billed,
+   * and one of a captured or released hold returns that hold whatever units it names.
    * Holds sharing one key are serialized
    * inside an instance; across instances they can both pass the pre-check and
    * reserve, and the loser of the ledger insert settles by the row the ledger holds

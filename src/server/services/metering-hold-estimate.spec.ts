@@ -167,6 +167,23 @@ describe('a hold replayed under the same idempotency key', () => {
     expect((await built.service.hold(context({ idempotencyKey: 'hold-key-3', extraUnits: { web_search_requests: 3 } }), rated(1000, 500))).id).toBe(released.id)
   })
 
+  /** The units are compared while the hold is pending only: once it is captured or released a replay returns it whatever units it names, and bills nothing. */
+  it('returns a captured or released hold for a replay that names other units, and bills nothing for them', async () => {
+    const built = await world()
+    const caller = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } } as const
+    const captured = await built.service.hold(ctx({ web_search_requests: 3 }), rated(1000, 500))
+    const settled = await built.service.capture(captured, caller, { provider: 'openai', model: 'gpt-5', operation: 'chat', inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 })
+    const balance = (await built.wallets!.getBalance(WALLET)).nanoUsd
+    expect((await built.service.hold(ctx({ web_search_requests: 9, code_run: 4 }), rated(1000, 500))).id).toBe(captured.id)
+    expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(balance)
+    const released = await built.service.hold(context({ idempotencyKey: 'hold-key-4', extraUnits: { web_search_requests: 3 } }), rated(1000, 500))
+    await built.service.release(released, caller, 'not needed')
+    const afterRelease = (await built.wallets!.getBalance(WALLET)).nanoUsd
+    expect((await built.service.hold(context({ idempotencyKey: 'hold-key-4', extraUnits: { code_run: 7 } }), rated(1000, 500))).id).toBe(released.id)
+    expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(afterRelease)
+    expect(settled.extraUnits).toEqual({ web_search_requests: 3 })
+  })
+
   /** Two names that collate as equal but are different keys are still one map in any order. */
   it('treats the same units as the same in any insertion order, including names that collate as equal', async () => {
     const built = await world()
