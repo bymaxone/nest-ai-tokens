@@ -756,17 +756,15 @@ export class BudgetService {
     return budget
   }
 
-  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. */
+  /** The budget of the tenant for `key`, or `null`; a store that returns another tenant's budget is not believed. The row is copied as fields before its tenant is compared, so a tenant planted on Object.prototype is not the row's. */
   private async findOwned(key: BudgetKey): Promise<Budget | null> {
-    const found = await this.store.findBudgetById(key)
-    // The row is copied as fields before its tenant is compared: a tenant planted on Object.prototype is not the row's.
-    const budget = found === null ? null : budgetRow(found)
+    const budget = budgetRow(await this.store.findBudgetById(key))
     return budget !== null && budget.tenantId === key.tenantId ? budget : null
   }
 
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
-    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).map(budgetRow).filter((budget) => budget.tenantId === tenantId)
+    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).map((row) => budgetRow(row)).filter((budget) => budget.tenantId === tenantId)
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */

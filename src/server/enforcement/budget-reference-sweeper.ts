@@ -186,7 +186,7 @@ export class BudgetReferenceSweeper {
     let budget = budgets.get(reference.budgetId)
     if (budget === undefined) {
       // The row is read as fields, so a key planted on Object.prototype is not one of the budget's: the verdict compares its features and scope with the call's.
-      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId }).then((found) => (found === null ? null : budgetRow(found)))
+      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId }).then(budgetRow)
       budgets.set(reference.budgetId, budget)
     }
     const row: UsageRecord | null = await this.ledger.findByIdempotencyKey(reference.tenantId, ledgerKeyOf(reference.key, kind))

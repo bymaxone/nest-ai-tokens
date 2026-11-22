@@ -140,11 +140,13 @@ const BUDGET_FIELDS: { readonly [K in keyof Required<Budget>]: true } = {
  * A budget a store returned, read as fields and held by an object with no prototype: a field the row leaves out (a dimension it does not
  * limit, no feature filter) is absent, and a key planted on `Object.prototype` is neither read now nor found by a later read of the copy.
  *
- * @param row The budget the store returned.
- * @returns The copy.
+ * @param row The budget the store returned, or `null` when it has none.
+ * @returns The copy, or `null`.
  */
-export function budgetRow(row: Budget): Budget {
-  return fieldsOf(row, BUDGET_FIELDS)
+export function budgetRow(row: Budget): Budget
+export function budgetRow(row: Budget | null): Budget | null
+export function budgetRow(row: Budget | null): Budget | null {
+  return row === null ? null : fieldsOf(row, BUDGET_FIELDS)
 }
 
 /** Assemble a {@link BudgetStatus} from a budget and its located window (§10.6). */
