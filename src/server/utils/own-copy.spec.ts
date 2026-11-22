@@ -114,3 +114,29 @@ describe('ownCopy', () => {
     expect(depth).toBeLessThan(12)
   })
 })
+
+describe('ownCopy and a spoofed type tag', () => {
+  /** The tag a value claims is no brand: a row that names itself a Date is still a record, and a tag planted on the root is on every row. */
+  it('copies a row that claims to be a Date, whether it says so itself or the root does', () => {
+    const own = { id: 'r1', [Symbol.toStringTag]: 'Date' }
+    expect(Object.getPrototypeOf(ownCopy(own))).toBeNull()
+    Object.defineProperty(Object.prototype, Symbol.toStringTag, { value: 'Map', configurable: true, writable: true, enumerable: false })
+    try {
+      const copy = ownCopy({ id: 'r2' })
+      expect(Object.getPrototypeOf(copy)).toBeNull()
+      expect(copy.id).toBe('r2')
+      class Row {
+        readonly id = 'r3'
+      }
+      expect(Object.getPrototypeOf(ownCopy(new Row()))).toBeNull()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, Symbol.toStringTag)
+    }
+  })
+
+  /** The built-in objects are recognised by what they are, not by what they say: each is handed on whatever the root says. */
+  it('hands on a Date, a Map, a Set, a typed array and a buffer, of this realm and of another', () => {
+    const values = [new Date(0), new Map(), new Set(), new WeakMap(), new WeakSet(), new Uint8Array(2), new ArrayBuffer(2), /x/u, runInNewContext('new Date(0)') as Date, runInNewContext('new Map()') as Map<unknown, unknown>]
+    for (const value of values) expect(ownCopy(value)).toBe(value)
+  })
+})
