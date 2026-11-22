@@ -33,6 +33,10 @@ const BUILT_INS: readonly (readonly [object, string])[] = [
   [String.prototype, 'startsWith'], [String.prototype, 'includes'], [Date.prototype, 'getTime'], [Date, 'now'], [Math, 'floor'],
   [ArrayBuffer, 'isView'], [Set.prototype, 'has'], [Map.prototype, 'get'], [WeakMap.prototype, 'get'], [Promise, 'resolve'], [Function.prototype, 'call'],
   [Function.prototype, 'apply'], [Function.prototype, 'bind'],
+  // The bindings of the namespaces and constructors the library calls, which its call sites resolve when they run: a name rebound to another
+  // object leaves every function above as it was and changes every call that goes through the name.
+  [globalThis, 'Object'], [globalThis, 'Reflect'], [globalThis, 'Array'], [globalThis, 'JSON'], [globalThis, 'Math'], [globalThis, 'Number'],
+  [globalThis, 'String'], [globalThis, 'Promise'], [globalThis, 'Set'], [globalThis, 'Map'], [globalThis, 'WeakMap'], [globalThis, 'ArrayBuffer'],
 ]
 
 /** The built-ins as this module met them. */

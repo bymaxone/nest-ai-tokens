@@ -12,6 +12,10 @@ import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
 import { assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
 
+/** Captured here, because the rows below rebind `Reflect` and must still be able to put it back. */
+const getOf = Reflect.get
+const setOf = Reflect.set
+
 /** The typed code and reason of the refusal `run` raises, or `undefined` when it does not refuse. */
 function refusal(run: () => void): { code: string; reason: string } | undefined {
   try {
@@ -182,6 +186,20 @@ describe('the realm guard', () => {
     for (const forbidden of [/\bfor\s*\(\s*(?:const|let)\s+[\w$[\]{},\s]+\s+of\b/, /\.\.\./, /\bnew\s+(?:Set|Map|WeakSet|WeakMap|Array)\b/, /\b(?:const|let)\s*\[/, /\]\s*=[^=]/, /\.(?:push|map|filter|forEach|some|every|includes|indexOf|slice|concat|entries|keys|values)\(/, /\bObject\.(?:keys|entries|values|assign)\b/]) {
       expect(forbidden.test(body)).toBe(false)
     }
+  })
+
+  /** A name rebound to another object leaves every function of the original as it was: the baseline compares the binding. */
+  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Promise', 'Set', 'Map', 'WeakMap', 'ArrayBuffer'])('counts the global %s rebound to another object, with nothing planted', (name) => {
+    const original = getOf(globalThis, name) as unknown
+    let counted = -1
+    try {
+      setOf(globalThis, name, { prototype: {} })
+      counted = pollutedNames()
+    } finally {
+      setOf(globalThis, name, original)
+    }
+    expect(counted).toBe(1)
+    expect(pollutedNames()).toBe(0)
   })
 
   it('compares with the Object.prototype of a fresh realm, so it holds in a process that runs another realm too', () => {

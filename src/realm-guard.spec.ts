@@ -155,27 +155,29 @@ describe('the refusal of the guard and the exception it throws', () => {
     expect(Object.getPrototypeOf(body.details)).toBeNull()
   })
 
-  it('refuses with the typed error when the global String or Object is rebound after the library loaded', async () => {
+  it('refuses with the typed error when the global String or Object is rebound after the library loaded, with a key planted or not', async () => {
     const { calls } = await rig()
     const hold = calls['metering.hold']!
     const base = await hold.base()
     const original = { String: globalThis.String, Object: globalThis.Object }
-    Object.defineProperty(Object.prototype, 'zzPlantedName', { value: 1, configurable: true, writable: true, enumerable: false })
-    let thrown: unknown
-    try {
-      ;(globalThis as { String: unknown }).String = (): never => { throw new Error('rebound String') }
-      ;(globalThis as { Object: unknown }).Object = { prototype: {} }
+    for (const plant of [true, false]) {
+      if (plant) Object.defineProperty(Object.prototype, 'zzPlantedName', { value: 1, configurable: true, writable: true, enumerable: false })
+      let thrown: unknown
       try {
-        await Promise.resolve(hold.run(base)).catch((error: unknown) => (thrown = error))
-      } catch (error) {
-        thrown = error
+        ;(globalThis as { String: unknown }).String = (): never => { throw new Error('rebound String') }
+        ;(globalThis as { Object: unknown }).Object = { prototype: {} }
+        try {
+          await Promise.resolve(hold.run(base)).catch((error: unknown) => (thrown = error))
+        } catch (error) {
+          thrown = error
+        }
+      } finally {
+        ;(globalThis as { String: unknown }).String = original.String
+        ;(globalThis as { Object: unknown }).Object = original.Object
+        Reflect.deleteProperty(Object.prototype, 'zzPlantedName')
       }
-    } finally {
-      ;(globalThis as { String: unknown }).String = original.String
-      ;(globalThis as { Object: unknown }).Object = original.Object
-      Reflect.deleteProperty(Object.prototype, 'zzPlantedName')
+      expect(thrown).toBeInstanceOf(AiTokensException)
+      expect((thrown as AiTokensException).message).not.toContain('rebound')
     }
-    expect(thrown).toBeInstanceOf(AiTokensException)
-    expect((thrown as AiTokensException).message).not.toContain('rebound')
   })
 })

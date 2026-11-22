@@ -806,7 +806,7 @@ specific to security is below.
   runs (`record`, `hold`, `capture`, `release`, `reverse`, the wallet, budget, ledger, pricing and report methods, the sweeps), while this
   realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its enumerability, or a function
   that is not the engine's), or while a built-in the library calls (`Object.keys`, `Reflect.get`, `JSON.stringify`, `Array.prototype.map`,
-  `Date.prototype.getTime`, `Promise.resolve`, and the others it relies on) is no longer the function it met when it loaded. The refusal is
+  `Date.prototype.getTime`, `Promise.resolve`, and the others it relies on) is no longer the function it met when it loaded, or the name of a namespace or constructor it calls (`Object`, `Reflect`, `JSON`, `Math`, `Promise`, and the others it relies on) is rebound to another object. The refusal is
   `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it carries a count, never a name or a value. A host that extends `Object.prototype` (a
   `should`-style assertion library, a polyfill) cannot run the library, and neither can a process that patches one of those built-ins in place
   (`jest.spyOn(Date, 'now')` in a host's own tests, an agent that wraps `JSON.stringify`): restore the built-in before the call, or replace the
