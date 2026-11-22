@@ -9,18 +9,6 @@
 export const MAX_PROTOTYPE_DEPTH = 32
 
 /**
- * Whether `value` is the `Object.prototype` of some realm: the object that ends every ordinary chain, whose own `constructor` is a function
- * whose `prototype` is that object. A null-prototype object a host built is not, so its fields are the host's own.
- *
- * @param value A prototype of an object.
- * @returns `true` for the root of a chain.
- */
-export function isRealmRoot(value: object): boolean {
-  const constructor = Object.getOwnPropertyDescriptor(value, 'constructor')?.value as { prototype?: unknown } | undefined
-  return typeof constructor === 'function' && constructor.prototype === value
-}
-
-/**
  * The names of the fields of an object: its own, enumerable or not, and the accessors and data its class or prototype chain defines up
  * to the root of the chain, without `constructor`.
  *
@@ -35,8 +23,9 @@ export function fieldNamesOf(value: object): string[] {
     // A chain this long is no class hierarchy: it is refused, not walked, which also ends a Proxy whose prototype loops.
     if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
     const next = Object.getPrototypeOf(proto) as object | null
-    // The `Object.prototype` of whichever realm adds nothing; a null-prototype object of the host's own that ends the chain does.
-    if (next === null && isRealmRoot(proto)) break
+    // The object that ends the chain is never read, whichever it is: the `Object.prototype` of any realm, which another library may have
+    // planted keys on and whose `constructor` it may have overwritten, or a null-prototype object of the host's own, whose keys are given up.
+    if (next === null) break
     for (const key of Object.getOwnPropertyNames(proto)) if (key !== 'constructor') keys.add(key)
     proto = next
   }
@@ -44,9 +33,12 @@ export function fieldNamesOf(value: object): string[] {
 }
 
 /**
- * The value of a field of an object, by its name: the object's own, or one its class or prototype chain defines up to the root of the
- * chain. A key found solely on the root (the `Object.prototype` of whichever realm, which another library may have added a key to) is not a
- * field; a key found nowhere is still asked of the object, which a Proxy answers by its `get` trap.
+ * The value of a field of an object, by its name: the object's own, or one its class or prototype chain defines. The walk goes to the first
+ * holder of the key; when that holder is not the object itself and has no prototype, it is the object that ends the chain (the
+ * `Object.prototype` of whichever realm, which another library may have added a key to) and the key is not read, and no property of that
+ * object is read to tell it, because pollution can overwrite or delete its `constructor`. The cost is that a key held only by a
+ * null-prototype object of the host's own, at the end of the chain, is not read either. A key found nowhere is still asked of the object,
+ * which a Proxy answers by its `get` trap.
  *
  * @param value The object.
  * @param key The name of the field.
@@ -58,8 +50,8 @@ export function fieldOf(value: object, key: string): unknown {
   for (let depth = 0; ; depth += 1) {
     if (depth === MAX_PROTOTYPE_DEPTH) throw new RangeError()
     const next = Object.getPrototypeOf(holder) as object | null
-    if (next === null) return depth > 0 && isRealmRoot(holder) && Object.hasOwn(holder, key) ? undefined : Reflect.get(value, key)
-    if (Object.hasOwn(holder, key)) return Reflect.get(value, key)
+    if (Object.hasOwn(holder, key)) return depth > 0 && next === null ? undefined : Reflect.get(value, key)
+    if (next === null) return Reflect.get(value, key)
     holder = next
   }
 }

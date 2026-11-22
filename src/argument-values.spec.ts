@@ -9,7 +9,7 @@
 import { rig } from '../test/fakes/call-registry'
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
-import { assertWalletRef, keysOf, readDeep, readField } from './server/utils/argument-guards'
+import { assertWalletRef, keysOf, readField } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
 
 const MAX = 9_223_372_036_854_775_807n
@@ -737,18 +737,17 @@ describe('an object that answers by a get trap and holds no key of its own', () 
 })
 
 describe('a chain that ends in an object the host built', () => {
-  it('keeps the fields of a null-prototype ancestor, listed and read by name', () => {
-    const ancestor = Object.assign(Object.create(null) as object, { surcharge: 7 })
+  it('gives up the keys of a null-prototype object that ends the chain, whatever its constructor says, and keeps its own', () => {
+    const ancestor = Object.assign(Object.create(null) as object, { constructor: function Own() { return 1 }, surcharge: 7 })
     const child = Object.create(ancestor) as object
-    expect(keysOf(child, 'input')).toEqual(['surcharge'])
-    expect(readDeep(child, 'unitRates', 1)).toEqual(expect.objectContaining({ surcharge: 7 }))
-    expect(readField(child, 'surcharge', 'input')).toBe(7)
+    expect(keysOf(child, 'input')).toEqual([])
+    expect(readField(child, 'surcharge', 'input')).toBeUndefined()
+    expect(readField(child, 'constructor', 'input')).toBeUndefined()
+    expect(readField(ancestor, 'surcharge', 'input')).toBe(7)
+    expect(keysOf(Object.assign(Object.create(ancestor) as object, { own: 1 }), 'input')).toEqual(['own'])
   })
 
-  it('keeps the fields of a null-prototype ancestor whose constructor is not a root, and a method a class shares with the root', () => {
-    const ancestor = Object.assign(Object.create(null) as object, { constructor: function Own() { return 1 }, surcharge: 7 })
-    expect(readField(Object.create(ancestor) as object, 'surcharge', 'input')).toBe(7)
-    expect(readField(Object.create(ancestor) as object, 'constructor', 'input')).toBe(ancestor.constructor)
+  it('keeps a method a class shares with the root, and the fields of an object that is the root itself', () => {
     class Shared {
       toString(): string {
         return 'own'
@@ -756,6 +755,28 @@ describe('a chain that ends in an object the host built', () => {
     }
     expect(readField(new Shared(), 'toString', 'input')).toBe(Shared.prototype.toString)
     expect(readField(Object.prototype, 'hasOwnProperty', 'input')).toBe(Object.prototype.hasOwnProperty)
+  })
+
+  it.each([
+    ['this realm', (): object => Object.prototype],
+    ['another realm', (): object => runInNewContext('Object.prototype') as object],
+  ])('does not read a key planted on the Object.prototype of %s after its constructor is overwritten or deleted', (_name, root) => {
+    const prototype = root() as Record<string, unknown>
+    const saved = Object.getOwnPropertyDescriptor(prototype, 'constructor')
+    const planted = ['isSystemCost', 'limit']
+    try {
+      for (const key of planted) Object.defineProperty(prototype, key, { value: 1, configurable: true, writable: true, enumerable: false })
+      const host = (): object => (root() === Object.prototype ? { a: 1 } : (runInNewContext('({ a: 1 })') as object))
+      for (const change of [() => Object.defineProperty(prototype, 'constructor', { value: 5, configurable: true, writable: true }), () => Reflect.deleteProperty(prototype, 'constructor')]) {
+        change()
+        expect(readField(host(), 'isSystemCost', 'input')).toBeUndefined()
+        expect(readField(host(), 'a', 'input')).toBe(1)
+        expect(keysOf(host(), 'input')).toEqual(['a'])
+      }
+    } finally {
+      for (const key of planted) Reflect.deleteProperty(prototype, key)
+      if (saved !== undefined) Object.defineProperty(prototype, 'constructor', saved)
+    }
   })
 
   it('still skips the Object.prototype of the realm and of another realm', () => {
