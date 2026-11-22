@@ -154,3 +154,23 @@ describe('what a method of the PostgreSQL store binds into a statement', () => {
     expect(boundText(statements)).toContain('0.5')
   })
 })
+
+describe('what the PostgreSQL store reads of its own options', () => {
+  /** The burn order of a store is the host's: one left out is not answered by a `burnOrder` planted on `Object.prototype`, which would choose which grants are spent first. */
+  it('burns the grants in the order of its default when burnOrder is planted and the host gave none', async () => {
+    const run = async (): Promise<string> => {
+      const { client, statements } = recordingClient()
+      await new PrismaAiTokensStore(client).conditionalDebit(WALLET, { ...grantEntry({ idempotencyKey: 'd9' }), type: 'debit', amountNanoUsd: -5n }, 0n, NOW).catch(() => undefined)
+      return statements.map((statement) => statement.text).join('\n')
+    }
+    const clean = await run()
+    Object.defineProperty(Object.prototype, 'burnOrder', { value: 'fifo', configurable: true, writable: true, enumerable: false })
+    let planted: string
+    try {
+      planted = await run()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'burnOrder')
+    }
+    expect(planted).toBe(clean)
+  })
+})

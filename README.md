@@ -804,11 +804,13 @@ specific to security is below.
   anything is reserved.
 - **A process whose prototypes are not the engine's is refused.** The module does not start, and no call that moves, reads or reports money
   runs (`record`, `hold`, `capture`, `release`, `reverse`, the wallet, budget, ledger, pricing and report methods, the sweeps), while this
-  realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its flags, or a function
+  realm's `Object.prototype` holds a name the engine does not define, lacks one it defines, or holds one changed (its enumerability, or a function
   that is not the engine's), or while a built-in the library calls (`Object.keys`, `Reflect.get`, `JSON.stringify`, `Array.prototype.map`,
   `Date.prototype.getTime`, `Promise.resolve`, and the others it relies on) is no longer the function it met when it loaded. The refusal is
   `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it carries a count, never a name or a value. A host that extends `Object.prototype` (a
-  `should`-style assertion library, a polyfill) cannot run the library. Beneath the check, the library still reads every option, decorator
+  `should`-style assertion library, a polyfill) cannot run the library, and neither can a process that patches one of those built-ins in place
+  (`jest.spyOn(Date, 'now')` in a host's own tests, an agent that wraps `JSON.stringify`): restore the built-in before the call, or replace the
+  whole global instead (`jest.useFakeTimers()` replaces `Date` and is not counted). Beneath the check, the library still reads every option, decorator
   field, usage, filter, row and descriptor as the host's own, so a name planted between the check and the read is not taken for a value the
   host set.
 - **The records a service returns are copies, and a store is read through a copy.** Every argument a service hands a store, and every row

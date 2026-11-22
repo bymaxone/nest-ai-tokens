@@ -57,7 +57,7 @@ describe('the realm guard', () => {
     }
   })
 
-  it('counts a standard name that is deleted, overwritten by another function, or made looser, and a constructor that no longer names Object', () => {
+  it('counts a standard name that is deleted, overwritten by another function, or a constructor that no longer names Object', () => {
     const toString = Object.getOwnPropertyDescriptor(Object.prototype, 'toString')!
     const constructor = Object.getOwnPropertyDescriptor(Object.prototype, 'constructor')!
     const valueOf = Object.getOwnPropertyDescriptor(Object.prototype, 'valueOf')!
@@ -75,6 +75,20 @@ describe('the realm guard', () => {
       Object.defineProperty(Object.prototype, 'valueOf', valueOf)
       Object.defineProperty(Object.prototype, 'constructor', constructor)
     }
+    expect(pollutedNames()).toBe(0)
+  })
+
+  it('counts a standard function swapped for the same native function of another realm, which has the same text and not the same identity', () => {
+    const original = Object.getOwnPropertyDescriptor(Object.prototype, 'valueOf')!
+    const foreign = runInNewContext('Object.prototype.valueOf') as () => boolean
+    let counted = 0
+    try {
+      Object.defineProperty(Object.prototype, 'valueOf', { ...original, value: foreign })
+      counted = pollutedNames()
+    } finally {
+      Object.defineProperty(Object.prototype, 'valueOf', original)
+    }
+    expect(counted).toBe(1)
     expect(pollutedNames()).toBe(0)
   })
 
@@ -107,6 +121,34 @@ describe('the realm guard', () => {
     }
     expect(afterKeys).toBe(1)
     expect(afterBoth).toBe(2)
+    expect(pollutedNames()).toBe(0)
+  })
+
+  /** The scan relies on nothing a polluter can replace: with a key planted, a `Set` that forgets, an iterator that stops, an `Array` method or a
+   * `Reflect` function that lies, the refusal still stands. */
+  it.each([
+    ['Set.prototype.add', Set.prototype, 'add', function (this: Set<unknown>): Set<unknown> { return this }],
+    ['Set.prototype.has', Set.prototype, 'has', (): boolean => false],
+    ['Array.prototype.filter', Array.prototype, 'filter', function (): unknown[] { return [] }],
+    ['Array.prototype.every', Array.prototype, 'every', (): boolean => true],
+    ['Array.prototype.includes', Array.prototype, 'includes', (): boolean => false],
+    ['Array.prototype[Symbol.iterator]', Array.prototype, Symbol.iterator, function* (): Generator<never> { /* yields nothing */ }],
+    ['Reflect.ownKeys', Reflect, 'ownKeys', (): never[] => []],
+    ['Reflect.get', Reflect, 'get', (): undefined => undefined],
+    ['Object.hasOwn', Object, 'hasOwn', (): boolean => true],
+    ['Object.getOwnPropertyDescriptors', Object, 'getOwnPropertyDescriptors', (): object => ({})],
+  ])('still counts a planted key when %s is replaced by a function that lies', (_name, owner, name, lie) => {
+    const original = Reflect.get(owner, name) as unknown
+    Object.defineProperty(Object.prototype, 'zzPlantedName', { value: 1, configurable: true, writable: true, enumerable: false })
+    let counted = 0
+    try {
+      Reflect.set(owner, name, lie)
+      counted = pollutedNames()
+    } finally {
+      Reflect.set(owner, name, original)
+      Reflect.deleteProperty(Object.prototype, 'zzPlantedName')
+    }
+    expect(counted).toBeGreaterThanOrEqual(1)
     expect(pollutedNames()).toBe(0)
   })
 

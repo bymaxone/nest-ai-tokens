@@ -7,6 +7,7 @@
 
 import { readShape } from './date-guards'
 import { setRealmGuard } from './prototype-guard'
+import { viewOf } from './usage-view'
 
 // These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them.
 beforeAll(() => setRealmGuard(false))
@@ -54,5 +55,17 @@ describe('readShape beneath a polluted realm', () => {
   it.each(['get', 'set', 'value', 'writable', 'enumerable', 'configurable'])('builds the snapshot when %s is planted, whether a value or an accessor', (key) => {
     const snapshot = planted(key, key === 'get' || key === 'set' ? (): number => 1 : true, () => readShape(INPUT, SHAPE, ''))
     expect(snapshot).toEqual(CLEAN)
+  })
+})
+
+describe('the view of a raw response beneath a polluted realm', () => {
+  it.each(['get', 'set', 'value', 'writable'])('lists the fields of an object, a list and a class instance when %s is planted, as it does when nothing is', (key) => {
+    class Response {
+      readonly model = 'gpt-5'
+    }
+    const objects = [{ model: 'gpt-5', usage: { n: 1 } }, ['a', 'b'], new Response()]
+    const clean = objects.map((raw) => Object.keys(viewOf(raw)))
+    const planted_ = objects.map((raw) => planted(key, key === 'get' || key === 'set' ? (): number => 1 : true, () => Object.keys(viewOf(raw))))
+    expect(planted_).toEqual(clean)
   })
 })

@@ -152,7 +152,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   constructor(client: PrismaRawClient, options: { burnOrder?: 'expiry' | 'priority' | 'fifo' } = {}) {
     this.prisma = new SqlClient(client)
     this.applications = new BudgetApplications(this.prisma)
-    this.burnOrder = options.burnOrder ?? 'expiry'
+    // The option is the host's own: one left out is not answered by a key planted on `Object.prototype`.
+    this.burnOrder = (Object.hasOwn(options, 'burnOrder') ? options.burnOrder : undefined) ?? 'expiry'
     return guardStoreErrors(this, (error) => isWalletMissing(error) || isLedgerIdempotencyConflict(error))
   }
 

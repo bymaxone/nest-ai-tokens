@@ -34,7 +34,7 @@ const BUILT_INS: readonly (readonly [object, string])[] = [
 ]
 
 /** The built-ins as this module met them. */
-const metBuiltIns: readonly unknown[] = BUILT_INS.map(([owner, name]) => Reflect.get(owner, name) as unknown)
+const metBuiltIns: readonly unknown[] = BUILT_INS.map(([owner, name]) => (owner as Record<string, unknown>)[name])
 
 /**
  * Builds a fresh realm and reads its `Object.prototype` and a reader of function text. The `vm` module reads its options from objects it
@@ -56,11 +56,22 @@ function build(): Pristine | undefined {
 
 let pristine: Pristine | undefined = build()
 
-/** The flags of a descriptor that make a name easier to change. */
-const FLAGS = ['writable', 'configurable'] as const
-
 /** The fields of a descriptor that hold what the name is. */
 const CONTENT = ['value', 'get', 'set'] as const
+
+// What the scan itself calls, captured when the module loads: a built-in replaced afterwards, a `Set` that forgets what it is given or an
+// iterator that stops early, cannot blind the check that is meant to find it. The scan uses these references, plain loops over arrays and
+// plain property reads, and nothing else of the realm.
+const getDescriptors = Object.getOwnPropertyDescriptors
+const ownKeysOf = Reflect.ownKeys
+const hasOwn = Object.hasOwn
+const getOf = Reflect.get
+
+/** The item of a list at an index, read by a plain property read, so that no iterator of the realm is run to reach it. */
+function item<T>(list: ArrayLike<T>, index: number): T {
+  const value: unknown = getOf(list, index)
+  return value as T
+}
 
 /**
  * A field of a descriptor, as its own property only: a descriptor of this realm inherits from the prototype under test, so a name planted
@@ -71,7 +82,7 @@ const CONTENT = ['value', 'get', 'set'] as const
  * @returns The own field, or `undefined`.
  */
 function field(descriptor: PropertyDescriptor | undefined, key: keyof PropertyDescriptor): unknown {
-  return descriptor !== undefined && Object.hasOwn(descriptor, key) ? (Reflect.get(descriptor, key) as unknown) : undefined
+  return descriptor !== undefined && hasOwn(descriptor, key) ? (getOf(descriptor, key) as unknown) : undefined
 }
 
 /**
@@ -87,8 +98,24 @@ function alike(now: unknown, was: unknown, sourceOf: Pristine['sourceOf']): bool
 }
 
 /**
- * Counts the names of this realm's `Object.prototype` that a fresh realm's does not hold, that it lacks, or that it holds changed (its flags,
- * or a function whose text is not the engine's, or is not the one this module met), and the built-ins that are no longer the ones it met.
+ * Whether the descriptor a name has now is the one the engine gives it: the same enumerability and the same content, which for a name this
+ * module met is also the very same function or value. Its writable and configurable flags are not compared: the engine gives every name of
+ * this prototype both, so a frozen realm is safe and no name can be looser.
+ */
+function unchanged(have: PropertyDescriptor | undefined, want: PropertyDescriptor | undefined, name: string | symbol, sourceOf: Pristine['sourceOf']): boolean {
+  if (field(have, 'enumerable') !== field(want, 'enumerable')) return false
+  for (let index = 0; index < CONTENT.length; index += 1) {
+    const key = item(CONTENT, index)
+    if (!alike(field(have, key), field(want, key), sourceOf)) return false
+    if (hasOwn(loaded, name) && field(have, key) !== field(loaded[name], key)) return false
+  }
+  return true
+}
+
+/**
+ * Counts the names of this realm's `Object.prototype` that a fresh realm's does not hold, that it lacks, or that it holds changed (its
+ * enumerability, or a function whose text is not the engine's, or is not the one this module met), and the built-ins that are no longer the
+ * ones it met.
  *
  * @returns Zero for a clean realm.
  */
@@ -96,23 +123,34 @@ export function pollutedNames(): number {
   pristine ??= build()
   if (pristine === undefined) return 1
   const { descriptors, sourceOf } = pristine
-  const now = Object.getOwnPropertyDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
+  const now = getDescriptors(Object.prototype) as Record<string | symbol, PropertyDescriptor>
+  const nowKeys = ownKeysOf(now)
+  const wantKeys = ownKeysOf(descriptors)
   // A symbol counts when it is enumerable, as an assignment through a polluted path plants it; a symbol made with defineProperty and hidden
   // needs code that already runs in the process.
-  const names = new Set([...Reflect.ownKeys(now).filter((name) => typeof name === 'string' || field(now[name], 'enumerable') === true), ...Reflect.ownKeys(descriptors)])
-  let found = 0
-  for (const name of names) {
-    // An absent descriptor reads every field as undefined, so a deleted name and a planted one differ at once.
-    const have = Object.hasOwn(now, name) ? now[name] : undefined
-    const want = Object.hasOwn(descriptors, name) ? descriptors[name] : undefined
-    const same =
-      field(have, 'enumerable') === field(want, 'enumerable') &&
-      // A flag tighter than the engine's, a frozen realm, is safe; a looser one is not.
-      FLAGS.every((flag) => field(have, flag) !== true || field(want, flag) === true) &&
-      CONTENT.every((key) => alike(field(have, key), field(want, key), sourceOf) && (!Object.hasOwn(loaded, name) || field(have, key) === field(loaded[name], key)))
-    if (!same) found += 1
+  const names: (string | symbol)[] = []
+  for (let index = 0; index < nowKeys.length; index += 1) {
+    const name = item(nowKeys, index)
+    if (typeof name === 'string' || field(now[name], 'enumerable') === true) names[names.length] = name
   }
-  for (const [index, [owner, name]] of BUILT_INS.entries()) if (Reflect.get(owner, name) !== metBuiltIns[index]) found += 1
+  for (let index = 0; index < wantKeys.length; index += 1) {
+    const name = item(wantKeys, index)
+    let seen = false
+    for (let other = 0; other < names.length; other += 1) if (item(names, other) === name) seen = true
+    if (!seen) names[names.length] = name
+  }
+  let found = 0
+  for (let index = 0; index < names.length; index += 1) {
+    const name = item(names, index)
+    // An absent descriptor reads every field as undefined, so a deleted name and a planted one differ at once.
+    const have = hasOwn(now, name) ? now[name] : undefined
+    const want = hasOwn(descriptors, name) ? descriptors[name] : undefined
+    if (!unchanged(have, want, name, sourceOf)) found += 1
+  }
+  for (let index = 0; index < BUILT_INS.length; index += 1) {
+    const entry = item(BUILT_INS, index)
+    if ((item(entry, 0) as Record<string, unknown>)[item(entry, 1) as string] !== item(metBuiltIns, index)) found += 1
+  }
   return found
 }
 
