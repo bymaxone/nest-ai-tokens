@@ -8,6 +8,8 @@
  * @layer server
  */
 
+import * as nodeCrypto from 'node:crypto'
+import { types } from 'node:util'
 import { runInNewContext } from 'node:vm'
 import { AiTokensException } from '../errors'
 import { AI_TOKENS_ERROR_MESSAGES } from '../errors/ai-tokens-error-messages'
@@ -27,14 +29,14 @@ const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<stri
  * prototype, is recorded when the module loads and compared by identity at every check, so no list of the functions the library calls has to be
  * kept: a function replaced after import, whichever it is, is counted. `Object.prototype` is left out, because it is compared by descriptor.
  */
-const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array'
+const STANDARD = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
 /**
  * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
  * changes every call that goes through the name. `Date` is left out: a fake-timer library replaces the global as a whole and leaves the
  * object, and every function on it, as it was.
  */
-const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Symbol RegExp Function Uint8Array'
+const BOUND = 'Object Reflect Array JSON Math Number String Boolean Promise Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Symbol Error RegExp Function Uint8Array Proxy'
 
 /** What the baseline compares: an owner, a name on it, and the function or object that name held when this module loaded. */
 interface Met {
@@ -61,6 +63,14 @@ export const BUILT_INS: readonly Met[] = (() => {
     for (const name of Reflect.ownKeys(owner)) {
       const value: unknown = Object.getOwnPropertyDescriptor(owner, name)?.value
       if (typeof value === 'function') found.push({ owner: owner as Met['owner'], name, met: value })
+    }
+  }
+  // The functions of the Node modules the money path calls (the type tests of `util.types`, `crypto.randomUUID`): a module object is read as it
+  // is at every check, so a function assigned to it after import is counted too.
+  for (const owner of [types, nodeCrypto] as unknown as Met['owner'][]) {
+    for (const name of Reflect.ownKeys(owner)) {
+      const value: unknown = owner[name]
+      if (typeof value === 'function') found.push({ owner, name, met: value })
     }
   }
   for (const name of BOUND.split(' ')) {

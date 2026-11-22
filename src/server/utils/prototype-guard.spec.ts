@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
+import { createRequire } from 'node:module'
 import { BUILT_INS, assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
 
 /** Captured here, because the rows below rebind `Reflect` and must still be able to put it back. */
@@ -189,7 +190,7 @@ describe('the realm guard', () => {
   })
 
   /** A name rebound to another object leaves every function of the original as it was: the baseline compares the binding. */
-  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Promise', 'Set', 'Map', 'WeakMap', 'ArrayBuffer'])('counts the global %s rebound to another object, with nothing planted', (name) => {
+  it.each(['Object', 'Reflect', 'Array', 'JSON', 'Math', 'Number', 'String', 'Promise', 'Set', 'Map', 'WeakMap', 'ArrayBuffer', 'BigInt', 'Proxy', 'Error'])('counts the global %s rebound to another object, with nothing planted', (name) => {
     const original = getOf(globalThis, name) as unknown
     let counted = -1
     try {
@@ -224,6 +225,30 @@ describe('the realm guard', () => {
     }
     expect(replaced).toBeGreaterThan(300)
     expect(missed).toEqual([])
+    expect(pollutedNames()).toBe(0)
+  })
+
+  /** The Node modules the money path calls are replaced on the module object itself, which is what a host's code can reach. */
+  it.each([
+    ['node:crypto', 'randomUUID'],
+    ['node:crypto', 'createHash'],
+    ['node:util', 'types.isProxy'],
+    ['node:util', 'types.isPromise'],
+    ['node:util', 'types.isMap'],
+    ['node:util', 'types.isDate'],
+  ])('counts %s %s replaced after import, and again as it was after the restore', (moduleName, path) => {
+    const loaded = createRequire(__filename)(moduleName) as Record<string, unknown>
+    const owner = (path.startsWith('types.') ? loaded.types : loaded) as Record<string, unknown>
+    const name = path.replace('types.', '')
+    const original = owner[name]
+    let counted = -1
+    try {
+      owner[name] = (): string => 'replaced'
+      counted = pollutedNames()
+    } finally {
+      owner[name] = original
+    }
+    expect(counted).toBe(1)
     expect(pollutedNames()).toBe(0)
   })
 
