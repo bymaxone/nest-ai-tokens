@@ -155,10 +155,10 @@ describe('the tenant of a budget a store returned', () => {
 })
 
 describe('the request the guard enriched', () => {
-  /** An `aiTokens` of null is no enrichment: the call is settled as one with no guard. */
-  it('records and bills 6,250,000 when the request carries a null aiTokens', async () => {
+  /** An `aiTokens` that is not an object (null, text, a number) is no enrichment: the call is settled as one with no guard. */
+  it.each([[null], ['text'], [5]])('records and bills 6,250,000 when the request carries an aiTokens of %p', async (aiTokens) => {
     const { wallets, interceptor } = await world()
-    await lastValueFrom(interceptor.intercept(executionContext(fixture.metered, { aiTokens: null }), handlerOf({ usage: normalized() })))
+    await lastValueFrom(interceptor.intercept(executionContext(fixture.metered, { aiTokens }), handlerOf({ usage: normalized() })))
     expect((await wallets.getBalance(WALLET)).nanoUsd).toBe(93_750_000n)
   })
 })
