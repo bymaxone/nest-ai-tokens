@@ -14,7 +14,9 @@ const config: Config = {
   // text itself is asserted by the builders spec, which does run. The second bundles the absorb
   // helper from the files on disk and runs it in a child process, so it would bundle the instrumented
   // source; the helper's behaviour is asserted in-process by host-call-failures.spec.ts, which does run.
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/src/prisma/timestamp-writes.spec.ts', '<rootDir>/src/absorb-child.spec.ts'],
+  // The third reads the tsup and Stryker configs and the shipped source text from disk to pin the mutation scope, which it cannot do on
+  // instrumented files; the unit suite runs it on the files as they are.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/src/prisma/timestamp-writes.spec.ts', '<rootDir>/src/absorb-child.spec.ts', '<rootDir>/src/stryker-scope.spec.ts'],
 }
 
 export default config

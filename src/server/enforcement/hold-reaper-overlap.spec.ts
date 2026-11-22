@@ -7,7 +7,6 @@
 
 import { Logger } from '@nestjs/common'
 import type { LedgerService } from '../services/ledger.service'
-import type { MeteringService } from '../services/metering.service'
 import { HoldReaper } from './hold-reaper'
 
 const SKIPPED_LINE = 'ai_tokens.hold_reaper.tick_skipped'
@@ -34,7 +33,7 @@ function hangingLedger(): { ledger: LedgerService; scans: { active: number; peak
 }
 
 function reaperOver(ledger: LedgerService): HoldReaper {
-  return new HoldReaper(ledger, {} as MeteringService, { holds: { ttlSeconds: 60, reaperIntervalSeconds: 1 } })
+  return new HoldReaper(ledger, {} as never, { holds: { ttlSeconds: 60, reaperIntervalSeconds: 1 } })
 }
 
 describe('HoldReaper timer without overlap', () => {

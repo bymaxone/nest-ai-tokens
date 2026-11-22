@@ -9,7 +9,6 @@
 
 import { Logger } from '@nestjs/common'
 import type { LedgerService } from '../services/ledger.service'
-import type { MeteringService } from '../services/metering.service'
 import { HoldReaper } from './hold-reaper'
 
 const STALLED_LINE = 'ai_tokens.hold_reaper.tick_stalled'
@@ -55,7 +54,7 @@ function ledgerHangingAt(hangs: readonly number[] | 'all'): { ledger: LedgerServ
 }
 
 function reaperOver(ledger: LedgerService, reaperIntervalSeconds: number): HoldReaper {
-  return new HoldReaper(ledger, {} as MeteringService, { holds: { ttlSeconds: 60, reaperIntervalSeconds } })
+  return new HoldReaper(ledger, {} as never, { holds: { ttlSeconds: 60, reaperIntervalSeconds } })
 }
 
 const linesStarting = (prefix: string): string[] => (Logger.prototype.warn as jest.Mock).mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith(prefix))
