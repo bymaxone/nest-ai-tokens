@@ -73,9 +73,11 @@ export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: Re
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 
-/** The tool units of a call as the names and counts they carry, sorted: an absent map and an empty one are the same. */
-function unitsOf(units: Record<string, number> | undefined): string {
-  return JSON.stringify(Object.entries(units ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)))
+/** Whether two tool unit maps name the same units with the same counts, in any order: an absent map and an empty one are the same. */
+function sameUnits(first: Record<string, number> | undefined, second: Record<string, number> | undefined): boolean {
+  const kept = Object.entries(first ?? {})
+  const other = second ?? {}
+  return kept.length === Object.keys(other).length && kept.every(([unit, count]) => other[unit] === count)
 }
 
 /**
@@ -85,7 +87,7 @@ function unitsOf(units: Record<string, number> | undefined): string {
  * replay names.
  */
 export function heldReplay(stored: UsageRecord, extraUnits: Record<string, number> | undefined): UsageRecord {
-  if (stored.status !== 'pending' || unitsOf(stored.extraUnits) === unitsOf(extraUnits)) return stored
+  if (stored.status !== 'pending' || sameUnits(stored.extraUnits, extraUnits)) return stored
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 

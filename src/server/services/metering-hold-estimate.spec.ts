@@ -107,12 +107,12 @@ async function world(): Promise<Built> {
 }
 
 /** The code and reason of the typed refusal a call raises, or `undefined` when it does not refuse. */
-async function refusal(run: () => Promise<unknown>): Promise<{ code: string; reason: string | undefined } | undefined> {
+async function refusal(run: () => Promise<unknown>): Promise<{ code: string; reason: string | undefined; details: Record<string, unknown> | undefined } | undefined> {
   try {
     await run()
   } catch (error) {
     const { error: body } = (error as AiTokensException).getResponse() as AiTokensErrorResponse
-    return { code: body.code, reason: body.details?.reason as string | undefined }
+    return { code: body.code, reason: body.details?.reason as string | undefined, details: body.details }
   }
   return undefined
 }
@@ -130,7 +130,7 @@ describe('the estimate of a hold', () => {
     const built = await world()
     const before = (await built.wallets!.getBalance(WALLET)).nanoUsd
     const outcome = await refusal(() => built.service.hold(context({ preset: providerPresets.openaiChat, baseModel: 'gpt-5' }), estimate))
-    expect(outcome).toEqual({ code: 'AI_TOKENS_INVALID_CONFIG', reason: REASON })
+    expect(outcome).toMatchObject({ code: 'AI_TOKENS_INVALID_CONFIG', reason: REASON })
     expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(before)
     expect(await built.ledgerStore.query({ tenantId: 'tenant-1' })).toEqual([])
   })
@@ -200,12 +200,13 @@ describe('a hold replayed under the same idempotency key', () => {
     ['a removed unit', { web_search_requests: 3, code_run: 1 }, { web_search_requests: 3 }],
     ['units where there were none', undefined, { web_search_requests: 3 }],
     ['none where there were units', { web_search_requests: 3 }, undefined],
+    ['a unit renamed to another with the same count', { web_search_requests: 3 }, { code_run: 3 }],
   ])('raises the idempotency conflict for %s', async (_name, first, second) => {
     const built = await world()
     const held = await built.service.hold(ctx(first), rated(1000, 500))
     const balance = (await built.wallets!.getBalance(WALLET)).nanoUsd
     const outcome = await refusal(() => built.service.hold(ctx(second), rated(1000, 500)))
-    expect(outcome?.code).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(outcome).toMatchObject({ code: 'AI_TOKENS_IDEMPOTENCY_CONFLICT', details: { tenantId: 'tenant-1', idempotencyKey: 'hold-key-1' } })
     expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(balance)
     expect((await built.ledgerStore.findById(held.id))?.extraUnits).toEqual(first)
   })
