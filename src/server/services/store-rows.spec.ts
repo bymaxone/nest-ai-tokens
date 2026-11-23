@@ -15,6 +15,11 @@ import { LedgerService } from './ledger.service'
 import { MarkupResolver } from './markup.resolver'
 import { MeteringService } from './metering.service'
 import { PricingService } from './pricing.service'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** Plant `value` as `key` on `Object.prototype`, run `run`, and remove it, whatever `run` does. */
 async function planted<T>(key: string, value: unknown, run: () => Promise<T>): Promise<T> {

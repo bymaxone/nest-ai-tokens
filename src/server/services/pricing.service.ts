@@ -11,6 +11,8 @@ import { Injectable } from '@nestjs/common'
 import type { OnModuleInit } from '@nestjs/common'
 import type { AiOperation, NewPriceVersion, PriceVersion, ProviderId, ServiceTier } from '../../shared'
 import { methodOf, withEveryName } from '../utils/field-names'
+import { jsonText } from '../utils/json-text'
+import { assertCleanRealm } from '../utils/prototype-guard'
 import { guardedStore } from '../utils/guarded-store'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
@@ -94,6 +96,8 @@ export class PricingService implements OnModuleInit {
    * @throws {AiTokensException} `AI_TOKENS_PRICE_NOT_FOUND` on a miss in strict mode.
    */
   async resolveRate(given: ResolveRateInput): Promise<PriceVersion | null> {
+    // A cached price never reaches the store, which is where every other read of the library is refused beside a polluted realm.
+    assertCleanRealm()
     assertObject('input', given)
     const input = snapshotOf(given, RESOLVE_RATE_FIELDS)
     assertText('provider', input.provider)
@@ -107,7 +111,7 @@ export class PricingService implements OnModuleInit {
     // Stryker disable next-line ArithmeticOperator: * instead of /: changes bucket to input.at.getTime() * cacheTtlMs (huge number), but since both calls use the same input.at, the cache key is still consistent across calls → cache still hits; only observable if two different input.at values are deliberately straddled across a bucket boundary, which no test does
     const bucket = Math.floor(at.getTime() / this.options.pricing.cacheTtlMs)
     // A JSON array escapes every string field, so no character inside provider, model or baseModel can move the boundary between fields.
-    const cacheKey = JSON.stringify([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
+    const cacheKey = jsonText([input.provider, input.model, input.baseModel, operation, serviceTier, bucket])
 
     let resolved: PriceVersion | null
     const cached = this.cache.get(cacheKey)
@@ -119,6 +123,8 @@ export class PricingService implements OnModuleInit {
       this.cache.set(cacheKey, { value: resolved, expiresAt: this.now() + this.options.pricing.cacheTtlMs })
     }
 
+    // The awaited read is over: the guard runs again before the caller computes an amount from the price it returns.
+    assertCleanRealm()
     if (resolved === null && this.options.pricing.strict) {
       // Stryker disable next-line ObjectLiteral: error context fields are diagnostic; tests check error code (AI_TOKENS_PRICE_NOT_FOUND), not payload shape
       throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, suppliedDetails({ provider: input.provider, model: input.model, operation: input.operation, serviceTier }))

@@ -19,6 +19,11 @@ import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingS
 import { BudgetGuard } from './budget.guard'
 import { Meter, RequireBudget } from './decorators'
 import { MeteringInterceptor } from './metering.interceptor'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 const WALLET = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
 const CONTEXT: MeteringContext = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply' }

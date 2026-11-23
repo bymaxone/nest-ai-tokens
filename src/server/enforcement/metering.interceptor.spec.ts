@@ -15,6 +15,11 @@ import type { RequestAiTokens } from './budget.guard'
 import { providerPresets } from '../config/provider-presets'
 import { Meter } from './decorators'
 import { MeteringInterceptor } from './metering.interceptor'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** Read the typed error code from a thrown `AiTokensException`. */
 function codeOf(error: unknown): string {

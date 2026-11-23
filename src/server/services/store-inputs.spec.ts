@@ -12,6 +12,11 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { BudgetService } from './budget.service'
 import { LedgerService } from './ledger.service'
 import { PricingService } from './pricing.service'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 const SCOPE = { type: 'user', id: 'u1' } as const
 

@@ -14,6 +14,7 @@ import { readArgument, readDatedArgument, readHoldEstimate, readShape } from './
 import { CONTENT_SHAPE, CONTEXT_SHAPE, HOLD_CALLER_SHAPE, HOLD_SHAPE, NORMALIZED_USAGE_FIELDS, PRESET_SHAPE, RECORD_SHAPE } from './input-fields'
 import { isBuiltInNormalizer } from '../config/provider-presets'
 import { isNormalizedUsage } from '../services/hold-support'
+import { assertCleanRealm } from './prototype-guard'
 import { viewOf } from './usage-view'
 
 /** The content a capture or a record may carry. */
@@ -40,6 +41,7 @@ function isCollector(value: unknown): value is StreamUsageCollector {
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdArguments(context: MeteringContext, estimate: HoldEstimate): { context: MeteringContext; estimate: HoldEstimate } {
+  assertCleanRealm()
   const visit = newVisit()
   return { context: readArgument(context, CONTEXT_SHAPE, 'context.', visit), estimate: readHoldEstimate(estimate, visit) }
 }
@@ -53,6 +55,7 @@ export function holdArguments(context: MeteringContext, estimate: HoldEstimate):
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read.
  */
 export function holdOwnerArguments(hold: Hold, caller: HoldCaller): { hold: Hold; caller: HoldCaller } {
+  assertCleanRealm()
   const visit = newVisit()
   return { hold: readArgument(hold, HOLD_SHAPE, 'hold.', visit), caller: readArgument(caller, HOLD_CALLER_SHAPE, 'caller.', visit) }
 }
@@ -96,6 +99,7 @@ export function readUsage(usage: unknown, visit: Visit, normalizedFirst: boolean
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` naming the field that cannot be read or is not a valid date.
  */
 export function recordInput(given: RecordInput): RecordInput {
+  assertCleanRealm()
   const visit = newVisit()
   const input = readDatedArgument(given, RECORD_SHAPE, ['occurredAt'], visit)
   if (input !== given) input.usage = readUsage(input.usage, visit, (input.normalizer ?? input.preset?.normalizer) === undefined, input.normalizer ?? input.preset?.normalizer)

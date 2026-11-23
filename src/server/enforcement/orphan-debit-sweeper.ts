@@ -13,7 +13,7 @@ import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 import type { UsageRecord } from '../../shared'
 import type { IWalletStore, OwedEffects, WalletDebit, WalletDebitCursor } from '../interfaces'
-import { methodOf } from '../utils/field-names'
+import { fieldOf, methodOf } from '../utils/field-names'
 import { guardedStore } from '../utils/guarded-store'
 import type { LedgerAppendInput, LedgerService } from '../services/ledger.service'
 import { isIdempotencyConflict } from '../services/record-replay'
@@ -75,8 +75,8 @@ export class OrphanDebitSweeper {
     tuning: OrphanDebitSweepTuning = {},
   ) {
     this.wallets = guardedStore(wallets)
-    this.pageSize = tuning.pageSize ?? PAGE_SIZE
-    this.pages = tuning.pages ?? PAGES_PER_TICK
+    this.pageSize = (fieldOf(tuning, 'pageSize') as number | undefined) ?? PAGE_SIZE
+    this.pages = (fieldOf(tuning, 'pages') as number | undefined) ?? PAGES_PER_TICK
   }
 
   /** Whether the sweep can run: the wallet store lists debits across wallets and the ledger keeps the marker. */

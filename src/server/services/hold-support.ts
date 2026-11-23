@@ -18,7 +18,8 @@ import type {
   ProviderId,
   ServiceTier,
 } from '../../shared'
-import { AI_OPERATIONS, TOKEN_CATEGORIES, computeCostNanoUsd } from '../../shared'
+import { AI_OPERATIONS, TOKEN_CATEGORIES } from '../../shared'
+import { ratedCost } from '../utils/rated-cost'
 import { AiTokensException } from '../errors'
 import { setErrorMessage } from '../errors/set-error-message'
 import type { HoldCaller, HoldEstimate, MeteringContext } from '../interfaces'
@@ -262,7 +263,7 @@ async function rateHoldEstimate(
       // Stryker disable next-line ConditionalExpression: CE true: spreading { baseModel: undefined } is equivalent to {} because resolveRate reads input.baseModel (undefined either way) — same cache key and same `baseModel !== undefined` resolution branch
       ...(context.baseModel !== undefined ? { baseModel: context.baseModel } : {}),
     })
-    const rawEstimateNanoUsd = rate === null ? 0n : computeCostNanoUsd(usage, rate).totalNanoUsd
+    const rawEstimateNanoUsd = rate === null ? 0n : ratedCost(usage, rate).totalNanoUsd
     const tokenCounts: TokenCounts = { ...zeroTokenCounts(), inputTokens: estimate.inputTokens, outputTokens: estimate.maxOutputTokens }
     return { provider: estimate.provider, model: estimate.model, operation: estimate.operation, serviceTier: tier, rawEstimateNanoUsd, estimatedTokens: sumTokenCounts(tokenCounts), tokenCounts }
   }

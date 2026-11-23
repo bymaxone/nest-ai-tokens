@@ -148,32 +148,43 @@ export interface UsageDraft {
 }
 
 /**
+ * What a draft sets for `key` itself: a draft is an object literal that leaves optional names out, and a name it lacks is answered by the
+ * `Object.prototype` of its realm, where another library, or prototype pollution, may have put a key.
+ */
+function own<K extends keyof UsageDraft>(draft: UsageDraft, key: K): UsageDraft[K] | undefined {
+  return Object.hasOwn(draft, key) ? draft[key] : undefined
+}
+
+/**
  * Build a {@link NormalizedUsage} from a draft: fill every numeric category with
  * `0` when absent and include the optional fields only when defined (honoring
- * `exactOptionalPropertyTypes`).
+ * `exactOptionalPropertyTypes`). Every name of the draft is read as the draft's own, and the usage has no prototype, so a name it lacks is
+ * `undefined` wherever it is read and never a key planted on `Object.prototype`.
  */
 export function buildUsage(draft: UsageDraft): NormalizedUsage {
-  const usage: NormalizedUsage = {
+  const usage: NormalizedUsage = Object.assign(Object.create(null) as NormalizedUsage, {
     provider: draft.provider,
     model: draft.model,
     operation: draft.operation,
     inputTokens: draft.inputTokens,
     outputTokens: draft.outputTokens,
-    cacheReadTokens: draft.cacheReadTokens ?? 0,
-    cacheWrite5mTokens: draft.cacheWrite5mTokens ?? 0,
-    cacheWrite1hTokens: draft.cacheWrite1hTokens ?? 0,
-    reasoningTokens: draft.reasoningTokens ?? 0,
-    audioInTokens: draft.audioInTokens ?? 0,
-    audioOutTokens: draft.audioOutTokens ?? 0,
-    imageInTokens: draft.imageInTokens ?? 0,
-    imageOutTokens: draft.imageOutTokens ?? 0,
-  }
-  if (draft.serviceTier !== undefined) usage.serviceTier = draft.serviceTier
-  if (draft.serverToolUse !== undefined) usage.serverToolUse = draft.serverToolUse
-  if (draft.providerReportedCostNanoUsd !== undefined) {
-    usage.providerReportedCostNanoUsd = draft.providerReportedCostNanoUsd
-  }
-  if (draft.raw !== undefined) usage.raw = draft.raw
+    cacheReadTokens: own(draft, 'cacheReadTokens') ?? 0,
+    cacheWrite5mTokens: own(draft, 'cacheWrite5mTokens') ?? 0,
+    cacheWrite1hTokens: own(draft, 'cacheWrite1hTokens') ?? 0,
+    reasoningTokens: own(draft, 'reasoningTokens') ?? 0,
+    audioInTokens: own(draft, 'audioInTokens') ?? 0,
+    audioOutTokens: own(draft, 'audioOutTokens') ?? 0,
+    imageInTokens: own(draft, 'imageInTokens') ?? 0,
+    imageOutTokens: own(draft, 'imageOutTokens') ?? 0,
+  })
+  const serviceTier = own(draft, 'serviceTier')
+  const serverToolUse = own(draft, 'serverToolUse')
+  const providerReportedCostNanoUsd = own(draft, 'providerReportedCostNanoUsd')
+  const raw = own(draft, 'raw')
+  if (serviceTier !== undefined) usage.serviceTier = serviceTier
+  if (serverToolUse !== undefined) usage.serverToolUse = serverToolUse
+  if (providerReportedCostNanoUsd !== undefined) usage.providerReportedCostNanoUsd = providerReportedCostNanoUsd
+  if (raw !== undefined) usage.raw = raw
   return usage
 }
 

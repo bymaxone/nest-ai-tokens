@@ -7,6 +7,11 @@ import type { NewPriceVersion, PriceVersion } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { PricingService } from './pricing.service'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 const AT = new Date('2026-06-01T00:00:00.000Z')
 

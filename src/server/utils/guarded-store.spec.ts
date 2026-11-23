@@ -6,6 +6,11 @@
 
 import { types } from 'node:util'
 import { guardedStore } from './guarded-store'
+import { setRealmGuard } from './prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** A store whose rows are class instances and plain objects, and that keeps what it was handed. */
 class Store {
@@ -144,6 +149,21 @@ describe('guardedStore', () => {
     expect(guarded.label).toBe('frozen')
     const sealed = Object.defineProperty({}, 'find', { value: (): { id: string } => ({ id: 's1' }), writable: false, configurable: false, enumerable: true }) as { find(): { id: string } }
     expect(Object.getPrototypeOf(guardedStore(sealed).find())).toBeNull()
+  })
+
+  /** The engine reads the fields of the descriptor a trap returns through its prototype chain: a planted `get` or `set` made `Object.hasOwn` throw. */
+  it.each(['get', 'set', 'value', 'writable'])('answers a question about a descriptor when %s is planted on Object.prototype, without throwing', (key) => {
+    const store = { find: (): number => 1, label: 'store' }
+    const guarded = guardedStore(store)
+    Object.defineProperty(Object.prototype, key, { value: key === 'get' || key === 'set' ? (): number => 1 : true, configurable: true, writable: true })
+    try {
+      expect(Object.hasOwn(guarded, 'find')).toBe(true)
+      expect(Object.hasOwn(guarded, 'absent')).toBe(false)
+      expect(Reflect.getOwnPropertyDescriptor(guarded, 'label')?.value).toBe('store')
+      expect(Object.keys(guarded)).toEqual(['find', 'label'])
+    } finally {
+      Reflect.deleteProperty(Object.prototype, key)
+    }
   })
 
   it('answers the questions about its keys and its names as the store does', () => {

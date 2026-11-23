@@ -11,6 +11,7 @@ import { assertObject, assertScope, assertText, newVisit, readDeep, readField, t
 import { AMOUNT_ESTIMATE_FIELDS, RATED_ESTIMATE_FIELDS, SCOPE_FIELDS, type FieldList, type Shape } from './input-fields'
 import { isDate } from '../../shared/utils/is-date'
 import { isValidDate } from './numeric-guards'
+import { descriptor } from './descriptor'
 
 /** The first instant of the supported range, 0001-01-01T00:00:00.000Z, in milliseconds since the epoch. */
 const FIRST_SUPPORTED_MS = -62_135_596_800_000
@@ -80,16 +81,25 @@ export function readOptionalDate(name: string, value: unknown): Date | undefined
 export function readShape(input: object, shape: Shape, prefix: string, visit = newVisit()): Record<string, unknown> {
   // No prototype: a key that another library put on `Object.prototype` is not found on the snapshot, whatever the call reads from it.
   const copy = Object.create(null) as Record<string, unknown>
+  // The parts of a shape are the shape's own, and so is each entry of them: a shape is a literal that leaves them out, and a name it lacks is
+  // otherwise answered by the `Object.prototype` of the realm.
+  const nested = ownEntry(shape, 'nested') as Shape['nested']
+  const raw = ownEntry(shape, 'raw') as Shape['raw']
+  const limits = ownEntry(shape, 'limits') as Shape['limits']
   for (const key of Object.keys(shape.fields)) {
     const name = `${prefix}${key}`
-    const raw = readField(input, key, name)
-    const inner = shape.nested?.[key]
-    const value = inner !== undefined && isRecord(raw) ? readShape(raw, inner, `${name}.`, visit) : shape.raw?.includes(key) === true ? raw : readDeep(raw, name, 1, shape.limits?.[key], visit)
-    // Defined, not assigned: a key that another library put on `Object.prototype` as read-only would make an assignment throw.
+    const value = readField(input, key, name)
+    const inner = ownEntry(nested, key) as Shape | undefined
+    const read = inner !== undefined && isRecord(value) ? readShape(value, inner, `${name}.`, visit) : Array.isArray(raw) && raw.includes(key) ? value : readDeep(value, name, 1, ownEntry(limits, key) as number | undefined, visit)
     // Enumerable on purpose: the snapshot is the library's own plain data, which the stores spread, so a field that is not enumerable would be dropped downstream.
-    if (value !== undefined) Object.defineProperty(copy, key, { value, enumerable: true, writable: true })
+    if (read !== undefined) copy[key] = read
   }
   return copy
+}
+
+/** The entry of a record that the record itself holds, or `undefined`: never one found on the `Object.prototype` of the realm. */
+function ownEntry(record: object | undefined, key: string): unknown {
+  return record !== undefined && Object.hasOwn(record, key) ? (Reflect.get(record, key) as unknown) : undefined
 }
 
 /** Replace the named date fields of a snapshot by {@link readDate} copies, so that a date is valid and read once. */
@@ -153,7 +163,7 @@ export function readHoldEstimate<T>(estimate: T, visit: Visit): T {
   const { provider: _provider, ...rated } = RATED_ESTIMATE_FIELDS
   const copy = readShape(estimate, { fields: provider !== undefined ? rated : tokens !== undefined ? {} : AMOUNT_ESTIMATE_FIELDS }, 'estimate.', visit)
   const answered = provider !== undefined ? { provider } : tokens !== undefined ? { tokens } : {}
-  for (const [key, value] of Object.entries(answered)) Object.defineProperty(copy, key, { value: readDeep(value, `estimate.${key}`, 1, undefined, visit), enumerable: true, writable: true })
+  for (const [key, value] of Object.entries(answered)) Object.defineProperty(copy, key, descriptor({ value: readDeep(value, `estimate.${key}`, 1, undefined, visit), enumerable: true, writable: true }))
   return copy as T
 }
 

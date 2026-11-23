@@ -7,6 +7,8 @@
  * @layer server
  */
 
+import { descriptor } from '../utils/descriptor'
+
 /**
  * Set `error.cause` to `cause` without making it enumerable, so it is not serialized with the exception.
  *
@@ -15,6 +17,6 @@
  * @returns `error`, for use in a `throw` expression.
  */
 export function attachCause<T extends Error>(error: T, cause: unknown): T {
-  Object.defineProperty(error, 'cause', { value: cause, enumerable: false, configurable: true, writable: true })
+  Object.defineProperty(error, 'cause', descriptor({ value: cause, enumerable: false, configurable: true, writable: true }))
   return error
 }

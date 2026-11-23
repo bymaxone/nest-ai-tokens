@@ -12,6 +12,7 @@ import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { fieldOf } from './field-names'
 import { isPlain, ownCopy } from './own-copy'
+import { assertCleanRealm } from './prototype-guard'
 
 /** Every proxy this module made, so that a store handed to two services is guarded once. */
 const GUARDED = new WeakSet()
@@ -58,8 +59,10 @@ export function guardedStore<T extends object>(store: T): T {
       const value = fieldOf(store, property)
       if (typeof value !== 'function') return value
       return (...args: unknown[]): unknown => {
-        const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(store, args.map((argument) => copied(argument)))
-        return isThenable(result) ? Promise.resolve(result).then((resolved) => copied(resolved)) : copied(result)
+        // No call reaches a store beside a polluted realm, so nothing is written or reported there.
+        assertCleanRealm()
+        const result: unknown = Reflect.apply(value as (...parameters: unknown[]) => unknown, store, args.map((argument) => copied(argument)))
+        return isThenable(result) ? (async (): Promise<unknown> => copied(await result))() : copied(result)
       }
     },
     has: (_target, property) => Reflect.has(store, property),
@@ -67,7 +70,8 @@ export function guardedStore<T extends object>(store: T): T {
     getPrototypeOf: () => Reflect.getPrototypeOf(store),
     getOwnPropertyDescriptor(_target, property) {
       const descriptor = Reflect.getOwnPropertyDescriptor(store, property)
-      return descriptor === undefined ? undefined : { ...descriptor, configurable: true }
+      // No prototype: the engine reads `get`, `set`, `value` and the flags of what a trap returns through its prototype chain.
+      return descriptor === undefined ? undefined : Object.assign(Object.create(null) as PropertyDescriptor, descriptor, { configurable: true })
     },
   })
   GUARDED.add(guarded)

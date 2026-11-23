@@ -27,7 +27,7 @@ import type {
   UsageNormalizer,
   UsageRecord,
 } from '../../shared'
-import { computeCostNanoUsd } from '../../shared'
+import { ratedCost } from '../utils/rated-cost'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
@@ -40,6 +40,9 @@ import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
+import { fieldOf } from '../utils/field-names'
+import { jsonText } from '../utils/json-text'
+import { assertCleanRealm } from '../utils/prototype-guard'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
@@ -224,7 +227,7 @@ export class MeteringService {
   private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
     if (key === undefined) return this.recordOnce(input, undefined)
-    return this.inflight.run(JSON.stringify([input.context.tenantId, key]), () => this.recordOnce(input, key))
+    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key))
   }
 
   /**
@@ -245,7 +248,7 @@ export class MeteringService {
     const normalized = withBaseModel(parsed, context.baseModel)
     const serviceTier = context.serviceTier ?? normalized.serviceTier ?? 'standard'
     const occurredAt = input.occurredAt ?? this.now()
-    const mode = context.ratingMode ?? input.preset?.ratingMode ?? this.options.ratingMode
+    const mode = context.ratingMode ?? input.preset?.ratingMode ?? (fieldOf(this.options, 'ratingMode') as RatingMode)
     const ratedUnits: Record<string, number> = { ...normalized.serverToolUse, ...context.extraUnits }
     const usageForRating = checkUsageCounts({ ...normalized, serverToolUse: ratedUnits })
 
@@ -367,7 +370,7 @@ export class MeteringService {
       imageOutTokens: 0,
     }
     const rate = await this.pricing.resolveRate({ provider: input.provider, model: input.model, operation: input.operation, serviceTier, at })
-    const rawCostNanoUsd = rate === null ? 0n : computeCostNanoUsd(usage, rate).totalNanoUsd
+    const rawCostNanoUsd = rate === null ? 0n : ratedCost(usage, rate).totalNanoUsd
     const markup = await this.markup.resolve({
       scope: input.scope ?? ESTIMATE_SCOPE,
       provider: input.provider,
@@ -406,7 +409,7 @@ export class MeteringService {
     assertHoldEstimate(estimate)
     const key = context.idempotencyKey
     if (key === undefined) return this.holdOnce(context, estimate)
-    return this.inflight.run(JSON.stringify([context.tenantId, key]), () => this.holdOnce(context, estimate))
+    return this.inflight.run(jsonText([context.tenantId, key]), () => this.holdOnce(context, estimate))
   }
 
   /**
@@ -449,6 +452,7 @@ export class MeteringService {
   async capture(givenHold: Hold, givenCaller: HoldCaller, givenUsage: unknown, givenPreset?: ProviderPreset, givenContent?: { prompt?: string; completion?: string }): Promise<UsageRecord> {
     const { hold, caller } = holdOwnerArguments(givenHold, givenCaller)
     const record = await this.loadHoldRecord(hold, caller, 'capture(hold, caller, usage)')
+    assertCleanRealm()
     if (record.status !== 'pending') return this.settledOrConflict(record)
     const { usage, preset, content } = captureInputs(givenUsage, givenPreset, givenContent)
     const normalized = await this.finalizeCaptureUsage(usage, record.totalTokens, preset)
@@ -461,9 +465,10 @@ export class MeteringService {
       serviceTier: record.serviceTier,
       serverToolUse: ratedUnits,
     })
-    const mode = preset?.ratingMode ?? this.options.ratingMode
+    const mode = preset?.ratingMode ?? (fieldOf(this.options, 'ratingMode') as RatingMode)
     const rating = await this.rate(usageForRating, record.serviceTier, record.occurredAt, mode, record.requestedModel)
     const markup = await this.markup.resolve({ scope: record.scope, provider: record.provider, model: record.model, operation: record.operation, serviceTier: record.serviceTier, feature: record.feature })
+    assertCleanRealm()
     const counts = tokenCountsOf(usageForRating)
     const patch = settlementPatch(counts, rating, markup, ratedUnits)
     const reservedBilled = record.billedCostNanoUsd
@@ -580,6 +585,7 @@ export class MeteringService {
    * @returns The combined access status.
    */
   async getStatus(tenantId: string, scope: MeteringScope): Promise<AccessStatus> {
+    assertCleanRealm()
     const own = lookupScope(tenantId, scope)
     const budgets = this.budgets !== undefined ? await this.budgets.status(tenantId, own) : []
     const wallet = await this.walletSection(tenantId, own)
@@ -786,7 +792,7 @@ export class MeteringService {
     // A tool unit the price lists no rate for is a missing price, as an unpriced model is: refused in strict mode, billed at 0 and flagged otherwise.
     const unpriced = unpricedUnits(usage, rate)
     if (unpriced.length > 0 && this.pricing.strict) throw new AiTokensException('AI_TOKENS_PRICE_NOT_FOUND', undefined, { reason: `the price lists no rate for the tool unit ${unpriced.join(', ')}` })
-    const breakdown = computeCostNanoUsd(usage, rate)
+    const breakdown = ratedCost(usage, rate)
     return { rawCostNanoUsd: breakdown.totalNanoUsd, surchargeNanoUsd: breakdown.surchargeNanoUsd, priceVersionId: rate.id, priceMissing: unpriced.length > 0 }
   }
 }

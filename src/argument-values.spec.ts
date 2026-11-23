@@ -11,6 +11,11 @@ import { createContext, runInContext, runInNewContext } from 'node:vm'
 import { AiTokensException } from './server/errors'
 import { assertWalletRef, keysOf, readField } from './server/utils/argument-guards'
 import { snapshotOf } from './server/utils/date-guards'
+import { setRealmGuard } from './server/utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 const MAX = 9_223_372_036_854_775_807n
 /** The same bound as the text of a refusal. */

@@ -19,10 +19,12 @@ import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { ownCopy } from '../utils/own-copy'
 import { guardedStore } from '../utils/guarded-store'
 import { assertObject, assertText } from '../utils/argument-guards'
 import { withReadDates } from '../utils/date-guards'
 import { REPORT_FILTER_FIELDS, SUMMARIZE_FIELDS } from '../utils/input-fields'
+import { jsonText } from '../utils/json-text'
 
 /** The resolved-options subset the report service consumes. */
 export interface UsageReportOptions {
@@ -124,7 +126,7 @@ export class UsageReportService {
     for (const record of records) {
       const savings = await this.cacheSavings(record)
       for (const group of expandGroups(record, groupBy)) {
-        const key = JSON.stringify(group)
+        const key = jsonText(group)
         const summary = groups.get(key) ?? emptySummary(group)
         accumulate(summary, record, savings)
         groups.set(key, summary)
@@ -177,7 +179,7 @@ export class UsageReportService {
     if (format === 'csv') yield `${csvLine(this.headers(converting))}\n`
     for (const record of records) {
       const row = await this.rowOf(record, converting)
-      yield format === 'csv' ? `${csvLine(row.map((cell) => cell[1]))}\n` : `${JSON.stringify(Object.fromEntries(row))}\n`
+      yield format === 'csv' ? `${csvLine(row.map((cell) => cell[1]))}\n` : `${jsonText(Object.fromEntries(row))}\n`
     }
   }
 
@@ -211,7 +213,9 @@ export class UsageReportService {
 }
 
 /** Map a {@link ReportFilter} to a {@link LedgerFilter}, defaulting the settled statuses. */
-function toLedgerFilter(filter: ReportFilter, limit: number): LedgerFilter {
+function toLedgerFilter(given: ReportFilter, limit: number): LedgerFilter {
+  // The filter is a rest object of the caller's input and leaves optional names out: it is read as a copy that holds only what it has.
+  const filter = ownCopy(given)
   return {
     tenantId: filter.tenantId,
     // Stryker disable next-line ConditionalExpression: spreading { scope: undefined } is equivalent to {} because InMemoryLedgerStore uses truthiness; the 'false' variant is covered by the scope isolation test
@@ -336,7 +340,7 @@ function baseCells(record: UsageRecord): [string, string][] {
     ['serviceTier', record.serviceTier],
     ...TOKEN_CATEGORIES.map((category): [string, string] => [`${category}Tokens`, String(record[`${category}Tokens`])]),
     ['totalTokens', String(record.totalTokens)],
-    ['extraUnits', record.extraUnits === undefined ? '' : JSON.stringify(record.extraUnits)],
+    ['extraUnits', record.extraUnits === undefined ? '' : jsonText(record.extraUnits)],
     ['rawCostNanoUsd', record.rawCostNanoUsd.toString()],
     ['surchargeNanoUsd', record.surchargeNanoUsd.toString()],
     ['billedCostNanoUsd', record.billedCostNanoUsd.toString()],

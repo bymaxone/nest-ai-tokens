@@ -8,6 +8,7 @@
  */
 
 import { AiTokensException } from './errors'
+import { descriptor } from './utils/descriptor'
 
 /** Marks a stand-in so the module can pass `null` to its own wiring instead of the stand-in. */
 const DISABLED = Symbol('bymax.ai-tokens.disabled-service')
@@ -36,9 +37,9 @@ export function disabledService<Service extends object>(
   }
   const standIn = Object.create(service.prototype as object) as Service
   for (const name of Object.getOwnPropertyNames(service.prototype)) {
-    if (name !== 'constructor') Object.defineProperty(standIn, name, { value: fail, enumerable: false })
+    if (name !== 'constructor') Object.defineProperty(standIn, name, descriptor({ value: fail, enumerable: false }))
   }
-  Object.defineProperty(standIn, DISABLED, { value: true, enumerable: false })
+  Object.defineProperty(standIn, DISABLED, descriptor({ value: true, enumerable: false }))
   return standIn
 }
 

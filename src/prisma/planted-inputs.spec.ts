@@ -64,6 +64,7 @@ const CALLS: Record<string, (s: PrismaAiTokensStore) => Promise<unknown>> = {
   appendEntry: (s) => s.appendEntry(WALLET, grantEntry({ idempotencyKey: 'g1' }), []),
   conditionalDebit: (s) => s.conditionalDebit(WALLET, { ...grantEntry({ idempotencyKey: 'd1' }), type: 'debit', amountNanoUsd: -5n }, 0n, NOW),
   listEntries: (s) => s.listEntries(WALLET, {}),
+  listEntriesWithoutFilter: (s) => s.listEntries(WALLET),
   findDebitsBefore: (s) => s.findDebitsBefore({ keyPrefixes: ['hold:'], olderThan: NOW, limit: 10 }),
   upsertBudget: (s) => s.upsert({ tenantId: TENANT, scope: USER_SCOPE, window: 'day', limitNanoUsd: 5n, softThresholds: [], policy: 'block' }),
   conditionalConsume: (s) => s.conditionalConsume('b1', NOW, DELTA, { nanoUsd: 10n }),
@@ -123,6 +124,8 @@ const PLANTED: [name: string, key: string, value: unknown, shows: string][] = [
   ['append', 'beneficiary', { type: 'user', id: 'planted-beneficiary' }, 'planted-beneficiary'],
   ['transition', 'billedCostNanoUsd', 9_999n, '9999n'],
   ['appendEntry', 'expiresAt', new Date('2031-01-01T00:00:00.000Z'), '2031-01-01'],
+  ['listEntriesWithoutFilter', 'limit', 7_777, '7777'],
+  ['listEntriesWithoutFilter', 'offset', 8_888, '8888'],
   ['query', 'isSystemCost', true, 'true'],
   ['sumCost', 'features', ['planted.feature'], 'planted.feature'],
   ['findDebitsBefore', 'newerThan', new Date('2031-01-01T00:00:00.000Z'), '2031-01-01'],
@@ -149,5 +152,25 @@ describe('what a method of the PostgreSQL store binds into a statement', () => {
     await new PrismaAiTokensStore(client).upsert({ tenantId: TENANT, scope: USER_SCOPE, window: 'day', limitTokens: 7_777, softThresholds: [0.5], policy: 'block' }).catch(() => undefined)
     expect(boundText(statements)).toContain('7777')
     expect(boundText(statements)).toContain('0.5')
+  })
+})
+
+describe('what the PostgreSQL store reads of its own options', () => {
+  /** The burn order of a store is the host's: one left out is not answered by a `burnOrder` planted on `Object.prototype`, which would choose which grants are spent first. */
+  it('burns the grants in the order of its default when burnOrder is planted and the host gave none', async () => {
+    const run = async (): Promise<string> => {
+      const { client, statements } = recordingClient()
+      await new PrismaAiTokensStore(client).conditionalDebit(WALLET, { ...grantEntry({ idempotencyKey: 'd9' }), type: 'debit', amountNanoUsd: -5n }, 0n, NOW).catch(() => undefined)
+      return statements.map((statement) => statement.text).join('\n')
+    }
+    const clean = await run()
+    Object.defineProperty(Object.prototype, 'burnOrder', { value: 'fifo', configurable: true, writable: true, enumerable: false })
+    let planted: string
+    try {
+      planted = await run()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'burnOrder')
+    }
+    expect(planted).toBe(clean)
   })
 })

@@ -13,6 +13,11 @@ import { providerPresets } from '../config/provider-presets'
 import type { RequestAiTokens } from './budget.guard'
 import { BudgetGuard } from './budget.guard'
 import { AiFeature, Meter, RequireBudget } from './decorators'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** A MeteringService over the shared ledger + the budget service (no wallets). */
 function makeMetering(ledger: LedgerService, budgets: BudgetService, now: () => Date): MeteringService {

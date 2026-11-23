@@ -11,6 +11,11 @@ import { AiTokensException } from './server/errors'
 import { StreamUsageCollector } from './server/streaming/stream-usage-collector'
 import { newVisit, readDeep } from './server/utils/argument-guards'
 import { readHoldEstimate, readShape } from './server/utils/date-guards'
+import { setRealmGuard } from './server/utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** An object whose keys each hold a list of zeros of the given length. */
 const lists = (sizes: number[]): Record<string, unknown> => Object.fromEntries(sizes.map((size, index) => [`l${String(index)}`, Array.from({ length: size }, () => 0)]))

@@ -9,6 +9,7 @@
 import { resolveMultiplier4dp } from '../../shared'
 import type { IMarkupPolicy } from '../interfaces'
 import type { BymaxAiTokensModuleOptions } from '../interfaces'
+import { fieldOf } from '../utils/field-names'
 import { withoutNullish } from './without-nullish'
 import { DEFAULT_AI_TOKENS_OPTIONS as D } from './default-options.constants'
 import type {
@@ -130,8 +131,8 @@ export function applyDefaults(given: BymaxAiTokensModuleOptions): ResolvedAiToke
   return Object.freeze<ResolvedAiTokensOptions>({
     store: options.store,
     scopeResolver: options.scopeResolver,
-    ratingMode: options.ratingMode ?? D.ratingMode,
-    currency: options.currency ?? D.currency,
+    ratingMode: (fieldOf(options, 'ratingMode') as ResolvedAiTokensOptions['ratingMode'] | undefined) ?? D.ratingMode,
+    currency: (fieldOf(options, 'currency') as ResolvedAiTokensOptions['currency'] | undefined) ?? D.currency,
     fx: options.fx,
     markup: resolveMarkup(options.markup),
     pricing: resolvePricing(options.pricing),

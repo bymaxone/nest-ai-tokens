@@ -142,7 +142,7 @@ export function readDeep(value: unknown, name: string, depth: number, limit = MA
     if (keys.length > MAX_LIST_LENGTH || (keys.length === 0 && types.isProxy(value) && !isView(value))) throw refused(`${name} could not be read`)
     const copy = Object.create(null) as Record<string, unknown>
     for (const key of keys) {
-      Object.defineProperty(copy, key, { value: readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit), enumerable: true })
+      copy[key] = readDeep(readField(value, key, `${name}.${labelOf(key)}`), `${name}.${labelOf(key)}`, depth + 1, limit, visit)
     }
     return copy
   } finally {

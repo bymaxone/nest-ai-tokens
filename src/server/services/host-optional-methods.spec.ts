@@ -14,6 +14,11 @@ import type { IBudgetStore } from '../interfaces'
 import { LedgerService } from './ledger.service'
 import { PricingService } from './pricing.service'
 import { UsageReportService } from './usage-report.service'
+import { setRealmGuard } from '../utils/prototype-guard'
+
+// These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them; the guard is proven in prototype-guard.spec.ts.
+beforeAll(() => setRealmGuard(false))
+afterAll(() => setRealmGuard(true))
 
 /** A copy of `store` as a plain object that has every method of it except `names`, so those are found nowhere but on `Object.prototype`. */
 function without<T extends object>(store: T, ...names: string[]): T {
