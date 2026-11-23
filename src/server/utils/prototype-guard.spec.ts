@@ -303,6 +303,19 @@ describe('the realm guard and a change of enumerability alone', () => {
   })
 })
 
+describe('the realm guard and a function planted over a name the engine holds as an accessor', () => {
+  it('counts a function value where the engine holds none, and counts it no more once restored', () => {
+    const was = Object.getOwnPropertyDescriptor(Object.prototype, '__proto__')!
+    Object.defineProperty(Object.prototype, '__proto__', { value: (): number => 1, enumerable: false, configurable: true, writable: true })
+    try {
+      expect(pollutedNames()).toBe(1)
+    } finally {
+      Object.defineProperty(Object.prototype, '__proto__', was)
+    }
+    expect(pollutedNames()).toBe(0)
+  })
+})
+
 describe('the refusal when a name and a built-in are both changed', () => {
   it('refuses with one of each, never netting a name against a built-in', () => {
     const planted = 'zzNettedName'
