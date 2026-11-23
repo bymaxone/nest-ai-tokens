@@ -92,7 +92,8 @@ export function heldReplay(stored: UsageRecord, extraUnits: Record<string, numbe
 
 /**
  * The row the ledger holds for a key after an append failed: `null` when there is none, `undefined` when the lookup
- * failed as well, so the caller does not guess.
+ * failed as well, so the caller does not guess. A refusal of the realm guard from that lookup is folded into `undefined` too: nothing moves on
+ * this path, and the caller goes on to raise the failure that brought it here.
  */
 export function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
   return find().catch((): undefined => undefined)

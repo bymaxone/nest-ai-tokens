@@ -89,7 +89,9 @@ export const BUILT_INS: readonly Met[] = (() => {
   owners.push(typedArray, typedArray.prototype)
   const arrayIterator = Object.getPrototypeOf([][Symbol.iterator]()) as object
   // A generator is started once, so that its body is a function the engine has run; only its prototypes are read.
-  const generated = function* (): Generator { yield 0 }
+  const generated = function* (): Generator {
+    // Empty on purpose: running it once is what the engine needs.
+  }
   const started = generated()
   started.next()
   owners.push(
@@ -121,13 +123,15 @@ export const BUILT_INS: readonly Met[] = (() => {
  * @returns The fresh realm's descriptors and text reader, or `undefined` when it could not be built.
  */
 function build(): Pristine | undefined {
+  let made: Pristine | undefined
   try {
-    return runInNewContext(
+    made = runInNewContext(
       '({ descriptors: Object.getOwnPropertyDescriptors(Object.prototype), sourceOf: (value) => Function.prototype.toString.call(value) })',
     ) as Pristine
   } catch {
-    return undefined
+    // No realm: `made` stays undefined, which counts as polluted.
   }
+  return made
 }
 
 let pristine: Pristine | undefined = build()
@@ -175,7 +179,7 @@ function field(descriptor: PropertyDescriptor | undefined, key: keyof PropertyDe
  * @returns `true` when they are alike.
  */
 function alike(now: unknown, was: unknown, sourceOf: Pristine['sourceOf']): boolean {
-  return typeof was === 'function' ? typeof now === 'function' && sourceOf(now) === sourceOf(was) : now === was
+  return now === was || (typeof was === 'function' && typeof now === 'function' && sourceOf(now) === sourceOf(was))
 }
 
 /**
@@ -185,7 +189,7 @@ function alike(now: unknown, was: unknown, sourceOf: Pristine['sourceOf']): bool
  */
 function unchanged(have: PropertyDescriptor | undefined, want: PropertyDescriptor | undefined, name: string | symbol, sourceOf: Pristine['sourceOf']): boolean {
   if (field(have, 'enumerable') !== field(want, 'enumerable')) return false
-  for (let index = 0; index < CONTENT.length; index += 1) {
+  for (let index = 0; index !== CONTENT.length; index += 1) {
     const key = item(CONTENT, index)
     if (!alike(field(have, key), field(want, key), sourceOf)) return false
     if (hasOwn(loaded, name) && field(have, key) !== field(loaded[name], key)) return false
@@ -210,7 +214,7 @@ function countKeys(): number {
   // The scan builds no list and writes no array: an element assigned to an array goes through the setters of its prototype chain, where an
   // index accessor planted on `Object.prototype` or `Array.prototype` would swallow it. A name is counted once: the names of this realm first,
   // then the names of the fresh realm that this realm lacks.
-  for (let index = 0; index < nowKeys.length; index += 1) {
+  for (let index = 0; index !== nowKeys.length; index += 1) {
     const name = item(nowKeys, index)
     if (name === RUNNER_MARK && field(now[name], 'enumerable') !== true) continue
     if (!unchanged(now[name], hasOwn(descriptors, name) ? descriptors[name] : undefined, name, sourceOf)) found += 1

@@ -290,6 +290,53 @@ describe('the realm guard', () => {
   })
 })
 
+describe('the realm guard and a change of enumerability alone', () => {
+  it('counts a standard name made enumerable and counts it no more once restored', () => {
+    const was = Object.getOwnPropertyDescriptor(Object.prototype, 'toString')!
+    Object.defineProperty(Object.prototype, 'toString', { ...was, enumerable: true })
+    try {
+      expect(pollutedNames()).toBe(1)
+    } finally {
+      Object.defineProperty(Object.prototype, 'toString', was)
+    }
+    expect(pollutedNames()).toBe(0)
+  })
+})
+
+describe('the refusal when a name and a built-in are both changed', () => {
+  it('refuses with one of each, never netting a name against a built-in', () => {
+    const planted = 'zzNettedName'
+    const original = Math.max
+    ;(Object.prototype as unknown as Record<string, unknown>)[planted] = 1
+    ;(Math as unknown as Record<string, unknown>).max = (...values: number[]): number => original(...values)
+    try {
+      const refused = refusal(() => assertCleanRealm())
+      expect(refused?.reason).toContain('1 name(s) on the Object.prototype')
+      expect(refused?.reason).toContain('1 built-in(s)')
+    } finally {
+      Reflect.deleteProperty(Object.prototype, planted)
+      ;(Math as unknown as Record<string, unknown>).max = original
+    }
+    expect(pollutedNames()).toBe(0)
+  })
+
+  it('defines the own fields of its refusal as hidden, writable and configurable', () => {
+    ;(Object.prototype as unknown as Record<string, unknown>).zzFieldName = 1
+    let caught: unknown
+    try {
+      assertCleanRealm()
+    } catch (error) {
+      caught = error
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'zzFieldName')
+    }
+    for (const field of ['response', 'status', 'message', 'name']) {
+      const described = Object.getOwnPropertyDescriptor(caught, field)!
+      expect([described.writable, described.configurable, described.enumerable]).toEqual([true, true, false])
+    }
+  })
+})
+
 describe('the realm guard when a fresh realm cannot be built', () => {
   /** The module loaded afresh with a `vm` whose `runInNewContext` throws `failures` times and then works as the real one does. */
   async function loadedWithFailingVm(failures: number): Promise<typeof GuardModule> {
@@ -323,5 +370,50 @@ describe('the realm guard when a fresh realm cannot be built', () => {
   it('builds the realm at the first use when the build at load failed once', async () => {
     const guard = await loadedWithFailingVm(1)
     expect(guard.pollutedNames()).toBe(0)
+  })
+})
+
+describe('the realm guard and a name changed before the module loaded', () => {
+  /** The module loaded afresh while `tamper` is in effect, and its count read after `tamper` has been undone. */
+  async function countLoadedUnder(tamper: () => () => void): Promise<number> {
+    let guard: typeof GuardModule | undefined
+    const undo = tamper()
+    try {
+      await jest.isolateModulesAsync(async () => {
+        guard = await import('./prototype-guard')
+      })
+      return guard!.pollutedNames()
+    } finally {
+      undo()
+    }
+  }
+
+  it('counts a function whose text is not the engine\'s although it is the very one the module met', async () => {
+    const original = Object.prototype.hasOwnProperty
+    const count = await countLoadedUnder(() => {
+      Object.defineProperty(Object.prototype, 'hasOwnProperty', {
+        value: function (this: unknown, key: PropertyKey): boolean {
+          return original.call(this, key)
+        },
+        configurable: true,
+        writable: true,
+        enumerable: false,
+      })
+      return () => {
+        Object.defineProperty(Object.prototype, 'hasOwnProperty', { value: original, configurable: true, writable: true, enumerable: false })
+      }
+    })
+    expect(count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('counts an accessor changed to a data property before the load', async () => {
+    const original = Object.getOwnPropertyDescriptor(Object.prototype, '__proto__')!
+    const count = await countLoadedUnder(() => {
+      Object.defineProperty(Object.prototype, '__proto__', { value: 5, configurable: true, writable: true, enumerable: false })
+      return () => {
+        Object.defineProperty(Object.prototype, '__proto__', original)
+      }
+    })
+    expect(count).toBeGreaterThanOrEqual(1)
   })
 })

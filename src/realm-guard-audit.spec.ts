@@ -215,6 +215,32 @@ describe('the realm guard after the awaited read of a price and of a markup', ()
   })
 })
 
+describe('the realm guard and the symbol-keyed methods', () => {
+  /** A replaced `RegExp.prototype[Symbol.replace]` or `Date.prototype[Symbol.toPrimitive]` is seen by no scan of names: the symbols are recorded too. */
+  it.each([
+    ['RegExp.prototype', RegExp.prototype, Symbol.replace],
+    ['RegExp.prototype', RegExp.prototype, Symbol.split],
+    ['RegExp.prototype', RegExp.prototype, Symbol.match],
+    ['RegExp.prototype', RegExp.prototype, Symbol.matchAll],
+    ['RegExp.prototype', RegExp.prototype, Symbol.search],
+    ['Date.prototype', Date.prototype, Symbol.toPrimitive],
+    ['String.prototype', String.prototype, Symbol.iterator],
+    ['Symbol.prototype', Symbol.prototype, Symbol.toPrimitive],
+  ] as [string, object, symbol][])('records the symbol-keyed method of %s and counts it replaced', (_label, owner, key) => {
+    expect(BUILT_INS.some((entry) => entry.owner === owner && entry.name === key)).toBe(true)
+    const kept = Object.getOwnPropertyDescriptor(owner, key)!
+    let counted = -1
+    try {
+      Object.defineProperty(owner, key, { ...kept, value: function replaced(): void { /* a replacement */ } })
+      counted = pollutedNames()
+    } finally {
+      Object.defineProperty(owner, key, kept)
+    }
+    expect(counted).toBe(1)
+    expect(pollutedNames()).toBe(0)
+  })
+})
+
 describe('the realm guard and Function.prototype', () => {
   /** `call`, `apply` and `bind` run every call the library makes, so a replaced one rewrites the arguments and the results of each. */
   it.each(['call', 'apply', 'bind'] as const)('counts Function.prototype.%s replaced', (name) => {
