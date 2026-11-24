@@ -31,8 +31,9 @@ describe('a promise a native await runs alone', () => {
   })
 
   /**
-   * A thenable that is no exact native promise (a subclass, a class with a `then`) is refused, since an `await` of it runs a `then` that is
-   * code of the host; a caller that passes `thenables` lets such a value through.
+   * A value that is no exact native promise is refused. An `await` of a class with a `then` runs that `then`, which is code of the host; an
+   * `await` of a subclass of Promise calls the inherited `then`, which builds its result through the species a host can plant. A caller that
+   * passes `thenables` lets a thenable through.
    */
   it('refuses a thenable and a subclass of Promise, and lets a driver thenable through when asked', () => {
     class Sub extends Promise<number> {}
