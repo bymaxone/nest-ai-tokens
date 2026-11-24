@@ -135,4 +135,18 @@ describe('guardStoreErrors', () => {
     failing.mockRestore()
     expect(store.plain()).toBe(PLAIN)
   })
+
+  /** A native promise with a `then` of its own is refused with the typed error, and the reason it was refused rides on the cause. */
+  it('types the refusal of a native promise that has a then of its own and says why on the cause', async () => {
+    const planted = Promise.resolve(1)
+    Object.defineProperty(planted, 'then', { value: () => undefined })
+    class Reader {
+      read(): Promise<number> {
+        return planted
+      }
+    }
+    const store = guardStoreErrors(new Reader(), () => false)
+    const error = await typedFailure(() => store.read())
+    expect((error.cause as Error).message).toBe('a promise a store method returned reads a constructor or then of its own')
+  })
 })

@@ -107,6 +107,15 @@ describe('a host whose promise is no longer what the engine made', () => {
     void Object.defineProperty(planted, 'then', { value: () => undefined })
     await expect(settled(planted)).rejects.toBeInstanceOf(AiTokensException)
   })
+
+  /** The statement of the Prisma adapter is refused with the typed store error, and the reason it was refused rides on the cause. */
+  it('types the refusal of a statement that is a native promise with a then of its own and says why on the cause', async () => {
+    const planted = Promise.resolve([1])
+    void Object.defineProperty(planted, 'then', { value: () => undefined })
+    const error: unknown = await awaitStatement(planted).catch((failure: unknown) => failure)
+    expect(error).toBeInstanceOf(AiTokensException)
+    expect(((error as AiTokensException).cause as Error).message).toBe('a promise a statement returned reads a constructor or then of its own')
+  })
 })
 
 describe('a store answer at the edge of what is a promise', () => {

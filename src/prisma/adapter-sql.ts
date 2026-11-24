@@ -343,7 +343,6 @@ export function rethrowAsStoreError(error: unknown): never {
  */
 export async function awaitStatement<T>(pending: PromiseLike<T>): Promise<T> {
   try {
-    // Stryker disable next-line StringLiteral: the message is an internal diagnostic on the cause of the typed error; tests check the typed error
     if (refusesPromise(pending, true, types.isProxy)) throw new Error('a promise a statement returned reads a constructor or then of its own')
     return await pending
   } catch (error) {
