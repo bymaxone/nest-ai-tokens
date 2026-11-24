@@ -6,6 +6,7 @@
  * @layer server
  */
 
+import { types } from 'node:util'
 import { AiTokensException } from '../errors'
 import { refusesPromise } from '../../shared/utils/native-promise'
 import { assertCleanRealm } from './prototype-guard'
@@ -21,11 +22,11 @@ import { assertCleanRealm } from './prototype-guard'
 export async function settled<T>(pending: T | PromiseLike<T>, thenables = false): Promise<T> {
   assertCleanRealm()
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
-  if (refusesPromise(pending, thenables)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
+  if (refusesPromise(pending, thenables, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
   const value = await pending
   assertCleanRealm()
   // The value is resolved into the promise this function returns, which reads its `then`: nothing of the host runs between this check and that read.
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
-  if (refusesPromise(value)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a host resolved with has a then of its own, or the arrays the library reads were replaced' })
+  if (refusesPromise(value, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a host resolved with has a then of its own, or the arrays the library reads were replaced' })
   return value
 }

@@ -73,6 +73,14 @@ describe('SqlClient', () => {
     expect(calls.map((c) => [c.kind, c.inTransaction])).toEqual([['query', false], ['execute', true], ['query', true]])
   })
 
+  /** The driver's promise for the transaction decides an applied, refused or replayed consume: it is held to the check of any driver call. */
+  it('refuses a transaction promise that reads a then of its own', async () => {
+    const { client } = fakeClient()
+    const forged = Promise.resolve('applied')
+    Reflect.defineProperty(forged, 'then', { value: (resolve: (answer: unknown) => void): void => resolve('refused') })
+    await expect(new SqlClient({ ...client, $transaction: () => forged as never }).transaction(() => Promise.resolve('x'))).rejects.toThrow('own')
+  })
+
   /** What the callback throws rolls the transaction back and reaches the caller. */
   it('lets the error of the callback through', async () => {
     const { client } = fakeClient()

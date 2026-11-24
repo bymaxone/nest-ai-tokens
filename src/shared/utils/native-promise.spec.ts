@@ -4,6 +4,7 @@
  * @layer shared
  */
 
+import { types } from 'node:util'
 import {
   appendTo,
   arrayIntrinsicsIntact,
@@ -150,6 +151,39 @@ describe('the arrays and objects a decision path reads', () => {
       arrayIntrinsicsIntact(),
     ]
     expect(answers).toEqual([true, false, false, false, false, false, true])
+  })
+
+  /** `every` is replaced together with `map`: a check that read `every` live would be told the list is fine. */
+  it('refuses a replaced method even when Array.prototype.every answers true', () => {
+    const every = Object.getOwnPropertyDescriptor(Array.prototype, 'every')!
+    const intact = whileReplaced(Array.prototype, 'every', { ...every, value: () => true }, () =>
+      whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, arrayIntrinsicsIntact),
+    )
+    expect(intact).toBe(false)
+  })
+
+  /** A Proxy answers `getOwnPropertyDescriptor` and `get` with the host's code: it is refused before either is asked. */
+  it('refuses a Proxy, or one on the prototype chain, without running a trap', () => {
+    const asked: string[] = []
+    const trap = (name: string) => (): undefined => {
+      asked.push(name)
+      return undefined
+    }
+    const proxy = new Proxy({}, {
+      getOwnPropertyDescriptor: trap('descriptor'),
+      get: trap('get'),
+      getPrototypeOf: trap('prototype') as unknown as () => null,
+      has: trap('has') as unknown as () => boolean,
+    })
+    const answers = [
+      refusesPromise(proxy, false, types.isProxy),
+      refusesPromise(proxy, true, types.isProxy),
+      refusesPromise(Object.create(proxy), false, types.isProxy),
+      chainHasThen(proxy, types.isProxy),
+      refusesPromise({}, false, types.isProxy),
+    ]
+    expect(answers).toEqual([true, true, true, true, false])
+    expect(asked).toEqual([])
   })
 
   it('refuses any value while an array method is replaced', () => {

@@ -34,7 +34,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  */
 function accepted(result: unknown): void {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
-  if (refusesPromise(result)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
+  if (refusesPromise(result, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
 }
 
 /** The copy of what a store resolved with, checked once more right before the value is resolved into the promise the caller awaits. */

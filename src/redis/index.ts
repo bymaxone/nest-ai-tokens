@@ -19,6 +19,7 @@ import type { IBudgetCounterStore } from '../server'
 // By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
 // class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { types } from 'node:util'
 import { refusesPromise } from '../shared/utils/native-promise'
 
 /**
@@ -40,7 +41,7 @@ function boxed(client: Redis): ClientBox {
  */
 async function reply<T>(pending: Promise<T>): Promise<T> {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
-  if (refusesPromise(pending)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
+  if (refusesPromise(pending, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
   return await pending
 }
 
@@ -242,7 +243,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   private async connected(connecting: Promise<ClientBox>): Promise<ClientBox | null> {
     try {
-      if (refusesPromise(connecting)) return null
+      if (refusesPromise(connecting, false, types.isProxy)) return null
       return await connecting
     } catch {
       return null
@@ -282,7 +283,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
     this.#connecting ??= this.connect(this.#source)
     const connecting = this.#connecting
     // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
-    if (refusesPromise(connecting)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
+    if (refusesPromise(connecting, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
     return await connecting
   }
 

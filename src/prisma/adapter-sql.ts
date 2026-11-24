@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { types } from 'node:util'
 import { isLegalTransitionPatchKey } from '../shared'
 import type {
   AiOperation,
@@ -342,7 +343,7 @@ export function rethrowAsStoreError(error: unknown): never {
  */
 export async function awaitStatement<T>(pending: PromiseLike<T>): Promise<T> {
   try {
-    if (refusesPromise(pending)) throw new Error('a promise a statement returned reads a constructor or then of its own')
+    if (refusesPromise(pending, false, types.isProxy)) throw new Error('a promise a statement returned reads a constructor or then of its own')
     return await pending
   } catch (error) {
     return rethrowAsStoreError(error)

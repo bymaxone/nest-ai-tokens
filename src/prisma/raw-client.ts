@@ -8,6 +8,7 @@
  * `$queryRawUnsafe`/`$executeRawUnsafe`; see `sql.ts` for why that is safe.
  */
 
+import { types } from 'node:util'
 import { refusesPromise } from '../shared/utils/native-promise'
 import type { Sql } from './sql'
 
@@ -16,10 +17,10 @@ import type { Sql } from './sql'
  * A Prisma query is a lazy thenable that sends its query inside its own `then`, so a thenable is the driver's normal answer and is let
  * through; a native promise is held to the strict check. What the thenable's `then` does is the driver's code, which the library cannot tell from a planted one.
  */
-async function waited<T>(pending: PromiseLike<T>): Promise<T> {
-  if (refusesPromise(pending, true)) throw new Error('a promise the driver returned reads a constructor or then of its own')
+export async function waited<T>(pending: PromiseLike<T>): Promise<T> {
+  if (refusesPromise(pending, true, types.isProxy)) throw new Error('a promise the driver returned reads a constructor or then of its own')
   const value = await pending
-  if (refusesPromise(value)) throw new Error('what the driver resolved with reads a then of its own')
+  if (refusesPromise(value, false, types.isProxy)) throw new Error('what the driver resolved with reads a then of its own')
   return value
 }
 
@@ -79,9 +80,9 @@ export class SqlClient extends SqlExecutor {
    * Runs the callback in a transaction.
    *
    * @param fn The work, given an executor that runs inside the transaction.
-   * @returns What the callback resolves to.
+   * @returns What the callback resolves to, once the driver's promise and that value are checked as for any driver call.
    */
-  transaction<R>(fn: (tx: SqlExecutor) => Promise<R>): Promise<R> {
-    return this.client.$transaction((tx) => fn(new SqlExecutor(tx)))
+  async transaction<R>(fn: (tx: SqlExecutor) => Promise<R>): Promise<R> {
+    return await waited(this.client.$transaction((tx) => fn(new SqlExecutor(tx))))
   }
 }

@@ -29,6 +29,9 @@ const ARRAY_READS: readonly { holder: object; key: string | symbol; value: unkno
   { holder: ARRAY_PROTOTYPE, key: Symbol.iterator, value: ARRAY_PROTOTYPE[Symbol.iterator] },
   { holder: ARRAY_ITERATOR_PROTOTYPE, key: 'next', value: (ARRAY_ITERATOR_PROTOTYPE as { next: unknown }).next },
 ]
+/** Tells a Proxy from any other value; the shared layer imports no Node built-in, so each layer passes `types.isProxy`. */
+export type ProxyProbe = (value: unknown) => boolean
+const noProxy: ProxyProbe = () => false
 /** The greatest number of prototypes walked for a `then`; a chain longer than any class hierarchy is refused. */
 const MAX_CHAIN = 64
 
@@ -42,10 +45,15 @@ const MAX_CHAIN = 64
  */
 export function arrayIntrinsicsIntact(): boolean {
   if (hasOwn(ARRAY_PROTOTYPE, 'then') || hasOwn(OBJECT_PROTOTYPE, 'then')) return false
-  return ARRAY_READS.every((read) => {
+  // A loop, not `ARRAY_READS.every`: that method is itself read live from `Array.prototype`.
+  let index = 0
+  while (index < ARRAY_READS.length) {
+    const read: (typeof ARRAY_READS)[number] = Reflect.get(ARRAY_READS, index)
     const descriptor = getOwnPropertyDescriptor(read.holder, read.key)
-    return descriptor !== undefined && hasOwn(descriptor, 'value') && descriptor.value === read.value
-  })
+    if (descriptor === undefined || !hasOwn(descriptor, 'value') || descriptor.value !== read.value) return false
+    index += 1
+  }
+  return true
 }
 
 /**
@@ -53,13 +61,14 @@ export function arrayIntrinsicsIntact(): boolean {
  * and calls it. Only own descriptors are read, so no getter of the host runs.
  *
  * @param value What a host call returned.
- * @returns `true` when a `then` is found, or the chain is longer than {@link MAX_CHAIN}.
+ * @param isProxy Tells a Proxy, whose traps run host code on every read, from an object; one on the chain is refused, since the descriptor it reports is its own.
+ * @returns `true` when a `then` is found, the chain is longer than {@link MAX_CHAIN}, or a Proxy is on it.
  */
-export function chainHasThen(value: unknown): boolean {
+export function chainHasThen(value: unknown, isProxy: ProxyProbe = noProxy): boolean {
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
   let holder: object | null = value
   for (let depth = 0; holder !== null; depth += 1) {
-    if (depth > MAX_CHAIN) return true
+    if (depth > MAX_CHAIN || isProxy(holder)) return true
     const own = getOwnPropertyDescriptor(holder, 'then')
     // A data `then` that is no function is read as a plain field; an accessor, or a function, is run or read by a resolution.
     if (own !== undefined && (!hasOwn(own, 'value') || typeof own.value === 'function')) return true
@@ -141,14 +150,16 @@ export function promiseSpeciesIntact(): boolean {
  * subclass of `Promise`, a class thenable): its `then` runs code of the host, which calls the live `Promise.prototype.then`. Only a value
  * with no `then` at all, or an exact native promise, passes. A refused promise is handed to a throwaway wait that swallows its outcome: it
  * would otherwise reject with no handler, which ends a Node process, and the wait reads whatever the host planted, which decides nothing
- * since the caller has refused.
+ * since the caller has refused. A Proxy, or a value with one on its chain, is refused and not waited for: the wait would run its traps.
  *
  * @param value What a host call returned.
  * @param thenables `true` for a driver, whose lazy query builders are thenables of their own; they are run by the caller, not refused here.
+ * @param isProxy Tells a Proxy from an object; a Proxy, or one on the prototype chain, is refused before any property of it is read.
  * @returns `true` when the caller must refuse it.
  */
-export function refusesPromise(value: unknown, thenables = false): boolean {
-  if (!refused(value, thenables)) return false
+export function refusesPromise(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): boolean {
+  if (!refused(value, thenables, isProxy)) return false
+  if (proxyOnChain(value, isProxy)) return true
   void (async (): Promise<void> => {
     try {
       await value
@@ -159,10 +170,21 @@ export function refusesPromise(value: unknown, thenables = false): boolean {
   return true
 }
 
+/** Whether `value` or a prototype of it is a Proxy: a wait on it would run its traps, so a refused one is not waited for. */
+function proxyOnChain(value: unknown, isProxy: ProxyProbe): boolean {
+  let holder: unknown = value
+  for (let depth = 0; (typeof holder === 'object' || typeof holder === 'function') && holder !== null; depth += 1) {
+    if (depth > MAX_CHAIN || isProxy(holder)) return true
+    holder = getPrototypeOf(holder)
+  }
+  return false
+}
+
 /** The decision of {@link refusesPromise}, without the throwaway wait. */
-function refused(value: unknown, thenables: boolean): boolean {
+function refused(value: unknown, thenables: boolean, isProxy: ProxyProbe): boolean {
   if (!arrayIntrinsicsIntact()) return true
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
+  if (isProxy(value)) return true
   if (getPrototypeOf(value) === PROMISE_PROTOTYPE) return hasOwn(value, 'then') || hasOwn(value, 'constructor') || !promiseIntrinsicsIntact()
-  return !thenables && chainHasThen(value)
+  return !thenables && chainHasThen(value, isProxy)
 }

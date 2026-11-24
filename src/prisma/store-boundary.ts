@@ -6,6 +6,7 @@
  * @layer prisma
  */
 
+import { types } from 'node:util'
 import { refusesPromise } from '../shared/utils/native-promise'
 import { ownCopy } from '../server/utils/own-copy'
 import { storeError } from './adapter-sql'
@@ -25,7 +26,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  */
 async function crossing(result: PromiseLike<unknown>, cross: (error: unknown) => never): Promise<unknown> {
   try {
-    if (refusesPromise(result)) throw new Error('a promise a store method returned reads a constructor or then of its own')
+    if (refusesPromise(result, false, types.isProxy)) throw new Error('a promise a store method returned reads a constructor or then of its own')
     return await result
   } catch (error) {
     return cross(error)
