@@ -266,12 +266,12 @@ describe('RedisBudgetCounterStore commandTimeoutMs', () => {
 })
 
 describe('RedisBudgetCounterStore refusals while it connects and while it waits for a command', () => {
-  /** A command of a client the host owns answers with a subclass of Promise whose `then` is its own: the reply is refused, not waited for. */
-  it('refuses the reply of a command that is a promise subclass', async () => {
+  /** A command of a client the host owns answers with a subclass of Promise: the reply is waited for. */
+  it('waits for the reply of a command that is a promise subclass', async () => {
     class SdkPromise<T> extends Promise<T> {}
     const client = { status: 'ready', eval: (): Promise<number> => SdkPromise.resolve(1) }
     const store = new RedisBudgetCounterStore(client as never)
-    await expect(store.incrIfBelow('k', 10n, 5n, 60)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    await expect(store.incrIfBelow('k', 10n, 5n, 60)).resolves.toBe(true)
   })
 
   /** A host that holds an accessor for `constructor` on Promise.prototype while the store asks for its client answers for the wait: the store refuses. */

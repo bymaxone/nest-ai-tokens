@@ -202,16 +202,12 @@ function resolvesWithOneShotThen(): Promise<object> {
 }
 
 describe('what a call to the host may answer with, by the kind of call', () => {
-  it('refuses a thenable that is no native promise when the call says nothing of thenables', async () => {
-    await expect(settled(lazy(1))).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+  it('lets a thenable that is no native promise through', async () => {
+    await expect(settled(lazy(1))).resolves.toBe(1)
   })
 
-  it('lets a thenable through when the call is the metered function of a provider SDK', async () => {
-    await expect(settled(lazy(1), true)).resolves.toBe(1)
-  })
-
-  it('refuses what a host resolved with when its then answers after the wait, even for a call that lets thenables through', async () => {
-    await expect(settled(resolvesWithOneShotThen(), true)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+  it('refuses what a host resolved with when its then answers after the wait', async () => {
+    await expect(settled(resolvesWithOneShotThen())).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
   })
 
   it('lets the lazy thenable of a driver through, and refuses what it resolved with when that has a then of its own', async () => {
@@ -219,14 +215,8 @@ describe('what a call to the host may answer with, by the kind of call', () => {
     await expect(waited(resolvesWithOneShotThen())).rejects.toThrow('what the driver resolved with reads a then of its own')
   })
 
-  it('refuses a thenable a statement returned, with the typed store error and the reason on its cause', async () => {
-    const failure = await awaitStatement(lazy(1)).then(
-      () => undefined,
-      (error: unknown) => error as AiTokensException,
-    )
-    expect(failure).toBeInstanceOf(AiTokensException)
-    expect(failure?.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
-    expect((failure?.cause as Error).message).toBe('a promise a statement returned reads a constructor or then of its own')
+  it('waits for a thenable a statement returned', async () => {
+    await expect(awaitStatement(lazy(1))).resolves.toBe(1)
   })
 })
 

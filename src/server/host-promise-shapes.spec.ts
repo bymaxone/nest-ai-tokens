@@ -1,0 +1,108 @@
+/**
+ * @fileoverview The promises a host returns to the library are answered as the host gives them: a subclass of `Promise`, a thenable that
+ * is a plain object or an instance of a class (a query builder), and a native promise of another realm resolve with what they hold,
+ * wherever the library waits for a host: a store, a markup policy, a tokenizer, an fx function and the async options factory.
+ * @layer server
+ */
+
+import { runInNewContext } from 'node:vm'
+import { Test } from '@nestjs/testing'
+import { AiTokensException } from './errors'
+import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
+import { MeteringService } from './services'
+import { MarkupResolver } from './services/markup.resolver'
+import { guardedStore } from './utils/guarded-store'
+import { settled } from './utils/host-settled'
+import { awaitStatement } from '../prisma/adapter-sql'
+import { makeFullStore } from '../../test/fakes/full-store'
+
+class SdkPromise<T> extends Promise<T> {}
+class QueryBuilder<T> {
+  constructor(private readonly value: T) {}
+
+  then(resolve: (value: T) => void): void {
+    resolve(this.value)
+  }
+}
+const foreign = runInNewContext('Promise') as PromiseConstructor
+
+/** Each way a host hands back an answer it will give later, as a function of the answer. */
+const SHAPES: readonly (readonly [string, <T>(value: T) => PromiseLike<T>])[] = [
+  ['a subclass of Promise', (value) => SdkPromise.resolve(value)],
+  ['a thenable that is a plain object', (value) => ({ then: (resolve?: (value: never) => unknown) => resolve?.(value as never) }) as never],
+  ['a thenable that is an instance of a class', (value) => new QueryBuilder(value) as never],
+  ['a native promise of another realm', (value) => foreign.resolve(value)],
+]
+
+describe.each(SHAPES)('a host that answers with %s', (_name, shape) => {
+  it('is waited for where the library waits for a host', async () => {
+    await expect(settled(shape(7))).resolves.toBe(7)
+  })
+
+  it('answers for a store method', async () => {
+    const store = guardedStore({ find: () => shape({ id: 'r1' }) })
+    await expect(store.find()).resolves.toEqual({ id: 'r1' })
+  })
+
+  it('answers for a markup policy', async () => {
+    const resolver = new MarkupResolver({ markup: { resolve: () => shape(1.5) as never } })
+    const resolved = await resolver.resolve({ tenantId: 't', scope: { type: 'user', id: 'u' }, provider: 'openai', model: 'gpt-5', operation: 'chat', feature: 'chat.reply' } as never)
+    expect(resolved.multiplier).toBe(1.5)
+  })
+
+  it('answers for the async options factory, which boots', async () => {
+    const options = { store: makeFullStore(), pricing: { seedFromSnapshot: false } }
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => shape(options) as never })],
+    }).compile()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+    await moduleRef.close()
+  })
+
+  it('answers for a statement of the Prisma adapter', async () => {
+    await expect(awaitStatement(shape([1]))).resolves.toEqual([1])
+  })
+})
+
+describe('a then planted on Object.prototype', () => {
+  it('is refused for every shape, as the realm guard refuses it before anything is waited for', async () => {
+    Object.defineProperty(Object.prototype, 'then', { value: (resolve: (value: string) => void): void => resolve('forged'), configurable: true, writable: true })
+    const outcomes: string[] = []
+    try {
+      // No matcher runs, and no object is resolved into a promise, while the key is planted: every object would be a thenable.
+      for (const [, shape] of SHAPES) {
+        outcomes.push(await settled(shape(7)).then(() => 'answered', (error: unknown) => (error instanceof AiTokensException ? 'refused' : 'failed')))
+      }
+    } finally {
+      delete (Object.prototype as { then?: unknown }).then
+    }
+    expect(outcomes).toEqual(SHAPES.map(() => 'refused'))
+  })
+})
+
+describe('a host that resolves with a Proxy', () => {
+  const proxy = (): object => new Proxy({ id: 'r1' }, {})
+
+  it('is waited for, as in 1.1.22, where the library takes what a host resolved with', async () => {
+    await expect(settled(Promise.resolve(proxy()))).resolves.toEqual({ id: 'r1' })
+  })
+
+  it('is refused for the function meter() runs, whose answer is resolved into the promise it returns', async () => {
+    await expect(settled(Promise.resolve(proxy()), true)).rejects.toBeInstanceOf(AiTokensException)
+  })
+
+  it('boots the module when the options factory resolves with a Proxy', async () => {
+    const options = new Proxy({ store: makeFullStore(), pricing: { seedFromSnapshot: false } }, {})
+    const moduleRef = await Test.createTestingModule({ imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => Promise.resolve(options) })] }).compile()
+    expect(moduleRef.get(MeteringService)).toBeInstanceOf(MeteringService)
+    await moduleRef.close()
+  })
+})
+
+describe('a host whose promise is no longer what the engine made', () => {
+  it('still refuses a native promise with a then of its own', async () => {
+    const planted = Promise.resolve(1)
+    void Object.defineProperty(planted, 'then', { value: () => undefined })
+    await expect(settled(planted)).rejects.toBeInstanceOf(AiTokensException)
+  })
+})

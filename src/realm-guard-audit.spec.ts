@@ -302,10 +302,9 @@ describe('the realm guard in the step of the arithmetic', () => {
 describe('the realm guard and Promise', () => {
   /**
    * Wrapping the global `Promise` and its methods after load, as a tracing or monitoring agent does, is not counted as a polluted realm. The
-   * wrapped `Promise.resolve` here hands the store a subclass instance, which is no exact native promise, so the store call is refused with
-   * `AI_TOKENS_INVALID_CONFIG`.
+   * wrapped `Promise.resolve` here hands the store a subclass instance, which is a promise the store owns: the store call is answered.
    */
-  it('does not count a Promise wrapped as an agent wraps it, and refuses the subclass promise it hands a store', async () => {
+  it('does not count a Promise wrapped as an agent wraps it, and waits for the subclass promise it hands a store', async () => {
     const { calls } = await rig()
     const query = calls['ledger.query']!
     const args = await query.base()
@@ -328,7 +327,7 @@ describe('the realm guard and Promise', () => {
       Promise.all = original.all
     }
     expect(counted).toBe(0)
-    expect(code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(code).toBeUndefined()
   })
 
   /** A `resolve` and a `then` that count the calls made from the library's own files: it settles with `await`, so neither is reached. */
