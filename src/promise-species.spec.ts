@@ -246,6 +246,13 @@ describe('a promise on a decision path is not chained', () => {
       }
     })
 
+    it('a guarded store refuses a promise whose constructor and then the host planted while its method ran', async () => {
+      const store = guardedStore({ find: (): Promise<unknown> => rejectedThenPlanted({ forged: true }, 'db down') })
+      const pending = store.find()
+      unplant()
+      await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    })
+
     it('the wait for a statement refuses a promise whose constructor and then the host planted while it ran', async () => {
       const pending = awaitStatement(rejectedThenPlanted([], 'connection lost'))
       unplant()

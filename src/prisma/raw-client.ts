@@ -8,7 +8,7 @@
  * `$queryRawUnsafe`/`$executeRawUnsafe`; see `sql.ts` for why that is safe.
  */
 
-import { refusesPromise } from '../server/utils/native-promise'
+import { refusesPromise } from '../shared/utils/native-promise'
 import type { Sql } from './sql'
 
 /** What a driver call returned, unless a native `await` of it would run code of the host: then the call fails, as any driver failure does. */

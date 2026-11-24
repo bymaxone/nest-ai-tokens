@@ -13,6 +13,7 @@ import { AiTokensException } from '../errors'
 import { fieldOf } from './field-names'
 import { isPlain, ownCopy } from './own-copy'
 import { assertCleanRealm } from './prototype-guard'
+import { refusesPromise } from '../../shared/utils/native-promise'
 
 /** Every proxy this module made, so that a store handed to two services is guarded once. */
 const GUARDED = new WeakSet()
@@ -24,6 +25,16 @@ const GUARDED = new WeakSet()
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   if (typeof value !== 'object' || value === null) return false
   return types.isPromise(value) || (!isPlain(value) && typeof fieldOf(value, 'then') === 'function')
+}
+
+/**
+ * What a store returned, once it is certain that a native `await` of it runs no code of the host: a promise whose `constructor` or `then` the
+ * host planted for that one read is refused, since the answer it would give is the host's.
+ */
+function waitable(result: PromiseLike<unknown>): PromiseLike<unknown> {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
+  if (refusesPromise(result)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise a store returned reads a constructor or then of its own' })
+  return result
 }
 
 /**
@@ -62,7 +73,7 @@ export function guardedStore<T extends object>(store: T): T {
         // No call reaches a store beside a polluted realm, so nothing is written or reported there.
         assertCleanRealm()
         const result: unknown = Reflect.apply(value as (...parameters: unknown[]) => unknown, store, args.map((argument) => copied(argument)))
-        return isThenable(result) ? (async (): Promise<unknown> => copied(await result))() : copied(result)
+        return isThenable(result) ? (async (): Promise<unknown> => copied(await waitable(result)))() : copied(result)
       }
     },
     has: (_target, property) => Reflect.has(store, property),

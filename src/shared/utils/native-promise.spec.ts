@@ -1,7 +1,7 @@
 /**
  * @fileoverview The check that runs between a host call and the native `await` of what it returned: a promise of this realm whose
  * `constructor` or `then` a host controls is refused, anything else goes on, and a refused promise is waited for once so that a rejection of it is handled.
- * @layer server
+ * @layer shared
  */
 
 import { isPristinePromise, promiseIntrinsicsIntact, promiseSpeciesIntact, refusesPromise } from './native-promise'

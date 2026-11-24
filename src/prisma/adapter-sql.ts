@@ -37,7 +37,7 @@ import { isCodeShaped } from '../server/errors/error-code-shape'
 import { storeFailureCode } from '../server/errors/store-availability'
 import { identifier, identifiers, join, sql, type Sql } from './sql'
 import { jsonText } from '../server/utils/json-text'
-import { refusesPromise } from '../server/utils/native-promise'
+import { refusesPromise } from '../shared/utils/native-promise'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
 /** A decimal as the database driver returns it: all the adapter needs of it is its value as a number. */

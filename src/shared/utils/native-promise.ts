@@ -6,7 +6,7 @@
  * host runs between the two. It reads only what it captured when the module loaded and writes to no promise. A value whose prototype is not
  * `Promise.prototype` (a query builder, a subclass of `Promise`) is a thenable the host owns: its own answer is what the host gives, and
  * no shared intrinsic decides it.
- * @layer server
+ * @layer shared
  */
 
 const PROMISE_PROTOTYPE = Promise.prototype

@@ -7,7 +7,7 @@
  */
 
 import { AiTokensException } from '../errors'
-import { refusesPromise } from './native-promise'
+import { refusesPromise } from '../../shared/utils/native-promise'
 import { assertCleanRealm } from './prototype-guard'
 
 /**

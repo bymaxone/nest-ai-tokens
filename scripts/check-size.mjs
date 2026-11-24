@@ -48,10 +48,10 @@ const BUDGETS = [
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
   // that a store error repeats. 16_786 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
-  // 62_095 (2026-11-24) adds the native-await hop that every store promise on a decision path goes through, with its two realm checks, so that no chain asks the live species, now with the pre-await check of the promise, the descriptor check of `Promise.prototype` and the box the redis client sits in. 62_497 and 17_103 hold them.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 62_497 },
+  // 62_095 (2026-11-24) adds the native-await hop that every store promise on a decision path goes through, with its two realm checks, so that no chain asks the live species, now with the pre-await check of the promise, the descriptor check of `Promise.prototype` and the box the redis client sits in. 62_525 and 17_139 hold them.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 62_525 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 17_103 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 17_139 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

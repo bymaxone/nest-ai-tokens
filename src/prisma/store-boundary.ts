@@ -6,7 +6,7 @@
  * @layer prisma
  */
 
-import { refusesPromise } from '../server/utils/native-promise'
+import { refusesPromise } from '../shared/utils/native-promise'
 import { ownCopy } from '../server/utils/own-copy'
 import { storeError } from './adapter-sql'
 

@@ -14,7 +14,7 @@ import { runInNewContext } from 'node:vm'
 import { AiTokensException } from '../errors'
 import { AI_TOKENS_ERROR_MESSAGES } from '../errors/ai-tokens-error-messages'
 import { AI_TOKENS_ERROR_STATUS } from '../errors/ai-tokens-error-status'
-import { promiseIntrinsicsIntact, promiseSpeciesIntact } from './native-promise'
+import { promiseIntrinsicsIntact, promiseSpeciesIntact } from '../../shared/utils/native-promise'
 
 /** What a fresh realm holds: the descriptors of its `Object.prototype` and a reader of function text. */
 interface Pristine {

@@ -19,7 +19,7 @@ import type { IBudgetCounterStore } from '../server'
 // By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
 // class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
-import { refusesPromise } from '../server/utils/native-promise'
+import { refusesPromise } from '../shared/utils/native-promise'
 
 /**
  * The client, in an object with no prototype. A client reached through a promise is read for `then` by the engine, on its class chain,
