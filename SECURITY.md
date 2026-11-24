@@ -85,6 +85,7 @@ Code that runs in the host process is trusted, as in Node's own threat model. A 
 Known limits:
 
 - A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through, since that `then` is the driver's code and cannot be told from a planted one.
+- A rejected native promise with a `then` of its own, planted by a store, can make the refusal check pass and leave an unhandled rejection behind.
 - A one-shot `Promise[Symbol.species]` getter that hands back a genuine, already resolved native promise cannot be told from the engine's answer.
 
 ### Supply chain

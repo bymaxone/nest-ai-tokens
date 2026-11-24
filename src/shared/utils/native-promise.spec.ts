@@ -91,7 +91,7 @@ describe('a promise a native await runs alone', () => {
     expect(promiseIntrinsicsIntact()).toBe(true)
   })
 
-  it('answers whether to refuse, and handles the rejection of a promise it refuses', async () => {
+  it('answers whether to refuse a native promise that has a then of its own', async () => {
     const handled = jest.fn()
     process.once('unhandledRejection', handled)
     const rejected = Promise.reject(new Error('refused'))
