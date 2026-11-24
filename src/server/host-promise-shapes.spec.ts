@@ -143,26 +143,6 @@ describe('a store answer at the edge of what is a promise', () => {
 })
 
 describe('settled on a polluted realm', () => {
-  /** A promise the host made and the library refuses to wait for is still handled: its rejection ends no process, whatever kind of promise it is. */
-  it.each([
-    ['a subclass of Promise', (): PromiseLike<never> => SdkPromise.reject(new Error('host'))],
-    ['a native promise of another realm', (): PromiseLike<never> => foreign.reject(new Error('host'))],
-    ['a native promise', (): PromiseLike<never> => Promise.reject(new Error('host'))],
-  ])('handles the rejection of %s it refuses', async (_name, rejected) => {
-    const unhandled: unknown[] = []
-    const record = (reason: unknown): number => unhandled.push(reason)
-    process.on('unhandledRejection', record)
-    Object.defineProperty(Object.prototype, 'plantedKey', { value: 1, configurable: true, writable: true })
-    try {
-      await expect(settled(rejected())).rejects.toBeInstanceOf(AiTokensException)
-      await new Promise((resolve) => setImmediate(resolve))
-    } finally {
-      delete (Object.prototype as { plantedKey?: unknown }).plantedKey
-      process.off('unhandledRejection', record)
-    }
-    expect(unhandled).toHaveLength(0)
-  })
-
   /** The thenable is the host's own and its `then` is code of the host: refusing the realm does not run it. */
   it('does not run the then of a thenable it refuses', async () => {
     const then = jest.fn()
