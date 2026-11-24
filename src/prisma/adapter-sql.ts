@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { types } from 'node:util'
 import { isLegalTransitionPatchKey } from '../shared'
 import type {
   AiOperation,
@@ -37,6 +38,7 @@ import { isCodeShaped } from '../server/errors/error-code-shape'
 import { storeFailureCode } from '../server/errors/store-availability'
 import { identifier, identifiers, join, sql, type Sql } from './sql'
 import { jsonText } from '../server/utils/json-text'
+import { refusesPromise } from '../shared/utils/native-promise'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
 /** A decimal as the database driver returns it: all the adapter needs of it is its value as a number. */
@@ -329,6 +331,23 @@ export function storeError(error: unknown): AiTokensException {
  */
 export function rethrowAsStoreError(error: unknown): never {
   throw storeError(error)
+}
+
+/**
+ * Waits for a statement and rethrows what it throws as the store's typed error. The wait is a native `await` inside a `try`: a chain
+ * (`.catch`) would return a promise built by `Promise[Symbol.species]`, read live, which a host can make answer for the statement; the promise is checked first, since a native `await` reads its `constructor`.
+ *
+ * @param pending What the executor returned for the statement.
+ * @returns What the statement resolved with.
+ * @throws The store's typed error, with the original on `cause`.
+ */
+export async function awaitStatement<T>(pending: PromiseLike<T>): Promise<T> {
+  try {
+    if (refusesPromise(pending, false, types.isProxy)) throw new Error('a promise a statement returned reads a constructor or then of its own')
+    return await pending
+  } catch (error) {
+    return rethrowAsStoreError(error)
+  }
 }
 
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */

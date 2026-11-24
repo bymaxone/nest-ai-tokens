@@ -264,3 +264,51 @@ describe('RedisBudgetCounterStore commandTimeoutMs', () => {
     expect(body.error.details.reason).toContain('commandTimeoutMs')
   })
 })
+
+describe('RedisBudgetCounterStore refusals while it connects and while it waits for a command', () => {
+  /** A command of a client the host owns answers with a subclass of Promise whose `then` is its own: the reply is refused, not waited for. */
+  it('refuses the reply of a command that is a promise subclass', async () => {
+    class SdkPromise<T> extends Promise<T> {}
+    const client = { status: 'ready', eval: (): Promise<number> => SdkPromise.resolve(1) }
+    const store = new RedisBudgetCounterStore(client as never)
+    await expect(store.incrIfBelow('k', 10n, 5n, 60)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+  })
+
+  /** A host that holds an accessor for `constructor` on Promise.prototype while the store asks for its client answers for the wait: the store refuses. */
+  it('refuses a call made while Promise.prototype.constructor is an accessor', async () => {
+    const kept = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor')!
+    const store = new RedisBudgetCounterStore('redis://localhost:6379')
+    let call: Promise<boolean>
+    Reflect.defineProperty(Promise.prototype, 'constructor', { configurable: true, get: () => Object })
+    try {
+      call = store.incrIfBelow('k', 1n, 10n, 60)
+    } finally {
+      Reflect.defineProperty(Promise.prototype, 'constructor', kept)
+    }
+    await expect(call).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    await store.onModuleDestroy()
+  })
+
+  /**
+   * A store closed while the client library is still loading opens no client, quits nothing, and leaves no rejection nobody handles; the
+   * call that started the connection fails closed, and closing again stays safe.
+   */
+  it('opens no client when it is closed while the client library loads, and says the store is closed', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const store = new RedisBudgetCounterStore('redis://localhost:6379')
+      const call = store.incrIfBelow('k', 1n, 10n, 60)
+      const closing = store.onModuleDestroy()
+      await expect(call).rejects.toThrow('counter store is closed')
+      await closing
+      await store.onModuleDestroy()
+      await new Promise<void>((done) => setImmediate(done))
+      expect(mockCreated).toHaveLength(0)
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+})

@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
 import { createRequire } from 'node:module'
-import { BUILT_INS, assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
+import { BUILT_INS, assertCleanRealm, recordFunctions, pollutedNames, withoutRealmGuard } from './prototype-guard'
 
 /** Captured here, because the rows below rebind `Reflect` and must still be able to put it back. */
 const getOf = Reflect.get
@@ -27,6 +27,53 @@ function refusal(run: () => void): { code: string; reason: string } | undefined 
   }
   return undefined
 }
+
+describe('the realm guard and the constructor and then of Promise.prototype', () => {
+  const constructorKept = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor')!
+  const thenKept = Object.getOwnPropertyDescriptor(Promise.prototype, 'then')!
+  const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
+  afterEach(() => {
+    Reflect.defineProperty(Promise.prototype, 'constructor', constructorKept)
+    Reflect.defineProperty(Promise.prototype, 'then', thenKept)
+    Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+  })
+
+  it('refuses while Promise[Symbol.species] persistently answers a constructor of the host', () => {
+    Reflect.defineProperty(Promise, Symbol.species, { get: () => Object, configurable: true })
+    const original = Math.max
+    try {
+      const alone = refusal(() => assertCleanRealm())
+      expect(alone?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+      expect(alone?.reason).toContain('0 name(s) on the Object.prototype')
+      expect(alone?.reason).toContain('1 built-in(s)')
+      ;(Math as unknown as Record<string, unknown>).max = (...values: number[]): number => original(...values)
+      expect(refusal(() => assertCleanRealm())?.reason).toContain('2 built-in(s)')
+    } finally {
+      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+      ;(Math as unknown as Record<string, unknown>).max = original
+    }
+  })
+
+  it('refuses while Promise.prototype.constructor is a value that is not Promise', () => {
+    Reflect.defineProperty(Promise.prototype, 'constructor', { value: Object, configurable: true, writable: true })
+    expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  it('refuses while Promise.prototype.then is an accessor', () => {
+    Reflect.defineProperty(Promise.prototype, 'then', { get: () => thenKept.value as unknown, configurable: true })
+    expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  it('passes while Promise.prototype.then is a function a tracing agent wrapped', () => {
+    const original = thenKept.value as (...args: unknown[]) => unknown
+    Reflect.defineProperty(Promise.prototype, 'then', { ...thenKept, value: function wrapped(this: unknown, ...args: unknown[]) { return original.apply(this, args) } })
+    expect(() => assertCleanRealm()).not.toThrow()
+  })
+
+  it('passes again once both are the engine’s', () => {
+    expect(() => assertCleanRealm()).not.toThrow()
+  })
+})
 
 describe('the realm guard', () => {
   it('finds a clean process clean', () => {
@@ -428,5 +475,19 @@ describe('the realm guard and a name changed before the module loaded', () => {
       }
     })
     expect(count).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('recordFunctions and a planted value', () => {
+  /** A descriptor is an ordinary object: the `value` of an accessor's descriptor must not resolve through `Object.prototype`. */
+  it('records no function for an accessor, whatever Object.prototype holds under value', () => {
+    const owner = {}
+    Object.defineProperty(owner, 'slot', { get: () => 1, configurable: true })
+    Object.defineProperty(Object.prototype, 'value', { value: function planted(): void {}, configurable: true, writable: true, enumerable: false })
+    try {
+      expect(recordFunctions([owner])).toEqual([])
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'value')
+    }
   })
 })

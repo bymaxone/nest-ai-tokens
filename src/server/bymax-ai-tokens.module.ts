@@ -54,6 +54,7 @@ import type {
 } from './interfaces'
 import { TelemetryEmitter } from './telemetry/otel-emitter'
 import { ContentCapture } from './services/content-capture'
+import { settled } from './utils/host-settled'
 import { BudgetService, LedgerService, MarkupResolver, MeteringService, PricingService, UsageReportService, WalletService } from './services'
 
 /** The tokens always provided and exported, regardless of which features are enabled. */
@@ -247,9 +248,9 @@ function buildSyncFeatureExports(resolved: ResolvedAiTokensOptions): (symbol | t
 }
 
 /** Validate + resolve raw options loaded from an async source, mapping any failure to `AI_TOKENS_INVALID_CONFIG`. */
-async function safeResolve(load: Promise<BymaxAiTokensModuleOptions>): Promise<ResolvedAiTokensOptions> {
+async function safeResolve(load: BymaxAiTokensModuleOptions | PromiseLike<BymaxAiTokensModuleOptions>): Promise<ResolvedAiTokensOptions> {
   try {
-    const raw = await load
+    const raw = await settled(load)
     validateOptions(raw)
     return applyDefaults(raw)
   } catch (error) {
@@ -266,7 +267,7 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
     return [
       {
         provide: BYMAX_AI_TOKENS_OPTIONS,
-        useFactory: (...args: unknown[]): Promise<ResolvedAiTokensOptions> => safeResolve(Promise.resolve(factory(...args))),
+        useFactory: (...args: unknown[]): Promise<ResolvedAiTokensOptions> => safeResolve(factory(...args)),
         inject: [...(descriptor.inject ?? [])],
       },
     ]
@@ -278,7 +279,7 @@ function buildAsyncOptionsProviders(descriptor: BymaxAiTokensModuleAsyncOptions)
   }
   const optionsProvider: Provider = {
     provide: BYMAX_AI_TOKENS_OPTIONS,
-    useFactory: (factory: BymaxAiTokensModuleOptionsFactory): Promise<ResolvedAiTokensOptions> => safeResolve(Promise.resolve(factory.createAiTokensOptions())),
+    useFactory: (factory: BymaxAiTokensModuleOptionsFactory): Promise<ResolvedAiTokensOptions> => safeResolve(factory.createAiTokensOptions()),
     inject: [factoryToken],
   }
   return descriptor.useClass !== undefined ? [optionsProvider, { provide: descriptor.useClass, useClass: descriptor.useClass }] : [optionsProvider]

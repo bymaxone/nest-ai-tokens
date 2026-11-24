@@ -17,6 +17,7 @@
  */
 
 import { effectivePolicy } from '../utils/enum-guards'
+import { settled } from '../utils/host-settled'
 import { Inject, Injectable } from '@nestjs/common'
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
 import type { Reflector } from '@nestjs/core'
@@ -80,7 +81,7 @@ export class BudgetGuard implements CanActivate {
    * @throws {AiTokensException} `AI_TOKENS_BUDGET_EXCEEDED` / `AI_TOKENS_QUOTA_EXCEEDED` when a hard budget is exhausted (or an estimate shortfall from the placed hold).
    */
   async canActivate(executionContext: ExecutionContext): Promise<boolean> {
-    const context = await this.scopeResolver(executionContext)
+    const context = await settled(this.scopeResolver(executionContext))
     const targets = [executionContext.getHandler(), executionContext.getClass()]
     const meter = meterConfigOf(this.reflector.getAllAndOverride<MeterConfig | undefined>(METER_METADATA, targets))
     const requireBudget = requireBudgetOf(this.reflector.getAllAndOverride<RequireBudgetConfig | undefined>(REQUIRE_BUDGET_METADATA, targets))

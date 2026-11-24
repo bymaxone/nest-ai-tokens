@@ -12,6 +12,7 @@ import { Logger } from '@nestjs/common'
 import { describeError } from '../errors/describe-error'
 import { fieldOf, methodOf } from '../utils/field-names'
 import { guardedStore } from '../utils/guarded-store'
+import { settled } from '../utils/host-settled'
 import { budgetRow } from '../services/budget-math'
 import type { Budget, UsageRecord } from '../../shared'
 import type { IBudgetStore, StaleCursor, StaleReference, StaleReferenceQuery, StaleSelection } from '../interfaces'
@@ -183,6 +184,11 @@ export class BudgetReferenceSweeper {
     return row.reversedByRecordId !== undefined && (await this.ledger.findEffectsOwedFor(row.reversedByRecordId)) !== null
   }
 
+  /** The budget a reference names, read as fields. A native wait, never a chain: the species a chain reads is live and a host could answer for the store. */
+  private async budgetOf(reference: StaleReference): Promise<Budget | null> {
+    return budgetRow(await settled(this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId })))
+  }
+
   /** Give one reference its verdict and apply it. */
   private async settle(reference: StaleReference, budgets: Map<string, Promise<Budget | null>>): Promise<void> {
     const kind = kindOf(reference.key)
@@ -190,7 +196,7 @@ export class BudgetReferenceSweeper {
     let budget = budgets.get(reference.budgetId)
     if (budget === undefined) {
       // The row is read as fields, so a key planted on Object.prototype is not one of the budget's: the verdict compares its features and scope with the call's.
-      budget = this.store.findBudgetById({ tenantId: reference.tenantId, id: reference.budgetId }).then(budgetRow)
+      budget = this.budgetOf(reference)
       budgets.set(reference.budgetId, budget)
     }
     const row: UsageRecord | null = await this.ledger.findByIdempotencyKey(reference.tenantId, ledgerKeyOf(reference.key, kind))

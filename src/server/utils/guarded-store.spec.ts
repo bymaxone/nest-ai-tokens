@@ -5,6 +5,7 @@
  */
 
 import { types } from 'node:util'
+import { AiTokensException } from '../errors'
 import { guardedStore } from './guarded-store'
 import { setRealmGuard } from './prototype-guard'
 
@@ -85,15 +86,18 @@ describe('guardedStore', () => {
     expect(guardedStore(store)).not.toBe(once)
   })
 
-  /** A row is a record: a `then` field of its own does not make it a promise, and it is not awaited. */
-  it('returns a row with a then of its own as a row, and awaits a promise and an object that is no record', async () => {
-    const row = { id: 'r1', then: (resolve: (value: string) => void): void => resolve('output') }
+  /**
+   * A record with a `then` that is no function is a plain field and comes back as a row. A row whose `then` is a function, and a thenable that is
+   * no native promise (a class with a `then`), are refused: an `await` of either runs that `then`, which is code of the host.
+   */
+  it('returns a row with a then field as a row, and refuses a callable then on a row and a thenable that is no native promise', async () => {
     class Entity {
       readonly id = 'e1'
     }
     const store = {
       entity: (): unknown => new Entity(),
-      row: (): unknown => row,
+      fieldThen: (): unknown => ({ id: 'r1', then: 1 }),
+      callableThen: (): unknown => ({ id: 'r2', then: (resolve: (value: string) => void): void => resolve('output') }),
       promise: (): Promise<{ id: string }> => Promise.resolve({ id: 'p1' }),
       builder: (): unknown => new (class Query {
         then(resolve: (value: { id: string }) => void): void {
@@ -102,17 +106,14 @@ describe('guardedStore', () => {
       })(),
     }
     const guarded = guardedStore(store)
-    const returned = guarded.row() as { id: string }
     // An instance of a class with no then is a record: it comes back at once, as a copy, and is not wrapped in a promise.
     const entity = guarded.entity()
     expect(types.isPromise(entity)).toBe(false)
     expect((entity as { id: string }).id).toBe('e1')
-    expect(returned.id).toBe('r1')
+    expect((guarded.fieldThen() as { id: string }).id).toBe('r1')
     expect(await guarded.promise()).toEqual({ id: 'p1' })
-    // The guard itself awaits what is no record and has a then: it hands back a promise of the copy, not the builder.
-    const built = guarded.builder()
-    expect(types.isPromise(built)).toBe(true)
-    expect(await (built as Promise<{ id: string }>)).toEqual({ id: 'q1' })
+    expect(() => guarded.callableThen()).toThrow(AiTokensException)
+    await expect(guarded.builder() as Promise<unknown>).rejects.toBeInstanceOf(AiTokensException)
   })
 
   /** A row nested deeper than a store returns is refused with the library's error and never handed on uncopied, in either direction. */

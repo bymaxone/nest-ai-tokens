@@ -19,6 +19,7 @@ import { TOKEN_CATEGORIES } from '../../shared'
 import { AiTokensException } from '../errors'
 import type { ILedgerStore, IPricingStore, ReportGroupBy } from '../interfaces'
 import { methodOf } from '../utils/field-names'
+import { settled } from '../utils/host-settled'
 import { ownCopy } from '../utils/own-copy'
 import { guardedStore } from '../utils/guarded-store'
 import { assertObject, assertText } from '../utils/argument-guards'
@@ -193,7 +194,7 @@ export class UsageReportService {
   private async rowOf(record: UsageRecord, converting: boolean): Promise<[string, string][]> {
     const cells = baseCells(record)
     if (!converting || this.options.fx === undefined) return cells
-    const rate = await this.options.fx(record.occurredAt, this.options.currency)
+    const rate = await settled(this.options.fx(record.occurredAt, this.options.currency))
     return [
       ...cells,
       ['presentationCurrency', this.options.currency],

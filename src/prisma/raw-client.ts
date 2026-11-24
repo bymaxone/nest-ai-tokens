@@ -8,7 +8,21 @@
  * `$queryRawUnsafe`/`$executeRawUnsafe`; see `sql.ts` for why that is safe.
  */
 
+import { types } from 'node:util'
+import { refusesPromise } from '../shared/utils/native-promise'
 import type { Sql } from './sql'
+
+/**
+ * What a driver call returned, unless a native `await` of it would run code of the host: then the call fails, as any driver failure does.
+ * A Prisma query is a lazy thenable that sends its query inside its own `then`, so a thenable is the driver's normal answer and is let
+ * through; a native promise is held to the strict check. What the thenable's `then` does is the driver's code, which the library cannot tell from a planted one.
+ */
+export async function waited<T>(pending: PromiseLike<T>): Promise<T> {
+  if (refusesPromise(pending, true, types.isProxy)) throw new Error('a promise the driver returned reads a constructor or then of its own')
+  const value = await pending
+  if (refusesPromise(value, false, types.isProxy)) throw new Error('what the driver resolved with reads a then of its own')
+  return value
+}
 
 /** The two raw-query methods of a Prisma client, or of the client a transaction hands to its callback. */
 export interface RawExecutor {
@@ -39,7 +53,7 @@ export class SqlExecutor {
    * @returns The rows.
    */
   async query<T = unknown>(statement: Sql): Promise<T> {
-    return await this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters)
+    return await waited(this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters))
   }
 
   /**
@@ -49,7 +63,7 @@ export class SqlExecutor {
    * @returns The number of rows it affected.
    */
   async execute(statement: Sql): Promise<number> {
-    return await this.raw.$executeRawUnsafe(statement.text, ...statement.parameters)
+    return await waited(this.raw.$executeRawUnsafe(statement.text, ...statement.parameters))
   }
 }
 
@@ -66,9 +80,9 @@ export class SqlClient extends SqlExecutor {
    * Runs the callback in a transaction.
    *
    * @param fn The work, given an executor that runs inside the transaction.
-   * @returns What the callback resolves to.
+   * @returns What the callback resolves to, once the driver's promise and that value are checked as for any driver call.
    */
-  transaction<R>(fn: (tx: SqlExecutor) => Promise<R>): Promise<R> {
-    return this.client.$transaction((tx) => fn(new SqlExecutor(tx)))
+  async transaction<R>(fn: (tx: SqlExecutor) => Promise<R>): Promise<R> {
+    return await waited(this.client.$transaction((tx) => fn(new SqlExecutor(tx))))
   }
 }

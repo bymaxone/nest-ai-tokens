@@ -19,6 +19,31 @@ import type { IBudgetCounterStore } from '../server'
 // By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
 // class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { types } from 'node:util'
+import { refusesPromise } from '../shared/utils/native-promise'
+
+/**
+ * The client, in an object with no prototype. A client reached through a promise is read for `then` by the engine, on its class chain,
+ * which a host can plant; an object with no prototype has none to read, and the client is taken from it after the wait.
+ */
+interface ClientBox {
+  readonly client: Redis
+}
+
+/** Put `client` in a {@link ClientBox}. */
+function boxed(client: Redis): ClientBox {
+  return Object.assign(Object.create(null) as object, { client })
+}
+
+/**
+ * Wait for what a command of the client returned with a native `await`, once the promise is known to run no `constructor` or `then` of the
+ * host: a one-shot plant of either, while the command ran, would make the wait answer for Redis.
+ */
+async function reply<T>(pending: Promise<T>): Promise<T> {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
+  if (refusesPromise(pending, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
+  return await pending
+}
 
 /** Construction options for {@link RedisBudgetCounterStore}. */
 export interface RedisBudgetCounterStoreOptions {
@@ -135,10 +160,13 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   readonly #source: Redis | string
 
   /** The in-flight lazy connection, which resolves to the same credentialed client. */
-  #connecting: Promise<Redis> | null = null
+  #connecting: Promise<ClientBox> | null = null
 
   /** Set once the store has closed the client it created: later calls fail instead of opening a new connection. */
   #closed = false
+
+  /** The client this store created, kept as soon as it exists so that shutdown closes it even when the wait for the connection is refused. */
+  #owned: Redis | null = null
 
   /**
    * @param redis A live `ioredis` client, or a connection URL to lazily connect.
@@ -165,14 +193,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @throws {CounterValueOutOfRangeError} when an operand or the resulting counter exceeds the safe-integer range.
    */
   async incrIfBelow(key: string, amount: bigint, limit: bigint, ttlSeconds: number): Promise<boolean> {
-    const client = await this.resolve()
-    const result = await client.eval(
-      INCR_IF_BELOW_LUA,
-      1,
-      this.prefixed(key),
-      amount.toString(),
-      limit.toString(),
-      Math.ceil(ttlSeconds * 1_000).toString(),
+    const { client } = await this.resolve()
+    const result = await reply(
+      client.eval(INCR_IF_BELOW_LUA, 1, this.prefixed(key), amount.toString(), limit.toString(), Math.ceil(ttlSeconds * 1_000).toString()),
     )
     if (result === -1) throw new CounterValueOutOfRangeError()
     return result === 1
@@ -185,8 +208,8 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param amount The amount to subtract.
    */
   async decr(key: string, amount: bigint): Promise<void> {
-    const client = await this.resolve()
-    await client.eval(DECR_FLOOR_LUA, 1, this.prefixed(key), amount.toString())
+    const { client } = await this.resolve()
+    await reply(client.eval(DECR_FLOOR_LUA, 1, this.prefixed(key), amount.toString()))
   }
 
   /**
@@ -195,8 +218,8 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param key The dimension counter key.
    */
   async reset(key: string): Promise<void> {
-    const client = await this.resolve()
-    await client.del(this.prefixed(key))
+    const { client } = await this.resolve()
+    await reply(client.del(this.prefixed(key)))
   }
 
   /**
@@ -207,8 +230,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   async onModuleDestroy(): Promise<void> {
     this.#closed = true
-    if (this.#connecting === null) return
-    const client = await this.#connecting.catch(() => null)
+    const client = this.#owned
     if (client === null || client.status === 'end') return
     await this.quitWithin(client)
   }
@@ -216,19 +238,22 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   /** Quit gracefully within the bound, falling back to `disconnect()` when the quit is late or fails; leaves no timer behind. */
   private async quitWithin(client: Redis): Promise<void> {
     let timer: NodeJS.Timeout | undefined
-    const late = new Promise<'late'>((resolve) => {
-      timer = setTimeout(() => {
-        resolve('late')
-      }, this.closeTimeoutMs)
+    const outcome = { quit: false }
+    await new Promise<void>((done) => {
+      timer = setTimeout(done, this.closeTimeoutMs)
+      // The wait for the quit is a native `await` in its own function, not a race: the timer above ends the wait whatever the quit does.
+      void (async (): Promise<void> => {
+        try {
+          await reply(client.quit())
+          outcome.quit = true
+        } catch {
+          // A failed quit is answered by the disconnect below.
+        }
+        done()
+      })()
     })
-    try {
-      const outcome = await Promise.race([client.quit(), late])
-      if (outcome === 'late' && client.status !== 'end') client.disconnect()
-    } catch {
-      if (client.status !== 'end') client.disconnect()
-    } finally {
-      clearTimeout(timer)
-    }
+    clearTimeout(timer)
+    if (!outcome.quit && client.status !== 'end') client.disconnect()
   }
 
   /** Prepend the configured key prefix. */
@@ -237,17 +262,24 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   }
 
   /** Resolve the live client, lazily connecting a URL via a dynamic `ioredis` import. */
-  private resolve(): Promise<Redis> {
-    if (typeof this.#source !== 'string') return Promise.resolve(this.#source)
-    if (this.#closed) return Promise.reject(new Error('counter store is closed'))
+  private async resolve(): Promise<ClientBox> {
+    if (typeof this.#source !== 'string') return boxed(this.#source)
+    if (this.#closed) throw new Error('counter store is closed')
     this.#connecting ??= this.connect(this.#source)
-    return this.#connecting
+    const connecting = this.#connecting
+    // Stryker disable next-line ObjectLiteral,StringLiteral,BooleanLiteral: error reason is an internal diagnostic; tests check the code. BooleanLiteral false->true: equivalent: `connecting` is always the intrinsic promise of the async connect(), which returns at the PROMISE_PROTOTYPE branch of refusesPromise before `thenables` is read
+    if (refusesPromise(connecting, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
+    return await connecting
   }
 
   /** Dynamically import `ioredis` and connect the given URL. */
-  private async connect(url: string): Promise<Redis> {
+  private async connect(url: string): Promise<ClientBox> {
     const { default: RedisClient } = await import('ioredis')
     // One retry per command and a command timeout, so a stopped Redis answers in the time of the timeout; the offline queue stays on, so a command issued while the connection is still opening waits for it.
-    return new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    // A store closed while the client was loading opens none, so no connection outlives the shutdown.
+    if (this.#closed) throw new Error('counter store is closed')
+    const client = new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    this.#owned = client
+    return boxed(client)
   }
 }

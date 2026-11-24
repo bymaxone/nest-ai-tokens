@@ -103,7 +103,7 @@ import {
   GRANT_REMAINING_SQL,
   SIGNED_BALANCE_SQL,
   statusAssignments,
-  rethrowAsStoreError,
+  awaitStatement,
   storeError,
   usageValues,
   walletAutoCreatable,
@@ -220,10 +220,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
   async query(filter: LedgerFilter): Promise<UsageRecord[]> {
     const limit = filter.limit === undefined ? empty : sql`LIMIT ${filter.limit}`
     const offset = filter.offset === undefined ? empty : sql`OFFSET ${filter.offset}`
-    const rows = await this.prisma.query<UsageRow[]>(sql`
+    const rows = await awaitStatement(
+      this.prisma.query<UsageRow[]>(sql`
       SELECT * FROM "ai_usage_records" WHERE ${buildWhere(filter)}
       ORDER BY "createdAt" ASC ${limit} ${offset}
-    `).catch(rethrowAsStoreError)
+    `),
+    )
     return rows.map(mapUsageRow)
   }
 
@@ -492,17 +494,19 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     const where = walletEntryWhere(wallet.id, filter)
     const limit = filter.limit === undefined ? empty : sql`LIMIT ${filter.limit}`
     const offset = filter.offset === undefined ? empty : sql`OFFSET ${filter.offset}`
-    const [entries, counts] = await Promise.all([
+    // One statement after the other, each waited for natively: `Promise.all` asks the live `Promise.resolve` for every element and builds its
+    // answer with the live species, which a host can make answer for the page and the count.
+    const entries = await awaitStatement(
       this.prisma.query<WalletEntryRow[]>(
         sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC, "id" ASC ${limit} ${offset}`,
       ),
-      this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`),
-    ]).catch(rethrowAsStoreError)
+    )
+    const counts = await awaitStatement(this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`))
     return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
   }
 
   async findDebitsBefore(query: WalletDebitQuery): Promise<WalletDebit[]> {
-    const rows = await this.prisma.query<WalletDebitRow[]>(walletDebitsSql(query)).catch(rethrowAsStoreError)
+    const rows = await awaitStatement(this.prisma.query<WalletDebitRow[]>(walletDebitsSql(query)))
     return rows.map(mapWalletDebitRow)
   }
 

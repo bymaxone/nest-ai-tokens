@@ -10,6 +10,17 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Fixed
+
+- A host can no longer answer for a store through `Promise[Symbol.species]` or a replaced `Promise.resolve`. Decision sites chained a promise a store returned (`.then`, `.catch`, `Promise.all`), and a chain builds its result with the species constructor read live, so a planted species made a store return a forged answer. Decision sites now wait natively, and check the promise they got first: one whose `constructor` or `then` a host planted for the one read is refused instead of answering. A source scan fails on any new chain or promise combinator in shipped code that is not named with the reason its result decides nothing.
+- The realm guard reads the `value` of a property descriptor as the descriptor's own, so a `value` planted on `Object.prototype` cannot make an accessor look like a built-in function, and it refuses while `Promise.prototype.constructor` is not `Promise`, while either it or `then` is an accessor, or while the getter of `Promise[Symbol.species]` is not the engine's, which a driver's own `then` reads.
+- The Redis counter takes the client from a box with no prototype, so a `then` planted on the class of the client cannot swap the client the store runs its script on.
+- The hold reaper waits for a sweep natively, so a species that never settles can no longer leave the running flag set and stop later sweeps.
+- Only an exact native promise is waited for on a decision path, except a driver call of the Prisma adapter and the metered function of `meter()`, which may return a thenable. A promise a store or a host function returns is refused when it is a subclass, a thenable that is not a native promise, or a value with a `then` anywhere on its chain, since an `await` of any of them runs a `then` of the host; the answer is checked again after the wait. A Proxy, or a value with a Proxy on its chain, is refused too, since its traps are host code. A native promise on those calls is still held to the strict check. **Apply:** a store or callback that returns a custom thenable, a `Promise` subclass or a Proxy must return a native promise (`Promise.resolve(x)`, or an `async` function).
+- After every store or host answer the `Array.prototype` members the library reads are compared with the engine's, and neither prototype may hold a `then`, and the budget and status lists are built with helpers that read none of them, so a one-shot `map`, `filter`, `push` or `then` a store plants is refused instead of emptying a budget list and letting an over-limit consume through.
+- The Redis client is quit on shutdown even when its connection promise was refused, and the bounded quit no longer races a promise.
+- These checks are best-effort hardening, not a security boundary against code that already runs in the host process; see "Threat model: same-process code" in `SECURITY.md` for what stays a known limit.
+
 ### Documentation
 
 - The README states the limit of a ledger store without the optional effects-owed marker calls. A wallet leg that fails after a capture commits leaves the record posted at its actual cost while the wallet keeps the hold's reserved debit, and a second capture returns the posted record without running the leg again. A store that keeps the marker, as the Prisma store does, lets the reaper finish the leg.

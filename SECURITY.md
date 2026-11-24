@@ -78,6 +78,16 @@ The ledger stores token counts, model identifiers, cost, and scope IDs. It **nev
 
 `RedisBudgetCounterStore` accepts a connection URL as an alternative to a live `Redis` instance. The URL is dynamically imported and NEVER logged, placed on an exception, or included in audit events.
 
+### Threat model: same-process code
+
+Code that runs in the host process is trusted, as in Node's own threat model. A module that swaps a builtin or a prototype (`Promise.prototype`, `Array.prototype`, `Object.prototype`) or a property of the host's own objects while a call is in progress can change what any library in that process does, and nothing in this library can stop it. The promise and intrinsics guards are best-effort hardening against accidents and against a hostile store or callback that answers once; they are not a security boundary against code that already runs in the process.
+
+Known limits:
+
+- A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through on a driver call of the Prisma adapter and on the metered function of `meter()`, since that `then` is the driver's or the provider's code and cannot be told from a planted one.
+- A rejected native promise that a store gives both a `constructor` and a `then` of its own is refused, but its rejection can stay unhandled, since the wait that handles it reads that `constructor` and calls that `then`.
+- A one-shot `Promise[Symbol.species]` getter that hands back a genuine, already resolved native promise cannot be told from the engine's answer.
+
 ### Supply chain
 
 - All GitHub Actions are pinned by commit SHA.

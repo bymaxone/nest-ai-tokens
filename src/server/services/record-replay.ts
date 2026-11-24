@@ -95,6 +95,15 @@ export function heldReplay(stored: UsageRecord, extraUnits: Record<string, numbe
  * failed as well, so the caller does not guess. A refusal of the realm guard from that lookup is folded into `undefined` too: nothing moves on
  * this path, and the caller goes on to raise the failure that brought it here.
  */
-export function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
-  return find().catch((): undefined => undefined)
+export async function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
+  // A native wait, never a chain: the species a chain reads is live, and a host that plants it would answer for the ledger. The realm is
+  // not re-checked here, since a refusal from the lookup is one of the failures this folds.
+  const pending = find()
+  let row: UsageRecord | null | undefined = null
+  try {
+    row = await pending
+  } catch {
+    row = undefined
+  }
+  return row
 }

@@ -12,6 +12,7 @@
  */
 
 import { types } from 'node:util'
+import { mapList } from '../../shared/utils/native-promise'
 import { fieldNamesOf, fieldOf } from './field-names'
 
 /** The deepest level copied: a record a store takes or returns has a record or a list in it, never a long chain; a record nested deeper is refused. */
@@ -62,7 +63,7 @@ export function ownCopy<T>(value: T, depth = 0): T {
   if (typeof value !== 'object' || value === null) return value
   // Stryker disable next-line StringLiteral: error text is internal diagnostics
   if (depth > MAX_DEPTH) throw new RangeError('a record is nested deeper than a store takes or returns')
-  if (Array.isArray(value)) return value.map((element: unknown) => ownCopy(element, depth + 1)) as T
+  if (Array.isArray(value)) return mapList(value as unknown[], (element: unknown) => ownCopy(element, depth + 1)) as T
   const plain = isPlain(value)
   // A Date, a Map, a typed array and the like are not records, and their methods live on a prototype that must stay.
   if (!plain && isBuiltIn(value)) return value

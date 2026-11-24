@@ -13,17 +13,35 @@ import { AiTokensException } from '../errors'
 import { fieldOf } from './field-names'
 import { isPlain, ownCopy } from './own-copy'
 import { assertCleanRealm } from './prototype-guard'
+import { refusesPromise } from '../../shared/utils/native-promise'
 
 /** Every proxy this module made, so that a store handed to two services is guarded once. */
 const GUARDED = new WeakSet()
 
 /**
  * Whether a value is what an asynchronous store method returns: a promise, or an object that is no record and has a `then` of its own or its
- * class's (a query builder of a client). A row is a record, so a row with a `then` of its own is a row and is never awaited.
+ * class's (a query builder of a client). A row is a record and is never awaited here; one whose `then` is a function is refused by {@link accepted}.
  */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   if (typeof value !== 'object' || value === null) return false
   return types.isPromise(value) || (!isPlain(value) && typeof fieldOf(value, 'then') === 'function')
+}
+
+/**
+ * What a store returned, once it is certain that reading or awaiting it runs no code the host planted for that one read: a promise whose
+ * `constructor` or `then` was planted, a thenable that is not a native promise, a value with a `then` on its chain, and arrays whose methods
+ * were replaced are all refused, since the answer they would give is the host's.
+ */
+function accepted(result: unknown): void {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
+  if (refusesPromise(result, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
+}
+
+/** The copy of what a store resolved with, checked once more right before the value is resolved into the promise the caller awaits. */
+function returned(value: unknown): unknown {
+  const copy = copied(value)
+  accepted(copy)
+  return copy
 }
 
 /**
@@ -62,7 +80,15 @@ export function guardedStore<T extends object>(store: T): T {
         // No call reaches a store beside a polluted realm, so nothing is written or reported there.
         assertCleanRealm()
         const result: unknown = Reflect.apply(value as (...parameters: unknown[]) => unknown, store, args.map((argument) => copied(argument)))
-        return isThenable(result) ? (async (): Promise<unknown> => copied(await result))() : copied(result)
+        if (isThenable(result)) {
+          // The check runs in the body of the async function, before its first await: a refusal is a rejection, as for any failed call.
+          return (async (): Promise<unknown> => {
+            accepted(result)
+            return returned(await result)
+          })()
+        }
+        accepted(result)
+        return returned(result)
       }
     },
     has: (_target, property) => Reflect.has(store, property),
