@@ -39,9 +39,12 @@ jobs:
       # mutants x about 1 s) / 2 workers: 85, 93, 145 and 265 minutes for the four shards, with the
       # heaviest on the slowest runner (53.2 s net against 27.5 s on the fastest). Eight shards split
       # the 675 static mutants to about 84 each, which puts the heaviest shard on that slowest runner
-      # at about 90 minutes. The ceiling is 1.5 times that, 135. Both numbers are estimates until the
-      # first scored run: compare the slowest shard of that run with 90 and move them together.
-      timeout-minutes: 135
+      # at about 90 minutes. 1.5 times that would be 135, but the planner balances by test executions
+      # and does not weigh static mutants, so one shard may draw well over its average share and a
+      # ceiling that cuts it loses the whole run. The ceiling is held at 150, the value the earlier run
+      # already used, until the first eight-shard run is measured; then it becomes 1.5 times that
+      # run's slowest shard, with the run ID written here.
+      timeout-minutes: 150
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
