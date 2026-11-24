@@ -139,7 +139,7 @@ describe('guardStoreErrors', () => {
   /** A native promise with a `then` of its own is refused with the typed error, and the reason it was refused rides on the cause. */
   it('types the refusal of a native promise that has a then of its own and says why on the cause', async () => {
     const planted = Promise.resolve(1)
-    Object.defineProperty(planted, 'then', { value: () => undefined })
+    void Object.defineProperty(planted, 'then', { value: () => undefined })
     class Reader {
       read(): Promise<number> {
         return planted
