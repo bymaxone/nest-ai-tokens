@@ -208,7 +208,7 @@ describe('the arrays and objects a decision path reads', () => {
   })
 
   /** A caller that lets thenables through still never lets a Proxy on the chain through: its `then` is a trap of the host. */
-  it('refuses a value with a Proxy on its chain when thenables are allowed, and lets a thenable of a class through', () => {
+  it('refuses a value with a Proxy on its chain when thenables are allowed, lets a thenable of a class through, and refuses no Proxy when no check for one is given', () => {
     class Builder {
       then(): void {}
     }

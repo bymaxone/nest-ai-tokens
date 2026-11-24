@@ -113,7 +113,7 @@ describe('the reason a refused host answer carries', () => {
     await expect(reasonOf(settled(planted))).resolves.toBe('what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced')
   })
 
-  it('names a resolved value that has a then of its own when it is refused after the wait', async () => {
+  it('names the check that refuses a Proxy the host resolved with, for the function meter() runs, after the wait', async () => {
     await expect(reasonOf(settled(Promise.resolve(new Proxy({}, {})), true))).resolves.toBe('what a host resolved with has a then of its own, or the arrays the library reads were replaced')
   })
 })
@@ -122,7 +122,8 @@ describe('a host that resolves with a Proxy', () => {
   const proxy = (): object => new Proxy({ id: 'r1' }, {})
 
   it('is waited for and answers with the Proxy the host resolved with', async () => {
-    await expect(settled(Promise.resolve(proxy()))).resolves.toEqual({ id: 'r1' })
+    const resolved = proxy()
+    await expect(settled(Promise.resolve(resolved))).resolves.toBe(resolved)
   })
 
   it('is refused for the function meter() runs, whose answer is resolved into the promise it returns', async () => {
@@ -155,11 +156,17 @@ describe('a host whose promise is no longer what the engine made', () => {
 })
 
 describe('a store answer at the edge of what is a promise', () => {
-  /** A native promise whose prototype was taken away is still a promise: it is waited for, so the caller gets a promise back, not the object itself. */
-  it('waits for a native promise that has no prototype', () => {
+  /**
+   * A native promise whose prototype was taken away has no `then`, so a native `await` of it settles with the promise object itself, not with
+   * the value it holds. The store method has nothing to unwrap either, and answers with a copy of that object, which holds no `id`.
+   */
+  it('answers a native promise that has no prototype with a copy of the promise that holds no id, not with the value it holds', async () => {
     const promise = Promise.resolve({ id: 'r1' })
     Object.setPrototypeOf(promise, null)
-    expect(types.isPromise(guardedStore({ find: () => promise }).find())).toBe(true)
+    const answer = guardedStore({ find: () => promise }).find()
+    expect(types.isPromise(answer)).toBe(true)
+    const settledWith = (await answer) as object
+    expect([Object.getPrototypeOf(settledWith), Object.keys(settledWith)]).toEqual([null, []])
   })
 
   /** A row whose `then` is answered by a Proxy trap, or is an accessor, is refused as the call is made: nothing is returned to wait for. */
