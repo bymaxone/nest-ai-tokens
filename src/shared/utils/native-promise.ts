@@ -15,6 +15,10 @@ const getPrototypeOf = Object.getPrototypeOf
 const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
 const hasOwn = Object.hasOwn
 const defineProperty = Object.defineProperty
+const reflectApply = Reflect.apply
+// Captured while the module loads, so that handling a rejection later reads no `then` from the promise or from `Promise.prototype`.
+const PROMISE_THEN = (getOwnPropertyDescriptor(PROMISE_PROTOTYPE, 'then') as { value: (...args: unknown[]) => unknown }).value
+const IGNORE = (): void => undefined
 const speciesAtLoad = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
 // The module loads before any host code, so the descriptor exists and its own getter is the one read.
 const INTRINSIC_SPECIES: unknown = (speciesAtLoad as { get?: unknown }).get
@@ -173,6 +177,30 @@ export function refusesPromise(value: unknown, thenables = false, isProxy: Proxy
     }
   })()
   return true
+}
+
+/**
+ * Marks the rejection of a promise as handled, for a caller that refuses to wait for it: a promise the host created and the library does not
+ * read would otherwise end a Node process as an unhandled rejection. An exact native promise on an intact `Promise.prototype` is handled with
+ * the `then` captured at load and the arguments it is given, so no property of the promise or of a polluted prototype is looked up; any other
+ * value is treated as {@link refusesPromise} treats it, and a thenable that call lets through is left alone.
+ *
+ * @param value What a host call returned.
+ * @param thenables As in {@link refusesPromise}.
+ * @param isProxy Tells a Proxy from an object.
+ */
+export function absorbRejection(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): void {
+  if (isExactPromise(value, isProxy) && promiseIntrinsicsIntact() && promiseSpeciesIntact()) {
+    void reflectApply(PROMISE_THEN, value, [IGNORE, IGNORE])
+    return
+  }
+  refusesPromise(value, thenables, isProxy)
+}
+
+/** Whether `value` is a native promise with no `then` or `constructor` of its own, read only through own descriptors. */
+function isExactPromise(value: unknown, isProxy: ProxyProbe): boolean {
+  if (typeof value !== 'object' || value === null || isProxy(value)) return false
+  return getPrototypeOf(value) === PROMISE_PROTOTYPE && !hasOwn(value, 'then') && !hasOwn(value, 'constructor')
 }
 
 /** Whether `value` or a prototype of it is a Proxy: a wait on it would run its traps, so a refused one is not waited for. */

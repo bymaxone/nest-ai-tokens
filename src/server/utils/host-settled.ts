@@ -8,7 +8,7 @@
 
 import { types } from 'node:util'
 import { AiTokensException } from '../errors'
-import { refusesPromise } from '../../shared/utils/native-promise'
+import { absorbRejection, refusesPromise } from '../../shared/utils/native-promise'
 import { assertCleanRealm } from './prototype-guard'
 
 /**
@@ -20,7 +20,13 @@ import { assertCleanRealm } from './prototype-guard'
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the realm is polluted before or after the wait, or the promise is not one a native `await` runs alone; what the host rejected with, unchanged.
  */
 export async function settled<T>(pending: T | PromiseLike<T>, thenables = false): Promise<T> {
-  assertCleanRealm()
+  try {
+    assertCleanRealm()
+  } catch (error) {
+    // The host's promise exists already and nothing will wait for it: its rejection is marked handled, or it would end the process.
+    absorbRejection(pending, thenables, types.isProxy)
+    throw error
+  }
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
   if (refusesPromise(pending, thenables, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
   const value = await pending

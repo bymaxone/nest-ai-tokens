@@ -229,3 +229,66 @@ describe('what a call to the host may answer with, by the kind of call', () => {
     expect((failure?.cause as Error).message).toBe('a promise a statement returned reads a constructor or then of its own')
   })
 })
+
+/** The rejections the process reports as unhandled while `run` and the turns after it go by. */
+async function unhandledDuring(run: () => Promise<unknown>): Promise<{ unhandled: unknown[]; error: unknown }> {
+  const unhandled: unknown[] = []
+  const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+  process.on('unhandledRejection', onUnhandled)
+  let error: unknown
+  try {
+    await run().catch((caught: unknown) => { error = caught })
+    await new Promise<void>((done) => setImmediate(done))
+    await new Promise<void>((done) => setImmediate(done))
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+  }
+  return { unhandled, error }
+}
+
+/** A host callback that pollutes the realm while it runs and answers with a promise that rejects. */
+function pollutingAndRejecting(): () => Promise<never> {
+  return () => {
+    ;(Object.prototype as Record<string, unknown>).accidentalExtension = 1
+    return Promise.reject(new Error('callback failed'))
+  }
+}
+
+describe('a host callback that pollutes the realm and rejects leaves nothing unhandled behind', () => {
+  beforeEach(() => setRealmGuard(true))
+  afterEach(() => {
+    Reflect.deleteProperty(Object.prototype, 'accidentalExtension')
+    setRealmGuard(false)
+  })
+
+  it('refuses the answer of settled with the realm error and handles the rejection it will not wait for', async () => {
+    const outcome = await unhandledDuring(() => settled(pollutingAndRejecting()()))
+    expect(outcome.error).toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    expect(outcome.unhandled).toEqual([])
+  })
+
+  it('does the same for a markup policy', async () => {
+    const resolver = new MarkupResolver({ markup: { resolve: pollutingAndRejecting() } })
+    const outcome = await unhandledDuring(() => resolver.resolve({ ...context(), provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard' } as never))
+    expect(outcome.error).toBeInstanceOf(AiTokensException)
+    expect(outcome.unhandled).toEqual([])
+  })
+
+  it('does the same for a tokenizer', async () => {
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: { countTokens: pollutingAndRejecting() } })
+    collector.push({ choices: [{ delta: { content: 'one two three' } }] })
+    const outcome = await unhandledDuring(() => collector.finalize())
+    expect(outcome.error).toBeInstanceOf(AiTokensException)
+    expect(outcome.unhandled).toEqual([])
+  })
+
+  it('does the same for the scope resolver of a guard and for a function the interceptor meters', async () => {
+    const { BudgetGuard } = await import('./enforcement/budget.guard')
+    const built = makeService()
+    const guard = new BudgetGuard(built.service, { holdFor: () => undefined } as never, new Reflector(), { scopeResolver: pollutingAndRejecting() })
+    const executionContext = { getHandler: () => () => undefined, getClass: () => class {}, switchToHttp: () => ({ getRequest: () => ({}) }) } as unknown as ExecutionContext
+    const outcome = await unhandledDuring(() => guard.canActivate(executionContext))
+    expect(outcome.error).toBeInstanceOf(AiTokensException)
+    expect(outcome.unhandled).toEqual([])
+  })
+})

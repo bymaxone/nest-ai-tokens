@@ -6,6 +6,7 @@
 
 import { types } from 'node:util'
 import {
+  absorbRejection,
   appendTo,
   arrayIntrinsicsIntact,
   chainHasThen,
@@ -303,5 +304,89 @@ describe('the limits of the chain a decision path walks, and what it takes for a
     for (const list of lists) {
       expect(Object.getOwnPropertyDescriptor(list, 0)).toEqual({ value: 1, writable: true, enumerable: true, configurable: true })
     }
+  })
+})
+
+describe('marking the rejection of a promise nobody will wait for as handled', () => {
+  /** The rejections the process reports as unhandled while `run` and the turns after it go by. */
+  async function unhandledDuring(run: () => void): Promise<unknown[]> {
+    const seen: unknown[] = []
+    const onUnhandled = (reason: unknown): void => void seen.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      run()
+      await new Promise<void>((done) => setImmediate(done))
+      await new Promise<void>((done) => setImmediate(done))
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    return seen
+  }
+  const kept = Object.getOwnPropertyDescriptor(Promise.prototype, 'then') as { value: (...args: unknown[]) => unknown } & PropertyDescriptor
+  afterEach(() => {
+    Reflect.defineProperty(Promise.prototype, 'then', kept)
+    Reflect.deleteProperty(Object.prototype, 'accidentalExtension')
+  })
+
+  it('leaves no unhandled rejection of a native promise, and reads nothing from the polluted realm to do it', async () => {
+    const lookups: string[] = []
+    const failed = new Error('callback failed')
+    // The plant is lifted before the test awaits anything: a `then` that never calls back would end the wait for the turns that follow.
+    const seen = await unhandledDuring(() => {
+      Reflect.defineProperty(Promise.prototype, 'then', { ...kept, value: () => void lookups.push('then') })
+      ;(Object.prototype as Record<string, unknown>).accidentalExtension = 1
+      try {
+        absorbRejection(Promise.reject(failed))
+      } finally {
+        Reflect.defineProperty(Promise.prototype, 'then', kept)
+      }
+    })
+    expect(seen).toEqual([])
+    expect(lookups).toEqual([])
+  })
+
+  it('leaves no unhandled rejection of a native promise that names Promise as its own constructor, nor of a subclass of Promise', async () => {
+    class Sub<T> extends Promise<T> {}
+    const named = Promise.reject(new Error('callback failed'))
+    Reflect.defineProperty(named, 'constructor', { value: Promise })
+    const subclassed = Sub.reject(new Error('callback failed'))
+    expect(await unhandledDuring(() => { absorbRejection(named); absorbRejection(subclassed) })).toEqual([])
+  })
+
+  it('leaves no unhandled rejection of a native promise with a then of its own', async () => {
+    const own = Promise.reject(new Error('callback failed'))
+    Reflect.defineProperty(own, 'then', { value: kept.value })
+    expect(await unhandledDuring(() => absorbRejection(own))).toEqual([])
+  })
+
+  it('leaves a native promise whose then is an accessor to the throwaway wait, and still handles it', async () => {
+    const failed = Promise.reject(new Error('callback failed'))
+    expect(await unhandledDuring(() => {
+      Reflect.defineProperty(Promise.prototype, 'then', { get: () => kept.value as unknown, configurable: true })
+      try {
+        absorbRejection(failed)
+      } finally {
+        Reflect.defineProperty(Promise.prototype, 'then', kept)
+      }
+    })).toEqual([])
+  })
+
+  it('runs the then of a thenable only when the caller does not let thenables through', () => {
+    const ran: string[] = []
+    const lazy = { then: () => void ran.push('then') }
+    absorbRejection(lazy, true)
+    expect(ran).toEqual([])
+    absorbRejection(lazy, false)
+    expect(ran).toEqual([])
+    return flushed().then(() => expect(ran).toEqual(['then']))
+  })
+
+  it('touches no trap of a Proxy and ignores a value that is no promise', () => {
+    const trapped: string[] = []
+    const proxied = new Proxy(Promise.resolve(1), { get: (target, key) => { trapped.push(String(key)); return Reflect.get(target, key) as unknown } })
+    absorbRejection(proxied, false, types.isProxy)
+    absorbRejection(null, false, types.isProxy)
+    absorbRejection(7, false, types.isProxy)
+    expect(trapped).toEqual([])
   })
 })
