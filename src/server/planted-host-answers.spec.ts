@@ -98,7 +98,7 @@ describe('a member planted on Array.prototype by the store does not let an over-
     expect((await outcomeOf(built.service.consume(context(), { nanoUsd: 1n, tokens: 0, count: 0 }))).error).toBeInstanceOf(AiTokensException)
   })
 
-  it('reports the exhausted budget when Array.prototype.push does nothing', async () => {
+  it('refuses the call or reports the exhausted budget when Array.prototype.push does nothing', async () => {
     const built = await exhausted('getWindow', plantArray('push', function () { return 0 }))
     const { value, error } = await outcomeOf(built.service.status(TENANT, USER_SCOPE))
     // Either the call is refused, or it reports the one budget there is, at its limit: an empty answer would read as no budget.
