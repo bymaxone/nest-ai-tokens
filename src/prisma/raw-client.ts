@@ -11,10 +11,16 @@
 import { refusesPromise } from '../shared/utils/native-promise'
 import type { Sql } from './sql'
 
-/** What a driver call returned, unless a native `await` of it would run code of the host: then the call fails, as any driver failure does. */
-function pristine<T>(pending: PromiseLike<T>): PromiseLike<T> {
-  if (refusesPromise(pending)) throw new Error('a promise the driver returned reads a constructor or then of its own')
-  return pending
+/**
+ * What a driver call returned, unless a native `await` of it would run code of the host: then the call fails, as any driver failure does.
+ * A Prisma query is a lazy thenable that sends its query inside its own `then`, so a thenable is the driver's normal answer and is let
+ * through; a native promise is held to the strict check. What the thenable's `then` does is the driver's code, which the library cannot tell from a planted one.
+ */
+async function waited<T>(pending: PromiseLike<T>): Promise<T> {
+  if (refusesPromise(pending, true)) throw new Error('a promise the driver returned reads a constructor or then of its own')
+  const value = await pending
+  if (refusesPromise(value)) throw new Error('what the driver resolved with reads a then of its own')
+  return value
 }
 
 /** The two raw-query methods of a Prisma client, or of the client a transaction hands to its callback. */
@@ -46,7 +52,7 @@ export class SqlExecutor {
    * @returns The rows.
    */
   async query<T = unknown>(statement: Sql): Promise<T> {
-    return await pristine(this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters))
+    return await waited(this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters))
   }
 
   /**
@@ -56,7 +62,7 @@ export class SqlExecutor {
    * @returns The number of rows it affected.
    */
   async execute(statement: Sql): Promise<number> {
-    return await pristine(this.raw.$executeRawUnsafe(statement.text, ...statement.parameters))
+    return await waited(this.raw.$executeRawUnsafe(statement.text, ...statement.parameters))
   }
 }
 

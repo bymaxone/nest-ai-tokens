@@ -16,6 +16,7 @@ import type { AiOperation, NormalizedUsage, ProviderId, ProviderPreset, UsageNor
 import { normalizeAnthropicUsage, normalizeOpenAiChatUsage } from '../../shared'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
+import { settled } from '../utils/host-settled'
 import type { ITokenizer } from '../interfaces'
 
 /** Construction options for {@link StreamUsageCollector}. */
@@ -193,8 +194,8 @@ export class StreamUsageCollector {
   /** Build the tokenizer-counted fallback usage for an aborted stream. */
   private async fallbackUsage(provider: ProviderId, tokenizer: ITokenizer): Promise<NormalizedUsage> {
     this.usedFallback = true
-    const outputTokens = await tokenizer.countTokens({ text: this.outputText, model: this.opts.model, provider })
-    const inputTokens = this.promptTokens ?? (this.promptText !== undefined ? await tokenizer.countTokens({ text: this.promptText, model: this.opts.model, provider }) : 0)
+    const outputTokens = await settled(tokenizer.countTokens({ text: this.outputText, model: this.opts.model, provider }))
+    const inputTokens = this.promptTokens ?? (this.promptText !== undefined ? await settled(tokenizer.countTokens({ text: this.promptText, model: this.opts.model, provider })) : 0)
     return { ...zeroUsage(provider, this.opts.model, this.operation), inputTokens, outputTokens }
   }
 }

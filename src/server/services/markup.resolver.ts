@@ -17,6 +17,7 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { IMarkupPolicy } from '../interfaces'
 import { assertCleanRealm } from '../utils/prototype-guard'
+import { settled } from '../utils/host-settled'
 
 /** The per-call context an `IMarkupPolicy` receives (spec §7.2). */
 export type MarkupContext = Parameters<IMarkupPolicy['resolve']>[0]
@@ -74,7 +75,7 @@ export class MarkupResolver {
   /** Invoke a host policy, wrapping any failure as an invalid-config error. */
   private async invokePolicy(policy: IMarkupPolicy, context: MarkupContext): Promise<number> {
     try {
-      return await policy.resolve(context)
+      return await settled(policy.resolve(context))
     } catch {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {

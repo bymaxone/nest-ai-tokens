@@ -11,10 +11,104 @@
 
 const PROMISE_PROTOTYPE = Promise.prototype
 const INTRINSIC_PROMISE = Promise
-const INTRINSIC_SPECIES: unknown = (Object.getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species) as { get?: unknown } | undefined)?.get
 const getPrototypeOf = Object.getPrototypeOf
 const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
 const hasOwn = Object.hasOwn
+const defineProperty = Object.defineProperty
+const speciesAtLoad = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
+// The module loads before any host code, so the descriptor exists and its own getter is the one read.
+const INTRINSIC_SPECIES: unknown = (speciesAtLoad as { get?: unknown }).get
+const ARRAY_PROTOTYPE = Array.prototype
+const OBJECT_PROTOTYPE = Object.prototype
+const ARRAY_ITERATOR_PROTOTYPE = getPrototypeOf([][Symbol.iterator]()) as object
+/** What a decision path reads off an array after a host call, by the key it is read with; each is compared with what the module captured. */
+const ARRAY_READS: readonly { holder: object; key: string | symbol; value: unknown }[] = [
+  { holder: ARRAY_PROTOTYPE, key: 'map', value: ARRAY_PROTOTYPE.map },
+  { holder: ARRAY_PROTOTYPE, key: 'filter', value: ARRAY_PROTOTYPE.filter },
+  { holder: ARRAY_PROTOTYPE, key: 'push', value: ARRAY_PROTOTYPE.push },
+  { holder: ARRAY_PROTOTYPE, key: Symbol.iterator, value: ARRAY_PROTOTYPE[Symbol.iterator] },
+  { holder: ARRAY_ITERATOR_PROTOTYPE, key: 'next', value: (ARRAY_ITERATOR_PROTOTYPE as { next: unknown }).next },
+]
+/** The greatest number of prototypes walked for a `then`; a chain longer than any class hierarchy is refused. */
+const MAX_CHAIN = 64
+
+/**
+ * Whether the arrays and plain objects a decision path reads still answer as they did when the module loaded: the array methods and the
+ * iterator the paths use are the engine's, and neither `Array.prototype` nor `Object.prototype` holds a `then`. A host call that plants a
+ * one-shot replacement for one of them answers for the store when the library reads it, and leaves nothing behind for a check that runs
+ * after the read, so the check runs right after the call returns, before the library reads anything from what came back.
+ *
+ * @returns `false` when one of them is not what was captured.
+ */
+export function arrayIntrinsicsIntact(): boolean {
+  if (hasOwn(ARRAY_PROTOTYPE, 'then') || hasOwn(OBJECT_PROTOTYPE, 'then')) return false
+  return ARRAY_READS.every((read) => {
+    const descriptor = getOwnPropertyDescriptor(read.holder, read.key)
+    return descriptor !== undefined && hasOwn(descriptor, 'value') && descriptor.value === read.value
+  })
+}
+
+/**
+ * Whether `value`, or any prototype of it, has a `then` that is a function or an accessor: the resolution of a promise, or an `await`, with such a value reads it
+ * and calls it. Only own descriptors are read, so no getter of the host runs.
+ *
+ * @param value What a host call returned.
+ * @returns `true` when a `then` is found, or the chain is longer than {@link MAX_CHAIN}.
+ */
+export function chainHasThen(value: unknown): boolean {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
+  let holder: object | null = value
+  for (let depth = 0; holder !== null; depth += 1) {
+    if (depth > MAX_CHAIN) return true
+    const own = getOwnPropertyDescriptor(holder, 'then')
+    // A data `then` that is no function is read as a plain field; an accessor, or a function, is run or read by a resolution.
+    if (own !== undefined && (!hasOwn(own, 'value') || typeof own.value === 'function')) return true
+    holder = getPrototypeOf(holder) as object | null
+  }
+  return false
+}
+
+/**
+ * Appends to a list with no method of `Array.prototype`: a `push` planted for one call would otherwise drop the element.
+ *
+ * @param list The list to grow.
+ * @param element What to append.
+ */
+export function appendTo<T>(list: T[], element: T): void {
+  const descriptor = { __proto__: null, value: element, writable: true, enumerable: true, configurable: true }
+  defineProperty(list, list.length, descriptor)
+}
+
+/**
+ * A list of what `transform` made of each element, built with no method of `Array.prototype`.
+ *
+ * @param list The elements.
+ * @param transform Applied to each element and its index.
+ * @returns A new list.
+ */
+export function mapList<T, U>(list: readonly T[], transform: (element: T, index: number) => U): U[] {
+  const mapped: U[] = []
+  for (let index = 0; index < list.length; index += 1) appendTo(mapped, transform(list[index] as T, index))
+  return mapped
+}
+
+/**
+ * The elements of a list for which `keep` answers `true`, selected with no method of `Array.prototype`.
+ *
+ * @param list The elements.
+ * @param keep The test.
+ * @returns A new list.
+ */
+export function filterList<T>(list: readonly T[], keep: (element: T) => boolean): T[] {
+  const kept: T[] = []
+  let index = 0
+  while (index < list.length) {
+    const element = list[index] as T
+    if (keep(element)) appendTo(kept, element)
+    index += 1
+  }
+  return kept
+}
 
 /**
  * Whether `Promise.prototype` still holds the engine's `constructor` as a data property, and `then` as a data property that is a function.
@@ -37,39 +131,38 @@ export function promiseIntrinsicsIntact(): boolean {
  */
 export function promiseSpeciesIntact(): boolean {
   const species = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
-  return species !== undefined && species.get === INTRINSIC_SPECIES
+  return species !== undefined && hasOwn(species, 'get') && species.get === INTRINSIC_SPECIES
 }
 
 /**
- * Whether a native `await` of `value` runs no code of the host: it is not a promise of this realm, or it is one whose `constructor` and
- * `then` are the engine's, with no own `constructor` or `then` of its own that differs.
+ * Whether the caller must refuse `value` instead of awaiting or reading it. It refuses when the arrays or objects the library reads are not
+ * what it captured ({@link arrayIntrinsicsIntact}), when `value` is a native promise with a `constructor` or `then` of its own or a
+ * `Promise.prototype` that is not intact, and, unless `thenables` allows it, when `value` is anything else with a `then` on its chain (a
+ * subclass of `Promise`, a class thenable): its `then` runs code of the host, which calls the live `Promise.prototype.then`. Only a value
+ * with no `then` at all, or an exact native promise, passes. A refused promise is handed to a throwaway wait that swallows its outcome: it
+ * would otherwise reject with no handler, which ends a Node process, and the wait reads whatever the host planted, which decides nothing
+ * since the caller has refused.
  *
  * @param value What a host call returned.
- * @returns `false` when the `await` would read a `constructor` or call a `then` the host controls on a shared promise.
- */
-export function isPristinePromise(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return true
-  if (getPrototypeOf(value) !== PROMISE_PROTOTYPE) return true
-  if (hasOwn(value, 'then') || hasOwn(value, 'constructor')) return false
-  return promiseIntrinsicsIntact()
-}
-
-/**
- * Whether the caller must refuse `value` instead of awaiting it, and when it must, hands the promise to a throwaway wait that swallows its
- * outcome. A refused promise that rejects would otherwise reject with no handler, and an unhandled rejection ends a Node process; the
- * throwaway wait reads whatever the host planted, which decides nothing, since the caller has already refused.
- *
- * @param value What a host call returned.
+ * @param thenables `true` for a driver, whose lazy query builders are thenables of their own; they are run by the caller, not refused here.
  * @returns `true` when the caller must refuse it.
  */
-export function refusesPromise(value: unknown): boolean {
-  if (isPristinePromise(value)) return false
+export function refusesPromise(value: unknown, thenables = false): boolean {
+  if (!refused(value, thenables)) return false
   void (async (): Promise<void> => {
     try {
       await value
     } catch {
-      // The caller refused this promise; whatever it settles with is not read.
+      // The caller refused this value; whatever it settles with is not read.
     }
   })()
   return true
+}
+
+/** The decision of {@link refusesPromise}, without the throwaway wait. */
+function refused(value: unknown, thenables: boolean): boolean {
+  if (!arrayIntrinsicsIntact()) return true
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
+  if (getPrototypeOf(value) === PROMISE_PROTOTYPE) return hasOwn(value, 'then') || hasOwn(value, 'constructor') || !promiseIntrinsicsIntact()
+  return !thenables && chainHasThen(value)
 }

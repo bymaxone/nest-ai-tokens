@@ -28,6 +28,7 @@ import type {
   UsageRecord,
 } from '../../shared'
 import { ratedCost } from '../utils/rated-cost'
+import { settled } from '../utils/host-settled'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
@@ -523,7 +524,7 @@ export class MeteringService {
   async meter<T>(fn: () => Promise<T>, context: MeteringContext, extract: (result: T) => unknown, estimate?: HoldEstimate): Promise<MeterResult<T>> {
     const startedAt = this.now().getTime()
     if (estimate === undefined) {
-      const result = await fn()
+      const result = await settled(fn(), true)
       // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
       const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
       if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
@@ -532,7 +533,7 @@ export class MeteringService {
     const hold = await this.hold(context, estimate)
     let result: T
     try {
-      result = await fn()
+      result = await settled(fn(), true)
     } catch (error) {
       await this.release(hold, context, 'metered function threw')
       throw error

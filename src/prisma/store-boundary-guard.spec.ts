@@ -81,11 +81,17 @@ describe('guardStoreErrors', () => {
     expect(store.fakeThen()).toEqual({ then: 1 })
   })
 
-  /** A rejection, a thenable that is not a promise and a throw before the first await all become the typed error. */
-  it.each([['rejects'], ['thenable'], ['throwsNow']] as const)('types the failure of %s and keeps it on the cause', async (method) => {
+  /** A rejection and a throw before the first await become the typed error, with the driver's failure on its cause. */
+  it.each([['rejects'], ['throwsNow']] as const)('types the failure of %s and keeps it on the cause', async (method) => {
     const error = await typedFailure(() => guarded()[method]())
     expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
     expect((error.cause as Error).message).toBe('driver down')
+  })
+
+  /** A thenable that is no native promise is refused before its `then` runs, and the refusal is the typed error. */
+  it('types the refusal of a thenable that is not a native promise', async () => {
+    const error = await typedFailure(() => guarded().thenable())
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
   })
 
   /** A throw before the first await is thrown at the call, not turned into a rejected promise. */

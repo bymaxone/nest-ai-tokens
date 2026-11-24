@@ -164,6 +164,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   /** Set once the store has closed the client it created: later calls fail instead of opening a new connection. */
   #closed = false
 
+  /** The client this store created, kept as soon as it exists so that shutdown closes it even when the wait for the connection is refused. */
+  #owned: Redis | null = null
+
   /**
    * @param redis A live `ioredis` client, or a connection URL to lazily connect.
    * @param options Optional key prefix.
@@ -227,9 +230,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   async onModuleDestroy(): Promise<void> {
     this.#closed = true
     if (this.#connecting === null) return
-    const box = await this.connected(this.#connecting)
-    if (box === null || box.client.status === 'end') return
-    const { client } = box
+    await this.connected(this.#connecting)
+    const client = this.#owned
+    if (client === null || client.status === 'end') return
     await this.quitWithin(client)
   }
 
@@ -249,19 +252,22 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   /** Quit gracefully within the bound, falling back to `disconnect()` when the quit is late or fails; leaves no timer behind. */
   private async quitWithin(client: Redis): Promise<void> {
     let timer: NodeJS.Timeout | undefined
-    const late = new Promise<'late'>((resolve) => {
-      timer = setTimeout(() => {
-        resolve('late')
-      }, this.closeTimeoutMs)
+    const outcome = { quit: false }
+    await new Promise<void>((done) => {
+      timer = setTimeout(done, this.closeTimeoutMs)
+      // The wait for the quit is a native `await` in its own function, not a race: the timer above ends the wait whatever the quit does.
+      void (async (): Promise<void> => {
+        try {
+          await reply(client.quit())
+          outcome.quit = true
+        } catch {
+          // A failed quit is answered by the disconnect below.
+        }
+        done()
+      })()
     })
-    try {
-      const outcome = await Promise.race([client.quit(), late])
-      if (outcome === 'late' && client.status !== 'end') client.disconnect()
-    } catch {
-      if (client.status !== 'end') client.disconnect()
-    } finally {
-      clearTimeout(timer)
-    }
+    clearTimeout(timer)
+    if (!outcome.quit && client.status !== 'end') client.disconnect()
   }
 
   /** Prepend the configured key prefix. */
@@ -274,13 +280,20 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
     if (typeof this.#source !== 'string') return boxed(this.#source)
     if (this.#closed) throw new Error('counter store is closed')
     this.#connecting ??= this.connect(this.#source)
-    return await this.#connecting
+    const connecting = this.#connecting
+    // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
+    if (refusesPromise(connecting)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
+    return await connecting
   }
 
   /** Dynamically import `ioredis` and connect the given URL. */
   private async connect(url: string): Promise<ClientBox> {
     const { default: RedisClient } = await import('ioredis')
     // One retry per command and a command timeout, so a stopped Redis answers in the time of the timeout; the offline queue stays on, so a command issued while the connection is still opening waits for it.
-    return boxed(new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs }))
+    // A store closed while the client was loading opens none, so no connection outlives the shutdown.
+    if (this.#closed) throw new Error('counter store is closed')
+    const client = new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    this.#owned = client
+    return boxed(client)
   }
 }

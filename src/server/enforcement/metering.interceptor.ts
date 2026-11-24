@@ -24,6 +24,7 @@ import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { MeteringContext } from '../interfaces'
 import { fieldOf, fieldsOf } from '../utils/field-names'
+import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
 import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
@@ -115,7 +116,7 @@ export class MeteringInterceptor implements NestInterceptor {
       // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
     }
-    const resolved = await this.scopeResolver(executionContext)
+    const resolved = await settled(this.scopeResolver(executionContext))
     // Stryker disable next-line ConditionalExpression,EqualityOperator,ObjectLiteral: equivalent: this context feeds the no-guard record() path, and record() derives its preset from config.preset directly (passed above), never from context.preset — so adding, omitting, or flipping this spread has no observable effect
     return { ...resolved, feature: config.feature, ...(config.preset !== undefined ? { preset: config.preset } : {}) }
   }

@@ -18,6 +18,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { Budget, BudgetPolicy, BudgetStatus, MeteringScope } from '../../shared'
 import type { ResolvedBudgetsOptions } from '../config'
+import { filterList, appendTo, mapList } from '../../shared/utils/native-promise'
 import { AiTokensException } from '../errors'
 import { attachCause } from '../errors/attach-cause'
 import { absorbHostCallAndWait } from '../utils/absorb-host-call'
@@ -420,7 +421,7 @@ export class BudgetService {
     for (const budget of budgets) {
       const windowStart = windowStartFor(budget, this.now())
       const spend = (await this.store.getWindow(budget.id, windowStart)) ?? ZERO_SPEND
-      statuses.push(buildStatus(budget, windowStart, resetsAtFor(budget, windowStart), spend))
+      appendTo(statuses, buildStatus(budget, windowStart, resetsAtFor(budget, windowStart), spend))
     }
     return statuses
   }
@@ -749,7 +750,11 @@ export class BudgetService {
 
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
-    return (await this.store.findMatching(tenantId, lookupScope(tenantId, scope))).map((row) => budgetRow(row)).filter((budget) => budget.tenantId === tenantId)
+    const rows = await this.store.findMatching(tenantId, lookupScope(tenantId, scope))
+    return filterList(
+      mapList(rows, (row) => budgetRow(row)),
+      (budget) => budget.tenantId === tenantId,
+    )
   }
 
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
