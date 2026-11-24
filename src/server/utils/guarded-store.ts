@@ -25,8 +25,12 @@ const GUARDED = new WeakSet()
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   if (typeof value !== 'object' || value === null) return false
   if (types.isPromise(value)) return true
-  // A plain object is a thenable only by a `then` of its own: one on `Object.prototype` is the realm's and is checked there.
-  return typeof fieldOf(value, 'then') === 'function' && (!isPlain(value) || Object.hasOwn(value, 'then'))
+  if (!isPlain(value)) return typeof fieldOf(value, 'then') === 'function'
+  // A plain object is a thenable only by a data `then` of its own, found without a read: a getter or a Proxy trap would run before {@link accepted}
+  // refuses the row, and one that changes the row and answers nothing would get it through. One on `Object.prototype` is the realm's, checked there.
+  if (types.isProxy(value)) return false
+  const own = Object.getOwnPropertyDescriptor(value, 'then')
+  return own !== undefined && Object.hasOwn(own, 'value') && typeof own.value === 'function'
 }
 
 /**

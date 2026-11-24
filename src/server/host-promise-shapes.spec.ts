@@ -177,6 +177,13 @@ describe('a store answer at the edge of what is a promise', () => {
     expect(() => guardedStore({ find: make }).find()).toThrow(AiTokensException)
   })
 
+  /** A row whose accessor `then` changes the row and answers nothing is refused, not handed on: the getter must not be what lets it through. */
+  it('refuses a row whose accessor then changes the row and answers nothing', () => {
+    const row: Record<string, unknown> = { id: 'r1' }
+    Object.defineProperty(row, 'then', { configurable: true, enumerable: true, get: () => { delete row.then; row.id = 'forged'; return undefined } })
+    expect(() => guardedStore({ find: () => row }).find()).toThrow(AiTokensException)
+  })
+
   /** A value that reads as no thenable when the promise resolves and as one when the library copies it is refused before it is handed on. */
   it('refuses a resolved row whose then turns into a function between the wait and the copy', async () => {
     let reads = 0
