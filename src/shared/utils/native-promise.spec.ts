@@ -238,3 +238,70 @@ describe('the arrays and objects a decision path reads', () => {
     expect(results).toEqual([[2, 5, 8], [2, 4]])
   })
 })
+
+/** A chain of `length` objects, the first the one handed over, each the prototype of the one before, ending in a prototype of null. */
+function chainOf(length: number, head: object): object {
+  let chain: object = Object.create(null) as object
+  for (let made = 1; made < length - 1; made += 1) chain = Object.create(chain) as object
+  return length > 1 ? Object.create(chain, Object.getOwnPropertyDescriptors(head)) as object : Object.assign(chain, head)
+}
+
+/** What a wait on a value reads, flushed: the microtasks an `await` of a thenable schedules have run when this resolves. */
+async function flushed(): Promise<void> {
+  for (let turn = 0; turn < 5; turn += 1) await Promise.resolve()
+}
+
+describe('the limits of the chain a decision path walks, and what it takes for a value', () => {
+  it('walks sixty-five objects and refuses a chain of sixty-six', () => {
+    const answers = [chainHasThen(chainOf(65, {})), chainHasThen(chainOf(66, {})), chainHasThen(chainOf(1, {}))]
+    expect(answers).toEqual([false, true, false])
+  })
+
+  it('finds a then on a function, which is a value a resolution reads a then of', () => {
+    const callable = Object.assign(() => undefined, { then: () => undefined })
+    expect(chainHasThen(callable)).toBe(true)
+    expect(refusesPromise(callable)).toBe(true)
+    expect(refusesPromise(() => undefined)).toBe(false)
+  })
+
+  it('refuses a Proxy of a function without running a trap, and without waiting for it', async () => {
+    const asked: string[] = []
+    const trap = (name: string) => (): never => {
+      asked.push(name)
+      throw new Error(`the ${name} trap ran`)
+    }
+    const proxy = new Proxy(() => undefined, { get: trap('get'), getPrototypeOf: trap('prototype'), has: trap('has') })
+    expect(refusesPromise(proxy, false, types.isProxy)).toBe(true)
+    expect(refusesPromise(proxy, true, types.isProxy)).toBe(true)
+    await flushed()
+    expect(asked).toEqual([])
+  })
+
+  it('waits for a refused thenable of an ordinary chain, and for none that is longer than the chain walked', async () => {
+    const ran: string[] = []
+    const thenable = (name: string): { then: () => void } => ({ then: () => void ran.push(name) })
+    expect(refusesPromise(chainOf(65, thenable('short')))).toBe(true)
+    expect(refusesPromise(chainOf(66, thenable('long')))).toBe(true)
+    await flushed()
+    expect(ran).toEqual(['short'])
+  })
+
+  it('refuses a value that is not an object while an array method is replaced, with nothing to walk', () => {
+    const push = Object.getOwnPropertyDescriptor(Array.prototype, 'push')!
+    Object.defineProperty(Array.prototype, 'push', { ...push, value: () => 0 })
+    try {
+      expect([refusesPromise(undefined), refusesPromise(1), refusesPromise(null)]).toEqual([true, true, true])
+    } finally {
+      Object.defineProperty(Array.prototype, 'push', push)
+    }
+  })
+
+  it('appends, maps and filters into lists that are as ordinary as a literal', () => {
+    const appended: number[] = []
+    appendTo(appended, 1)
+    const lists = [appended, mapList([1], (n) => n), filterList([1], () => true)]
+    for (const list of lists) {
+      expect(Object.getOwnPropertyDescriptor(list, 0)).toEqual({ value: 1, writable: true, enumerable: true, configurable: true })
+    }
+  })
+})

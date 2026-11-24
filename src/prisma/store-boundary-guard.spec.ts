@@ -34,6 +34,9 @@ class Sample {
   thenable(): PromiseLike<never> {
     return { then: (onFulfilled, onRejected) => Promise.reject(new Error('driver down')).then(onFulfilled, onRejected) }
   }
+  lazy(): PromiseLike<string> {
+    return { then: (onFulfilled) => Promise.resolve('ran').then(onFulfilled) }
+  }
   async rejects(): Promise<never> {
     throw Object.assign(new Error('driver down'), { code: 'P2010' })
   }
@@ -92,6 +95,13 @@ describe('guardStoreErrors', () => {
   it('types the refusal of a thenable that is not a native promise', async () => {
     const error = await typedFailure(() => guarded().thenable())
     expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
+  })
+
+  /** The refusal is the boundary's, not the thenable's: a thenable that would have answered is refused, and the reason is on the cause. */
+  it('refuses a thenable that would have resolved, and says why on the cause', async () => {
+    const error = await typedFailure(() => guarded().lazy())
+    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
+    expect((error.cause as Error).message).toBe('a promise a store method returned reads a constructor or then of its own')
   })
 
   /** A throw before the first await is thrown at the call, not turned into a rejected promise. */

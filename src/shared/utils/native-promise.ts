@@ -69,7 +69,8 @@ function unchanged(read: ArrayRead): boolean {
  * @returns `true` when a `then` is found, the chain is longer than {@link MAX_CHAIN}, or a Proxy is on it.
  */
 export function chainHasThen(value: unknown, isProxy: ProxyProbe = noProxy): boolean {
-  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
+  // A null falls through: it is no holder, so the walk below ends before it reads anything.
+  if (typeof value !== 'object' && typeof value !== 'function') return false
   let holder: object | null = value
   for (let depth = 0; holder !== null; depth += 1) {
     if (depth > MAX_CHAIN || isProxy(holder)) return true

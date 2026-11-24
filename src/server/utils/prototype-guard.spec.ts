@@ -40,10 +40,17 @@ describe('the realm guard and the constructor and then of Promise.prototype', ()
 
   it('refuses while Promise[Symbol.species] persistently answers a constructor of the host', () => {
     Reflect.defineProperty(Promise, Symbol.species, { get: () => Object, configurable: true })
+    const original = Math.max
     try {
-      expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+      const alone = refusal(() => assertCleanRealm())
+      expect(alone?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+      expect(alone?.reason).toContain('0 name(s) on the Object.prototype')
+      expect(alone?.reason).toContain('1 built-in(s)')
+      ;(Math as unknown as Record<string, unknown>).max = (...values: number[]): number => original(...values)
+      expect(refusal(() => assertCleanRealm())?.reason).toContain('2 built-in(s)')
     } finally {
       Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+      ;(Math as unknown as Record<string, unknown>).max = original
     }
   })
 
