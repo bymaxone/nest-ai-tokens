@@ -31,8 +31,8 @@ describe('a promise a native await runs alone', () => {
   })
 
   /**
-   * A thenable that is no exact native promise (a subclass, a class with a `then`) is refused, since its `then` is code of the host that
-   * calls the live `Promise.prototype.then`; only a driver's own lazy query builders are let through, by `thenables`.
+   * A thenable that is no exact native promise (a subclass, a class with a `then`) is refused, since an `await` of it runs a `then` that is
+   * code of the host; a caller that passes `thenables` lets such a value through.
    */
   it('refuses a thenable and a subclass of Promise, and lets a driver thenable through when asked', () => {
     class Sub extends Promise<number> {}
