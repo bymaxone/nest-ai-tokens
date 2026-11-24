@@ -87,8 +87,8 @@ Known limits:
 - A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through on a driver call of the Prisma adapter and on the metered function of `meter()`, since that `then` is the driver's or the provider's code and cannot be told from a planted one.
 - A rejected native promise that a store gives both a `constructor` and a `then` of its own is refused, but its rejection can stay unhandled, since the wait that handles it reads that `constructor` and calls that `then`.
 - A one-shot `Promise[Symbol.species]` getter that hands back a genuine, already resolved native promise cannot be told from the engine's answer.
-- An accessor `then` on a row is read by code of the host, and what a read does is not controlled. A plain row with an accessor `then` is refused by the store guard, and its getter can still run once while it is refused. The PostgreSQL store boundary reads the `then` of a row once and hands the row on as it is when the getter answers no function. A class-instance row whose accessor `then` removes itself is read once through the store guard's own field read and is answered, not refused. A function-valued accessor `then` is treated as a thenable.
-- The `getPrototypeOf` trap of a Proxy row runs once, when the store guard decides whether the row is a plain object; the row is refused afterwards, and no other trap of it is asked first.
+- An accessor `then` on a row is read by code of the host, and what a read does is not controlled. A plain row with an accessor `then` is refused by the store guard. The PostgreSQL store boundary reads the `then` of a row once and hands the row on as it is when the getter answers no function. A class-instance row whose accessor `then` removes itself is read once through the store guard's own field read and is answered, not refused. A function-valued accessor `then` is treated as a thenable.
+- The `getPrototypeOf` trap of a Proxy row runs when the store guard decides whether the row is a plain object, before the row is refused.
 
 ### Supply chain
 
