@@ -84,7 +84,7 @@ Code that runs in the host process is trusted, as in Node's own threat model. A 
 
 Known limits:
 
-- A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through on the three calls the Prisma adapter makes to the driver (`$queryRawUnsafe`, `$executeRawUnsafe`, `$transaction`) and on the metered function of `meter()`, since that `then` is the driver's or the provider's code and cannot be told from a planted one. Every other store, host-callback and Redis path refuses a thenable.
+- A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through on a driver call of the Prisma adapter and on the metered function of `meter()`, since that `then` is the driver's or the provider's code and cannot be told from a planted one.
 - A rejected native promise that a store gives both a `constructor` and a `then` of its own is refused, but its rejection can stay unhandled, since the wait that handles it reads that `constructor` and calls that `then`.
 - A one-shot `Promise[Symbol.species]` getter that hands back a genuine, already resolved native promise cannot be told from the engine's answer.
 
