@@ -810,8 +810,7 @@ specific to security is below.
   met when it loaded, or the name of one of them is rebound to another object. `Promise`, its prototype and its binding are exempt, with one exception: tracing and
   monitoring agents (`dd-trace`, New Relic, `zone.js`) wrap them after load on healthy hosts, but `Promise.prototype.constructor` must stay the engine's `Promise`, the getter of `Promise[Symbol.species]` must stay the engine's, and
   neither it nor `Promise.prototype.then` may be an accessor, because a native `await` reads `constructor` and, when it is not `Promise`, calls `then`. The code that
-  settles a store result or serializes the writes of a call uses `await`, which does not look the global `Promise` up, and checks, between a host call and the `await`,
-  that the promise it got is the engine's own and that those two properties are intact; otherwise it refuses. `JSON` is exempt too, because a host's own tests spy on it: the keys, the statement parameters and the hashes are made with the `JSON.stringify` the library met when it loaded. The refusal is `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it says how many names of `Object.prototype`
+  settles a store result or serializes the writes of a call uses `await`, which does not look the global `Promise` up. `JSON` is exempt too, because a host's own tests spy on it: the keys, the statement parameters and the hashes are made with the `JSON.stringify` the library met when it loaded. The refusal is `AI_TOKENS_INVALID_CONFIG`, nothing is written, and it says how many names of `Object.prototype`
   differ and how many built-ins do, with a count, never a name or a value. A host that extends `Object.prototype` (a
   `should`-style assertion library, a polyfill) cannot run the library, and neither can a process that patches one of those built-ins in place
   (`jest.spyOn(Date, 'now')` in a host's own tests): restore the built-in before the call. The global `Date`
