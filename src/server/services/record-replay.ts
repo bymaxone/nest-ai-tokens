@@ -99,10 +99,11 @@ export async function rowAfterFailure(find: () => Promise<UsageRecord | null>): 
   // A native wait, never a chain: the species a chain reads is live, and a host that plants it would answer for the ledger. The realm is
   // not re-checked here, since a refusal from the lookup is one of the failures this folds.
   const pending = find()
+  // Stryker disable BlockStatement: equivalent: an emptied handler falls off the end of the function, which also answers undefined; the range spans the try block too, whose emptied form a hand mutant showed the service specs kill
   try {
     return await pending
-    // Stryker disable next-line BlockStatement: equivalent: an emptied handler falls off the end of the function, which also answers undefined
   } catch {
     return undefined
   }
+  // Stryker restore BlockStatement
 }
