@@ -80,7 +80,7 @@ The ledger stores token counts, model identifiers, cost, and scope IDs. It **nev
 
 ### Threat model: same-process code
 
-Code that runs in the host process is trusted, as in Node's own threat model. A module that swaps a builtin or a prototype (`Promise.prototype`, `Array.prototype`, `Object.prototype`) or a property of the host's own objects while a call is in progress can change what any library in that process does, and nothing in this library can stop it. The guards that compare those intrinsics, refuse a promise that reads a `constructor` or a `then` of its own, or refuse a Proxy answer are best-effort hardening against accidents and against a hostile store or callback that answers once; they are not a security boundary against code that already runs in the process.
+Code that runs in the host process is trusted, as in Node's own threat model. A module that swaps a builtin or a prototype (`Promise.prototype`, `Array.prototype`, `Object.prototype`) or a property of the host's own objects while a call is in progress can change what any library in that process does, and nothing in this library can stop it. The promise and intrinsics guards are best-effort hardening against accidents and against a hostile store or callback that answers once; they are not a security boundary against code that already runs in the process.
 
 Known limits:
 
