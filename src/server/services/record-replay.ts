@@ -9,7 +9,6 @@
 import type { AiTokensErrorResponse, NewUsageRecord, NormalizedUsage, UsageRecord, UsageStatus } from '../../shared'
 import { AiTokensException } from '../errors'
 import { suppliedDetails } from '../utils/detail-text'
-import { settledOr } from '../utils/host-settled'
 import type { ReplayBasis } from '../utils/replay-match'
 import { sameRequest } from '../utils/replay-match'
 import type { ResolvedMarkup } from './markup.resolver'
@@ -97,6 +96,12 @@ export function heldReplay(stored: UsageRecord, extraUnits: Record<string, numbe
  * this path, and the caller goes on to raise the failure that brought it here.
  */
 export async function rowAfterFailure(find: () => Promise<UsageRecord | null>): Promise<UsageRecord | null | undefined> {
-  // A native wait, never a chain: the species a chain reads is live, and a host that plants it would answer for the ledger.
-  return settledOr(find(), (): undefined => undefined)
+  // A native wait, never a chain: the species a chain reads is live, and a host that plants it would answer for the ledger. The realm is
+  // not re-checked here, since a refusal from the lookup is one of the failures this folds.
+  const pending = find()
+  try {
+    return await pending
+  } catch {
+    return undefined
+  }
 }

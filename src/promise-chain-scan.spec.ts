@@ -3,7 +3,7 @@
  * `Promise[Symbol.species]` names, read on every call, and `Promise.resolve`, `Promise.all` and the other combinators read `Promise.resolve`
  * live, so a host that plants either decides what the chain resolves to. The scan lists every such use in the shipped source; each one that
  * stays is named with the reason its result decides nothing. A new use fails here until it is waited for with a native `await` (through
- * `settled` or `settledOr` for a promise a host returned) or is named with its reason.
+ * `settled` for a promise a host returned) or is named with its reason.
  * @layer server
  */
 

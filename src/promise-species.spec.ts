@@ -116,6 +116,19 @@ describe('a promise on a decision path is not chained', () => {
     expect(await whileSpeciesPlanted(null, () => rowAfterFailure(() => Promise.resolve(row)))).toBe(row)
   })
 
+  it('the lookup after a failed append still folds a realm refusal to undefined', async () => {
+    const store = new InMemoryLedgerStore(() => T0)
+    setRealmGuard(true)
+    Object.defineProperty(Object.prototype, 'plantedBeforeLookup', { configurable: true, value: () => undefined })
+    try {
+      // The ledger service refuses a call beside a polluted realm; that refusal is what the lookup folds, so the caller rethrows its own failure.
+      expect(await rowAfterFailure(() => new LedgerService(store).findByIdempotencyKey('t1', 'k1'))).toBeUndefined()
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'plantedBeforeLookup')
+      setRealmGuard(false)
+    }
+  })
+
   it('the budget a stale reference names is the one the store returned', async () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     let now = new Date('2026-06-10T12:00:00.000Z')

@@ -20,23 +20,3 @@ export async function settled<T>(pending: PromiseLike<T>): Promise<T> {
   assertCleanRealm()
   return value
 }
-
-/**
- * Waits for a host promise and answers a rejection with `onError`, whose result stands in for the value.
- *
- * @param pending What the host returned.
- * @param onError Maps a rejection to the answer; it may throw instead.
- * @returns What the promise resolved with, or what `onError` answered.
- * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the realm is polluted before or after the wait.
- */
-export async function settledOr<T, R>(pending: PromiseLike<T>, onError: (error: unknown) => R): Promise<T | R> {
-  assertCleanRealm()
-  let value: T
-  try {
-    value = await pending
-  } catch (error) {
-    return onError(error)
-  }
-  assertCleanRealm()
-  return value
-}
