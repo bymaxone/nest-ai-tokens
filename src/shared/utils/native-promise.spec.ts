@@ -162,6 +162,16 @@ describe('the arrays and objects a decision path reads', () => {
     expect(intact).toBe(false)
   })
 
+  /** The check reads no live global either: a `Reflect.get` replaced with the map answers an index with a read that is unchanged. */
+  it('refuses a replaced method even when Reflect.get answers an unchanged read', () => {
+    const unchanged = { holder: Object.prototype, key: 'hasOwnProperty', value: Object.prototype.hasOwnProperty }
+    const answer = (_target: object, key: PropertyKey): unknown => (typeof key === 'number' ? unchanged : undefined)
+    const intact = whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, () =>
+      whileReplaced(Reflect, 'get', { value: answer, configurable: true, writable: true }, arrayIntrinsicsIntact),
+    )
+    expect(intact).toBe(false)
+  })
+
   /** A Proxy answers `getOwnPropertyDescriptor` and `get` with the host's code: it is refused before either is asked. */
   it('refuses a Proxy, or one on the prototype chain, without running a trap', () => {
     const asked: string[] = []

@@ -14,6 +14,7 @@ const INTRINSIC_PROMISE = Promise
 const getPrototypeOf = Object.getPrototypeOf
 const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
 const hasOwn = Object.hasOwn
+const reflectGet = Reflect.get
 const defineProperty = Object.defineProperty
 const speciesAtLoad = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
 // The module loads before any host code, so the descriptor exists and its own getter is the one read.
@@ -45,10 +46,10 @@ const MAX_CHAIN = 64
  */
 export function arrayIntrinsicsIntact(): boolean {
   if (hasOwn(ARRAY_PROTOTYPE, 'then') || hasOwn(OBJECT_PROTOTYPE, 'then')) return false
-  // A loop, not `ARRAY_READS.every`: that method is itself read live from `Array.prototype`.
+  // A loop, not `ARRAY_READS.every`, and a captured `Reflect.get`: both are otherwise read live.
   let index = 0
   while (index < ARRAY_READS.length) {
-    const read: (typeof ARRAY_READS)[number] = Reflect.get(ARRAY_READS, index)
+    const read: (typeof ARRAY_READS)[number] = reflectGet(ARRAY_READS, index)
     const descriptor = getOwnPropertyDescriptor(read.holder, read.key)
     if (descriptor === undefined || !hasOwn(descriptor, 'value') || descriptor.value !== read.value) return false
     index += 1
