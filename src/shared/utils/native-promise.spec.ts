@@ -184,15 +184,16 @@ describe('the arrays and objects a decision path reads', () => {
   /** A Proxy answers `getOwnPropertyDescriptor` and `get` with the host's code: it is refused before either is asked. */
   it('refuses a Proxy, or one on the prototype chain, without running a trap', () => {
     const asked: string[] = []
-    const trap = (name: string) => (): undefined => {
+    // A trap records that it ran and throws, so its type is `never` and fits every trap signature without an assertion.
+    const trap = (name: string) => (): never => {
       asked.push(name)
-      return undefined
+      throw new Error(`the ${name} trap ran`)
     }
     const proxy = new Proxy({}, {
       getOwnPropertyDescriptor: trap('descriptor'),
       get: trap('get'),
-      getPrototypeOf: trap('prototype') as unknown as () => null,
-      has: trap('has') as unknown as () => boolean,
+      getPrototypeOf: trap('prototype'),
+      has: trap('has'),
     })
     const answers = [
       refusesPromise(proxy, false, types.isProxy),
