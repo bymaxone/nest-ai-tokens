@@ -53,9 +53,10 @@ interface Built {
 }
 
 /** Build a metering service over in-memory stores with a wallet and budgets for two tenants. */
-async function build(): Promise<Built> {
+async function build(withoutMarkerCalls = false): Promise<Built> {
   const now = (): Date => new Date()
   const ledgerStore = new InMemoryLedgerStore()
+  if (withoutMarkerCalls) for (const name of ['findEffectsOwed', 'findEffectsOwedFor', 'clearEffectsOwed']) Object.defineProperty(ledgerStore, name, { value: undefined })
   const pricingStore = new InMemoryPricingStore()
   const options = {
     ratingMode: 'rate-table', markup: 1, ledger: { hashChain: false },
@@ -129,6 +130,29 @@ describe('the effects-owed marker and the owed-effects sweep', () => {
     expect(await sweep(built)).toBe(0)
     expect(await sweep(built)).toBe(0)
     expect(await stateOf(built, 'tenant-1')).toEqual(await stateOf(control, 'tenant-1'))
+  })
+
+  /**
+   * The documented limit of a store without the marker calls: a capture whose wallet leg fails after the transition
+   * leaves the record posted at its actual cost while the wallet keeps the hold's reserved debit, a repeated capture
+   * returns the posted record without moving the leg, and nothing is owed that a sweep could find.
+   */
+  it('leaves the capture unapplied on a store without the marker calls, and a repeated capture does not apply it', async () => {
+    const control = await build()
+    const { hold: heldControl, caller } = await holdIn(control)
+    await control.service.capture(heldControl, caller, usage())
+
+    const built = await build(true)
+    const { hold } = await holdIn(built)
+    const reservedWallet = (await stateOf(built, 'tenant-1')).wallet
+    jest.spyOn(built.wallets, 'settleAdjustment').mockRejectedValueOnce(new Error('wallet down'))
+    await expect(built.service.capture(hold, caller, usage())).rejects.toThrow('wallet down')
+
+    const posted = await built.service.capture(hold, caller, usage())
+    expect(posted.status).toBe('posted')
+    expect((await stateOf(built, 'tenant-1')).wallet).toBe(reservedWallet)
+    expect(reservedWallet).toBeLessThan((await stateOf(control, 'tenant-1')).wallet)
+    expect(await sweep(built)).toBe(0)
   })
 
   /** A release whose effects fail after the transition is finished by the sweep. */

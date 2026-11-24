@@ -959,6 +959,8 @@ sweeping at once hold no lock between them. The sweep re-emits the event a write
 idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
 once at boot.
 
+**Known limit.** Without those calls, a leg that fails after the ledger commit is not finished by anyone: the record is posted at its actual cost while the wallet keeps the hold's reserved debit, and a second capture returns the posted record without running the leg again. Use a store that keeps the marker (the Prisma store does) when a failed capture leg must be repaired.
+
 The budget has a second sweep on the same tick. A keyed budget movement holds one reference per attempt, and an attempt that
 dies between taking the movement and writing its ledger row leaves its reference, so the window counts a call nobody
 owns. The sweep lists the references an attempt left that are older than the grace, looks at the ledger row under each key,
