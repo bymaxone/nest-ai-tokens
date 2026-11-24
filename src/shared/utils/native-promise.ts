@@ -3,7 +3,7 @@
  * its `constructor`, and when that is not `Promise` it wraps the promise and calls its `then`; a host that plants a one-shot `constructor`
  * getter and `then` on `Promise.prototype` while its call runs, and restores them when they are read, answers for the store with no trace
  * left for a later check of the realm. This check runs synchronously after the host call returns and before the `await`, so nothing of the
- * host runs between the two. It reads only what it captured when the module loaded and writes to no promise. A value whose prototype is not
+ * host runs between the two. It calls only functions it captured when the module loaded, and writes to no promise; what it reads live is the value, the prototypes on its chain and `Promise` itself, always as own descriptors, so no getter of the host runs before it decides. A value whose prototype is not
  * `Promise.prototype` (a query builder, a subclass of `Promise`) is a thenable the host owns: its own answer is what the host gives, and
  * no shared intrinsic decides it.
  * @layer shared
@@ -151,7 +151,7 @@ export function promiseSpeciesIntact(): boolean {
  * Whether the caller must refuse `value` instead of awaiting or reading it. It refuses when the arrays or objects the library reads are not
  * what it captured ({@link arrayIntrinsicsIntact}), when `value` is a native promise with a `constructor` or `then` of its own or a
  * `Promise.prototype` that is not intact, and, unless `thenables` allows it, when `value` is anything else with a `then` on its chain (a
- * subclass of `Promise`, a class thenable): its `then` runs code of the host, which calls the live `Promise.prototype.then`. Only a value
+ * subclass of `Promise`, a class thenable): an `await` of it runs a `then` that is code of the host. Only a value
  * with no `then` at all, or an exact native promise, passes. A refused promise is handed to a throwaway wait that swallows its outcome: it
  * would otherwise reject with no handler, which ends a Node process, and the wait reads whatever the host planted, which decides nothing
  * since the caller has refused. A Proxy, or a value with one on its chain, is refused and not waited for: the wait would run its traps.

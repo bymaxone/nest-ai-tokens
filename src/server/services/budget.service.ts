@@ -751,6 +751,9 @@ export class BudgetService {
   /** The tenant's budgets that apply to `scope`; a store that returns another tenant's budget is not believed. */
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
     const rows = await this.store.findMatching(tenantId, lookupScope(tenantId, scope))
+    // An answer that is no array is not read as an empty list: no budget row means unlimited, so the call fails closed instead.
+    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
+    if (!Array.isArray(rows)) throw invalid('the store answered the budgets of a tenant with something that is no list')
     return filterList(
       mapList(rows, (row) => budgetRow(row)),
       (budget) => budget.tenantId === tenantId,

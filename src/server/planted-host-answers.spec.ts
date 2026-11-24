@@ -111,6 +111,18 @@ describe('a member planted on Array.prototype by the store does not let an over-
   })
 })
 
+describe('a store answer that is no list never reads as no budget', () => {
+  /** No budget row means unlimited, so an answer that is no array must refuse the call and not enforce nothing. */
+  it.each([[{}], [{ length: 0 }], ['']])('refuses consume, status and list when findMatching answers %j', async (answer) => {
+    const built = makeService()
+    await built.service.upsertBudget(budgetInput({ limitNanoUsd: 100n, window: 'month' }))
+    ;(built.store as unknown as Record<string, unknown>).findMatching = () => Promise.resolve(answer)
+    await expect(built.service.consume(context(), { nanoUsd: 1n, tokens: 0, count: 0 })).rejects.toBeInstanceOf(AiTokensException)
+    await expect(built.service.status(TENANT, USER_SCOPE)).rejects.toBeInstanceOf(AiTokensException)
+    await expect(built.service.list(TENANT)).rejects.toBeInstanceOf(AiTokensException)
+  })
+})
+
 /** A native promise of `value` whose `then` is its own: the host's driver answers through it when the library waits. */
 function forging<T>(value: T, forged: unknown): Promise<T> {
   const promise = Promise.resolve(value)

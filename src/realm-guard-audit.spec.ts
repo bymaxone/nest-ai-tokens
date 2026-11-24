@@ -301,8 +301,9 @@ describe('the realm guard in the step of the arithmetic', () => {
 
 describe('the realm guard and Promise', () => {
   /**
-   * Tracing and monitoring agents wrap the global `Promise` and its methods after load on healthy hosts: that is not a polluted realm. The
-   * wrapped `Promise.resolve` here hands the store a subclass instance, which is no exact native promise, so the call fails closed.
+   * Wrapping the global `Promise` and its methods after load, as a tracing or monitoring agent does, is not counted as a polluted realm. The
+   * wrapped `Promise.resolve` here hands the store a subclass instance, which is no exact native promise, so the store call is refused with
+   * `AI_TOKENS_INVALID_CONFIG`.
    */
   it('does not count a Promise wrapped as an agent wraps it, and refuses the subclass promise it hands a store', async () => {
     const { calls } = await rig()
