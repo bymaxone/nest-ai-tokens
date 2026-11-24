@@ -282,7 +282,7 @@ describe('a host callback that pollutes the realm and rejects leaves nothing unh
     expect(outcome.unhandled).toEqual([])
   })
 
-  it('does the same for the scope resolver of a guard and for a function the interceptor meters', async () => {
+  it('does the same for the scope resolver of a guard', async () => {
     const { BudgetGuard } = await import('./enforcement/budget.guard')
     const built = makeService()
     const guard = new BudgetGuard(built.service, { holdFor: () => undefined } as never, new Reflector(), { scopeResolver: pollutingAndRejecting() })
