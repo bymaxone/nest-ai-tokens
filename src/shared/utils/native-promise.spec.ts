@@ -172,6 +172,17 @@ describe('the arrays and objects a decision path reads', () => {
     expect(intact).toBe(false)
   })
 
+  /** The check runs on what the module captured: `Object.getOwnPropertyDescriptor` and `Object.hasOwn` replaced after load do not answer for it. */
+  it('refuses a replaced method even when Object.getOwnPropertyDescriptor and Object.hasOwn are replaced to answer intact', () => {
+    const unchanged = (_holder: object, key: PropertyKey): unknown => ({ value: key === 'map' ? (kept.map.value as unknown) : undefined })
+    const intact = whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, () =>
+      whileReplaced(Object, 'getOwnPropertyDescriptor', { value: unchanged, configurable: true, writable: true }, () =>
+        whileReplaced(Object, 'hasOwn', { value: () => true, configurable: true, writable: true }, arrayIntrinsicsIntact),
+      ),
+    )
+    expect(intact).toBe(false)
+  })
+
   /** A Proxy answers `getOwnPropertyDescriptor` and `get` with the host's code: it is refused before either is asked. */
   it('refuses a Proxy, or one on the prototype chain, without running a trap', () => {
     const asked: string[] = []
