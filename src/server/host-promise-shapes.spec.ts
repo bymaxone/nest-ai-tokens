@@ -184,6 +184,14 @@ describe('a store answer at the edge of what is a promise', () => {
     expect(() => guardedStore({ find: () => row }).find()).toThrow(AiTokensException)
   })
 
+  /** A Proxy row is refused without a question put to its descriptor trap: that trap would be code of the host run before the refusal. */
+  it('refuses a Proxy row without running its descriptor trap', () => {
+    let asked = 0
+    const row = new Proxy({ id: 'r1' }, { getOwnPropertyDescriptor(target, key) { asked += 1; return Reflect.getOwnPropertyDescriptor(target, key) } })
+    expect(() => guardedStore({ find: () => row }).find()).toThrow(AiTokensException)
+    expect(asked).toBe(0)
+  })
+
   /** A value that reads as no thenable when the promise resolves and as one when the library copies it is refused before it is handed on. */
   it('refuses a resolved row whose then turns into a function between the wait and the copy', async () => {
     let reads = 0
