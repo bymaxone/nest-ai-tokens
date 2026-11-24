@@ -48,8 +48,8 @@ const BUDGETS = [
   // The prisma bundle's 16_042 holds the boundary that types every failure of the store, and the stale-reference, prune and given-back statements, the budget-row statement
   // builders, the cross-wallet debit listing, the given-back pruning that spares tenants and the shape test of the driver code
   // that a store error repeats. 16_786 adds the adapter kinds that mean the connection, not the call, failed, and the brand test that reads a date of another realm as a date.
-  // 62_222 (2026-11-24) adds the native-await hop that every store promise on a decision path goes through, with its two realm checks, so that no chain asks the live species.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 62_222 },
+  // 62_095 (2026-11-24) adds the native-await hop that every store promise on a decision path goes through, with its two realm checks, so that no chain asks the live species.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 62_095 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 16_786 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
