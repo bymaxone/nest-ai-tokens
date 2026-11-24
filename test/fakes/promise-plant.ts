@@ -1,6 +1,7 @@
 /**
  * @fileoverview A plant on `Promise.prototype` that a host driver makes while its call runs and that undoes itself when it is first read: the
  * `constructor` getter answers `Object` once, and the `then` answers `forged` once, so a later check of the realm finds nothing.
+ * @layer test
  */
 
 const prototype = Object.getPrototypeOf((async (): Promise<void> => undefined)()) as {
