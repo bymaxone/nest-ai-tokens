@@ -2,9 +2,11 @@
  * @fileoverview The promises a host returns to the library are answered as the host gives them: a subclass of `Promise`, a thenable that
  * is a plain object or an instance of a class (a query builder), and a native promise of another realm resolve with what they hold,
  * wherever the library waits for a host: a store, a markup policy, a tokenizer, an fx function and the async options factory.
+ * The shapes at the edge of that (a promise with no prototype, a row whose `then` a Proxy or an accessor answers) are pinned beside them.
  * @layer server
  */
 
+import { types } from 'node:util'
 import { runInNewContext } from 'node:vm'
 import { Test } from '@nestjs/testing'
 import { AiTokensException } from './errors'
@@ -104,5 +106,49 @@ describe('a host whose promise is no longer what the engine made', () => {
     const planted = Promise.resolve(1)
     void Object.defineProperty(planted, 'then', { value: () => undefined })
     await expect(settled(planted)).rejects.toBeInstanceOf(AiTokensException)
+  })
+})
+
+describe('a store answer at the edge of what is a promise', () => {
+  /** A native promise whose prototype was taken away is still a promise: it is waited for, so the caller gets a promise back, not the object itself. */
+  it('waits for a native promise that has no prototype', () => {
+    const promise = Promise.resolve({ id: 'r1' })
+    Object.setPrototypeOf(promise, null)
+    expect(types.isPromise(guardedStore({ find: () => promise }).find())).toBe(true)
+  })
+
+  /** A row whose `then` is answered by a Proxy trap, or is an accessor, is refused as the call is made: nothing is returned to wait for. */
+  it.each([
+    ['a Proxy that answers a then', (): unknown => new Proxy({ id: 'r' }, { get: (target, key) => (key === 'then' ? () => 1 : (target as never)[key]) })],
+    ['an accessor named then', (): unknown => ({ id: 'r', get then() { return undefined } })],
+  ] as const)('refuses a row that is %s at once', (_name, make) => {
+    expect(() => guardedStore({ find: make }).find()).toThrow(AiTokensException)
+  })
+
+  /** A value that reads as no thenable when the promise resolves and as one when the library copies it is refused before it is handed on. */
+  it('refuses a resolved row whose then turns into a function between the wait and the copy', async () => {
+    let reads = 0
+    const row = { id: 'r', get then(): unknown { reads += 1; return reads === 1 ? undefined : (): string => 'forged' } }
+    await expect(guardedStore({ find: () => Promise.resolve(row) }).find()).rejects.toBeInstanceOf(AiTokensException)
+  })
+})
+
+describe('settled on a polluted realm', () => {
+  /** The thenable is the host's own and its `then` is code of the host: refusing the realm does not run it. */
+  it('does not run the then of a thenable it refuses', async () => {
+    const then = jest.fn()
+    class Builder {
+      then(): void {
+        then()
+      }
+    }
+    Object.defineProperty(Object.prototype, 'plantedKey', { value: 1, configurable: true, writable: true })
+    try {
+      await expect(settled(new Builder())).rejects.toBeInstanceOf(AiTokensException)
+      await new Promise((resolve) => setImmediate(resolve))
+    } finally {
+      delete (Object.prototype as { plantedKey?: unknown }).plantedKey
+    }
+    expect(then).not.toHaveBeenCalled()
   })
 })

@@ -26,6 +26,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  */
 async function crossing(result: PromiseLike<unknown>, cross: (error: unknown) => never): Promise<unknown> {
   try {
+    // Stryker disable next-line StringLiteral: the message is an internal diagnostic on the cause of the typed error; tests check the typed error
     if (refusesPromise(result, true, types.isProxy)) throw new Error('a promise a store method returned reads a constructor or then of its own')
     return await result
   } catch (error) {

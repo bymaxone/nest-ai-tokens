@@ -1,10 +1,11 @@
 /**
  * @fileoverview Pins that `MeteringService.meter` lets a provider SDK's promise through: the metered function may return a subclass of
- * `Promise` with a `then` of its own, on the path with a hold and on the path without an estimate.
+ * `Promise` with a `then` of its own, on the path with a hold and on the path without an estimate, and refuses one that resolves with a Proxy.
  * @layer server
  */
 
 import type { NormalizedUsage } from '../../shared'
+import { AiTokensException } from '../errors'
 import { InMemoryLedgerStore } from '../../../test/fakes/in-memory-ledger-store'
 import { InMemoryPricingStore } from '../../../test/fakes/in-memory-pricing-store'
 import { InMemoryWalletStore } from '../../../test/fakes/in-memory-wallet-store'
@@ -54,5 +55,13 @@ describe('MeteringService.meter with a provider SDK promise', () => {
     const { result, usage } = await service.meter(() => SdkPromise.resolve({ usage: USAGE }), CONTEXT, (r) => r.usage, estimate)
     expect(result.usage.provider).toBe('openai')
     expect(usage.status).toBe('posted')
+  })
+})
+
+describe('MeteringService.meter with a result that is a Proxy', () => {
+  /** What `fn` resolves with is resolved again into the promise `meter` returns, which would read a `then` through a trap of the host: it is refused, on both paths. */
+  it.each([['with a hold', ESTIMATE], ['without an estimate', undefined]] as const)('refuses a function that resolves with a Proxy, %s', async (_name, estimate) => {
+    const service = await build()
+    await expect(service.meter(() => Promise.resolve(new Proxy({ usage: USAGE }, {})), CONTEXT, (r) => r.usage, estimate)).rejects.toBeInstanceOf(AiTokensException)
   })
 })
