@@ -19,6 +19,30 @@ import type { IBudgetCounterStore } from '../server'
 // By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
 // class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { refusesPromise } from '../server/utils/native-promise'
+
+/**
+ * The client, in an object with no prototype. A client reached through a promise is read for `then` by the engine, on its class chain,
+ * which a host can plant; an object with no prototype has none to read, and the client is taken from it after the wait.
+ */
+interface ClientBox {
+  readonly client: Redis
+}
+
+/** Put `client` in a {@link ClientBox}. */
+function boxed(client: Redis): ClientBox {
+  return Object.assign(Object.create(null) as object, { client })
+}
+
+/**
+ * Wait for what a command of the client returned with a native `await`, once the promise is known to run no `constructor` or `then` of the
+ * host: a one-shot plant of either, while the command ran, would make the wait answer for Redis.
+ */
+async function reply<T>(pending: Promise<T>): Promise<T> {
+  // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
+  if (refusesPromise(pending)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
+  return await pending
+}
 
 /** Construction options for {@link RedisBudgetCounterStore}. */
 export interface RedisBudgetCounterStoreOptions {
@@ -135,7 +159,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   readonly #source: Redis | string
 
   /** The in-flight lazy connection, which resolves to the same credentialed client. */
-  #connecting: Promise<Redis> | null = null
+  #connecting: Promise<ClientBox> | null = null
 
   /** Set once the store has closed the client it created: later calls fail instead of opening a new connection. */
   #closed = false
@@ -165,14 +189,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @throws {CounterValueOutOfRangeError} when an operand or the resulting counter exceeds the safe-integer range.
    */
   async incrIfBelow(key: string, amount: bigint, limit: bigint, ttlSeconds: number): Promise<boolean> {
-    const client = await this.resolve()
-    const result = await client.eval(
-      INCR_IF_BELOW_LUA,
-      1,
-      this.prefixed(key),
-      amount.toString(),
-      limit.toString(),
-      Math.ceil(ttlSeconds * 1_000).toString(),
+    const { client } = await this.resolve()
+    const result = await reply(
+      client.eval(INCR_IF_BELOW_LUA, 1, this.prefixed(key), amount.toString(), limit.toString(), Math.ceil(ttlSeconds * 1_000).toString()),
     )
     if (result === -1) throw new CounterValueOutOfRangeError()
     return result === 1
@@ -185,8 +204,8 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param amount The amount to subtract.
    */
   async decr(key: string, amount: bigint): Promise<void> {
-    const client = await this.resolve()
-    await client.eval(DECR_FLOOR_LUA, 1, this.prefixed(key), amount.toString())
+    const { client } = await this.resolve()
+    await reply(client.eval(DECR_FLOOR_LUA, 1, this.prefixed(key), amount.toString()))
   }
 
   /**
@@ -195,8 +214,8 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    * @param key The dimension counter key.
    */
   async reset(key: string): Promise<void> {
-    const client = await this.resolve()
-    await client.del(this.prefixed(key))
+    const { client } = await this.resolve()
+    await reply(client.del(this.prefixed(key)))
   }
 
   /**
@@ -208,17 +227,19 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   async onModuleDestroy(): Promise<void> {
     this.#closed = true
     if (this.#connecting === null) return
-    const client = await this.connected(this.#connecting)
-    if (client === null || client.status === 'end') return
+    const box = await this.connected(this.#connecting)
+    if (box === null || box.client.status === 'end') return
+    const { client } = box
     await this.quitWithin(client)
   }
 
   /**
-   * The client a connection resolved to, or `null` when it failed. The wait is a native `await` in a `try`: a chain (`.catch`) would build
+   * The box of the client a connection resolved to, or `null` when it failed. The wait is a native `await` in a `try`: a chain (`.catch`) would build
    * its answer with `Promise[Symbol.species]`, read live, which a host can make answer for the connection.
    */
-  private async connected(connecting: Promise<Redis>): Promise<Redis | null> {
+  private async connected(connecting: Promise<ClientBox>): Promise<ClientBox | null> {
     try {
+      if (refusesPromise(connecting)) return null
       return await connecting
     } catch {
       return null
@@ -249,17 +270,17 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   }
 
   /** Resolve the live client, lazily connecting a URL via a dynamic `ioredis` import. */
-  private resolve(): Promise<Redis> {
-    if (typeof this.#source !== 'string') return Promise.resolve(this.#source)
-    if (this.#closed) return Promise.reject(new Error('counter store is closed'))
+  private async resolve(): Promise<ClientBox> {
+    if (typeof this.#source !== 'string') return boxed(this.#source)
+    if (this.#closed) throw new Error('counter store is closed')
     this.#connecting ??= this.connect(this.#source)
-    return this.#connecting
+    return await this.#connecting
   }
 
   /** Dynamically import `ioredis` and connect the given URL. */
-  private async connect(url: string): Promise<Redis> {
+  private async connect(url: string): Promise<ClientBox> {
     const { default: RedisClient } = await import('ioredis')
     // One retry per command and a command timeout, so a stopped Redis answers in the time of the timeout; the offline queue stays on, so a command issued while the connection is still opening waits for it.
-    return new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    return boxed(new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs }))
   }
 }

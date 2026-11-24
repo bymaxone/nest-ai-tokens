@@ -12,8 +12,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Fixed
 
-- A host can no longer answer for a store through `Promise[Symbol.species]` or a replaced `Promise.resolve`. Decision sites chained a promise a store returned (`.then`, `.catch`, `Promise.all`), and a chain builds its result with the species constructor read live, so a planted species made a store return a forged answer. Decision sites now wait natively, between two checks of the realm. A source scan fails on any new chain or promise combinator in shipped code that is not named with the reason its result decides nothing.
-- The realm guard reads the `value` of a property descriptor as the descriptor's own, so a `value` planted on `Object.prototype` cannot make an accessor look like a built-in function.
+- A host can no longer answer for a store through `Promise[Symbol.species]` or a replaced `Promise.resolve`. Decision sites chained a promise a store returned (`.then`, `.catch`, `Promise.all`), and a chain builds its result with the species constructor read live, so a planted species made a store return a forged answer. Decision sites now wait natively, and check the promise they got first: one whose `constructor` or `then` a host planted for the one read is refused as a store error instead of answering. A source scan fails on any new chain or promise combinator in shipped code that is not named with the reason its result decides nothing.
+- The realm guard reads the `value` of a property descriptor as the descriptor's own, so a `value` planted on `Object.prototype` cannot make an accessor look like a built-in function, and it refuses while `Promise.prototype.constructor` is not `Promise`, while either it or `then` is an accessor, or while the getter of `Promise[Symbol.species]` is not the engine's, which a driver's own `then` reads.
+- The Redis counter takes the client from a box with no prototype, so a `then` planted on the class of the client cannot swap the client the store runs its script on.
+- The hold reaper waits for a sweep natively, so a species that never settles can no longer leave the running flag set and stop later sweeps.
 
 ### Documentation
 

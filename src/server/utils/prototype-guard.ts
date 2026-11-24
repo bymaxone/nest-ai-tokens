@@ -14,6 +14,7 @@ import { runInNewContext } from 'node:vm'
 import { AiTokensException } from '../errors'
 import { AI_TOKENS_ERROR_MESSAGES } from '../errors/ai-tokens-error-messages'
 import { AI_TOKENS_ERROR_STATUS } from '../errors/ai-tokens-error-status'
+import { promiseIntrinsicsIntact, promiseSpeciesIntact } from './native-promise'
 
 /** What a fresh realm holds: the descriptors of its `Object.prototype` and a reader of function text. */
 interface Pristine {
@@ -300,7 +301,7 @@ function refusal(keys: number, builtIns: number): AiTokensException {
 export function assertCleanRealm(): void {
   if (!active) return
   const keys = countKeys()
-  const builtIns = countBuiltIns()
+  const builtIns = countBuiltIns() + (promiseIntrinsicsIntact() && promiseSpeciesIntact() ? 0 : 1)
   if (keys + builtIns === 0) return
   throw refusal(keys, builtIns)
 }

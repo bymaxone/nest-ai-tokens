@@ -140,14 +140,19 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
     this.blockedLogged = false
     const sweep: TimedSweep = { startedAt: nowMs }
     this.current = sweep
-    void this.sweep()
-      .catch((error: unknown) => {
-        this.logger.warn(`${SWEEP_FAILED_LOG_KEY} ${describeError(error)}`)
-      })
-      .finally(() => {
-        if (this.current === sweep) this.current = undefined
-        else this.abandoned = undefined
-      })
+    void this.run(sweep)
+  }
+
+  /** Run one sweep, log a failure of it, and clear the running flag. The wait is a native `await`: a chain would build its answer with `Promise[Symbol.species]`, read live. */
+  private async run(sweep: TimedSweep): Promise<void> {
+    try {
+      await this.sweep()
+    } catch (error) {
+      this.logger.warn(`${SWEEP_FAILED_LOG_KEY} ${describeError(error)}`)
+    } finally {
+      if (this.current === sweep) this.current = undefined
+      else this.abandoned = undefined
+    }
   }
 
   /** Stop the sweep on shutdown (no open handles left for Jest). */

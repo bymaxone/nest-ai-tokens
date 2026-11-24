@@ -8,7 +8,14 @@
  * `$queryRawUnsafe`/`$executeRawUnsafe`; see `sql.ts` for why that is safe.
  */
 
+import { refusesPromise } from '../server/utils/native-promise'
 import type { Sql } from './sql'
+
+/** What a driver call returned, unless a native `await` of it would run code of the host: then the call fails, as any driver failure does. */
+function pristine<T>(pending: PromiseLike<T>): PromiseLike<T> {
+  if (refusesPromise(pending)) throw new Error('a promise the driver returned reads a constructor or then of its own')
+  return pending
+}
 
 /** The two raw-query methods of a Prisma client, or of the client a transaction hands to its callback. */
 export interface RawExecutor {
@@ -39,7 +46,7 @@ export class SqlExecutor {
    * @returns The rows.
    */
   async query<T = unknown>(statement: Sql): Promise<T> {
-    return await this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters)
+    return await pristine(this.raw.$queryRawUnsafe<T>(statement.text, ...statement.parameters))
   }
 
   /**
@@ -49,7 +56,7 @@ export class SqlExecutor {
    * @returns The number of rows it affected.
    */
   async execute(statement: Sql): Promise<number> {
-    return await this.raw.$executeRawUnsafe(statement.text, ...statement.parameters)
+    return await pristine(this.raw.$executeRawUnsafe(statement.text, ...statement.parameters))
   }
 }
 

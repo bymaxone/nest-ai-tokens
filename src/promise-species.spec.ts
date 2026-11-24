@@ -14,11 +14,18 @@ import { InMemoryLedgerStore } from '../test/fakes/in-memory-ledger-store'
 import { usageRecord } from '../test/fakes/budget-fixtures'
 import { PrismaAiTokensStore } from './prisma'
 import { guardStoreErrors } from './prisma/store-boundary'
+import { awaitStatement } from './prisma/adapter-sql'
 import { rowAfterFailure } from './server/services/record-replay'
 import { LedgerService } from './server/services/ledger.service'
 import { BudgetReferenceSweeper } from './server/enforcement/budget-reference-sweeper'
 import { setRealmGuard } from './server/utils/prototype-guard'
+import { guardedStore } from './server/utils/guarded-store'
+import { settled } from './server/utils/host-settled'
+import { HoldReaper } from './server/enforcement/hold-reaper'
+import { plantOnce, unplant } from '../test/fakes/promise-plant'
 import type { UsageRecord } from './shared'
+
+const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
 
 // The rows plant a species on `Promise`, which the realm guard does not name; the guard is off only so that a planted slot is not refused early.
 beforeAll(() => setRealmGuard(false))
@@ -35,11 +42,12 @@ function forging(answer: Promise<unknown>): new (executor: (resolve: () => void,
 /** Plant the species on `Promise`, call `start` (which chains before it first awaits), remove the species, and give back what `start` returned. */
 function whileSpeciesPlanted<T>(answer: unknown, start: () => T): T {
   const forged = forging(Promise.resolve(answer))
+  const kept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
   Object.defineProperty(Promise, Symbol.species, { configurable: true, get: () => forged })
   try {
     return start()
   } finally {
-    Reflect.deleteProperty(Promise, Symbol.species)
+    Reflect.defineProperty(Promise, Symbol.species, kept)
   }
 }
 
@@ -52,6 +60,14 @@ function driver(rows: (text: string) => unknown): ConstructorParameters<typeof P
     $transaction: <R>(fn: (tx: unknown) => Promise<R>): Promise<R> => fn(client),
   }
   return client as unknown as ConstructorParameters<typeof PrismaAiTokensStore>[0]
+}
+
+/** A rejected promise that has its handler already, with the one-shot plant armed after: the refusal never waits for it, and it must not surface as unhandled. */
+function rejectedThenPlanted(forged: unknown, message: string, reads = 1): Promise<never> {
+  const rejected = Promise.reject(new Error(message))
+  rejected.catch(() => undefined)
+  plantOnce(forged, reads)
+  return rejected
 }
 
 describe('a promise on a decision path is not chained', () => {
@@ -172,10 +188,103 @@ describe('a promise on a decision path is not chained', () => {
     try {
       await sweeper.sweep()
     } finally {
-      Reflect.deleteProperty(Promise, Symbol.species)
+      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
     }
     // The same call, so the movement is kept and its reference renamed to `row`: a forged absent budget would give it back instead.
     expect(await budgets.getWindow('b1', window)).toEqual({ spentNanoUsd: 25n, spentTokens: 100, spentCount: 1 })
     expect(budget.id).toBe('b1')
+  })
+
+  describe('a native await of what a host call returned runs no code the host planted for it', () => {
+    afterEach(() => unplant())
+
+    it('the store boundary refuses a promise whose constructor and then the driver planted while it ran', async () => {
+      const guarded = guardStoreErrors(
+        new (class {
+          find(): Promise<string> {
+            return rejectedThenPlanted('__forged__', 'db down')
+          }
+        })(),
+        () => false,
+      )
+      const pending = guarded.find()
+      // A refused call leaves the plant armed for the next `await`; it is undone here so that the assertion's own wait does not read it.
+      unplant()
+      await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_STORE_ERROR' } } })
+    })
+
+    it('a ledger query refuses a promise whose constructor and then the driver planted while it ran', async () => {
+      const client = {
+        $queryRawUnsafe: (): Promise<unknown> => {
+          return rejectedThenPlanted([], 'connection lost')
+        },
+        $executeRawUnsafe: async (): Promise<number> => 0,
+        $transaction: <R>(fn: (tx: unknown) => Promise<R>): Promise<R> => fn(client),
+      }
+      const store = guardedStore(new PrismaAiTokensStore(client as unknown as ConstructorParameters<typeof PrismaAiTokensStore>[0]))
+      const pending = store.query({ tenantId: TENANT })
+      unplant()
+      await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_STORE_ERROR' } } })
+    })
+
+    it('a driver whose own then chains reads a species getter the host left planted, and the store refuses with the guard on', () => {
+      const kept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
+      const forged = forging(Promise.resolve([]))
+      const client = {
+        $queryRawUnsafe: (): PromiseLike<unknown> => ({ then: (resolve) => Promise.resolve([usageRow()]).then(resolve) }),
+        $executeRawUnsafe: async (): Promise<number> => 0,
+        $transaction: <R>(fn: (tx: unknown) => Promise<R>): Promise<R> => fn(client),
+      }
+      const store = guardedStore(new PrismaAiTokensStore(client as unknown as ConstructorParameters<typeof PrismaAiTokensStore>[0]))
+      Object.defineProperty(Promise, Symbol.species, { configurable: true, get: () => forged })
+      setRealmGuard(true)
+      try {
+        expect(() => store.query({ tenantId: TENANT })).toThrow(expect.objectContaining({ response: expect.objectContaining({ error: expect.objectContaining({ code: 'AI_TOKENS_INVALID_CONFIG' }) as unknown }) as unknown }) as Error)
+      } finally {
+        setRealmGuard(false)
+        Reflect.defineProperty(Promise, Symbol.species, kept)
+      }
+    })
+
+    it('the wait for a statement refuses a promise whose constructor and then the host planted while it ran', async () => {
+      const pending = awaitStatement(rejectedThenPlanted([], 'connection lost'))
+      unplant()
+      await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_STORE_ERROR' } } })
+    })
+
+    it('the wait for a host promise refuses one whose constructor and then the host planted while it ran', async () => {
+      const pending = rejectedThenPlanted(null, 'db down')
+      const waiting = settled(pending)
+      unplant()
+      await expect(waiting).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+      await expect(pending).rejects.toThrow('db down')
+    })
+
+    it('the wait for a host promise still hands on the value of one that is untouched', async () => {
+      expect(await settled(Promise.resolve('real'))).toBe('real')
+    })
+  })
+
+  it('the reaper clears its running flag when a species that never settles is planted for the tick', async () => {
+    const intrinsic = Promise
+    const never = function Never(executor: (resolve: () => void, reject: () => void) => void): Promise<unknown> {
+      executor(() => undefined, () => undefined)
+      return new intrinsic(() => undefined)
+    }
+    let sweeps = 0
+    let clock = 0
+    const ledger = { findExpiredHolds: async (): Promise<never[]> => { sweeps += 1; return [] }, supportsOwedEffects: (): boolean => false }
+    const reaper = new HoldReaper(ledger as never, {} as never, { holds: { reaperIntervalSeconds: 60, ttlSeconds: 60 } }, () => new Date(clock)) as unknown as { tick: () => void }
+    for (let round = 0; round < 3; round += 1) {
+      Object.defineProperty(Promise, Symbol.species, { configurable: true, get: () => never })
+      try {
+        reaper.tick()
+      } finally {
+        Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      clock += 10_000
+    }
+    expect(sweeps).toBe(3)
   })
 })

@@ -6,6 +6,10 @@
  */
 
 import { RedisBudgetCounterStore } from './index'
+import { guardedStore } from '../server/utils/guarded-store'
+import { plantOnce, unplant } from '../../test/fakes/promise-plant'
+
+const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
 
 /** The clients the mocked ioredis constructor created. */
 const created: { status: string; quits: number; disconnects: number }[] = []
@@ -47,9 +51,48 @@ describe('the shutdown of the client a URL store created', () => {
     try {
       closing = store.onModuleDestroy()
     } finally {
-      Reflect.deleteProperty(Promise, Symbol.species)
+      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
     }
     await closing
     expect(created[0]?.quits).toBe(1)
+  })
+})
+
+describe('the client a store was given is not asked for a then', () => {
+  afterEach(() => unplant())
+
+  it('answers what Redis answered when a then is planted on the class of the client', async () => {
+    class HostRedis {
+      status = 'ready'
+      eval(): Promise<number> {
+        return Promise.resolve(0)
+      }
+    }
+    const forgedClient = { status: 'ready', eval: (): Promise<number> => Promise.resolve(1) }
+    const store = guardedStore(new RedisBudgetCounterStore(new HostRedis() as never))
+    let armed = true
+    ;(HostRedis.prototype as unknown as { then: unknown }).then = function (resolve: (value: unknown) => void): void {
+      if (!armed) return
+      armed = false
+      resolve(forgedClient)
+    }
+    try {
+      expect(await store.incrIfBelow('k', 10n, 5n, 60)).toBe(false)
+    } finally {
+      delete (HostRedis.prototype as unknown as { then?: unknown }).then
+    }
+  })
+
+  it('refuses the reply of a command whose promise the client planted a constructor and then on while it ran', async () => {
+    const client = {
+      status: 'ready',
+      eval: (): Promise<number> => {
+        plantOnce(1)
+        return Promise.resolve(0)
+      },
+    }
+    const store = new RedisBudgetCounterStore(client as never)
+    const pending = store.incrIfBelow('k', 10n, 5n, 60)
+    await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
   })
 })

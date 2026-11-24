@@ -37,6 +37,7 @@ import { isCodeShaped } from '../server/errors/error-code-shape'
 import { storeFailureCode } from '../server/errors/store-availability'
 import { identifier, identifiers, join, sql, type Sql } from './sql'
 import { jsonText } from '../server/utils/json-text'
+import { refusesPromise } from '../server/utils/native-promise'
 import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON } from '../server/utils/wallet-keys'
 
 /** A decimal as the database driver returns it: all the adapter needs of it is its value as a number. */
@@ -333,7 +334,7 @@ export function rethrowAsStoreError(error: unknown): never {
 
 /**
  * Waits for a statement and rethrows what it throws as the store's typed error. The wait is a native `await` inside a `try`: a chain
- * (`.catch`) would return a promise built by `Promise[Symbol.species]`, read live, which a host can make answer for the statement.
+ * (`.catch`) would return a promise built by `Promise[Symbol.species]`, read live, which a host can make answer for the statement; the promise is checked first, since a native `await` reads its `constructor`.
  *
  * @param pending What the executor returned for the statement.
  * @returns What the statement resolved with.
@@ -341,6 +342,7 @@ export function rethrowAsStoreError(error: unknown): never {
  */
 export async function awaitStatement<T>(pending: PromiseLike<T>): Promise<T> {
   try {
+    if (refusesPromise(pending)) throw new Error('a promise a statement returned reads a constructor or then of its own')
     return await pending
   } catch (error) {
     return rethrowAsStoreError(error)

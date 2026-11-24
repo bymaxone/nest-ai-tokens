@@ -28,6 +28,46 @@ function refusal(run: () => void): { code: string; reason: string } | undefined 
   return undefined
 }
 
+describe('the realm guard and the constructor and then of Promise.prototype', () => {
+  const constructorKept = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor')!
+  const thenKept = Object.getOwnPropertyDescriptor(Promise.prototype, 'then')!
+  const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
+  afterEach(() => {
+    Reflect.defineProperty(Promise.prototype, 'constructor', constructorKept)
+    Reflect.defineProperty(Promise.prototype, 'then', thenKept)
+    Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+  })
+
+  it('refuses while Promise[Symbol.species] persistently answers a constructor of the host', () => {
+    Reflect.defineProperty(Promise, Symbol.species, { get: () => Object, configurable: true })
+    try {
+      expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    } finally {
+      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+    }
+  })
+
+  it('refuses while Promise.prototype.constructor is a value that is not Promise', () => {
+    Reflect.defineProperty(Promise.prototype, 'constructor', { value: Object, configurable: true, writable: true })
+    expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  it('refuses while Promise.prototype.then is an accessor', () => {
+    Reflect.defineProperty(Promise.prototype, 'then', { get: () => thenKept.value as unknown, configurable: true })
+    expect(refusal(() => assertCleanRealm())?.code).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  it('passes while Promise.prototype.then is a function a tracing agent wrapped', () => {
+    const original = thenKept.value as (...args: unknown[]) => unknown
+    Reflect.defineProperty(Promise.prototype, 'then', { ...thenKept, value: function wrapped(this: unknown, ...args: unknown[]) { return original.apply(this, args) } })
+    expect(() => assertCleanRealm()).not.toThrow()
+  })
+
+  it('passes again once both are the engine’s', () => {
+    expect(() => assertCleanRealm()).not.toThrow()
+  })
+})
+
 describe('the realm guard', () => {
   it('finds a clean process clean', () => {
     expect(pollutedNames()).toBe(0)
