@@ -82,6 +82,24 @@ describe('a then planted on Object.prototype', () => {
   })
 })
 
+describe('a host answer with a Proxy on its prototype chain, which answers a then with a function', () => {
+  const answer = (runs: string[]): object =>
+    Object.create(new Proxy({}, { get: (_target, key) => (key === 'then' ? (resolve: (value: number) => void): void => { runs.push('then'); resolve(123) } : undefined) })) as object
+
+  /** Each place the library waits for a host, as a function that is given the answer. */
+  const SITES: readonly (readonly [string, (value: object) => Promise<unknown>])[] = [
+    ['settled', (value) => settled(value)],
+    ['a store method', (value) => guardedStore({ find: () => value }).find() as Promise<unknown>],
+    ['a statement of the Prisma adapter', (value) => awaitStatement(value as PromiseLike<unknown>)],
+  ]
+
+  it.each(SITES)('is refused, and its then is not run, at %s', async (_site, wait) => {
+    const runs: string[] = []
+    await expect(Promise.resolve().then(() => wait(answer(runs)))).rejects.toBeInstanceOf(AiTokensException)
+    expect(runs).toEqual([])
+  })
+})
+
 describe('a host that resolves with a Proxy', () => {
   const proxy = (): object => new Proxy({ id: 'r1' }, {})
 

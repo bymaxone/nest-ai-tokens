@@ -219,5 +219,6 @@ function refused(value: unknown, thenables: boolean, isProxy: ProxyProbe): boole
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
   if (isProxy(value)) return true
   if (getPrototypeOf(value) === PROMISE_PROTOTYPE) return hasOwn(value, 'then') || hasOwn(value, 'constructor') || !promiseIntrinsicsIntact()
-  return !thenables && chainHasThen(value, isProxy)
+  // A thenable a caller allows is run by that caller, but a Proxy on its chain answers a `then` with the host's trap, which is never run.
+  return thenables ? proxyOnChain(value, isProxy) : chainHasThen(value, isProxy)
 }

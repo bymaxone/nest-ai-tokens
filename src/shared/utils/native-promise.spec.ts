@@ -207,6 +207,15 @@ describe('the arrays and objects a decision path reads', () => {
     expect(asked).toEqual([])
   })
 
+  /** A caller that lets thenables through still never lets a Proxy on the chain through: its `then` is a trap of the host. */
+  it('refuses a value with a Proxy on its chain when thenables are allowed, and lets a thenable of a class through', () => {
+    class Builder {
+      then(): void {}
+    }
+    const proxy = new Proxy({}, {})
+    expect([refusesPromise(Object.create(proxy), true, types.isProxy), refusesPromise(new Builder(), true, types.isProxy), refusesPromise(Object.create(proxy), true)]).toEqual([true, false, false])
+  })
+
   it('refuses any value while an array method is replaced', () => {
     const refused = whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, () => refusesPromise(1))
     expect(refused).toBe(true)
