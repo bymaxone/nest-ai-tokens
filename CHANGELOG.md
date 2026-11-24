@@ -10,6 +10,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.23] - 2026-11-24
+
+**Apply:** no migration and no option change is needed. This release closes one class of defect: a host that planted `Promise[Symbol.species]`, a `then` or a `constructor` could decide what a store or a callback answered, because the library chained the promise it was given. It now waits for a native promise with a native `await` and refuses what it cannot wait for safely. A store or callback that returns a custom thenable, a `Promise` subclass or a Proxy must return a native promise (`Promise.resolve(x)`, or an `async` function). The metered function of `meter()` may still return a thenable or a `Promise` subclass, as a provider SDK does, but a Proxy is refused there too: a metered function whose result is a Proxy, a Proxy over a promise or a promise that resolves with a Proxy is refused with `AI_TOKENS_INVALID_CONFIG`, so a provider SDK that wraps its response in a Proxy must be unwrapped by the host before the function returns it.
+
 ### Fixed
 
 - A host can no longer answer for a store through `Promise[Symbol.species]` or a replaced `Promise.resolve`. Decision sites chained a promise a store returned (`.then`, `.catch`, `Promise.all`), and a chain builds its result with the species constructor read live, so a planted species made a store return a forged answer. Decision sites now wait natively, and check the promise they got first: one whose `constructor` or `then` a host planted for the one read is refused instead of answering. A source scan fails on any new chain or promise combinator in shipped code that is not named with the reason its result decides nothing.
@@ -1329,4 +1333,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.20]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.19...v1.1.20
 [1.1.21]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.20...v1.1.21
 [1.1.22]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...v1.1.22
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...HEAD
+[1.1.23]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...v1.1.23
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.23...HEAD
