@@ -10,6 +10,11 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Fixed
+
+- A host can no longer answer for a store through `Promise[Symbol.species]` or a replaced `Promise.resolve`. Seven decision sites chained a promise a store returned (`.then`, `.catch`, `Promise.all`), and a chain builds its result with the species constructor read live, so a planted species made the store boundary, the ledger query, the debit lookup, the entry listing, the lookup after a failed append and the stale-reference sweep return a forged answer. Each now waits natively, between two checks of the realm. The Redis counter store's connection wait no longer chains either. A source scan fails on any new chain or promise combinator in shipped code that is not named with the reason its result decides nothing.
+- The realm guard reads the `value` of a property descriptor as the descriptor's own, so a `value` planted on `Object.prototype` cannot make an accessor look like a built-in function.
+
 ### Documentation
 
 - The README states the limit of a ledger store without the optional effects-owed marker calls. A wallet leg that fails after a capture commits leaves the record posted at its actual cost while the wallet keeps the hold's reserved debit, and a second capture returns the posted record without running the leg again. A store that keeps the marker, as the Prisma store does, lets the reaper finish the leg.

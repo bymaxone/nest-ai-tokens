@@ -15,6 +15,22 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 /**
+ * Waits for what a method returned and lets a failure cross the boundary. The wait is a native `await` in a `try`: a chain on the returned
+ * promise (`.catch`) would build its answer with `Promise[Symbol.species]`, read live, which a host can make answer for the store.
+ *
+ * @param result What the method returned.
+ * @param cross Throws the typed error for a failure.
+ * @returns What the method resolved with.
+ */
+async function crossing(result: PromiseLike<unknown>, cross: (error: unknown) => never): Promise<unknown> {
+  try {
+    return await result
+  } catch (error) {
+    return cross(error)
+  }
+}
+
+/**
  * Wrap the methods of `store` so that what they throw crosses the boundary as a typed error. A method runs with the store
  * itself as its receiver, so a call between two of its own methods does not pass the boundary a second time. Each argument is copied
  * with {@link ownCopy} on the way in, so no method reads a key found only on `Object.prototype` as a name its input did not set.
@@ -37,7 +53,7 @@ export function guardStoreErrors<T extends object>(store: T, isSignal: (error: u
         try {
           // A method reads the optional names of its inputs by name, so each input reaches it as a copy that holds only what the caller put in it.
           const result: unknown = (value as (...parameters: unknown[]) => unknown).apply(target, args.map((argument) => ownCopy(argument)))
-          return isThenable(result) ? Promise.resolve(result).catch(cross) : result
+          return isThenable(result) ? crossing(result, cross) : result
         } catch (error) {
           return cross(error)
         }

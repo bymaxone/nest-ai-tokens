@@ -10,5 +10,9 @@
   {
     "file": "src/stryker-scope.spec.ts",
     "reason": "A text scan: it reads tsup.config.ts, stryker.config.json and the shipped source files from disk and compares their text, so it executes no mutated source. Stryker instruments those files before the tests run, so the comparison cannot hold there; jest.stryker.config.ts ignores the spec for that reason. What it pins, the mutation scope itself, is asserted by the unit suite, which runs it on the files as they are."
+  },
+  {
+    "file": "src/promise-chain-scan.spec.ts",
+    "reason": "A text scan: it reads every shipped source file from disk and looks for promise chains in its text, so it executes no mutated source. Stryker instruments those files before the tests run, so the comparison cannot hold there; jest.stryker.config.ts ignores the spec for that reason. The behaviour of each decision site is asserted by promise-species.spec.ts, which the mutation run does execute."
   }
 ]

@@ -47,6 +47,37 @@ const STANDARD = 'Object Reflect Array Math Number String Boolean Set Map WeakMa
  */
 const BOUND = 'Object Reflect Array Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
 
+// What the scan itself calls, captured when the module loads: a built-in replaced afterwards, a `Set` that forgets what it is given or an
+// iterator that stops early, cannot blind the check that is meant to find it. The scan uses these references, plain loops over arrays and
+// plain property reads, and nothing else of the realm.
+const getDescriptors = Object.getOwnPropertyDescriptors
+const ownKeysOf = Reflect.ownKeys
+const hasOwn = Object.hasOwn
+const getOf = Reflect.get
+const root = Object.prototype
+const stringOf = String
+const createObject = Object.create
+const define = Object.defineProperty
+const captureStack = Error.captureStackTrace.bind(Error)
+
+/** The item of a list at an index, read by a plain property read, so that no iterator of the realm is run to reach it. */
+function item<T>(list: ArrayLike<T>, index: number): T {
+  const value: unknown = getOf(list, index)
+  return value as T
+}
+
+/**
+ * A field of a descriptor, as its own property only: a descriptor of this realm inherits from the prototype under test, so a name planted
+ * there, an accessor called `get` say, must never run.
+ *
+ * @param descriptor A descriptor, or `undefined`.
+ * @param key The field.
+ * @returns The own field, or `undefined`.
+ */
+function field(descriptor: PropertyDescriptor | undefined, key: keyof PropertyDescriptor): unknown {
+  return descriptor !== undefined && hasOwn(descriptor, key) ? (getOf(descriptor, key) as unknown) : undefined
+}
+
 /** What the baseline compares: an owner, a name on it, and the function or object that name held when this module loaded. */
 interface Met {
   readonly owner: Record<string | symbol, unknown>
@@ -65,7 +96,7 @@ export function recordFunctions(owners: readonly object[]): Met[] {
   const found: Met[] = []
   for (const owner of owners) {
     for (const name of Reflect.ownKeys(owner)) {
-      const value: unknown = Object.getOwnPropertyDescriptor(owner, name)?.value
+      const value: unknown = field(Object.getOwnPropertyDescriptor(owner, name), 'value')
       if (typeof value === 'function') found.push({ owner: owner as Met['owner'], name, met: value })
     }
   }
@@ -138,37 +169,6 @@ let pristine: Pristine | undefined = build()
 
 /** The fields of a descriptor that hold what the name is. */
 const CONTENT = ['value', 'get', 'set'] as const
-
-// What the scan itself calls, captured when the module loads: a built-in replaced afterwards, a `Set` that forgets what it is given or an
-// iterator that stops early, cannot blind the check that is meant to find it. The scan uses these references, plain loops over arrays and
-// plain property reads, and nothing else of the realm.
-const getDescriptors = Object.getOwnPropertyDescriptors
-const ownKeysOf = Reflect.ownKeys
-const hasOwn = Object.hasOwn
-const getOf = Reflect.get
-const root = Object.prototype
-const stringOf = String
-const createObject = Object.create
-const define = Object.defineProperty
-const captureStack = Error.captureStackTrace.bind(Error)
-
-/** The item of a list at an index, read by a plain property read, so that no iterator of the realm is run to reach it. */
-function item<T>(list: ArrayLike<T>, index: number): T {
-  const value: unknown = getOf(list, index)
-  return value as T
-}
-
-/**
- * A field of a descriptor, as its own property only: a descriptor of this realm inherits from the prototype under test, so a name planted
- * there, an accessor called `get` say, must never run.
- *
- * @param descriptor A descriptor, or `undefined`.
- * @param key The field.
- * @returns The own field, or `undefined`.
- */
-function field(descriptor: PropertyDescriptor | undefined, key: keyof PropertyDescriptor): unknown {
-  return descriptor !== undefined && hasOwn(descriptor, key) ? (getOf(descriptor, key) as unknown) : undefined
-}
 
 /**
  * Whether a value of `now` is the one of `was`: the same text for a function, else the same value.

@@ -331,6 +331,22 @@ export function rethrowAsStoreError(error: unknown): never {
   throw storeError(error)
 }
 
+/**
+ * Waits for a statement and rethrows what it throws as the store's typed error. The wait is a native `await` inside a `try`: a chain
+ * (`.catch`) would return a promise built by `Promise[Symbol.species]`, read live, which a host can make answer for the statement.
+ *
+ * @param pending What the executor returned for the statement.
+ * @returns What the statement resolved with.
+ * @throws The store's typed error, with the original on `cause`.
+ */
+export async function awaitStatement<T>(pending: PromiseLike<T>): Promise<T> {
+  try {
+    return await pending
+  } catch (error) {
+    return rethrowAsStoreError(error)
+  }
+}
+
 /** Build the ordered value fragments for a usage insert (aligned with {@link USAGE_COLUMNS}). */
 export function usageValues(id: string, record: NewUsageRecord, payloadHash: string, prevHash: string | null, hash: string | null): Sql[] {
   const extraUnits =

@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import type * as GuardModule from './prototype-guard'
 import { createRequire } from 'node:module'
-import { BUILT_INS, assertCleanRealm, pollutedNames, withoutRealmGuard } from './prototype-guard'
+import { BUILT_INS, assertCleanRealm, recordFunctions, pollutedNames, withoutRealmGuard } from './prototype-guard'
 
 /** Captured here, because the rows below rebind `Reflect` and must still be able to put it back. */
 const getOf = Reflect.get
@@ -428,5 +428,19 @@ describe('the realm guard and a name changed before the module loaded', () => {
       }
     })
     expect(count).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('recordFunctions and a planted value', () => {
+  /** A descriptor is an ordinary object: the `value` of an accessor's descriptor must not resolve through `Object.prototype`. */
+  it('records no function for an accessor, whatever Object.prototype holds under value', () => {
+    const owner = {}
+    Object.defineProperty(owner, 'slot', { get: () => 1, configurable: true })
+    Object.defineProperty(Object.prototype, 'value', { value: function planted(): void {}, configurable: true, writable: true, enumerable: false })
+    try {
+      expect(recordFunctions([owner])).toEqual([])
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'value')
+    }
   })
 })

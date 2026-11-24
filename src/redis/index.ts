@@ -208,9 +208,21 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
   async onModuleDestroy(): Promise<void> {
     this.#closed = true
     if (this.#connecting === null) return
-    const client = await this.#connecting.catch(() => null)
+    const client = await this.connected(this.#connecting)
     if (client === null || client.status === 'end') return
     await this.quitWithin(client)
+  }
+
+  /**
+   * The client a connection resolved to, or `null` when it failed. The wait is a native `await` in a `try`: a chain (`.catch`) would build
+   * its answer with `Promise[Symbol.species]`, read live, which a host can make answer for the connection.
+   */
+  private async connected(connecting: Promise<Redis>): Promise<Redis | null> {
+    try {
+      return await connecting
+    } catch {
+      return null
+    }
   }
 
   /** Quit gracefully within the bound, falling back to `disconnect()` when the quit is late or fails; leaves no timer behind. */
