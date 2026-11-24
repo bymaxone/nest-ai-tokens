@@ -53,7 +53,9 @@ const BUDGETS = [
   // 63_247 also holds the wait that marks the rejection of a host promise as handled when the realm check refuses it, a native await in a
   // try/catch that reads no `Promise[Symbol.species]`. 63_319 (server) also holds the thenable test of the guarded store (a plain object with a `then` of its own), the
   // choice of the Proxy test by the caller of `settled`, and the engine-prototype capture of the promise module; the server bundle measures 63_289.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 63_319 },
+  // 63_367 (server) holds the 48 B the correction rounds of the promise fixes added after that (the handled rejection of a promise refused on a polluted realm, and the
+  // Proxy-on-chain check kept when thenables are allowed); the server bundle measures 63_337.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 63_367 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 17_710 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
