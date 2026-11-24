@@ -359,7 +359,7 @@ describe('marking the rejection of a promise nobody will wait for as handled', (
     expect(await unhandledDuring(() => absorbRejection(own))).toEqual([])
   })
 
-  it('leaves a native promise whose then is an accessor to the throwaway wait, and still handles it', async () => {
+  it('leaves no unhandled rejection of a native promise while the then of Promise.prototype is an accessor', async () => {
     const failed = Promise.reject(new Error('callback failed'))
     expect(await unhandledDuring(() => {
       Reflect.defineProperty(Promise.prototype, 'then', { get: () => kept.value as unknown, configurable: true })
@@ -369,6 +369,27 @@ describe('marking the rejection of a promise nobody will wait for as handled', (
         Reflect.defineProperty(Promise.prototype, 'then', kept)
       }
     })).toEqual([])
+  })
+
+  it('reads no species getter a host planted', () => {
+    const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
+    let reads = 0
+    const failed = Promise.reject(new Error('callback failed'))
+    Reflect.apply(kept.value as (...args: unknown[]) => unknown, failed, [() => undefined, () => undefined])
+    Reflect.defineProperty(Promise, Symbol.species, { get: () => { reads += 1; return Promise }, configurable: true })
+    try {
+      absorbRejection(failed)
+    } finally {
+      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+    }
+    expect(reads).toBe(0)
+  })
+
+  it('does not hand a thenable that is no promise to the then of a promise', () => {
+    class Builder {
+      then(): void {}
+    }
+    expect(() => absorbRejection(new Builder(), true)).not.toThrow()
   })
 
   it('runs the then of a thenable only when the caller does not let thenables through', () => {
@@ -387,6 +408,7 @@ describe('marking the rejection of a promise nobody will wait for as handled', (
     absorbRejection(proxied, false, types.isProxy)
     absorbRejection(null, false, types.isProxy)
     absorbRejection(7, false, types.isProxy)
+    absorbRejection(undefined, false, types.isProxy)
     expect(trapped).toEqual([])
   })
 })

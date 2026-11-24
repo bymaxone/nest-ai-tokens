@@ -181,26 +181,27 @@ export function refusesPromise(value: unknown, thenables = false, isProxy: Proxy
 
 /**
  * Marks the rejection of a promise as handled, for a caller that refuses to wait for it: a promise the host created and the library does not
- * read would otherwise end a Node process as an unhandled rejection. An exact native promise on an intact `Promise.prototype` is handled with
- * the `then` captured at load and the arguments it is given, so no property of the promise or of a polluted prototype is looked up; any other
- * value is treated as {@link refusesPromise} treats it, and a thenable that call lets through is left alone.
+ * read would otherwise end a Node process as an unhandled rejection. A native promise, while `Promise[Symbol.species]` is the engine's, is
+ * handled with the `then` captured at load and the arguments it is given, so no `then` is looked up on the promise or on a polluted
+ * prototype and no planted species getter runs; any other value is treated as {@link refusesPromise} treats it, and a thenable that call lets
+ * through is left alone.
  *
  * @param value What a host call returned.
  * @param thenables As in {@link refusesPromise}.
  * @param isProxy Tells a Proxy from an object.
  */
 export function absorbRejection(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): void {
-  if (isExactPromise(value, isProxy) && promiseIntrinsicsIntact() && promiseSpeciesIntact()) {
+  if (isNativePromise(value, isProxy) && promiseSpeciesIntact()) {
     void reflectApply(PROMISE_THEN, value, [IGNORE, IGNORE])
     return
   }
   refusesPromise(value, thenables, isProxy)
 }
 
-/** Whether `value` is a native promise with no `then` or `constructor` of its own, read only through own descriptors. */
-function isExactPromise(value: unknown, isProxy: ProxyProbe): boolean {
+/** Whether `value` is an object whose prototype is the engine's `Promise.prototype` and that is no Proxy, read without running a getter. */
+function isNativePromise(value: unknown, isProxy: ProxyProbe): boolean {
   if (typeof value !== 'object' || value === null || isProxy(value)) return false
-  return getPrototypeOf(value) === PROMISE_PROTOTYPE && !hasOwn(value, 'then') && !hasOwn(value, 'constructor')
+  return getPrototypeOf(value) === PROMISE_PROTOTYPE
 }
 
 /** Whether `value` or a prototype of it is a Proxy: a wait on it would run its traps, so a refused one is not waited for. */
