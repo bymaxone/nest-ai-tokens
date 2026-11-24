@@ -113,7 +113,7 @@ describe('the reason a refused host answer carries', () => {
     await expect(reasonOf(settled(planted))).resolves.toBe('what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced')
   })
 
-  it('names the check that refuses a Proxy the host resolved with, for the function meter() runs, after the wait', async () => {
+  it('carries the post-wait reason when a Proxy the host resolved with is refused, for the function meter() runs', async () => {
     await expect(reasonOf(settled(Promise.resolve(new Proxy({}, {})), true))).resolves.toBe('what a host resolved with has a then of its own, or the arrays the library reads were replaced')
   })
 })
