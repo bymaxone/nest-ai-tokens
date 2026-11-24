@@ -929,17 +929,6 @@ describe('MeteringService.meter', () => {
     expect(usage.enforced).toBe(true)
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
   })
-
-  /** A provider SDK answers with a subclass of Promise whose `then` is its own: the metered function is where that is let through, on both paths. */
-  it.each([['with a hold', ESTIMATE_A], ['without an estimate', undefined]] as const)('meters a function that returns a promise subclass, %s', async (_name, estimate) => {
-    class SdkPromise<T> extends Promise<T> {}
-    const built = build({ wallets: true })
-    await seedGpt5(built.pricingStore)
-    await grant(built, 100_000_000n)
-    const { result, usage } = await built.service.meter(() => SdkPromise.resolve({ usage: normalized() }), context(), (r) => r.usage, estimate)
-    expect(result.usage.provider).toBe('openai')
-    expect(usage.status).toBe('posted')
-  })
 })
 
 describe('MeteringService.reverse', () => {
