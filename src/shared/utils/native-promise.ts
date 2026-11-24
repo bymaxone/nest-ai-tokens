@@ -9,15 +9,14 @@
  * @layer shared
  */
 
-const PROMISE_PROTOTYPE = Promise.prototype
-const INTRINSIC_PROMISE = Promise
 const getPrototypeOf = Object.getPrototypeOf
 const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
 const hasOwn = Object.hasOwn
 const defineProperty = Object.defineProperty
-const speciesAtLoad = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
-// The module loads before any host code, so the descriptor exists and its own getter is the one read.
-const INTRINSIC_SPECIES: unknown = (speciesAtLoad as { get?: unknown }).get
+// The engine's own `Promise.prototype`, taken from a promise an async function returns: the global `Promise` is the host's to replace (a subclass, a wrapper, bluebird, zone.js) and is never read here.
+const PROMISE_PROTOTYPE = getPrototypeOf((async (value: number | PromiseLike<number>): Promise<number> => await value)(0)) as object
+const INTRINSIC_PROMISE = (getOwnPropertyDescriptor(PROMISE_PROTOTYPE, 'constructor') as { value: PromiseConstructor }).value
+const INTRINSIC_SPECIES: unknown = (getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species) as { get?: unknown }).get
 const ARRAY_PROTOTYPE = Array.prototype
 const OBJECT_PROTOTYPE = Object.prototype
 const ARRAY_ITERATOR_PROTOTYPE = getPrototypeOf([][Symbol.iterator]()) as object
@@ -220,5 +219,6 @@ function refused(value: unknown, thenables: boolean, isProxy: ProxyProbe): boole
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false
   if (isProxy(value)) return true
   if (getPrototypeOf(value) === PROMISE_PROTOTYPE) return hasOwn(value, 'then') || hasOwn(value, 'constructor') || !promiseIntrinsicsIntact()
-  return !thenables && chainHasThen(value, isProxy)
+  // A thenable a caller allows is run by that caller, but a Proxy on its chain answers a `then` with the host's trap, which is never run.
+  return thenables ? proxyOnChain(value, isProxy) : chainHasThen(value, isProxy)
 }

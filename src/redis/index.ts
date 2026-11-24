@@ -41,7 +41,7 @@ function boxed(client: Redis): ClientBox {
  */
 async function reply<T>(pending: Promise<T>): Promise<T> {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
-  if (refusesPromise(pending, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
+  if (refusesPromise(pending, true, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
   return await pending
 }
 

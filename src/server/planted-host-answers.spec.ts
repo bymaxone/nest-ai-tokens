@@ -7,6 +7,7 @@
 
 import { Reflector } from '@nestjs/core'
 import type { ExecutionContext } from '@nestjs/common'
+import { runInNewContext } from 'node:vm'
 import { context, makeService, TENANT, USER_SCOPE, budgetInput } from '../../test/fakes/budget-fixtures'
 import { unplant } from '../../test/fakes/promise-plant'
 import { AiTokensException } from './errors'
@@ -202,16 +203,12 @@ function resolvesWithOneShotThen(): Promise<object> {
 }
 
 describe('what a call to the host may answer with, by the kind of call', () => {
-  it('refuses a thenable that is no native promise when the call says nothing of thenables', async () => {
-    await expect(settled(lazy(1))).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+  it('lets a thenable that is no native promise through', async () => {
+    await expect(settled(lazy(1))).resolves.toBe(1)
   })
 
-  it('lets a thenable through when the call is the metered function of a provider SDK', async () => {
-    await expect(settled(lazy(1), true)).resolves.toBe(1)
-  })
-
-  it('refuses what a host resolved with when its then answers after the wait, even for a call that lets thenables through', async () => {
-    await expect(settled(resolvesWithOneShotThen(), true)).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+  it('refuses what a host resolved with when its then answers after the wait', async () => {
+    await expect(settled(resolvesWithOneShotThen())).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
   })
 
   it('lets the lazy thenable of a driver through, and refuses what it resolved with when that has a then of its own', async () => {
@@ -219,14 +216,8 @@ describe('what a call to the host may answer with, by the kind of call', () => {
     await expect(waited(resolvesWithOneShotThen())).rejects.toThrow('what the driver resolved with reads a then of its own')
   })
 
-  it('refuses a thenable a statement returned, with the typed store error and the reason on its cause', async () => {
-    const failure = await awaitStatement(lazy(1)).then(
-      () => undefined,
-      (error: unknown) => error as AiTokensException,
-    )
-    expect(failure).toBeInstanceOf(AiTokensException)
-    expect(failure?.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
-    expect((failure?.cause as Error).message).toBe('a promise a statement returned reads a constructor or then of its own')
+  it('waits for a thenable a statement returned', async () => {
+    await expect(awaitStatement(lazy(1))).resolves.toBe(1)
   })
 })
 
@@ -246,15 +237,25 @@ async function unhandledDuring(run: () => Promise<unknown>): Promise<{ unhandled
   return { unhandled, error }
 }
 
-/** A host callback that pollutes the realm while it runs and answers with a promise that rejects. */
-function pollutingAndRejecting(): () => Promise<never> {
+class SdkPromise<T> extends Promise<T> {}
+const foreign = runInNewContext('Promise') as PromiseConstructor
+
+/** The promises a host rejects with: the engine's, a subclass of it, and one of another realm. */
+const REJECTIONS: readonly (readonly [string, () => Promise<never>])[] = [
+  ['a native promise', () => Promise.reject(new Error('callback failed'))],
+  ['a subclass of Promise', () => SdkPromise.reject(new Error('callback failed'))],
+  ['a native promise of another realm', () => foreign.reject(new Error('callback failed'))],
+]
+
+/** A host callback that pollutes the realm while it runs and answers with the promise `reject` makes. */
+function pollutingAndRejecting(reject: () => Promise<never>): () => Promise<never> {
   return () => {
     ;(Object.prototype as Record<string, unknown>).accidentalExtension = 1
-    return Promise.reject(new Error('callback failed'))
+    return reject()
   }
 }
 
-describe('a host callback that pollutes the realm and rejects leaves nothing unhandled behind', () => {
+describe.each(REJECTIONS)('a host callback that pollutes the realm and rejects with %s leaves nothing unhandled behind', (_shape, reject) => {
   beforeEach(() => setRealmGuard(true))
   afterEach(() => {
     Reflect.deleteProperty(Object.prototype, 'accidentalExtension')
@@ -262,20 +263,20 @@ describe('a host callback that pollutes the realm and rejects leaves nothing unh
   })
 
   it('refuses the answer of settled with the realm error and handles the rejection it will not wait for', async () => {
-    const outcome = await unhandledDuring(() => settled(pollutingAndRejecting()()))
+    const outcome = await unhandledDuring(() => settled(pollutingAndRejecting(reject)()))
     expect(outcome.error).toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
     expect(outcome.unhandled).toEqual([])
   })
 
   it('does the same for a markup policy', async () => {
-    const resolver = new MarkupResolver({ markup: { resolve: pollutingAndRejecting() } })
+    const resolver = new MarkupResolver({ markup: { resolve: pollutingAndRejecting(reject) } })
     const outcome = await unhandledDuring(() => resolver.resolve({ ...context(), provider: 'openai', model: 'gpt-5', operation: 'chat', serviceTier: 'standard' } as never))
     expect(outcome.error).toBeInstanceOf(AiTokensException)
     expect(outcome.unhandled).toEqual([])
   })
 
   it('does the same for a tokenizer', async () => {
-    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: { countTokens: pollutingAndRejecting() } })
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: { countTokens: pollutingAndRejecting(reject) } })
     collector.push({ choices: [{ delta: { content: 'one two three' } }] })
     const outcome = await unhandledDuring(() => collector.finalize())
     expect(outcome.error).toBeInstanceOf(AiTokensException)
@@ -285,7 +286,7 @@ describe('a host callback that pollutes the realm and rejects leaves nothing unh
   it('does the same for the scope resolver of a guard', async () => {
     const { BudgetGuard } = await import('./enforcement/budget.guard')
     const built = makeService()
-    const guard = new BudgetGuard(built.service, { holdFor: () => undefined } as never, new Reflector(), { scopeResolver: pollutingAndRejecting() })
+    const guard = new BudgetGuard(built.service, { holdFor: () => undefined } as never, new Reflector(), { scopeResolver: pollutingAndRejecting(reject) })
     const executionContext = { getHandler: () => () => undefined, getClass: () => class {}, switchToHttp: () => ({ getRequest: () => ({}) }) } as unknown as ExecutionContext
     const outcome = await unhandledDuring(() => guard.canActivate(executionContext))
     expect(outcome.error).toBeInstanceOf(AiTokensException)

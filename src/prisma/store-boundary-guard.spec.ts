@@ -97,11 +97,9 @@ describe('guardStoreErrors', () => {
     expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
   })
 
-  /** The refusal is the boundary's, not the thenable's: a thenable that would have answered is refused, and the reason is on the cause. */
-  it('refuses a thenable that would have resolved, and says why on the cause', async () => {
-    const error = await typedFailure(() => guarded().lazy())
-    expect(error.getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
-    expect((error.cause as Error).message).toBe('a promise a store method returned reads a constructor or then of its own')
+  /** A thenable that answers is waited for, and what it resolved with is what the method returns. */
+  it('waits for a thenable that resolves', async () => {
+    await expect(guarded().lazy()).resolves.toBe('ran')
   })
 
   /** A throw before the first await is thrown at the call, not turned into a rejected promise. */
@@ -136,5 +134,19 @@ describe('guardStoreErrors', () => {
     expect(() => store.plain()).toThrow('injected')
     failing.mockRestore()
     expect(store.plain()).toBe(PLAIN)
+  })
+
+  /** A native promise with a `then` of its own is refused with the typed error, and the reason it was refused rides on the cause. */
+  it('types the refusal of a native promise that has a then of its own and says why on the cause', async () => {
+    const planted = Promise.resolve(1)
+    void Object.defineProperty(planted, 'then', { value: () => undefined })
+    class Reader {
+      read(): Promise<number> {
+        return planted
+      }
+    }
+    const store = guardStoreErrors(new Reader(), () => false)
+    const error = await typedFailure(() => store.read())
+    expect((error.cause as Error).message).toBe('a promise a store method returned reads a constructor or then of its own')
   })
 })

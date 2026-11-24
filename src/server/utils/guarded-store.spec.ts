@@ -5,7 +5,6 @@
  */
 
 import { types } from 'node:util'
-import { AiTokensException } from '../errors'
 import { guardedStore } from './guarded-store'
 import { setRealmGuard } from './prototype-guard'
 
@@ -87,10 +86,10 @@ describe('guardedStore', () => {
   })
 
   /**
-   * A record with a `then` that is no function is a plain field and comes back as a row. A row whose `then` is a function, and a thenable that is
-   * no native promise (a class with a `then`), are refused: an `await` of either runs that `then`, which is code of the host.
+   * A record with a `then` that is no function is a plain field and comes back as a row. A plain object whose own `then` is a function, and a
+   * thenable that is no native promise (a class with a `then`), are thenables: the store's own answer is what they resolve with.
    */
-  it('returns a row with a then field as a row, and refuses a callable then on a row and a thenable that is no native promise', async () => {
+  it('returns a row with a then field as a row, and waits for a callable own then and for a thenable that is no native promise', async () => {
     class Entity {
       readonly id = 'e1'
     }
@@ -112,8 +111,8 @@ describe('guardedStore', () => {
     expect((entity as { id: string }).id).toBe('e1')
     expect((guarded.fieldThen() as { id: string }).id).toBe('r1')
     expect(await guarded.promise()).toEqual({ id: 'p1' })
-    expect(() => guarded.callableThen()).toThrow(AiTokensException)
-    await expect(guarded.builder() as Promise<unknown>).rejects.toBeInstanceOf(AiTokensException)
+    await expect(guarded.callableThen() as Promise<unknown>).resolves.toBe('output')
+    await expect(guarded.builder() as Promise<unknown>).resolves.toEqual({ id: 'q1' })
   })
 
   /** A row nested deeper than a store returns is refused with the library's error and never handed on uncopied, in either direction. */

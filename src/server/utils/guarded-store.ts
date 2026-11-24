@@ -24,23 +24,29 @@ const GUARDED = new WeakSet()
  */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   if (typeof value !== 'object' || value === null) return false
-  return types.isPromise(value) || (!isPlain(value) && typeof fieldOf(value, 'then') === 'function')
+  if (types.isPromise(value)) return true
+  if (!isPlain(value)) return typeof fieldOf(value, 'then') === 'function'
+  // A plain object is a thenable only by a data `then` of its own, found without a read: a getter or a Proxy trap would run before {@link accepted}
+  // refuses the row, and one that changes the row and answers nothing would get it through. One on `Object.prototype` is the realm's, checked there.
+  if (types.isProxy(value)) return false
+  const own = Object.getOwnPropertyDescriptor(value, 'then')
+  return own !== undefined && Object.hasOwn(own, 'value') && typeof own.value === 'function'
 }
 
 /**
- * What a store returned, once it is certain that reading or awaiting it runs no code the host planted for that one read: a promise whose
- * `constructor` or `then` was planted, a thenable that is not a native promise, a value with a `then` on its chain, and arrays whose methods
- * were replaced are all refused, since the answer they would give is the host's.
+ * What a store returned, once it is certain that reading or awaiting it runs no code the host planted for that one read: a native promise whose
+ * `constructor` or `then` was planted, a Proxy, and arrays whose methods were replaced are refused, since the answer they would give is the
+ * host's; so is a row with a `then` on its chain. A promise (`pending`) may be a subclass of `Promise` or a thenable, whose `then` is the store's own.
  */
-function accepted(result: unknown): void {
+function accepted(result: unknown, pending: boolean): void {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
-  if (refusesPromise(result, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
+  if (refusesPromise(result, pending, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
 }
 
 /** The copy of what a store resolved with, checked once more right before the value is resolved into the promise the caller awaits. */
 function returned(value: unknown): unknown {
   const copy = copied(value)
-  accepted(copy)
+  accepted(copy, false)
   return copy
 }
 
@@ -83,11 +89,11 @@ export function guardedStore<T extends object>(store: T): T {
         if (isThenable(result)) {
           // The check runs in the body of the async function, before its first await: a refusal is a rejection, as for any failed call.
           return (async (): Promise<unknown> => {
-            accepted(result)
+            accepted(result, true)
             return returned(await result)
           })()
         }
-        accepted(result)
+        accepted(result, false)
         return returned(result)
       }
     },

@@ -26,7 +26,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  */
 async function crossing(result: PromiseLike<unknown>, cross: (error: unknown) => never): Promise<unknown> {
   try {
-    if (refusesPromise(result, false, types.isProxy)) throw new Error('a promise a store method returned reads a constructor or then of its own')
+    if (refusesPromise(result, true, types.isProxy)) throw new Error('a promise a store method returned reads a constructor or then of its own')
     return await result
   } catch (error) {
     return cross(error)
