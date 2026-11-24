@@ -31,8 +31,8 @@ describe('a promise a native await runs alone', () => {
   })
 
   /**
-   * Flipped from "lets a thenable go on": a thenable that is no exact native promise (a subclass, a class with a `then`) is refused, since
-   * its `then` is code of the host that calls the live `Promise.prototype.then`; only a driver's own lazy query builders are let through, by `thenables`.
+   * A thenable that is no exact native promise (a subclass, a class with a `then`) is refused, since its `then` is code of the host that
+   * calls the live `Promise.prototype.then`; only a driver's own lazy query builders are let through, by `thenables`.
    */
   it('refuses a thenable and a subclass of Promise, and lets a driver thenable through when asked', () => {
     class Sub extends Promise<number> {}
@@ -104,11 +104,8 @@ describe('a promise a native await runs alone', () => {
     expect(handled).not.toHaveBeenCalled()
   })
 
-  /** The species getter is read as an own property of the intrinsic only: a descriptor with no `get` of its own is not the engine's. */
-  it('refuses a species descriptor that inherits its getter', () => {
-    const inherited = Object.create({ get: speciesKept.get }) as PropertyDescriptor
-    Object.defineProperty(inherited, 'configurable', { value: true })
-    expect(Object.hasOwn(inherited, 'get')).toBe(false)
+  /** A `Promise[Symbol.species]` that holds a plain value instead of the engine's getter is not the engine's. */
+  it('refuses a species property that is a plain value, not the engine getter', () => {
     Reflect.defineProperty(Promise, Symbol.species, { value: Promise, configurable: true })
     expect(promiseSpeciesIntact()).toBe(false)
   })
