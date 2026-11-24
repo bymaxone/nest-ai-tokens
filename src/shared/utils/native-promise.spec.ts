@@ -216,6 +216,38 @@ describe('the arrays and objects a decision path reads', () => {
     expect([refusesPromise(Object.create(proxy), true, types.isProxy), refusesPromise(new Builder(), true, types.isProxy), refusesPromise(Object.create(proxy), true)]).toEqual([true, false, false])
   })
 
+  /**
+   * Every check the default mode makes, run in both modes. The one the thenables mode skips is the `then` on the chain of a value that is no
+   * native promise; every other check holds in both.
+   */
+  const CHECKS: readonly (readonly [string, (thenables: boolean) => boolean, boolean, boolean])[] = [
+    ['a plain object', (thenables) => refusesPromise({ id: 1 }, thenables, types.isProxy), false, false],
+    ['a native promise', (thenables) => refusesPromise(Promise.resolve(1), thenables, types.isProxy), false, false],
+    ['a native promise with a then of its own', (thenables) => refusesPromise(Object.assign(Promise.resolve(1), { then: () => undefined }), thenables, types.isProxy), true, true],
+    ['a native promise with a constructor of its own', (thenables) => refusesPromise(Object.assign(Promise.resolve(1), { constructor: Promise }), thenables, types.isProxy), true, true],
+    ['a native promise while Promise.prototype.then is an accessor', (thenables) => {
+      const promise = Promise.resolve(1)
+      return whileReplaced(Promise.prototype, 'then', { get: () => undefined, configurable: true }, () => refusesPromise(promise, thenables, types.isProxy))
+    }, true, true],
+    ['any value while an array method is replaced', (thenables) => whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, () => refusesPromise({ id: 1 }, thenables, types.isProxy)), true, true],
+    ['a Proxy', (thenables) => refusesPromise(new Proxy({}, {}), thenables, types.isProxy), true, true],
+    ['a Proxy over a promise', (thenables) => refusesPromise(new Proxy(Promise.resolve(1), {}), thenables, types.isProxy), true, true],
+    ['an object with a Proxy on its chain', (thenables) => refusesPromise(Object.create(new Proxy({}, {})), thenables, types.isProxy), true, true],
+    ['an object with a chain longer than the one walked', (thenables) => {
+      let chain: object = {}
+      for (let depth = 0; depth < 70; depth += 1) chain = Object.create(chain) as object
+      return refusesPromise(chain, thenables, types.isProxy)
+    }, true, true],
+    ['an instance of a class with a then', (thenables) => refusesPromise(new (class { then(): void {} })(), thenables, types.isProxy), true, false],
+    ['an object with an accessor then', (thenables) => refusesPromise({ get then() { return undefined } }, thenables, types.isProxy), true, false],
+    ['a subclass of Promise', (thenables) => refusesPromise(new (class extends Promise<number> {})(() => undefined), thenables, types.isProxy), true, false],
+    ['an object with a then that is a plain field', (thenables) => refusesPromise({ then: 1 }, thenables, types.isProxy), false, false],
+  ]
+
+  it.each(CHECKS)('answers for %s in the default mode and in the mode that lets thenables through', (_name, check, byDefault, withThenables) => {
+    expect([check(false), check(true)]).toEqual([byDefault, withThenables])
+  })
+
   it('refuses any value while an array method is replaced', () => {
     const refused = whileReplaced(Array.prototype, 'map', { ...kept.map, value: () => [] }, () => refusesPromise(1))
     expect(refused).toBe(true)

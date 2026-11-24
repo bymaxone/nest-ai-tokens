@@ -100,6 +100,24 @@ describe('a host answer with a Proxy on its prototype chain, which answers a the
   })
 })
 
+describe('the reason a refused host answer carries', () => {
+  /** The reason rides in the details of the typed error: it says which check refused, before the wait or after it. */
+  const reasonOf = async (answer: Promise<unknown>): Promise<unknown> => {
+    const error: unknown = await answer.catch((failure: unknown) => failure)
+    return ((error as AiTokensException).getResponse() as { error: { details: { reason: unknown } } }).error.details.reason
+  }
+
+  it('names a promise that reads a constructor or then of its own when it is refused before the wait', async () => {
+    const planted = Promise.resolve(1)
+    void Object.defineProperty(planted, 'then', { value: () => undefined })
+    await expect(reasonOf(settled(planted))).resolves.toBe('what a host returned reads a constructor or then of its own, or the arrays the library reads were replaced')
+  })
+
+  it('names a resolved value that has a then of its own when it is refused after the wait', async () => {
+    await expect(reasonOf(settled(Promise.resolve(new Proxy({}, {})), true))).resolves.toBe('what a host resolved with has a then of its own, or the arrays the library reads were replaced')
+  })
+})
+
 describe('a host that resolves with a Proxy', () => {
   const proxy = (): object => new Proxy({ id: 'r1' }, {})
 
