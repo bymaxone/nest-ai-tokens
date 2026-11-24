@@ -33,17 +33,15 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # The ceiling is per shard job and is computed, not guessed. Cold run 45272965108 on bc54d53,
-      # four shards of two workers: shard 1 finished in about 85 minutes, shards 2, 3 and 4 were cut
-      # at 150. Each shard's cost is (static mutants x its dry-run net seconds x about 2.2 + the other
-      # mutants x about 1 s) / 2 workers: 85, 93, 145 and 265 minutes for the four shards, with the
-      # heaviest on the slowest runner (53.2 s net against 27.5 s on the fastest). Eight shards split
-      # the 675 static mutants to about 84 each, which puts the heaviest shard on that slowest runner
-      # at about 90 minutes. 1.5 times that would be 135, but the planner balances by test executions
-      # and does not weigh static mutants, so one shard may draw well over its average share and a
-      # ceiling that cuts it loses the whole run. The ceiling is held at 150, the value the earlier run
-      # already used, until the first eight-shard run is measured; then it becomes 1.5 times that
-      # run's slowest shard, with the run ID written here.
+      # The ceiling is per shard job. A shard costs about (static mutants x its dry-run seconds x 2.2 +
+      # other mutants x 1 s) / workers, because each static mutant re-runs the whole suite. Hosted
+      # runners vary 1.9x on the same work (27.5 s to 53.2 s net dry run), and a four-shard split put
+      # 85 to 265 estimated minutes on one runner. Eight shards split the 675 static mutants to about 84
+      # each, which is about 90 minutes for the heaviest shard on the slowest runner measured.
+      # The planner balances by test executions and does not weigh static mutants, so one shard can
+      # draw well over its average share, and a ceiling that cuts it loses the whole run. The ceiling
+      # therefore stays at 150, above 1.5 times that estimate, until an eight-shard run has been
+      # measured; it then becomes 1.5 times that run's slowest shard.
       timeout-minutes: 150
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
