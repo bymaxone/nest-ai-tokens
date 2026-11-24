@@ -101,6 +101,7 @@ export async function rowAfterFailure(find: () => Promise<UsageRecord | null>): 
   const pending = find()
   try {
     return await pending
+    // Stryker disable next-line BlockStatement: equivalent: an emptied handler falls off the end of the function, which also answers undefined
   } catch {
     return undefined
   }
