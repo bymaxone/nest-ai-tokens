@@ -10,6 +10,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Documentation
+
+- The README states the limit of a ledger store without the optional effects-owed marker calls. A wallet leg that fails after a capture commits leaves the record posted at its actual cost while the wallet keeps the hold's reserved debit, and a second capture returns the posted record without running the leg again. A store that keeps the marker, as the Prisma store does, lets the reaper finish the leg.
+
 ## [1.1.22] - 2026-11-22
 
 **Apply:** no migration and no option change is needed. This release closes one class of defect, found in every earlier release: a key put on `Object.prototype` (by another library, or by prototype pollution) was read as a value the host had supplied, in the options of the module, the metadata of `@Meter` and `@RequireBudget`, the usage a handler returns and a normalizer builds, the rows, filters and optional methods of a store, the inputs the PostgreSQL adapter binds and the descriptors the library defines. Read the **Changed** entries before you upgrade: the library now refuses to start or to move money in a process whose `Object.prototype` or built-ins are not the engine's, and the records the services hand back are copies with no prototype.
