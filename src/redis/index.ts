@@ -230,24 +230,9 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
    */
   async onModuleDestroy(): Promise<void> {
     this.#closed = true
-    if (this.#connecting === null) return
-    await this.connected(this.#connecting)
     const client = this.#owned
     if (client === null || client.status === 'end') return
     await this.quitWithin(client)
-  }
-
-  /**
-   * The box of the client a connection resolved to, or `null` when it failed. The wait is a native `await` in a `try`: a chain (`.catch`) would build
-   * its answer with `Promise[Symbol.species]`, read live, which a host can make answer for the connection.
-   */
-  private async connected(connecting: Promise<ClientBox>): Promise<ClientBox | null> {
-    try {
-      if (refusesPromise(connecting, false, types.isProxy)) return null
-      return await connecting
-    } catch {
-      return null
-    }
   }
 
   /** Quit gracefully within the bound, falling back to `disconnect()` when the quit is late or fails; leaves no timer behind. */
@@ -282,7 +267,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
     if (this.#closed) throw new Error('counter store is closed')
     this.#connecting ??= this.connect(this.#source)
     const connecting = this.#connecting
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
+    // Stryker disable next-line ObjectLiteral,StringLiteral,BooleanLiteral: error reason is an internal diagnostic; tests check the code. BooleanLiteral false->true: equivalent: `connecting` is always the intrinsic promise of the async connect(), which returns at the PROMISE_PROTOTYPE branch of refusesPromise before `thenables` is read
     if (refusesPromise(connecting, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
     return await connecting
   }

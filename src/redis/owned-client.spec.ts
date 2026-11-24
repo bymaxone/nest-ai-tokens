@@ -289,13 +289,26 @@ describe('RedisBudgetCounterStore refusals while it connects and while it waits 
     await store.onModuleDestroy()
   })
 
-  /** A store closed while the client library is still loading opens no client, and the call that started the connection fails closed. */
+  /**
+   * A store closed while the client library is still loading opens no client, quits nothing, and leaves no rejection nobody handles; the
+   * call that started the connection fails closed, and closing again stays safe.
+   */
   it('opens no client when it is closed while the client library loads, and says the store is closed', async () => {
-    const store = new RedisBudgetCounterStore('redis://localhost:6379')
-    const call = store.incrIfBelow('k', 1n, 10n, 60)
-    const closing = store.onModuleDestroy()
-    await expect(call).rejects.toThrow('counter store is closed')
-    await closing
-    expect(mockCreated).toHaveLength(0)
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const store = new RedisBudgetCounterStore('redis://localhost:6379')
+      const call = store.incrIfBelow('k', 1n, 10n, 60)
+      const closing = store.onModuleDestroy()
+      await expect(call).rejects.toThrow('counter store is closed')
+      await closing
+      await store.onModuleDestroy()
+      await new Promise<void>((done) => setImmediate(done))
+      expect(mockCreated).toHaveLength(0)
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
   })
 })
