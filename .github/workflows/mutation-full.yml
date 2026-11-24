@@ -33,15 +33,20 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # The ceiling is per shard job and sits well above what one shard needs, because hosted runner
-      # speed varies about 1.5x on the same work across the fleet. Nothing blocks on this job: an
-      # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the whole run
-      # and leaves the week without a measured baseline.
+      # The ceiling is per shard job. A shard costs about (static mutants x its dry-run seconds x 2.2 +
+      # other mutants x 1 s) / workers, because each static mutant re-runs the whole suite. Hosted
+      # runners vary 1.9x on the same work (27.5 s to 53.2 s net dry run), and a four-shard split put
+      # 85 to 265 estimated minutes on one runner. Eight shards split the 675 static mutants to about 84
+      # each, which is about 90 minutes for the heaviest shard on the slowest runner measured.
+      # The planner balances by test executions and does not weigh static mutants, so one shard can
+      # draw well over its average share, and a ceiling that cuts it loses the whole run. The ceiling
+      # therefore stays at 150, above 1.5 times that estimate, until an eight-shard run has been
+      # measured; it then becomes 1.5 times that run's slowest shard.
       timeout-minutes: 150
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
-      # Four shards of two workers each. The cold run grows with the suite, so it is split across four
+      # Eight shards of two workers each. The cold run grows with the suite, so it is split across
       # runners instead of given a longer one. A worker grows to several GiB over a long run and the
       # hosted runner has 16 GB, so two workers and their parent are what one runner holds. The count
       # and the concurrency are passed here, not written into stryker.config.json, which the per-push
@@ -49,5 +54,5 @@ jobs:
       # The static mutants (about 6% of the mutants, about 71% of the test time) each re-run the whole
       # suite, and 69% of that static cost sits in three places: the seed table (100 mutants),
       # prisma/sql.ts (50) and the error messages (16).
-      shards: 4
+      shards: 8
       concurrency: 2
