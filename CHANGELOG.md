@@ -17,8 +17,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 - The Redis counter takes the client from a box with no prototype, so a `then` planted on the class of the client cannot swap the client the store runs its script on.
 - The hold reaper waits for a sweep natively, so a species that never settles can no longer leave the running flag set and stop later sweeps.
 - Only an exact native promise is waited for on a decision path. A promise a store or a host function returns (a scope resolver, a markup policy, a tokenizer, an fx function, the metered function, the module options factory, the Redis client) is refused when it is a subclass, a thenable that is not a native promise, or a value with a `then` anywhere on its chain, since an `await` of any of them runs a `then` of the host; and every host answer is checked again after the wait, with the arrays the library reads compared with the engine's. **Apply:** a store or callback that returns a custom thenable or a `Promise` subclass must return a native promise (`Promise.resolve(x)`, or an `async` function). The metered function of `meter()` may still return a provider SDK's promise.
-- The lists the library reads after a store answered are built with index loops and array helpers that use no live `Array.prototype` member, so a one-shot `map`, `filter`, `push` or `then` a store plants cannot empty a budget list or a status list and let an over-limit consume through.
-- The Redis client is quit on shutdown even when its connection promise was refused or never settled, and the bounded quit no longer races a promise.
+- After every store or host answer the `Array.prototype` and `Object.prototype` members the library reads are compared with the engine's, and the budget and status lists are built with helpers that read none of them, so a one-shot `map`, `filter`, `push` or `then` a store plants is refused instead of emptying a budget list and letting an over-limit consume through.
+- The Redis client is quit on shutdown even when its connection promise was refused, and the bounded quit no longer races a promise.
 
 ### Documentation
 
