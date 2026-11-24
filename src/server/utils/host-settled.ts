@@ -15,7 +15,7 @@ import { assertCleanRealm } from './prototype-guard'
  * Waits for a host promise.
  *
  * @param pending What the host returned: a promise, or a value that is no promise.
- * @param refuseProxyAnswer `true` for the function `meter()` runs, whose answer may not be a Proxy: resolving it reads a `then` through a trap, which is code of the host. Every other call takes the answer as 1.1.22 did.
+ * @param refuseProxyAnswer `true` for the function `meter()` runs, whose answer may not be a Proxy: resolving it reads a `then` through a trap, which is code of the host. Every other call takes the answer as the host resolved it, a Proxy included.
  * @returns What it resolved with.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the realm is polluted before or after the wait, or the promise is a native one with a `constructor` or `then` of its own, or a Proxy; what the host rejected with, unchanged.
  */
@@ -23,8 +23,9 @@ export async function settled<T>(pending: T | PromiseLike<T>, refuseProxyAnswer 
   try {
     assertCleanRealm()
   } catch (error) {
-    // The host's promise exists already and nothing will wait for it: its rejection is marked handled, or it would end the process.
-    absorbRejection(pending, true, types.isProxy)
+    // The host's promise exists already and nothing will wait for it: its rejection is marked handled, or it would end the process. A promise of
+    // any kind is waited for by a throwaway wait; a thenable that is no promise is left alone, as running its `then` is code of the host.
+    absorbRejection(pending, !types.isPromise(pending), types.isProxy)
     throw error
   }
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
