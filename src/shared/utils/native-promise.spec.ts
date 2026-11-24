@@ -371,17 +371,19 @@ describe('marking the rejection of a promise nobody will wait for as handled', (
     })).toEqual([])
   })
 
-  it('reads no species getter a host planted', () => {
+  it('leaves no unhandled rejection of a native promise while Promise[Symbol.species] is planted, and reads that getter 0 times', async () => {
     const speciesKept = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!
     let reads = 0
     const failed = Promise.reject(new Error('callback failed'))
-    Reflect.apply(kept.value as (...args: unknown[]) => unknown, failed, [() => undefined, () => undefined])
-    Reflect.defineProperty(Promise, Symbol.species, { get: () => { reads += 1; return Promise }, configurable: true })
-    try {
-      absorbRejection(failed)
-    } finally {
-      Reflect.defineProperty(Promise, Symbol.species, speciesKept)
-    }
+    const seen = await unhandledDuring(() => {
+      Reflect.defineProperty(Promise, Symbol.species, { get: () => { reads += 1; return Promise }, configurable: true })
+      try {
+        absorbRejection(failed)
+      } finally {
+        Reflect.defineProperty(Promise, Symbol.species, speciesKept)
+      }
+    })
+    expect(seen).toEqual([])
     expect(reads).toBe(0)
   })
 

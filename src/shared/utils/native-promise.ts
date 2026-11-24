@@ -15,10 +15,6 @@ const getPrototypeOf = Object.getPrototypeOf
 const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
 const hasOwn = Object.hasOwn
 const defineProperty = Object.defineProperty
-const reflectApply = Reflect.apply
-// Captured while the module loads, so that handling a rejection later reads no `then` from the promise or from `Promise.prototype`.
-const PROMISE_THEN = (getOwnPropertyDescriptor(PROMISE_PROTOTYPE, 'then') as { value: (...args: unknown[]) => unknown }).value
-const IGNORE = (): void => undefined
 const speciesAtLoad = getOwnPropertyDescriptor(INTRINSIC_PROMISE, Symbol.species)
 // The module loads before any host code, so the descriptor exists and its own getter is the one read.
 const INTRINSIC_SPECIES: unknown = (speciesAtLoad as { get?: unknown }).get
@@ -169,6 +165,30 @@ export function promiseSpeciesIntact(): boolean {
 export function refusesPromise(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): boolean {
   if (!refused(value, thenables, isProxy)) return false
   if (proxyOnChain(value, isProxy)) return true
+  swallow(value)
+  return true
+}
+
+/**
+ * Marks the rejection of a promise as handled, for a caller that refuses to wait for it: a promise the host created and the library does not
+ * read would otherwise end a Node process as an unhandled rejection. A native promise is waited for by a native `await` that discards its
+ * outcome: that `await` builds no derived promise, so it reads no `Promise[Symbol.species]`, and it looks up no `then`. Any other value is
+ * treated as {@link refusesPromise} treats it, and a thenable that call lets through is left alone.
+ *
+ * @param value What a host call returned.
+ * @param thenables As in {@link refusesPromise}.
+ * @param isProxy Tells a Proxy from an object.
+ */
+export function absorbRejection(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): void {
+  if (!isNativePromise(value, isProxy)) {
+    refusesPromise(value, thenables, isProxy)
+    return
+  }
+  swallow(value)
+}
+
+/** Waits for `value` and discards how it settles, so that a rejection of it is handled. Nothing it settles with is read. */
+function swallow(value: unknown): void {
   void (async (): Promise<void> => {
     try {
       await value
@@ -176,26 +196,6 @@ export function refusesPromise(value: unknown, thenables = false, isProxy: Proxy
       // The caller refused this value; whatever it settles with is not read.
     }
   })()
-  return true
-}
-
-/**
- * Marks the rejection of a promise as handled, for a caller that refuses to wait for it: a promise the host created and the library does not
- * read would otherwise end a Node process as an unhandled rejection. A native promise, while `Promise[Symbol.species]` is the engine's, is
- * handled with the `then` captured at load and the arguments it is given, so no `then` is looked up on the promise or on a polluted
- * prototype and no planted species getter runs; any other value is treated as {@link refusesPromise} treats it, and a thenable that call lets
- * through is left alone.
- *
- * @param value What a host call returned.
- * @param thenables As in {@link refusesPromise}.
- * @param isProxy Tells a Proxy from an object.
- */
-export function absorbRejection(value: unknown, thenables = false, isProxy: ProxyProbe = noProxy): void {
-  if (isNativePromise(value, isProxy) && promiseSpeciesIntact()) {
-    void reflectApply(PROMISE_THEN, value, [IGNORE, IGNORE])
-    return
-  }
-  refusesPromise(value, thenables, isProxy)
 }
 
 /** Whether `value` is an object whose prototype is the engine's `Promise.prototype` and that is no Proxy, read without running a getter. */
