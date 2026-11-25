@@ -18,6 +18,15 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 - `getBalance(ref, { asOf })` and `getBalanceBreakdown(ref, { asOf })` answer what could be spent at an instant; an `asOf` more than 5 seconds in the past is refused. Both need a store with `balanceAt` and `balanceBreakdown`, which are optional on the port.
 - Each ledger entry of a wallet carries a per-wallet `seq` and the `balanceAfterNanoUsd` it left, and entries list in commit order.
 
+### Fixed
+
+- `BudgetGuard` could not be built by Nest in a host that names it in `@UseGuards(BudgetGuard)`, including the README's own controller: its constructor parameters carried no `@Inject`, the published build is made without decorator metadata, and Nest reported "can't resolve dependencies of the BudgetGuard (?, +, +, Symbol(BYMAX_AI_TOKENS_OPTIONS))". It failed in every published version. Every parameter now names its token. A consumer-runtime gate now boots a Nest host over HTTP against the packed tarball with the README controller, and proves the guard passes a request under budget, answers 402 or 429 over it, and refuses a hold larger than the budget before the handler runs.
+- `@RequireBudget` with a `{ tokens }` or `{ amountNanoUsd }` estimate on a rate-table preset is refused with `AI_TOKENS_INVALID_CONFIG` (HTTP 500) before the handler runs when `pricing.strict` is true. Such an estimate names no model, so its settle after the provider call was always refused with `AI_TOKENS_PRICE_NOT_FOUND` and the served usage was released unbilled. A provider-reported preset, a rated `{ provider, model, ... }` estimate and `pricing.strict: false` are unchanged; with `strict: false` a model-less hold on a rate-table preset is recorded at 0 USD, so name provider and model to bill it. A direct `metering.hold()` followed by `capture()` is unchanged.
+
+### Documentation
+
+- README step 4 names the model in the `@RequireBudget` estimate and extracts the provider response in `@Meter`: the anthropic normalizer reads the whole response, so the default `result.usage` made the settle fail with `AI_TOKENS_USAGE_MALFORMED`.
+
 ### Changed
 
 - `appendEntry` of the Prisma store locks the wallet row before it writes, as `conditionalDebit` and `reconcile` already did. Parallel writers to one wallet queue on that lock.

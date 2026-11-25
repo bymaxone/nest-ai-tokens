@@ -257,24 +257,35 @@ import {
   toJsonSafe,
   providerPresets,
 } from '@bymax-one/nest-ai-tokens'
+import { AiService } from './ai.service' // your wrapper over the provider SDK
 
 @Controller('ai')
 @UseGuards(BudgetGuard)
 @UseInterceptors(MeteringInterceptor)
 export class AiController {
-  constructor(private readonly metering: MeteringService) {}
+  constructor(
+    private readonly metering: MeteringService,
+    private readonly ai: AiService,
+  ) {}
 
   @Post('summarize')
-  @RequireBudget({ scope: 'tenant', estimate: { tokens: 3_000 } })
+  @RequireBudget({
+    scope: 'tenant',
+    // Name the provider and the model: the settle prices the call with the hold's own, and a bare `{ tokens }` estimate names none
+    // (the guard refuses it under strict pricing, and with `pricing.strict: false` it is recorded at 0 USD).
+    estimate: { provider: 'anthropic', model: 'claude-opus-4', operation: 'chat', inputTokens: 2_000, maxOutputTokens: 1_000 },
+  })
   @Meter({
     feature: 'doc.summarize',
     scope: 'tenant',
     preset: providerPresets.anthropic,
+    // The anthropic normalizer reads the whole provider response (its `usage` and its `model`), so extract that, not `result.usage`.
+    extract: (result) => (result as { response: unknown }).response,
     exposeHeaders: true,
   })
   async summarize(@Body() dto: { content: string }) {
     // Guard checks budget and places a hold; interceptor settles it with the handler's actual usage.
-    return this.ai.summarize(dto.content) // returns { summary, usage }
+    return this.ai.summarize(dto.content) // returns { summary, response }, `response` being the provider's own response
   }
 
   @Get('me/usage')

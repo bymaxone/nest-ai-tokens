@@ -29,6 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { prepareHostProbe } from './consumer-host-probe.mjs'
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Read from the manifest rather than hard-coded: this gate exists to inspect
@@ -211,6 +212,17 @@ try {
       failed = true
     }
   }
+
+  // The host a consumer writes: a Nest application over HTTP with the README's controller, resolving the guard
+  // and the interceptor from the tarball, and the guard acting on what it is asked.
+  const host = prepareHostProbe(rootDir, consumerDir)
+  try {
+    process.stdout.write(run(host.command, host.args, { cwd: host.cwd, stdio: 'pipe' }))
+  } catch (error) {
+    process.stdout.write(error.stdout ?? '')
+    process.stderr.write(error.stderr ?? '')
+    failed = true
+  }
 } catch (error) {
   console.error(`✗ gate setup failed: ${error.message}`)
   if (error.stderr) process.stderr.write(error.stderr)
@@ -225,4 +237,4 @@ if (failed) {
   process.exit(1)
 }
 
-console.log('✓ Entry points share one runtime in ESM and CommonJS.')
+console.log('✓ Entry points share one runtime in ESM and CommonJS, and a host boots and is guarded by the tarball.')

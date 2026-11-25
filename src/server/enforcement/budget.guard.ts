@@ -20,13 +20,13 @@ import { effectivePolicy } from '../utils/enum-guards'
 import { settled } from '../utils/host-settled'
 import { Inject, Injectable } from '@nestjs/common'
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
-import type { Reflector } from '@nestjs/core'
+import { Reflector } from '@nestjs/core'
 import type { BudgetStatus } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
-import type { BudgetService, MeteringService } from '../services'
+import { BudgetService, MeteringService } from '../services'
 import { suppliedDetails } from '../utils/detail-text'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA, meterConfigOf, requireBudgetOf } from './decorators'
@@ -57,9 +57,9 @@ export class BudgetGuard implements CanActivate {
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `scopeResolver` is absent (fail-fast at init).
    */
   constructor(
-    private readonly budgets: BudgetService,
-    private readonly metering: MeteringService,
-    private readonly reflector: Reflector,
+    @Inject(BudgetService) private readonly budgets: BudgetService,
+    @Inject(MeteringService) private readonly metering: MeteringService,
+    @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(BYMAX_AI_TOKENS_OPTIONS) options: Pick<ResolvedAiTokensOptions, 'scopeResolver'>,
   ) {
     if (options.scopeResolver === undefined) {
@@ -93,6 +93,7 @@ export class BudgetGuard implements CanActivate {
       if (error !== null) throw error
     }
     const meterContext: MeteringContext = { ...context, feature, ...(meter?.preset !== undefined ? { preset: meter.preset } : {}) }
+    if (requireBudget?.estimate !== undefined) this.metering.assertSettlePriceable(requireBudget.estimate, meter?.preset)
     const hold = requireBudget?.estimate !== undefined ? await this.metering.hold(meterContext, requireBudget.estimate) : undefined
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
     request.aiTokens = { status: statuses, context: meterContext, ...(hold !== undefined ? { hold } : {}) }
