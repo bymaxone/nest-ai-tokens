@@ -10,7 +10,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
-**Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had.
+**Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.
 
 ### Added
 
