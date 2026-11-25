@@ -3,6 +3,7 @@
  * @layer server
  */
 import { Reflector } from '@nestjs/core'
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host'
 import type { ResolvedAiTokensOptions } from '../config'
 import { providerPresets } from '../config/provider-presets'
 import { AiTokensException } from '../errors'
@@ -86,8 +87,7 @@ describe('a guard built by hand without a pricing service', () => {
     RequireBudget({ estimate: { tokens: 10 } })(Handler.prototype, 'run', descriptor)
     Meter({ feature: 'f', preset: providerPresets.openaiChat })(Handler.prototype, 'run', descriptor)
     const request: { aiTokens?: { hold?: unknown } } = {}
-    const executionContext = { getHandler: () => Handler.prototype.run, getClass: () => Handler, switchToHttp: () => ({ getRequest: () => request }) }
-    await expect(guard.canActivate(executionContext as never)).resolves.toBe(true)
+    await expect(guard.canActivate(new ExecutionContextHost([request], Handler, Handler.prototype.run))).resolves.toBe(true)
     expect(request.aiTokens?.hold).toBeDefined()
   })
 })

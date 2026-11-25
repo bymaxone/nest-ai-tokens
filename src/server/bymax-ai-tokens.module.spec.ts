@@ -1,6 +1,6 @@
 import { Inject, Injectable, Module } from '@nestjs/common'
-import type { ExecutionContext } from '@nestjs/common'
 import { DiscoveryModule, DiscoveryService } from '@nestjs/core'
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host'
 import { Test } from '@nestjs/testing'
 import {
   applyMarkup,
@@ -343,11 +343,7 @@ describe('BymaxAiTokensModule', () => {
         }),
       ],
     }).compile()
-    const executionContext = {
-      getHandler: () => Handler.prototype.run,
-      getClass: () => Handler,
-      switchToHttp: () => ({ getRequest: () => ({}) }),
-    } as unknown as ExecutionContext
+    const executionContext = new ExecutionContextHost([{}], Handler, Handler.prototype.run)
     await expect(moduleRef.get(BudgetGuard).canActivate(executionContext)).rejects.toMatchObject({
       response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } },
     })
