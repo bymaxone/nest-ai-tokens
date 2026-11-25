@@ -192,15 +192,16 @@ export class MeteringService {
    * budget feature.
    *
    * @param input The usage, its preset/normalizer, and the metering context.
-   * @param onAppended Internal: called once this call's own row is in the ledger, so a later failure is known to lose no usage.
+   * @param tracked Not for callers. A function given first is called once this call's own row is in the ledger; anything else is ignored.
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
-  async record(given: RecordInput, onAppended?: () => void): Promise<UsageRecord> {
+  async record(given: RecordInput, ...tracked: unknown[]): Promise<UsageRecord> {
     const input = recordInput(given)
     assertObject('input', input)
     assertMeteringContext(input.context)
-    return (await this.recordSettled(input, typeof onAppended === 'function' ? onAppended : undefined)).record
+    const [onAppended] = tracked
+    return (await this.recordSettled(input, typeof onAppended === 'function' ? (onAppended as () => void) : undefined)).record
   }
 
   /**

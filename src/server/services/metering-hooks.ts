@@ -6,7 +6,9 @@
 
 import type { Logger } from '@nestjs/common'
 import type { SettleFailedEventData, UsageRecord } from '../../shared'
+import { absorbHostCall } from '../utils/absorb-host-call'
 import { assertScope, assertText } from '../utils/argument-guards'
+import { MAX_DETAIL_CHARS } from '../utils/detail-text'
 import { fieldOf } from '../utils/field-names'
 import { describeError, errorCodeOf } from '../errors/describe-error'
 import type { HoldCaller } from '../interfaces'
@@ -54,20 +56,28 @@ export interface SettleSite {
 export async function announceSettleFailure(deps: { ledger: LedgerService; events: MeteringEventHooks }, logger: Logger, site: SettleSite, caller: HoldCaller, error: unknown): Promise<void> {
   const { holdId, where } = site
   const subject = holdId === undefined ? 'a metered call' : `hold ${holdId}`
+  // The logger is the host's, and a line it cannot write must not replace the settle error.
+  const warn = (line: string): void => {
+    absorbHostCall(logger, SETTLE_FAILED_LOG_KEY, () => {
+      logger.warn(`${SETTLE_FAILED_LOG_KEY} ${line}`)
+    })
+  }
   try {
     if (holdId !== undefined && (await deps.ledger.findById(holdId))?.status === 'posted') return
   } catch {
     // The row's state is unknown, so the failure is announced.
   }
-  logger.warn(`${SETTLE_FAILED_LOG_KEY} ${subject} was not settled: ${describeError(error)}`)
+  warn(`${subject} was not settled: ${describeError(error)}`)
   const errorCode = errorCodeOf(error)
   try {
     // A context with no payer reaches here when `record()` refused it; an event nobody can be told about is not emitted.
     assertText('context.tenantId', caller.tenantId)
     assertScope('context.scope', caller.scope)
-    const correlationId = fieldOf(caller, 'correlationId')
-    await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(typeof correlationId === 'string' ? { correlationId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
+    // Bounded like any supplied value an error may carry, and without the NUL a text column cannot hold.
+    const given = fieldOf(caller, 'correlationId')
+    const correlationId = typeof given === 'string' && given.length <= MAX_DETAIL_CHARS && !given.includes('\u0000') ? given : undefined
+    await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(correlationId !== undefined ? { correlationId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
   } catch (failure) {
-    logger.warn(`${SETTLE_FAILED_LOG_KEY} the event for ${subject} was not delivered: ${describeError(failure)}`)
+    warn(`the event for ${subject} was not delivered: ${describeError(failure)}`)
   }
 }

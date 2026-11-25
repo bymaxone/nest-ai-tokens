@@ -194,7 +194,7 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect(await run(built.interceptor, hold, returning({ usage: normalized() }))).toBe(failure)
   })
 
-  /** Without a hold the served usage is announced all the same, with no hold id; the error is the handler's caller's as before. */
+  /** Without a hold the served usage is announced all the same, with no hold id; the error reaches the caller unchanged. */
   it.each<[string, unknown, string]>([
     ['usable usage is missing', { nothing: true }, 'AI_TOKENS_USAGE_MALFORMED'],
     ['the usage cannot be normalized', { usage: { not: 'usable' } }, 'AI_TOKENS_UNKNOWN_PROVIDER'],

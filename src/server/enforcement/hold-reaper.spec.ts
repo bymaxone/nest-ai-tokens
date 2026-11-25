@@ -241,6 +241,43 @@ describe('HoldReaper', () => {
    * The settlement sweep rides on the same tick: a release whose wallet refund failed leaves the marker, and the sweep
    * finishes it once the marker is older than the grace.
    */
+  /** A backlog larger than one batch is reclaimed in the same sweep. */
+  it('reclaims more than one batch in a sweep', async () => {
+    const built = build()
+    const expired = Array.from({ length: 250 }, (_, index) => ({ id: `hold-${String(index)}` }))
+    const left = new Set(expired.map((record) => record.id))
+    jest.spyOn(built.ledger, 'findExpiredHolds').mockImplementation((_cutoff, limit) => Promise.resolve(expired.filter((record) => left.has(record.id)).slice(0, limit) as never))
+    jest.spyOn(built.ledger, 'transition').mockImplementation((id) => {
+      left.delete(id)
+      return Promise.resolve(null)
+    })
+    await built.reaper().sweep()
+    expect(left.size).toBe(0)
+    expect(built.ledger.findExpiredHolds).toHaveBeenCalledTimes(3)
+  })
+
+  /** A batch of which no hold can be moved ends the loop; the next tick retries. */
+  it('stops after a full batch it could not move', async () => {
+    const built = build()
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const stuck = Array.from({ length: 100 }, (_, index) => ({ id: `hold-${String(index)}` }))
+    jest.spyOn(built.ledger, 'findExpiredHolds').mockResolvedValue(stuck as never)
+    jest.spyOn(built.ledger, 'transition').mockRejectedValue(new Error('store down'))
+    await built.reaper().sweep()
+    expect(built.ledger.findExpiredHolds).toHaveBeenCalledTimes(1)
+    jest.restoreAllMocks()
+  })
+
+  /** A store that keeps answering with a full batch cannot keep a sweep from ending. */
+  it('reads at most a hundred batches in a sweep', async () => {
+    const built = build()
+    const full = Array.from({ length: 100 }, (_, index) => ({ id: `hold-${String(index)}` }))
+    jest.spyOn(built.ledger, 'findExpiredHolds').mockResolvedValue(full as never)
+    jest.spyOn(built.ledger, 'transition').mockResolvedValue(null)
+    await built.reaper().sweep()
+    expect(built.ledger.findExpiredHolds).toHaveBeenCalledTimes(100)
+  })
+
   describe('the settlement sweep', () => {
     /** A hold released by its caller whose refund failed, as the owed row the sweep finds. */
     async function owedRelease(built: ReturnType<typeof build>, wallets: WalletService): Promise<void> {

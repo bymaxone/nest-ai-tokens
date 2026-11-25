@@ -81,7 +81,7 @@ describe('MeteringService.meter() when settling fails after the function served'
   beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined))
   afterEach(() => jest.restoreAllMocks())
 
-  /** The reservation is released as before, then the lost usage is announced with the hold id and the code. */
+  /** The reservation is released, then the lost usage is announced with the hold id and the code. */
   it('releases the hold and then announces a failed capture', async () => {
     const built = await setup()
     const error = await meter(built, unusable, ESTIMATE)

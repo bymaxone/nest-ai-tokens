@@ -63,7 +63,9 @@ const BUDGETS = [
   // `Reflect` in place of every function of it; the server bundle measures 64_598.
   // 65_355 (server) also holds the settle failure that leaves the interceptor's hold pending and the `ai_tokens.settle.failed` event of the interceptor and of
   // `meter()`, with or without a hold; the server bundle measures 65_325.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_355 },
+  // 65_724 (server) also holds the interceptor's single catch that keeps the handler's error apart from the settle's, the announcement that survives a host logger or
+  // substitute service that throws, the bound on its correlation id and the reaper's further batches; the server bundle measures 65_694.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_724 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 19_498 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },

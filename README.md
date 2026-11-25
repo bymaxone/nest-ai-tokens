@@ -325,7 +325,7 @@ export class AiController {
 | `wallets.burnOrder`         | `'expiry' \| 'priority' \| 'fifo'`    | `'expiry'`       | Order in which grants are consumed                                               |
 | `budgets.defaultPolicy`     | `'block' \| 'throttle' \| 'allow'`    | `'block'`        | Default enforcement when a budget is exhausted                                   |
 | `budgets.alertThresholds`   | `number[]`                            | `[0.8, 1.0]`     | Soft-threshold events at these fractions                                         |
-| `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the reaper voids expired holds                                   |
+| `holds.ttlSeconds`          | `number`                              | `3600`           | Spend-hold TTL; the next reaper sweep voids the hold                             |
 | `settlement.enabled`        | `boolean`                             | `true`           | Run the settlement sweep with the reaper; inactive for a store without the marker |
 | `settlement.graceSeconds`   | `number`                              | `300`            | How long a row's effects may stay owed before the sweep runs them (1 to 2,147,483) |
 | `settlement.retentionSeconds` | `number`                            | `604800`         | How long the record of a budget movement is kept after it was given back or its row ended; must exceed `graceSeconds` and `holds.ttlSeconds` |
@@ -652,11 +652,22 @@ When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is 
 
 All event payloads use `bigint` nano-USD internally and `string` decimal at JSON boundaries.
 
-When a served call cannot be settled, `MeteringInterceptor` keeps the guard's hold until `holds.ttlSeconds`: its reservation goes
-on counting against the wallet and budget, and a retry with the same idempotency key gets the same hold. `meter()` releases its hold
+When a served call cannot be settled, `MeteringInterceptor` leaves the guard's hold to the reaper, which releases it at its first
+sweep after `holds.ttlSeconds`: up to one `holds.reaperIntervalSeconds` later, and later still when sweeps are slow or more than
+10,000 holds expired at once. Until then its reservation goes on counting against the wallet and budget, and a retry with the same
+idempotency key gets the same hold. To give the reservation back sooner, call `release()` with a hold whose `id` is the event's
+`holdId`, which is the only field of the hold it reads, and a caller of the envelope's `tenantId` and `scope`. `meter()` releases its hold
 at once, so that a failed capture strands no headroom for that long. `meter()` and the interceptor
 emit `ai_tokens.settle.failed`, whose `where` names the caller, for you to reconcile from your provider's log. When the ledger could
 not be read back after the failure, the row may exist all the same: check the ledger before you bill from that log.
+`correlationId` is carried when it is text of at most 256 characters with no NUL.
+
+**Known limits of `ai_tokens.settle.failed`.**
+
+- It is a snapshot: the row may post after it, and `LedgerFilter` has no `correlationId` to look it up by.
+- The error reaches the caller after the event is delivered, so a sink that never settles holds the failed request.
+- A small budget or wallet can refuse further calls while an unsettled hold's reservation waits for the reaper; `release()` it as above.
+- `AiTokensEventType` gains a member, so a `switch` that must cover every type needs a case for it.
 
 ---
 

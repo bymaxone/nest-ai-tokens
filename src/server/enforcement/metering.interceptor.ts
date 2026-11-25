@@ -5,7 +5,8 @@
  * then either settles the guard's hold (`capture`) or records enforcing post-hoc
  * (`record({ enforce: true })`). On a handler error with a hold present it releases
  * the hold; when settling fails after the handler returned it leaves a hold pending,
- * and announces `ai_tokens.settle.failed` when the usage was not recorded. Both rethrow the ORIGINAL error. With
+ * and announces `ai_tokens.settle.failed` when the usage was not recorded. The handler's error and the settle's each reach the
+ * caller as the ORIGINAL error. With
  * `exposeHeaders` it sets the three `x-ai-tokens-*` response headers as DECIMAL
  * STRINGS (bigint never crosses the HTTP boundary raw, §15.5). Handlers without a
  * `@Meter` are passed through untouched. `scopeResolver` is TRUSTED INPUT — the
@@ -23,7 +24,7 @@ import type { UsageRecord } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { MeteringContext } from '../interfaces'
+import type { Hold, MeteringContext } from '../interfaces'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
@@ -33,6 +34,16 @@ import type { MeterConfig } from './decorators'
 
 /** Every field of the guard's enrichment, mapped to `true` so that the compiler keeps the list complete. */
 const ENRICHMENT_FIELDS: { readonly [K in keyof Required<RequestAiTokens>]: true } = { status: true, context: true, hold: true }
+
+/** What a settle threw, marked so that the one catch of the pipeline can tell it from the handler's own error. */
+class SettleFailure {
+  constructor(readonly thrown: unknown) {}
+}
+
+/** What one intercepted call knows about its handler. */
+interface CallState {
+  handlerFailed: boolean
+}
 
 /** The response shape the interceptor writes headers through (adapter-agnostic). */
 interface HeaderSink {
@@ -83,18 +94,46 @@ export class MeteringInterceptor implements NestInterceptor {
     // an enrichment nor the hold the guard did not place.
     const given = fieldOf(request, 'aiTokens')
     const enrichment = typeof given === 'object' && given !== null ? fieldsOf(given as RequestAiTokens, ENRICHMENT_FIELDS) : undefined
+    const call: CallState = { handlerFailed: false }
     return next.handle().pipe(
-      // Before the settle, so that it sees the handler's errors only.
-      catchError((error: unknown) => this.onError(enrichment, error)),
-      mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result)).pipe(catchError((error: unknown) => this.onSettleError(enrichment, error)))),
+      mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result, call)).pipe(catchError((error: unknown) => throwError(() => new SettleFailure(error))))),
+      // One catch, after the settle: a handler that fails while a settle is in flight ends the stream with its own error.
+      catchError((error: unknown) => {
+        if (error instanceof SettleFailure) return throwError(() => error.thrown)
+        call.handlerFailed = true
+        return this.onError(enrichment, error)
+      }),
     )
   }
 
   /** Settle the handler's usage and set the cost headers; returns the untouched result. */
-  private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<unknown> {
-    const record = enrichment?.hold !== undefined ? await this.metering.capture(enrichment.hold, enrichment.context, extractUsage(result, config), config.preset) : await this.recordServed(executionContext, config, enrichment, result)
+  private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown, call: CallState): Promise<unknown> {
+    const record = enrichment?.hold !== undefined ? await this.captureHeld(enrichment.hold, enrichment.context, config, result, call) : await this.recordServed(executionContext, config, enrichment, result)
     if (config.exposeHeaders === true) this.setHeaders(executionContext, record, enrichment)
     return result
+  }
+
+  /**
+   * Settle the guard's hold. A failure leaves the hold pending for the reaper and is announced from here, so that a caller that
+   * stops waiting takes nothing with it. A handler that failed meanwhile releases the hold itself, and a capture that loses to that
+   * release is no settle failure.
+   */
+  private async captureHeld(hold: Hold, context: MeteringContext, config: MeterConfig, result: unknown, call: CallState): Promise<UsageRecord> {
+    try {
+      return await this.metering.capture(hold, context, extractUsage(result, config), config.preset)
+    } catch (error) {
+      if (!call.handlerFailed) await this.announce(hold, context, error)
+      throw error
+    }
+  }
+
+  /** Announce a failed settle. A substitute metering service without the method, or one whose method fails, leaves the settle error as it is. */
+  private async announce(hold: Hold | undefined, context: MeteringContext, error: unknown): Promise<void> {
+    try {
+      await this.metering.reportSettleFailure(hold, context, error)
+    } catch {
+      // The settle error is the one that reaches the caller.
+    }
   }
 
   /**
@@ -116,7 +155,7 @@ export class MeteringInterceptor implements NestInterceptor {
         () => (row.appended = true),
       )
     } catch (error) {
-      if (!row.appended) await this.metering.reportSettleFailure(undefined, context, error)
+      if (!row.appended) await this.announce(undefined, context, error)
       throw error
     }
   }
@@ -144,15 +183,6 @@ export class MeteringInterceptor implements NestInterceptor {
       this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
     })
     return from(released).pipe(mergeMap(() => throwError(() => error)))
-  }
-
-  /**
-   * The handler's work was served and settling it failed: leave the hold pending for the reaper, announce it, and rethrow the
-   * ORIGINAL error.
-   */
-  private onSettleError(enrichment: RequestAiTokens | undefined, error: unknown): Observable<never> {
-    if (enrichment?.hold === undefined) return throwError(() => error)
-    return from(this.metering.reportSettleFailure(enrichment.hold, enrichment.context, error)).pipe(mergeMap(() => throwError(() => error)))
   }
 
   /** Set the three `x-ai-tokens-*` headers as decimal strings via the HTTP adapter. */
