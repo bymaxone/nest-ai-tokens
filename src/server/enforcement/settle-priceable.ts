@@ -54,7 +54,7 @@ export async function assertSettlePriceable(
     if (!(error instanceof AiTokensException) || (error.getResponse() as { error: { code: string } }).error.code !== 'AI_TOKENS_PRICE_NOT_FOUND') throw error
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
       reason:
-        'the settle of a { tokens } or { amountNanoUsd } estimate prices the model context.baseModel for the provider of the preset, and the price list has none for it; set baseModel to a model listed for that provider, or give the estimate its provider and model',
+        'the settle of a { tokens } or { amountNanoUsd } estimate prices the model context.baseModel for the preset provider, and the price list has none for it; set baseModel to a model listed for it, or give the estimate its provider and model',
     })
   }
 }
