@@ -31,7 +31,7 @@ export function readmeStepSource(rootDir) {
 /** The driver, plain CommonJS: it does what a host's `main.ts` does, then asserts over HTTP. */
 const driver = `
 require('reflect-metadata')
-const { Module } = require('@nestjs/common')
+const { Module, Controller, Post, UseGuards, UseInterceptors } = require('@nestjs/common')
 const { NestFactory } = require('@nestjs/core')
 const lib = require('@bymax-one/nest-ai-tokens')
 const { makeFullStore } = require('./store.cjs')
@@ -40,6 +40,18 @@ const { AiController } = require('./snippet')
 
 const failures = []
 const expect = (ok, what) => { if (!ok) failures.push(what) }
+
+// A host that holds a bare { tokens } estimate: no model named, so under strict pricing its settle has no price.
+class BareController {
+  calls = 0
+  summarize() { this.calls += 1; return { ok: true } }
+}
+Controller('bare')(BareController)
+Post('summarize')(BareController.prototype, 'summarize', Object.getOwnPropertyDescriptor(BareController.prototype, 'summarize'))
+lib.RequireBudget({ estimate: { tokens: 3000 } })(BareController.prototype, 'summarize', Object.getOwnPropertyDescriptor(BareController.prototype, 'summarize'))
+lib.Meter({ preset: lib.providerPresets.anthropic })(BareController.prototype, 'summarize', Object.getOwnPropertyDescriptor(BareController.prototype, 'summarize'))
+UseGuards(lib.BudgetGuard)(BareController)
+UseInterceptors(lib.MeteringInterceptor)(BareController)
 
 class AppModule {}
 Module({
@@ -55,7 +67,7 @@ Module({
       pricing: { seedFromSnapshot: true },
     }),
   ],
-  controllers: [AiController],
+  controllers: [AiController, BareController],
   providers: [AiService],
 })(AppModule)
 
@@ -73,9 +85,9 @@ async function main() {
     const before = ai.calls
     const res = await fetch(url + '/ai/summarize', { method: 'POST', headers: { 'x-tenant': tenant, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'hello world' }) })
     const text = await res.text()
-    let code
-    try { code = JSON.parse(text).error?.code } catch { code = undefined }
-    return { status: res.status, code, headers: res.headers, handlerRan: ai.calls !== before }
+    let code, details
+    try { const error = JSON.parse(text).error; code = error?.code; details = error?.details } catch { code = undefined }
+    return { status: res.status, code, details, headers: res.headers, handlerRan: ai.calls !== before }
   }
   const budget = (tenant, limit) => budgets.upsertBudget({ tenantId: tenant, scope: { type: 'tenant', id: tenant }, window: 'month', ...limit })
 
@@ -97,17 +109,26 @@ async function main() {
   // A spend limit of 0 is a hard block, answered before the handler.
   await budget('zero', { limitNanoUsd: 0n })
   const zero = await post('zero')
-  expect(zero.status === 402 && zero.code === 'AI_TOKENS_BUDGET_EXCEEDED' && !zero.handlerRan, 'a spend limit of 0 answered ' + zero.status + ' ' + zero.code + ', handler ran: ' + zero.handlerRan)
+  // The guard's own refusal names the budget and the dimension; a refusal by the hold that follows it carries neither, so a guard that stopped checking is seen.
+  expect(zero.status === 402 && zero.code === 'AI_TOKENS_BUDGET_EXCEEDED' && !zero.handlerRan && zero.details?.dimension === 'cost' && typeof zero.details?.budgetId === 'string', 'a spend limit of 0 answered ' + zero.status + ' ' + zero.code + ', handler ran: ' + zero.handlerRan)
 
   // A token limit below the hold is a quota error, answered before the handler.
   await budget('quota', { limitTokens: 100 })
   const quota = await post('quota')
-  expect(quota.status === 429 && quota.code === 'AI_TOKENS_QUOTA_EXCEEDED' && !quota.handlerRan, 'a token limit of 100 answered ' + quota.status + ' ' + quota.code + ', handler ran: ' + quota.handlerRan)
+  expect(quota.status === 429 && quota.code === 'AI_TOKENS_QUOTA_EXCEEDED' && !quota.handlerRan && quota.details?.dimension === 'tokens' && typeof quota.details?.budgetId === 'string', 'a token limit of 100 answered ' + quota.status + ' ' + quota.code + ', handler ran: ' + quota.handlerRan)
 
   // A hold larger than what the budget has left is refused by the hold itself, in hold mode.
   await budget('small', { limitNanoUsd: 1_000n })
   const small = await post('small')
   expect(small.status === 402 && !small.handlerRan, 'a hold over a 1000 nano-USD budget answered ' + small.status + ' ' + small.code + ', handler ran: ' + small.handlerRan)
+
+  // Strict pricing (the default) and a rate table: an estimate that names no model is refused before the handler, with nothing held.
+  await budget('bare', { limitNanoUsd: 1_000_000_000_000n })
+  const bareBefore = app.get(BareController).calls
+  const bareRes = await fetch(url + '/bare/summarize', { method: 'POST', headers: { 'x-tenant': 'bare' } })
+  const bareCode = (await bareRes.json().catch(() => ({}))).error?.code
+  expect(bareRes.status === 500 && bareCode === 'AI_TOKENS_INVALID_CONFIG' && app.get(BareController).calls === bareBefore, 'a model-less estimate under strict pricing answered ' + bareRes.status + ' ' + bareCode + ' instead of 500 AI_TOKENS_INVALID_CONFIG before the handler')
+  expect((await budgets.status('bare', { type: 'tenant', id: 'bare' }))[0]?.spent.nanoUsd === 0n, 'the refused model-less estimate took budget')
 
   await app.close()
   if (failures.length) {

@@ -385,26 +385,6 @@ export class MeteringService {
   }
 
   /**
-   * Refuse, before any handler or hold, a `{ tokens }` or `{ amountNanoUsd }` estimate that its settle could only fail on: both record the
-   * placeholder model `unspecified`, which no rate table lists, so in strict pricing the settle after the provider call is refused with
-   * `AI_TOKENS_PRICE_NOT_FOUND` and the served usage is released unbilled. A rated estimate, a provider-reported preset and non-strict
-   * pricing (where an unpriced call is recorded at 0 USD by design) pass. The guard asks this; a direct `hold()` does not.
-   *
-   * @param estimate The `@RequireBudget` estimate.
-   * @param preset The `@Meter` preset the interceptor will settle with, when there is one.
-   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` for a model-less estimate under a rate table in strict pricing.
-   * @internal
-   */
-  assertSettlePriceable(estimate: HoldEstimate, preset: ProviderPreset | undefined): void {
-    if ('provider' in estimate || !this.pricing.strict) return
-    const mode = preset?.ratingMode ?? (fieldOf(this.options, 'ratingMode') as RatingMode)
-    if (mode !== 'rate-table') return
-    throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-      reason: 'a { tokens } or { amountNanoUsd } estimate names no model, so a rate table cannot price its settle; name provider and model in the estimate',
-    })
-  }
-
-  /**
    * Place an auth-hold: rate the estimate, apply markup, reserve budget + wallet
    * headroom (compensated on any step's failure), and write a `pending` ledger
    * record with a TTL (§2.2 step 1). A repeat with the same `idempotencyKey`

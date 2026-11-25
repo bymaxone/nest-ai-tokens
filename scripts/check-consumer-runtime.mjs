@@ -133,7 +133,7 @@ const FORMAT = 'CJS'
 ${probeBody}`
 
 function run(command, args, options = {}) {
-  return execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe', ...options })
+  return execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe', timeout: 300_000, ...options })
 }
 
 function cleanup() {

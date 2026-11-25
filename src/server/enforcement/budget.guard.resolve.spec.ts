@@ -7,7 +7,7 @@ import { Controller, Get, UseGuards } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
-import { BudgetService, MeteringService } from '../services'
+import { BudgetService, MeteringService, PricingService } from '../services'
 import { BudgetGuard } from './budget.guard'
 
 @Controller('probe')
@@ -27,6 +27,7 @@ describe('BudgetGuard resolved by Nest from a host controller', () => {
       providers: [
         { provide: BudgetService, useValue: {} },
         { provide: MeteringService, useValue: {} },
+        { provide: PricingService, useValue: {} },
         { provide: BYMAX_AI_TOKENS_OPTIONS, useValue: { scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }) } },
         Reflector,
       ],

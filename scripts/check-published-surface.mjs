@@ -604,18 +604,11 @@ function scaffoldConsumer() {
       2,
     )}\n`,
   )
-  // The names a snippet uses without introducing them, typed for real so a call
-  // made through one is checked instead of silently resolving to `any`. Copied with a
-  // `.ts` extension: the repository tsconfig sets `skipLibCheck`, a declaration file is
-  // never diagnosed, and a prelude type that stopped resolving would turn into `any`
-  // without a word.
-  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.ts'))
-  // A snippet imports the host's own wrapper over a provider SDK from a relative path, which a consumer lays out itself.
-  // The module is declared here, typed, so the import resolves and a call through it is checked.
-  writeFileSync(
-    join(GATE_DIR, 'ai.service.ts'),
-    'export declare class AiService {\n  summarize(content: string): Promise<{ summary: string; response: unknown }>\n}\n',
-  )
+  // The names a snippet uses without introducing them, typed for real so a call made through one is checked
+  // instead of silently resolving to `any`: the prelude, and the host's own `./ai.service` wrapper. Copied with a
+  // `.ts` extension: the repository tsconfig sets `skipLibCheck`, a declaration file is never diagnosed, and a
+  // type that stopped resolving would turn into `any` without a word.
+  for (const [from, to] of [['readme-prelude.d.ts', 'prelude.ts'], ['readme-ai-service.d.ts', 'ai.service.ts']]) copyFileSync(join(ROOT, 'scripts', from), join(GATE_DIR, to))
 }
 
 /**
