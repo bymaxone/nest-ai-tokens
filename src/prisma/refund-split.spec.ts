@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Property specs of the refund split: the parts of a random split sum to the amount, a part never exceeds what its grant has left,
+ * and a sequence of partial refunds ends with every slot at zero.
+ * @layer prisma
+ */
+
 import { splitByWeights } from './refund-split'
 
 /** A small deterministic generator, so a failing sequence can be replayed from its seed. */
