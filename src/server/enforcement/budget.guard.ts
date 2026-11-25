@@ -96,7 +96,7 @@ export class BudgetGuard implements CanActivate {
       if (error !== null) throw error
     }
     const meterContext: MeteringContext = { ...context, feature, ...(meter?.preset !== undefined ? { preset: meter.preset } : {}) }
-    if (requireBudget?.estimate !== undefined) await assertSettlePriceable(requireBudget.estimate, meterContext, this.pricing, this.options)
+    if (requireBudget?.estimate !== undefined) await assertSettlePriceable(requireBudget.estimate, meterContext, meter?.preset, this.pricing, this.options)
     const hold = requireBudget?.estimate !== undefined ? await this.metering.hold(meterContext, requireBudget.estimate) : undefined
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
     request.aiTokens = { status: statuses, context: meterContext, ...(hold !== undefined ? { hold } : {}) }

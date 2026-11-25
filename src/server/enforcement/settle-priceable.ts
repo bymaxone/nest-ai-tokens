@@ -20,15 +20,13 @@ import type { PricingService } from '../services'
  * hold already prices it), a provider-reported mode and non-strict pricing (an unpriced call is recorded at 0 USD by design) pass. The
  * guard asks this; a direct `hold()` does not.
  *
- * The mode is the one `capture()` rates with: the preset's, else the module's. A rating mode a scope resolver puts on its context is read
- * by `record()` only, so it plays no part in the settle of a hold.
- *
- * Known limit: the guard reads `context.preset`, which `@Meter`'s preset overrides, while the interceptor settles with the preset `@Meter`
- * names. When the scope resolver supplies the preset and `@Meter` names none, the guard sees that preset and passes, and the settle rates
- * with the module's mode and may fail with `AI_TOKENS_PRICE_NOT_FOUND`. Name the preset on `@Meter` to keep the two the same.
+ * The mode is the one `capture()` rates with: the preset the interceptor settles with, which is the one `@Meter` names, else the module's.
+ * A preset a scope resolver puts on its context gives the hold its provider but never the mode, and a rating mode it puts on its context is
+ * read by `record()` only, so neither plays a part in the settle of a hold.
  *
  * @param estimate The `@RequireBudget` estimate.
- * @param context The context the hold will be placed with (feature and preset merged in).
+ * @param context The context the hold will be placed with (feature and preset merged in); it decides the provider and model of the row.
+ * @param settlePreset The preset `@Meter` names, which the settle rates with; `undefined` when it names none.
  * @param pricing The pricing service; a guard constructed with `new` and no pricing service has no price list to ask and skips the preflight.
  * @param options The resolved module options, which carry the rating mode and whether pricing is strict.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the settle of the estimate has no price.
@@ -36,11 +34,12 @@ import type { PricingService } from '../services'
 export async function assertSettlePriceable(
   estimate: HoldEstimate,
   context: MeteringContext & { preset?: ProviderPreset },
+  settlePreset: ProviderPreset | undefined,
   pricing: PricingService | undefined,
   options: Partial<Pick<ResolvedAiTokensOptions, 'ratingMode' | 'pricing'>>,
 ): Promise<void> {
   if ('provider' in estimate || pricing === undefined || options.pricing?.strict !== true) return
-  if ((context.preset?.ratingMode ?? options.ratingMode) !== 'rate-table') return
+  if ((settlePreset?.ratingMode ?? options.ratingMode) !== 'rate-table') return
   try {
     await pricing.resolveRate({
       provider: context.preset?.provider ?? 'unspecified',
