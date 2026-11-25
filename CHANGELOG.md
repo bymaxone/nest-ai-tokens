@@ -10,6 +10,18 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+**Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.
+
+### Added
+
+- `refund()` accepts `restore: 'source'` and `debitEntryId`: the refund puts the amount back on the grants the debit burned, by negative allocation rows, and links itself to the debit. A part on an expired grant is taken out again by an `expiry:refund:<refundId>:<grantId>` entry. A `hold:` or `record:` debit is refused, and the restorable amount is capped by the debit less its linked refunds and the unlinked refunds and positive adjustments of the same `usageRecordId`. A replay of the key is checked in both directions: a plain refund and a restoring refund never share a key.
+- `getBalance(ref, { asOf })` and `getBalanceBreakdown(ref, { asOf })` answer what could be spent at an instant; an `asOf` more than 5 seconds in the past is refused. Both need a store with `balanceAt` and `balanceBreakdown`, which are optional on the port.
+- Each ledger entry of a wallet carries a per-wallet `seq` and the `balanceAfterNanoUsd` it left, and entries list in commit order.
+
+### Changed
+
+- `appendEntry` of the Prisma store locks the wallet row before it writes, as `conditionalDebit` and `reconcile` already did. Parallel writers to one wallet queue on that lock.
+
 ## [1.1.23] - 2026-11-24
 
 **Apply:** no migration and no option change is needed. This release closes one class of defect: a host that planted `Promise[Symbol.species]`, a `then` or a `constructor` could decide what a store or a callback answered, because the library chained the promise it was given. It now waits for what a host returns with a native `await`, after refusing a native promise that carries a `then` or a `constructor` of its own, and refuses it again when the answer it resolved with has a `then`. A store, a markup policy, a tokenizer, an fx function and the async options factory may still return a `Promise` subclass, a thenable (a plain object or a class instance with a `then`, a query builder) or a native promise of another realm, as in 1.1.22. A Proxy is refused, since its traps are host code: a promise that is a Proxy is refused on every call, and for the function `meter()` runs an answer that is a Proxy is refused too, with `AI_TOKENS_INVALID_CONFIG`, so a provider SDK that wraps its response in a Proxy must be unwrapped by the host before the function returns it. The module also loads when the global `Promise` was replaced before the import (a subclass, bluebird, zone.js, a wrapper): it takes the engine's promise from an async function and never reads the global.

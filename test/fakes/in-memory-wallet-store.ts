@@ -26,6 +26,8 @@ import { deriveIdempotencyKey } from '@bymax-one/nest-ai-tokens/shared'
 import type {
   IWalletStore,
   OpenGrant,
+  RefundToSourceInput,
+  WalletBalanceBreakdown,
   WalletDebit,
   WalletDebitQuery,
   WalletEntryFilter,
@@ -33,7 +35,7 @@ import type {
 } from '@bymax-one/nest-ai-tokens'
 import { LedgerIdempotencyConflict } from '../../src/server/services/ledger-idempotency-conflict'
 import { AiTokensException } from '../../src/server/errors'
-import { RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../../src/server/utils/wallet-keys'
+import { EXPIRY_KEY_PREFIX, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../../src/server/utils/wallet-keys'
 
 /** A persisted debit→grant allocation (the audit trail of §9.3). */
 export interface WalletAllocation {
@@ -68,6 +70,8 @@ export class InMemoryWalletStore implements IWalletStore {
   private readonly idempotency = new Map<string, { entry: WalletEntry; hash: string }>()
   /** Allocations keyed by the consuming entry id (a debit or an expiry entry). */
   private readonly allocations = new Map<string, WalletAllocation[]>()
+  /** The last sequence handed out per wallet id: assigned inside the synchronous insert, so it is the commit order. */
+  private readonly sequences = new Map<string, bigint>()
   private readonly burnOrder: BurnOrder
   private readonly now: () => Date
 
@@ -94,8 +98,9 @@ export class InMemoryWalletStore implements IWalletStore {
    * same logical grant/debit hash differently and spuriously conflict. This mirrors
    * the ledger payload hash, which likewise excludes generated timestamps.
    */
-  private static hashOf(entry: NewWalletEntry): string {
+  private static hashOf(entry: NewWalletEntry, source = false): string {
     return deriveIdempotencyKey({
+      source,
       type: entry.type,
       amountNanoUsd: entry.amountNanoUsd,
       priority: entry.priority,
@@ -154,7 +159,9 @@ export class InMemoryWalletStore implements IWalletStore {
   listEntries(ref: WalletRef, filter: WalletEntryFilter = {}): Promise<WalletEntryPage> {
     const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
     if (wallet === undefined) return Promise.resolve({ entries: [], total: 0 })
-    const matched = (this.entries.get(wallet.id) ?? []).filter((entry) => matchesFilter(entry, filter))
+    const inOrder = [...(this.entries.get(wallet.id) ?? [])]
+    if (filter.order === 'desc') inOrder.reverse()
+    const matched = inOrder.filter((entry) => matchesFilter(entry, filter))
     const offset = filter.offset ?? 0
     const end = filter.limit === undefined ? undefined : offset + filter.limit
     return Promise.resolve({ entries: matched.slice(offset, end), total: matched.length })
@@ -184,6 +191,143 @@ export class InMemoryWalletStore implements IWalletStore {
     wallet.balanceNanoUsd = this.spendableBalance(wallet, at)
     wallet.updatedAt = this.now()
     return Promise.resolve(wallet)
+  }
+
+  // `async` so a refusal surfaces as a rejected promise; the body stays synchronous, so the whole refund is atomic.
+  async refundToSource(ref: WalletRef, input: RefundToSourceInput): Promise<WalletEntry> {
+    const { entry, debitEntryId, now } = input
+    assertCallerKey(entry.idempotencyKey)
+    const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
+    if (wallet === undefined) throw new WalletMissingError()
+    // The replay is judged on the stored row's own fields before the source is resolved: a debit that appeared later with the same usage id
+    // cannot make a retry ambiguous.
+    const prior = this.idempotency.get(InMemoryWalletStore.replayKey(wallet.id, entry.idempotencyKey))
+    if (prior !== undefined) {
+      const linked = prior.entry.refundsEntryId
+      if (prior.hash !== InMemoryWalletStore.hashOf(entry, true) || (debitEntryId !== undefined && debitEntryId !== linked)) {
+        throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
+      }
+      return prior.entry
+    }
+    const all = this.entries.get(wallet.id) ?? []
+    const debit = this.sourceDebit(all, entry, debitEntryId)
+    if (debit.idempotencyKey.startsWith('hold:') || debit.idempotencyKey.startsWith('record:')) {
+      throw refusal('a debit the library wrote itself (hold: / record:) cannot be refunded to its source')
+    }
+    const amount = entry.amountNanoUsd
+    const earlier = all.filter((other) => other.type === 'refund' && other.refundsEntryId === debit.id)
+    const earlierAmount = earlier.reduce((sum, other) => sum + other.amountNanoUsd, 0n)
+    const left = -debit.amountNanoUsd - earlierAmount
+    const unlinked = debit.usageRecordId === undefined
+      ? 0n
+      : all
+          .filter((other) => other.usageRecordId === debit.usageRecordId && other.refundsEntryId === undefined && (other.type === 'refund' || (other.type === 'adjustment' && other.amountNanoUsd > 0n && !other.idempotencyKey.startsWith('activate:'))))
+          .reduce((sum, other) => sum + other.amountNanoUsd, 0n)
+    if (amount <= 0n || amount > left - unlinked) throw refusal('the refund is above what the debit has left to restore')
+    const parts = this.splitRefund(wallet, debit, earlier, left, amount)
+    const stored = this.insert(wallet, { ...entry, refundsEntryId: debit.id }, parts.map(({ grant, part }) => ({ grantEntryId: grant.id, amountNanoUsd: -part })))
+    for (const { grant, part } of parts) {
+      const expired = (grant.expiresAt !== undefined && grant.expiresAt <= now) || this.idempotency.has(InMemoryWalletStore.replayKey(wallet.id, expiryKey(grant.id)))
+      if (!expired) continue
+      this.insert(wallet, {
+        walletId: wallet.id,
+        type: 'expiry',
+        amountNanoUsd: -part,
+        priority: grant.priority,
+        effectiveAt: now,
+        idempotencyKey: `${EXPIRY_KEY_PREFIX}refund:${stored.id}:${grant.id}`,
+        reason: 'refund restored an expired grant',
+      }, [{ grantEntryId: grant.id, amountNanoUsd: part }])
+    }
+    return stored
+  }
+
+  balanceAt(ref: WalletRef, asOf: Date): Promise<bigint> {
+    const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
+    return Promise.resolve(wallet === undefined ? 0n : this.spendableAt(wallet, asOf))
+  }
+
+  balanceBreakdown(ref: WalletRef, asOf: Date): Promise<WalletBalanceBreakdown> {
+    const wallet = this.wallets.get(InMemoryWalletStore.keyOf(ref))
+    if (wallet === undefined) return Promise.resolve({ asOf, nanoUsd: 0n, unallocatedNanoUsd: 0n, buckets: [] })
+    const total = this.spendableAt(wallet, asOf)
+    // Due grants count whether or not the activation sweep has credited them yet: a debit at `asOf` would activate them first.
+    const open = (this.entries.get(wallet.id) ?? [])
+      .filter((entry) => entry.type === 'grant' && entry.effectiveAt <= asOf && (entry.expiresAt === undefined || entry.expiresAt > asOf))
+      .map((grant) => ({ ...grant, remainingNanoUsd: grant.amountNanoUsd - this.allocatedOf(grant.id) }))
+      .filter((grant) => grant.remainingNanoUsd > 0n)
+      .sort((a, b) => compareGrants(a, b, this.burnOrder))
+    const held = open.reduce((sum, grant) => sum + grant.remainingNanoUsd, 0n)
+    return Promise.resolve({
+      asOf,
+      nanoUsd: total,
+      unallocatedNanoUsd: total - held,
+      buckets: open.map((grant) => ({
+        grantEntryId: grant.id,
+        remainingNanoUsd: grant.remainingNanoUsd,
+        priority: grant.priority,
+        ...(grant.expiresAt === undefined ? {} : { expiresAt: grant.expiresAt }),
+        ...(grant.reason === undefined ? {} : { reason: grant.reason }),
+      })),
+    })
+  }
+
+  /** The debit a refund names by id, or the single debit of the wallet that carries its usage id. */
+  private sourceDebit(all: readonly WalletEntry[], entry: NewWalletEntry, debitEntryId: string | undefined): WalletEntry {
+    if (debitEntryId !== undefined) {
+      const found = all.find((other) => other.id === debitEntryId)
+      if (found === undefined || found.type !== 'debit') throw refusal('the debit to restore is not a debit of this wallet')
+      return found
+    }
+    if (entry.usageRecordId === undefined) throw refusal('a source refund names a debit by id or by usageRecordId')
+    const matches = all.filter((other) => other.type === 'debit' && other.usageRecordId === entry.usageRecordId)
+    if (matches.length !== 1) throw refusal('the usageRecordId does not name exactly one debit of this wallet')
+    return matches[0] as WalletEntry
+  }
+
+  /**
+   * Split a refund across the grants that funded a debit, weighted by what each still has room for, plus one slot for the part no grant funded
+   * (credited unallocated). Largest remainder over the sum of the weights; the refund never exceeds that sum, so no part exceeds its weight.
+   */
+  private splitRefund(wallet: Wallet, debit: WalletEntry, earlier: readonly WalletEntry[], left: bigint, amount: bigint): { grant: WalletEntry; part: bigint }[] {
+    const byGrant = new Map<string, bigint>()
+    for (const allocation of this.allocations.get(debit.id) ?? []) byGrant.set(allocation.grantEntryId, (byGrant.get(allocation.grantEntryId) ?? 0n) + allocation.amountNanoUsd)
+    const funded = [...byGrant].map(([grantEntryId, amountNanoUsd]) => ({ grantEntryId, amountNanoUsd })).sort((a, b) => compareEntryOrder(this.grantOf(wallet, a.grantEntryId), this.grantOf(wallet, b.grantEntryId)))
+    const restoredOn = (grantId: string): bigint =>
+      earlier.reduce((sum, refund) => sum + (this.allocations.get(refund.id) ?? []).filter((a) => a.grantEntryId === grantId).reduce((inner, a) => inner - a.amountNanoUsd, 0n), 0n)
+    const weights = funded.map((allocation) => allocation.amountNanoUsd - restoredOn(allocation.grantEntryId))
+    weights.push(left - weights.reduce((sum, weight) => sum + weight, 0n))
+    const total = weights.reduce((sum, weight) => sum + weight, 0n)
+    const shares = weights.map((weight) => (amount * weight) / total)
+    let rest = amount - shares.reduce((sum, share) => sum + share, 0n)
+    const byRemainder = weights.map((weight, index) => ({ index, remainder: (amount * weight) % total })).sort((a, b) => (a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1))
+    for (const { index } of byRemainder) {
+      if (rest === 0n) break
+      shares[index] = (shares[index] as bigint) + 1n
+      rest -= 1n
+    }
+    return funded.flatMap((allocation, index) => ((shares[index] as bigint) > 0n ? [{ grant: this.grantOf(wallet, allocation.grantEntryId), part: shares[index] as bigint }] : []))
+  }
+
+  private grantOf(wallet: Wallet, grantId: string): WalletEntry {
+    return (this.entries.get(wallet.id) as WalletEntry[]).find((entry) => entry.id === grantId) as WalletEntry
+  }
+
+  /** What a debit at `at` could spend: the column, plus due-not-credited grants, minus pending and expired remainders. */
+  private spendableAt(wallet: Wallet, at: Date): bigint {
+    let total = wallet.balanceNanoUsd - this.pendingGrants(wallet, at)
+    for (const grant of this.entries.get(wallet.id) ?? []) {
+      if (grant.type !== 'grant') continue
+      if (!this.isCredited(wallet, grant)) {
+        if (grant.effectiveAt <= at && (grant.expiresAt === undefined || grant.expiresAt > at)) total += grant.amountNanoUsd
+        continue
+      }
+      if (grant.expiresAt !== undefined && grant.expiresAt <= at) {
+        const remaining = grant.amountNanoUsd - this.allocatedOf(grant.id)
+        if (remaining > 0n) total -= remaining
+      }
+    }
+    return total
   }
 
   /** Test accessor — the allocation trail of a consuming (debit/expiry) entry. */
@@ -225,10 +369,10 @@ export class InMemoryWalletStore implements IWalletStore {
   }
 
   /** Return the stored entry on a matching replay, throw on a conflict, or `null` when new. */
-  private replayOrConflict(ref: WalletRef, wallet: Wallet, entry: NewWalletEntry): WalletEntry | null {
+  private replayOrConflict(ref: WalletRef, wallet: Wallet, entry: NewWalletEntry, source = false): WalletEntry | null {
     const prior = this.idempotency.get(InMemoryWalletStore.replayKey(wallet.id, entry.idempotencyKey))
     if (prior === undefined) return null
-    if (prior.hash === InMemoryWalletStore.hashOf(entry)) return prior.entry
+    if (prior.hash === InMemoryWalletStore.hashOf(entry, source)) return prior.entry
     throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
   }
 
@@ -238,11 +382,13 @@ export class InMemoryWalletStore implements IWalletStore {
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[],
   ): WalletEntry {
-    const stored: WalletEntry = { ...entry, id: randomUUID(), walletId: wallet.id, createdAt: this.now() }
+    const seq = (this.sequences.get(wallet.id) ?? 0n) + 1n
+    this.sequences.set(wallet.id, seq)
+    const stored: WalletEntry = { ...entry, id: randomUUID(), walletId: wallet.id, createdAt: this.now(), seq, balanceAfterNanoUsd: 0n }
     ;(this.entries.get(wallet.id) as WalletEntry[]).push(stored)
     this.idempotency.set(InMemoryWalletStore.replayKey(wallet.id, entry.idempotencyKey), {
       entry: stored,
-      hash: InMemoryWalletStore.hashOf(entry),
+      hash: InMemoryWalletStore.hashOf(entry, entry.refundsEntryId !== undefined),
     })
     if (allocations.length > 0) {
       this.allocations.set(
@@ -251,6 +397,7 @@ export class InMemoryWalletStore implements IWalletStore {
       )
     }
     wallet.balanceNanoUsd += this.balanceDelta(stored)
+    stored.balanceAfterNanoUsd = wallet.balanceNanoUsd
     wallet.updatedAt = stored.createdAt
     return stored
   }
@@ -283,6 +430,12 @@ export class InMemoryWalletStore implements IWalletStore {
    */
   private activateDueGrants(wallet: Wallet, now: Date): void {
     let activated = false
+    const due = (this.entries.get(wallet.id) ?? []).filter(
+      (grant) => grant.type === 'grant' && !this.isCredited(wallet, grant) && grant.effectiveAt <= now && (grant.expiresAt === undefined || grant.expiresAt > now),
+    )
+    // The balance is set to the ledger-derived sum before the first activation, so each activation entry carries the running balance
+    // from that point and the last one equals the wallet; a drifted wallet shows as one jump on the first entry.
+    if (due.length > 0) wallet.balanceNanoUsd = this.signedBalance(wallet)
     for (const grant of this.entries.get(wallet.id) ?? []) {
       if (grant.type !== 'grant' || this.isCredited(wallet, grant)) continue
       if (grant.effectiveAt > now || (grant.expiresAt !== undefined && grant.expiresAt <= now)) continue
@@ -403,6 +556,16 @@ export class InMemoryWalletStore implements IWalletStore {
     }
     return total
   }
+}
+
+/** The typed refusal of a refund to source that cannot be applied. */
+function refusal(reason: string): AiTokensException {
+  return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
+}
+
+/** Order two grants by `(createdAt, id)`: the order a split breaks its ties in. */
+function compareEntryOrder(a: WalletEntry, b: WalletEntry): number {
+  return a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 /** Signal that a wallet does not exist for a non-creating entry — mapped to insufficient credits. */

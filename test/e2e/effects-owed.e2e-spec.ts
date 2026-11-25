@@ -10,7 +10,7 @@
 
 import type { NewUsageRecord } from '@bymax-one/nest-ai-tokens/shared'
 import { bootMeteringModule, e2eContext, e2eUsage, grantWallet, seedPrice, startPostgres, upsertBudget, E2E_WALLET, type Booted, type PostgresFixture } from './harness'
-import { shippedMigrationSql } from './migration-files'
+import { migrationSqlStartingWith } from './migration-files'
 
 let pg: PostgresFixture
 beforeAll(async () => {
@@ -143,7 +143,7 @@ describe('the effects-owed marker in PostgreSQL', () => {
 describe('migration 0003', () => {
   /** The statements the migration's header documents as its rollback, read from the shipped file. */
   function rollbackStatements(): string[] {
-    const file = shippedMigrationSql()
+    const file = migrationSqlStartingWith('0003')
     const start = file.indexOf('-- Rollback')
     expect(start).toBeGreaterThan(-1)
     return file
@@ -156,7 +156,7 @@ describe('migration 0003', () => {
 
   /** The additive statements of the migration itself. */
   function upStatements(): string[] {
-    const text = shippedMigrationSql()
+    const text = migrationSqlStartingWith('0003')
     const from = text.indexOf('CREATE TABLE "ai_usage_effects_owed"')
     expect(from).toBeGreaterThan(-1)
     return text

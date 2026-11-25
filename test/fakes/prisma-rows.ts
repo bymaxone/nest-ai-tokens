@@ -160,6 +160,9 @@ export function entryRow(over: Partial<WalletEntryRow> = {}): WalletEntryRow {
     idempotencyKey: 'k1',
     reason: 'welcome',
     createdAt: T1,
+    seq: null,
+    balanceAfterNanoUsd: null,
+    refundsEntryId: null,
     ...over,
   }
 }

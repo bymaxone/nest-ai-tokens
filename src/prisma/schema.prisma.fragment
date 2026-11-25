@@ -118,6 +118,7 @@ model AiWallet {
   ownerType      String // tenant | team | user
   ownerId        String
   balanceNanoUsd BigInt   @default(0) // materialized; source of truth = Σ entries (§9.4)
+  entrySeq       BigInt   @default(0) // last entry sequence handed out; incremented under the row lock (0004)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   entries        AiWalletEntry[]
@@ -138,6 +139,9 @@ model AiWalletEntry {
   idempotencyKey     String
   reason             String?
   createdAt          DateTime  @default(now())
+  seq                BigInt? // commit order inside the wallet; NULL before 0004 (unique per wallet where not NULL, 0005)
+  balanceAfterNanoUsd BigInt? // the balance the store left after the entry; NULL before 0004
+  refundsEntryId     String? // the debit a refund to source restored (0004; foreign key and index in 0005)
   wallet             AiWallet  @relation(fields: [walletId], references: [id])
   allocationsAsDebit AiWalletDebitAllocation[] @relation("debit")
   allocationsAsGrant AiWalletDebitAllocation[] @relation("grant")

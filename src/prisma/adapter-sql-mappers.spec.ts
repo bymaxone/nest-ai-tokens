@@ -9,7 +9,8 @@
 
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { NewWalletEntry, WalletEntry } from '../shared'
-import { WalletMissingError, firstOrThrow, isWalletMissing, mapBudgetRow, mapBudgetWindowRow, mapOpenGrantRow, mapPriceRow, mapUsageRow, mapWalletEntryRow, mapWalletRow, parseUnitRates, parseWindow, scopeOf, serializeUnitRates, serializeWindow, walletAutoCreatable, walletBalanceDelta, walletEntryMatches, type WalletRow } from './adapter-sql'
+import { WalletMissingError, firstOrThrow, isWalletMissing, mapOpenGrantRow, mapPriceRow, mapUsageRow, mapWalletEntryRow, mapWalletRow, parseUnitRates, scopeOf, serializeUnitRates, walletAutoCreatable, walletBalanceDelta, walletEntryMatches, type WalletRow } from './adapter-sql'
+import { mapBudgetRow, mapBudgetWindowRow, parseWindow, serializeWindow } from './budget-rows'
 import { T0, T1, T2, usageRow, bareUsageRow, priceRow, entryRow, budgetRow } from '../../test/fakes/prisma-rows'
 
 describe('scopeOf', () => {
@@ -231,6 +232,21 @@ describe('wallet mappers', () => {
     expect('expiresAt' in mapWalletEntryRow(entryRow({ ...bare, usageRecordId: 'r', reason: 'x' }))).toBe(false)
   })
 
+  /** The order columns and the link map when present, each judged on its own, and are absent when null or not selected. */
+  it('maps the sequence, the balance after and the refund link only when they are set', () => {
+    const mapped = mapWalletEntryRow(entryRow({ seq: 4n, balanceAfterNanoUsd: 9n, refundsEntryId: 'd1' }))
+    expect([mapped.seq, mapped.balanceAfterNanoUsd, mapped.refundsEntryId]).toEqual([4n, 9n, 'd1'])
+    const unselected = entryRow({ seq: undefined as never, balanceAfterNanoUsd: undefined as never, refundsEntryId: undefined as never })
+    for (const row of [entryRow(), entryRow({ seq: null, balanceAfterNanoUsd: null, refundsEntryId: null }), unselected]) {
+      const bare = mapWalletEntryRow(row)
+      expect(['seq' in bare, 'balanceAfterNanoUsd' in bare, 'refundsEntryId' in bare]).toEqual([false, false, false])
+    }
+    expect('seq' in mapWalletEntryRow(entryRow({ seq: 1n }))).toBe(true)
+    expect('balanceAfterNanoUsd' in mapWalletEntryRow(entryRow({ balanceAfterNanoUsd: 1n }))).toBe(true)
+    expect('refundsEntryId' in mapWalletEntryRow(entryRow({ refundsEntryId: 'x' }))).toBe(true)
+    expect('seq' in mapWalletEntryRow(entryRow({ balanceAfterNanoUsd: 1n, refundsEntryId: 'x' }))).toBe(false)
+  })
+
   /** An open grant carries the remaining value as `remainingNanoUsd`. */
   it('maps an open grant with its remainder', () => {
     expect(mapOpenGrantRow({ ...entryRow(), remaining: 40n })).toMatchObject({ id: 'e1', remainingNanoUsd: 40n })
@@ -305,6 +321,14 @@ describe('walletEntryMatches', () => {
     ['reason', { reason: 'other' }],
   ])('does not match when the %s differs', (_label, patch) => {
     expect(walletEntryMatches(row, { ...same, ...patch })).toBe(false)
+  })
+
+  /** A replay is a source refund only when the stored row carries the link, and the mode must agree in both directions. */
+  it('requires the stored refund link to agree with the mode of the call', () => {
+    const linked = entryRow({ refundsEntryId: 'd1' })
+    expect(walletEntryMatches(linked, same)).toBe(false)
+    expect(walletEntryMatches(linked, same, true)).toBe(true)
+    expect(walletEntryMatches(row, same, true)).toBe(false)
   })
 
   /** An absent field on either side is equal to a null column on the other, and unequal to a present one. */

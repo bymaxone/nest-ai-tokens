@@ -6,7 +6,8 @@
  */
 
 import { bareUsageRow, budgetRow, entryRow, priceRow, T0, T1 } from '../../test/fakes/prisma-rows'
-import { mapBudgetRow, mapPriceRow, mapUsageRow, mapWalletEntryRow, walletBalanceDelta } from './adapter-sql'
+import { mapPriceRow, mapUsageRow, mapWalletEntryRow, walletBalanceDelta } from './adapter-sql'
+import { mapBudgetRow } from './budget-rows'
 import { setRealmGuard } from '../server/utils/prototype-guard'
 
 // These rows plant keys on Object.prototype to prove what the library reads beneath the realm guard, which would refuse them.

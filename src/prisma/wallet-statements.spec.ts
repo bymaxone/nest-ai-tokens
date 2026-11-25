@@ -5,6 +5,7 @@
  * @layer prisma
  */
 
+import { balanceAtSql, balanceBreakdownSql } from './balance-statements'
 import {
   mapWalletDebitRow,
   openGrantsSql,
@@ -92,5 +93,30 @@ describe('the wallet statements', () => {
         createdAt: T1,
       },
     })
+  })
+})
+
+describe('the balance statements', () => {
+  /** The balance at an instant is one statement over the wallet, with the instant bound once per predicate. */
+  it('builds the balance at an instant as one statement of the wallet', () => {
+    const query = balanceAtSql('w1', T1)
+    expect(query.text).toContain('FROM "ai_wallets" w WHERE w."id"')
+    expect(query.text).toContain('w."balanceNanoUsd"')
+    expect(query.text).toContain('GREATEST(')
+    expect(query.values.filter((value) => value === T1)).toHaveLength(5)
+    expect(query.values).toContain('w1')
+    expect(query.text).not.toContain(';')
+  })
+
+  /** The breakdown is one statement, the total first and then the buckets in the burn order. */
+  it.each([
+    ['expiry', '"expiresAt" ASC NULLS LAST, "createdAt" ASC, "id" ASC'],
+    ['priority', '"priority" ASC, "createdAt" ASC, "id" ASC'],
+    ['fifo', '"createdAt" ASC, "id" ASC'],
+  ] as const)('orders the buckets of the breakdown in %s order after the total row', (order, sort) => {
+    const query = balanceBreakdownSql('w1', T1, order)
+    expect(query.text).toContain(`ORDER BY "rank" ASC, ${sort}`)
+    expect(query.text).toContain("'total' AS \"kind\"")
+    expect(query.values).toContain('w1')
   })
 })

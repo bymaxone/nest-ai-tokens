@@ -147,6 +147,13 @@ installed package:
   beside the ledger: the effects-owed marker that lets the settlement sweep find a capture, a release or a reversal whose
   wallet and budget legs never ran. Apply it before you update the package: the new code writes a marker row in the same
   statement as a transition. It is additive, touches no existing table, and its header documents the rollback.
+- `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0004_wallet_entry_order.sql` — columns only: a per-wallet
+  entry sequence (`ai_wallets.entrySeq`, `ai_wallet_entries.seq`), the balance an entry left (`balanceAfterNanoUsd`) and the
+  debit a refund restored (`refundsEntryId`). Apply it before you update the package: the new code writes these columns.
+  It is additive and does not rewrite a row; the columns are added in an instant, and its header documents the rollback.
+- `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/migrations/0005_wallet_entry_order_indexes.sql` — the indexes and the
+  foreign key that go with 0004, kept apart because they lock writes while they build. Apply it after 0004, in a quiet
+  period on a large ledger; its header says how to build the indexes with `CONCURRENTLY` by hand instead.
 - `node_modules/@bymax-one/nest-ai-tokens/dist/prisma/schema.prisma.fragment` — the same models
   for merging into your own Prisma schema if you manage migrations with `prisma migrate`.
 
@@ -450,6 +457,52 @@ and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
 > when you need the figure that includes every due grant.
+
+#### Refunding to the source, and balances at an instant
+
+`refund()` with no `restore` keeps its old behaviour: it credits the wallet with an entry that no grant owns, so the
+credit is spendable at once and never expires. With `restore: 'source'` the refund puts the amount back on the grants
+that the debit burned, in proportion to what each still has room for, and links the refund to the debit
+(`refundsEntryId`). Pass `debitEntryId` to name the debit, or `usageRecordId` to find it (the wallet must have exactly one debit with that id, or the refund is refused); a `debitEntryId` without
+`restore: 'source'` is refused with `AI_TOKENS_INVALID_CONFIG`, since it contradicts the call.
+
+A product sold in whole credits picks the rate (`creditRateNanoUsd`) and never grants or debits a fraction of a credit: every amount is in nano-USD, and credits are only how a balance is shown.
+
+```typescript
+const ref = { tenantId, ownerType: 'user', ownerId: userId } as const
+
+await wallets.refund(ref, {
+  amountNanoUsd: 90n,
+  usageRecordId: 'u-1',
+  idempotencyKey: 'refund:u-1',
+  reason: 'provider error',
+  restore: 'source',
+})
+```
+
+- The refund writes one `refund` entry and negative allocation rows on the burned grants. No grant is created and no
+  posted row is updated, so the ledger stays append-only.
+- A part that lands on a grant that has already expired (its `expiresAt` has passed, or the sweep wrote its `expiry:`
+  entry) does not come back as spendable credit: the store writes an `expiry:refund:<refundId>:<grantId>` entry that takes
+  it out again. A restored credit never outlives the grant it returns to (no rollover).
+- What can be restored is the debit, less the refunds already linked to it, less the refunds and positive adjustments
+  that carry the same `usageRecordId` and are not linked to any debit. When several debits share one `usageRecordId`, each
+  one's cap counts all of that id's unlinked credits, which is conservative: it can refuse a restore that would have fit,
+  and never allows one that does not. A later refund that is not linked to a debit is not capped by this rule.
+- A debit written by `hold()` or `record()` (key `hold:` or `record:`) is refused for `restore: 'source'`: its grants are
+  settled by `capture()`, `release()` and `reverse()`.
+- Amounts are `bigint` nano-USD and the split is exact: the parts add up to the refund to the nano-USD. The `credits` figures
+  that the service returns are `nanoUsd / creditRateNanoUsd` as a `number` for display and are never stored, so a refund
+  that is not a whole number of credits restores a fraction of a credit.
+- Entries are listed in the order they committed (`seq`, then `createdAt`, then `id`), and each carries `balanceAfterNanoUsd`,
+  the stored balance after it. An entry written before migration 0004 has no `seq` and sorts first when ascending and last when
+  descending. A deployment that runs the old and the new code against one wallet orders the rows of the old code by time only.
+
+`getBalance(ref)` is unchanged. `getBalance(ref, { asOf })` answers what could be spent at that instant: a grant not yet
+effective, or already expired, is out, and one due but not yet credited is in. `getBalanceBreakdown(ref, { asOf })` lists
+the same figure by grant. An `asOf` up to 5 seconds behind the clock is evaluated at now, one further behind is refused
+with `AI_TOKENS_INVALID_CONFIG`, and the result carries the instant it used. A store without `balanceAt` and
+`balanceBreakdown` is refused with the same code rather than answered from the stored balance.
 
 #### What a debit costs as a wallet grows
 
