@@ -20,9 +20,18 @@ beforeAll(() => setRealmGuard(false))
 afterAll(() => setRealmGuard(true))
 
 /** A MeteringService over the shared ledger + the budget service (no wallets). */
-function makeMetering(ledger: LedgerService, budgets: BudgetService, now: () => Date): MeteringService {
-  const options = { ratingMode: 'rate-table', markup: 1, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 }, wallets: { enabled: false }, pricing: { strict: false, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} } } as ResolvedAiTokensOptions
-  return new MeteringService(ledger, new PricingService(options, new InMemoryPricingStore()), new MarkupResolver(options), options, undefined, undefined, budgets, now)
+function makeMetering(ledger: LedgerService, budgets: BudgetService, now: () => Date, strict = false): MeteringService {
+  return meteringWorld(ledger, budgets, now, strict).metering
+}
+
+/** The metering service with the pricing service and the options it was built from, for a guard that asks the same price question. */
+function meteringWorld(ledger: LedgerService, budgets: BudgetService, now: () => Date, strict: boolean): { metering: MeteringService; pricing: PricingService; options: ResolvedAiTokensOptions } {
+  const options = { ratingMode: 'rate-table', markup: 1, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 }, wallets: { enabled: false }, pricing: { strict, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} } } as ResolvedAiTokensOptions
+  const prices = new InMemoryPricingStore()
+  // The store adds the row synchronously, so the named-model estimate of the strict rows finds its price.
+  void prices.seedPrice({ provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 2_500_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
+  const pricing = new PricingService(options, prices)
+  return { metering: new MeteringService(ledger, pricing, new MarkupResolver(options), options, undefined, undefined, budgets, now), pricing, options }
 }
 
 const TENANT = 't1'
@@ -57,6 +66,24 @@ class FixtureController {
   @Meter({ feature: 'meter.feat', preset: providerPresets.openaiChat })
   withPresetEstimate(): string {
     return 'preset-estimate'
+  }
+
+  @RequireBudget({ estimate: { tokens: 2_000 } })
+  @Meter({ feature: 'meter.feat', preset: providerPresets.openrouter })
+  withReportedEstimate(): string {
+    return 'reported-estimate'
+  }
+
+  @RequireBudget({ estimate: { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 100, maxOutputTokens: 100 } })
+  @Meter({ feature: 'meter.feat', preset: providerPresets.openaiChat })
+  withNamedEstimate(): string {
+    return 'named-estimate'
+  }
+
+  @RequireBudget({ estimate: { amountNanoUsd: 5_000_000n } })
+  @Meter({ feature: 'meter.feat', preset: providerPresets.openaiChat })
+  withPresetAmount(): string {
+    return 'preset-amount'
   }
 
   plain(): string {
@@ -98,14 +125,15 @@ function executionContext(handler: () => unknown, request: Record<string, unknow
 }
 
 /** A guard + budget service over in-memory fakes; the scope resolver returns `ctx`. */
-function makeGuard(ctx: MeteringContext = context()): { guard: BudgetGuard; service: BudgetService; ledgerStore: InMemoryLedgerStore } {
+function makeGuard(ctx: MeteringContext = context(), strict = false): { guard: BudgetGuard; service: BudgetService; ledgerStore: InMemoryLedgerStore; metering: MeteringService; pricing: PricingService } {
   const store = new InMemoryBudgetStore({ now: () => NOW })
   const ledgerStore = new InMemoryLedgerStore()
   const ledger = new LedgerService(ledgerStore)
   const options: BudgetServiceOptions = { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true }
   const service = new BudgetService(store, ledger, options, () => NOW)
-  const guard = new BudgetGuard(service, makeMetering(ledger, service, () => NOW), new Reflector(), { scopeResolver: () => ctx })
-  return { guard, service, ledgerStore }
+  const world = meteringWorld(ledger, service, () => NOW, strict)
+  const guard = new BudgetGuard(service, world.metering, new Reflector(), { ...world.options, scopeResolver: () => ctx }, world.pricing)
+  return { guard, service, ledgerStore, metering: world.metering, pricing: world.pricing }
 }
 
 describe('BudgetGuard', () => {
@@ -224,6 +252,104 @@ describe('BudgetGuard', () => {
     await guard.canActivate(executionContext(fixture.withPresetEstimate, request))
     expect(request.aiTokens?.hold).toBeDefined()
     expect(request.aiTokens?.context.preset?.provider).toBe('openai')
+  })
+})
+
+describe('BudgetGuard and an estimate that names no model', () => {
+  /** In strict pricing a settle of a model-less estimate fails after the provider call, so the guard refuses it before the handler, with a 5xx. */
+  it('refuses a { tokens } estimate on a rate-table preset in strict pricing, with no hold and nothing spent', async () => {
+    const { guard, service, ledgerStore } = makeGuard(context(), true)
+    await service.upsertBudget({ tenantId: TENANT, scope: USER_SCOPE, limitTokens: 1_000_000, window: 'month' })
+    const request: { aiTokens?: RequestAiTokens } = {}
+    let thrown: unknown
+    try {
+      await guard.canActivate(executionContext(fixture.withPresetEstimate, request))
+    } catch (error) {
+      thrown = error
+    }
+    expect(codeOf(thrown)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect((thrown as AiTokensException).getStatus()).toBe(500)
+    expect(request.aiTokens).toBeUndefined()
+    expect(ledgerStore.all()).toHaveLength(0)
+    expect((await service.status(TENANT, USER_SCOPE))[0]?.spent).toEqual({ nanoUsd: 0n, tokens: 0, count: 0 })
+  })
+
+  /** An amountNanoUsd estimate on the default rate table is the same model-less case. */
+  it('refuses an { amountNanoUsd } estimate with no preset in strict pricing', async () => {
+    const { guard, ledgerStore } = makeGuard(context(), true)
+    await expectRejectCode(guard.canActivate(executionContext(fixture.withEstimate)), 'AI_TOKENS_INVALID_CONFIG')
+    expect(ledgerStore.all()).toHaveLength(0)
+  })
+
+  /** A provider-reported preset never reads the model, so the model-less estimate settles. */
+  it('passes a { tokens } estimate on a provider-reported preset in strict pricing', async () => {
+    const { guard, ledgerStore } = makeGuard(context(), true)
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture.withReportedEstimate, request))
+    expect(request.aiTokens?.hold).toBeDefined()
+    expect(ledgerStore.all().filter((r) => r.status === 'pending')).toHaveLength(1)
+  })
+
+  /** Non-strict pricing records an unpriced call at 0 USD by design, so the guard leaves it as it was. */
+  it('places the hold of a { tokens } estimate on a rate-table preset when pricing is not strict', async () => {
+    const { guard, ledgerStore } = makeGuard(context(), false)
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture.withPresetEstimate, request))
+    expect(request.aiTokens?.hold).toBeDefined()
+    expect(ledgerStore.all().filter((r) => r.status === 'pending')).toHaveLength(1)
+  })
+
+  /** The settle prices context.baseModel, so a listed one is served and billed: the guard asks the price list, not the shape of the estimate. */
+  it.each([
+    ['{ tokens }', 'withPresetEstimate'],
+    ['{ amountNanoUsd }', 'withPresetAmount'],
+  ] as const)('places the hold and settles a %s estimate when baseModel is a listed model in strict pricing', async (_shape, handler) => {
+    const { guard, metering, ledgerStore } = makeGuard(context({ baseModel: 'gpt-4o' }), true)
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture[handler], request))
+    const hold = request.aiTokens?.hold
+    expect(hold).toBeDefined()
+    const usage = { provider: 'openai', model: 'gpt-4o', operation: 'chat', inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, reasoningTokens: 0, audioInTokens: 0, audioOutTokens: 0, imageInTokens: 0, imageOutTokens: 0 }
+    const posted = await metering.capture(hold!, { tenantId: TENANT, scope: USER_SCOPE }, usage, providerPresets.openaiChat)
+    expect(posted.status).toBe('posted')
+    expect(posted.rawCostNanoUsd).toBe(7_500_000n)
+    expect(ledgerStore.all().filter((r) => r.status === 'pending')).toHaveLength(0)
+  })
+
+  /** An unlisted baseModel is a settle with no price, like none: refused before the handler, with nothing held. */
+  it.each([
+    ['{ tokens }', 'withPresetEstimate'],
+    ['{ amountNanoUsd }', 'withPresetAmount'],
+  ] as const)('refuses a %s estimate when baseModel is not a listed model in strict pricing', async (_shape, handler) => {
+    const { guard, ledgerStore } = makeGuard(context({ baseModel: 'not-listed' }), true)
+    await expectRejectCode(guard.canActivate(executionContext(fixture[handler])), 'AI_TOKENS_INVALID_CONFIG')
+    expect(ledgerStore.all()).toHaveLength(0)
+  })
+
+  /** A price lookup that fails for another reason is that failure, not a missing price: the guard does not rename it. */
+  it.each([
+    ['a plain error', new Error('store down')],
+    ['another typed code', new AiTokensException('AI_TOKENS_INVALID_CONFIG')],
+  ])('passes on %s from the price lookup', async (_name, failure) => {
+    const { guard, pricing, ledgerStore } = makeGuard(context(), true)
+    jest.spyOn(pricing, 'resolveRate').mockRejectedValueOnce(failure)
+    await expect(guard.canActivate(executionContext(fixture.withPresetEstimate))).rejects.toBe(failure)
+    expect(ledgerStore.all()).toHaveLength(0)
+  })
+
+  /** A rating mode the resolver puts on its context is read by record() only; the settle and the guard both read the preset's, else the module's. */
+  it('decides from the preset and module rating mode, not from a ratingMode the scope resolver supplies', async () => {
+    const { guard } = makeGuard(context({ ratingMode: 'provider-reported' }), true)
+    await expectRejectCode(guard.canActivate(executionContext(fixture.withPresetEstimate)), 'AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** An estimate that names provider and model is rated at capture, so strict pricing passes it. */
+  it('passes an estimate that names the model in strict pricing', async () => {
+    const { guard, ledgerStore } = makeGuard(context(), true)
+    const request: { aiTokens?: RequestAiTokens } = {}
+    await guard.canActivate(executionContext(fixture.withNamedEstimate, request))
+    expect(request.aiTokens?.hold).toBeDefined()
+    expect(ledgerStore.all().filter((r) => r.status === 'pending')).toHaveLength(1)
   })
 })
 

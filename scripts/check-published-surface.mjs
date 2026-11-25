@@ -604,12 +604,11 @@ function scaffoldConsumer() {
       2,
     )}\n`,
   )
-  // The names a snippet uses without introducing them, typed for real so a call
-  // made through one is checked instead of silently resolving to `any`. Copied with a
-  // `.ts` extension: the repository tsconfig sets `skipLibCheck`, a declaration file is
-  // never diagnosed, and a prelude type that stopped resolving would turn into `any`
-  // without a word.
-  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.ts'))
+  // The names a snippet uses without introducing them, typed for real so a call made through one is checked
+  // instead of silently resolving to `any`: the prelude, and the host's own `./ai.service` wrapper. Copied with a
+  // `.ts` extension: the repository tsconfig sets `skipLibCheck`, a declaration file is never diagnosed, and a
+  // type that stopped resolving would turn into `any` without a word.
+  for (const [from, to] of [['readme-prelude.d.ts', 'prelude.ts'], ['readme-ai-service.d.ts', 'ai.service.ts']]) copyFileSync(join(ROOT, 'scripts', from), join(GATE_DIR, to))
 }
 
 /**
