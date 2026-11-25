@@ -204,9 +204,9 @@ function budgetServiceProvider(): Provider {
 function budgetGuardProvider(): Provider {
   return {
     provide: BudgetGuard,
-    useFactory: (options: ResolvedAiTokensOptions, budgets: BudgetService, metering: MeteringService, reflector: Reflector): BudgetGuard =>
-      options.budgets.enabled ? new BudgetGuard(budgets, metering, reflector, options) : disabledService(BudgetGuard, 'budgets'),
-    inject: [BYMAX_AI_TOKENS_OPTIONS, BudgetService, MeteringService, Reflector],
+    useFactory: (options: ResolvedAiTokensOptions, budgets: BudgetService, metering: MeteringService, reflector: Reflector, pricing: PricingService): BudgetGuard =>
+      options.budgets.enabled ? new BudgetGuard(budgets, metering, reflector, options, pricing) : disabledService(BudgetGuard, 'budgets'),
+    inject: [BYMAX_AI_TOKENS_OPTIONS, BudgetService, MeteringService, Reflector, PricingService],
   }
 }
 

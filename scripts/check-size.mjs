@@ -58,7 +58,9 @@ const BUDGETS = [
   // 64_218 (server) and 19_498 (prisma) also hold the refund to its source (the debit lookup, the cap, the split by largest remainder, the expiry of a part that lands
   // on an expired grant), the balance at an instant and its breakdown, the per-wallet entry sequence and the order and balance columns of every entry insert, and the
   // typed refusals and field lists of those inputs, the order check of the entry list and the millisecond clock of a grant's balance; they measure 64_218 and 19_483.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 64_218 },
+  // 64_524 (server) also holds the `@Inject` of the three services the guard names beside its options token, which a host's `@UseGuards(BudgetGuard)` is built from, and the
+  // refusal, before the handler, of a model-less hold estimate that strict pricing could only fail to settle; the server bundle measures 64_494.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 64_524 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 19_498 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },

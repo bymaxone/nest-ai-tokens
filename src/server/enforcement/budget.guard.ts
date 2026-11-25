@@ -20,17 +20,18 @@ import { effectivePolicy } from '../utils/enum-guards'
 import { settled } from '../utils/host-settled'
 import { Inject, Injectable } from '@nestjs/common'
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
-import type { Reflector } from '@nestjs/core'
+import { Reflector } from '@nestjs/core'
 import type { BudgetStatus } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
-import type { BudgetService, MeteringService } from '../services'
+import { BudgetService, MeteringService, PricingService } from '../services'
 import { suppliedDetails } from '../utils/detail-text'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { AI_FEATURE_METADATA, METER_METADATA, REQUIRE_BUDGET_METADATA, meterConfigOf, requireBudgetOf } from './decorators'
 import type { MeterConfig, RequireBudgetConfig } from './decorators'
+import { assertSettlePriceable } from './settle-priceable'
 
 /** The request enrichment the guard attaches (the `AIGenerationGuard` parity contract). */
 export interface RequestAiTokens {
@@ -54,13 +55,15 @@ export class BudgetGuard implements CanActivate {
    * @param metering The metering facade (hold placement in `@RequireBudget.estimate` mode).
    * @param reflector The NestJS reflector (decorator metadata).
    * @param options The resolved options carrying the required `scopeResolver`.
+   * @param pricing The pricing service the settle preflight asks; a guard constructed with `new` and no pricing service skips the preflight, and a Nest provider of your own for the guard must inject `PricingService` (it is not optional there).
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `scopeResolver` is absent (fail-fast at init).
    */
   constructor(
-    private readonly budgets: BudgetService,
-    private readonly metering: MeteringService,
-    private readonly reflector: Reflector,
-    @Inject(BYMAX_AI_TOKENS_OPTIONS) options: Pick<ResolvedAiTokensOptions, 'scopeResolver'>,
+    @Inject(BudgetService) private readonly budgets: BudgetService,
+    @Inject(MeteringService) private readonly metering: MeteringService,
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(BYMAX_AI_TOKENS_OPTIONS) private readonly options: Pick<ResolvedAiTokensOptions, 'scopeResolver'> & Partial<Pick<ResolvedAiTokensOptions, 'ratingMode' | 'pricing'>>,
+    @Inject(PricingService) private readonly pricing?: PricingService,
   ) {
     if (options.scopeResolver === undefined) {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
@@ -93,6 +96,7 @@ export class BudgetGuard implements CanActivate {
       if (error !== null) throw error
     }
     const meterContext: MeteringContext = { ...context, feature, ...(meter?.preset !== undefined ? { preset: meter.preset } : {}) }
+    if (requireBudget?.estimate !== undefined) await assertSettlePriceable(requireBudget.estimate, meterContext, meter?.preset, this.pricing, this.options)
     const hold = requireBudget?.estimate !== undefined ? await this.metering.hold(meterContext, requireBudget.estimate) : undefined
     const request = executionContext.switchToHttp().getRequest<{ aiTokens?: RequestAiTokens }>()
     request.aiTokens = { status: statuses, context: meterContext, ...(hold !== undefined ? { hold } : {}) }
