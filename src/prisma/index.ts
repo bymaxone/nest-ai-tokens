@@ -142,6 +142,15 @@ function reservedKeyHeld(walletId: string, key: string, grantId: string): AiToke
   )
 }
 
+/** A grant a debit burned, with the amount it burned and the amount refunds already restored to it. */
+interface FundedAllocation {
+  grantEntryId: string
+  amountNanoUsd: bigint
+  restored: bigint
+  priority: number
+  expiresAt: Date | null
+}
+
 /** The refusal of a refund to its source that the debit, or the amount, cannot take: a typed configuration error, never a driver error. */
 function sourceRefusal(reason: string): AiTokensException {
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
@@ -536,14 +545,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         const debit = await this.sourceDebit(tx, wallet.id, entry, debitEntryId)
         if (debit.idempotencyKey.startsWith('hold:') || debit.idempotencyKey.startsWith('record:')) throw sourceRefusal('a debit the library wrote itself (hold: / record:) cannot be refunded to its source')
         const left = await this.restorableOf(tx, wallet.id, debit, entry.amountNanoUsd)
-        const funded = await tx.query<{ grantEntryId: string; amountNanoUsd: bigint; restored: bigint; priority: number; expiresAt: Date | null }[]>(sql`
-          SELECT a."grantEntryId", a."amountNanoUsd", g."priority", g."expiresAt",
-                 COALESCE((SELECT -SUM(b."amountNanoUsd") FROM "ai_wallet_debit_allocations" b JOIN "ai_wallet_entries" r ON r."id" = b."debitEntryId"
-                           WHERE b."grantEntryId" = a."grantEntryId" AND r."refundsEntryId" = ${debit.id}), 0)::bigint AS "restored"
-          FROM "ai_wallet_debit_allocations" a JOIN "ai_wallet_entries" g ON g."id" = a."grantEntryId"
-          WHERE a."debitEntryId" = ${debit.id}
-          ORDER BY g."seq" ASC NULLS FIRST, g."createdAt" ASC, g."id" ASC
-        `)
+        const funded = await this.fundedAllocations(tx, debit.id)
         const weights = funded.map((allocation) => allocation.amountNanoUsd - allocation.restored)
         weights.push(left.available - weights.reduce((sum, weight) => sum + weight, 0n))
         const shares = splitByWeights(weights, entry.amountNanoUsd)
@@ -551,31 +553,43 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         const parts = funded.map((allocation, index) => ({ ...allocation, part: shares[index] ?? 0n })).filter((allocation) => allocation.part > 0n)
         await this.insertAllocations(tx, stored.id, parts.map((allocation) => ({ grantEntryId: allocation.grantEntryId, amountNanoUsd: -allocation.part })))
         await this.applyBalanceDelta(tx, wallet.id, entry.amountNanoUsd)
-        let running = balance + entry.amountNanoUsd
-        for (const grant of parts) {
-          const part = grant.part
-          // A grant that has expired by the clock, or that the sweep already wrote off, takes its part back out in an entry of its own: the refund
-          // raised its remainder, and an expired grant's remainder is not spendable. The key is the refund's, never the sweep's.
-          const swept = await tx.query<{ one: number }[]>(sql`SELECT 1 AS "one" FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${expiryKey(grant.grantEntryId)} LIMIT 1`)
-          if ((grant.expiresAt === null || grant.expiresAt > now) && swept[0] === undefined) continue
-          running -= part
-          const expiry = await this.insertSystemEntry(tx, wallet.id, {
-            type: 'expiry',
-            amountNanoUsd: -part,
-            priority: grant.priority,
-            idempotencyKey: `${EXPIRY_KEY_PREFIX}refund:${stored.id}:${grant.grantEntryId}`,
-            reason: 'refund restored an expired grant',
-          }, running, now)
-          if (expiry === undefined) throw reservedKeyHeld(wallet.id, `${EXPIRY_KEY_PREFIX}refund:${stored.id}:${grant.grantEntryId}`, grant.grantEntryId)
-          await this.insertAllocations(tx, expiry.id, [{ grantEntryId: grant.grantEntryId, amountNanoUsd: part }])
-          await this.applyBalanceDelta(tx, wallet.id, -part)
-        }
+        await this.expireRestoredParts(tx, wallet.id, stored.id, parts, balance + entry.amountNanoUsd, now)
         return stored
       })
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) throw error
       if (isWalletMissing(error)) throw error
       throw storeError(error)
+    }
+  }
+
+  /** The grants a debit burned, each with what a refund already restored to it, in the order the debit was split. */
+  private async fundedAllocations(tx: SqlExecutor, debitId: string): Promise<FundedAllocation[]> {
+    return tx.query<FundedAllocation[]>(sql`
+          SELECT a."grantEntryId", a."amountNanoUsd", g."priority", g."expiresAt",
+                 COALESCE((SELECT -SUM(b."amountNanoUsd") FROM "ai_wallet_debit_allocations" b JOIN "ai_wallet_entries" r ON r."id" = b."debitEntryId"
+                           WHERE b."grantEntryId" = a."grantEntryId" AND r."refundsEntryId" = ${debitId}), 0)::bigint AS "restored"
+          FROM "ai_wallet_debit_allocations" a JOIN "ai_wallet_entries" g ON g."id" = a."grantEntryId"
+          WHERE a."debitEntryId" = ${debitId}
+          ORDER BY g."seq" ASC NULLS FIRST, g."createdAt" ASC, g."id" ASC
+        `)
+  }
+
+  /** Takes a refund's part back out of each grant that has expired by the clock or that the sweep wrote off. */
+  private async expireRestoredParts(tx: SqlExecutor, walletId: string, refundId: string, parts: readonly (FundedAllocation & { part: bigint })[], balanceAfterRefund: bigint, now: Date): Promise<void> {
+    let running = balanceAfterRefund
+    for (const grant of parts) {
+      const part = grant.part
+      // A grant that has expired by the clock, or that the sweep already wrote off, takes its part back out in an entry of its own: the refund
+      // raised its remainder, and an expired grant's remainder is not spendable. The key is the refund's, never the sweep's.
+      const swept = await tx.query<{ one: number }[]>(sql`SELECT 1 AS "one" FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "idempotencyKey" = ${expiryKey(grant.grantEntryId)} LIMIT 1`)
+      if ((grant.expiresAt === null || grant.expiresAt > now) && swept[0] === undefined) continue
+      running -= part
+      const key = `${EXPIRY_KEY_PREFIX}refund:${refundId}:${grant.grantEntryId}`
+      const expiry = await this.insertSystemEntry(tx, walletId, { type: 'expiry', amountNanoUsd: -part, priority: grant.priority, idempotencyKey: key, reason: 'refund restored an expired grant' }, running, now)
+      if (expiry === undefined) throw reservedKeyHeld(walletId, key, grant.grantEntryId)
+      await this.insertAllocations(tx, expiry.id, [{ grantEntryId: grant.grantEntryId, amountNanoUsd: part }])
+      await this.applyBalanceDelta(tx, walletId, -part)
     }
   }
 

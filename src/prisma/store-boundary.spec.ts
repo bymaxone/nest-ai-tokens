@@ -23,7 +23,7 @@ const DELTA = { nanoUsd: 5n, tokens: 1, count: 1 }
 const INTERNAL = new Set([
   'constructor', 'insert', 'insertChained', 'settleChained', 'updateStatus', 'lastHashWithin', 'getWalletWithin', 'ensureWallet',
   'insertWalletEntry', 'insertAllocations', 'applyBalanceDelta', 'lockWallet', 'insertSystemEntry', 'activateDueGrants',
-  'sweepExpiredGrants', 'burnDown', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict', 'lockedBalance', 'sourceDebit', 'restorableOf',
+  'sweepExpiredGrants', 'burnDown', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict', 'lockedBalance', 'sourceDebit', 'restorableOf', 'fundedAllocations', 'expireRestoredParts',
 ])
 
 /** A call of a method by its name, for the one the type system marks deprecated and the lint refuses to see called by name. */
