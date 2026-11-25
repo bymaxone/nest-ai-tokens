@@ -272,7 +272,7 @@ export class AiController {
   @RequireBudget({
     scope: 'tenant',
     // Name the provider and the model: the settle prices the call with the hold's own. A bare `{ tokens }` or `{ amountNanoUsd }`
-    // estimate settles on `context.baseModel` instead (a model listed for the preset's provider), and with none, or with no preset, the guard refuses it under strict pricing
+    // estimate settles on `context.baseModel` instead (a model listed for the preset's provider), and with none, or with no preset, the guard refuses it under strict pricing on a rate-table mode
     // (with `pricing.strict: false` it is recorded at 0 USD).
     estimate: { provider: 'anthropic', model: 'claude-opus-4', operation: 'chat', inputTokens: 2_000, maxOutputTokens: 1_000 },
   })

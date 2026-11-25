@@ -22,7 +22,7 @@ import type { PricingService } from '../services'
  *
  * The mode is the one `capture()` rates with: the preset the interceptor settles with, which is the one `@Meter` names, else the module's.
  * A preset a scope resolver puts on its context gives the hold its provider but never the mode, and a rating mode it puts on its context is
- * read by `record()` only, so neither plays a part in the settle of a hold.
+ * read by `record()` only, so neither changes the mode.
  *
  * @param estimate The `@RequireBudget` estimate.
  * @param context The context the hold will be placed with (feature and preset merged in); it decides the provider and model of the row.
@@ -47,7 +47,6 @@ export async function assertSettlePriceable(
       operation: 'chat',
       serviceTier: context.serviceTier ?? 'standard',
       at: new Date(),
-      ...(context.baseModel !== undefined ? { baseModel: context.baseModel } : {}),
     })
   } catch (error) {
     if (!(error instanceof AiTokensException) || (error.getResponse() as { error: { code: string } }).error.code !== 'AI_TOKENS_PRICE_NOT_FOUND') throw error

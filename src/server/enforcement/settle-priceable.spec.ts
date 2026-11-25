@@ -23,11 +23,16 @@ const context: MeteringContext & { preset: typeof providerPresets.openaiChat } =
   preset: providerPresets.openaiChat,
 }
 
-function world(aliases: Record<string, string> = {}): { pricing: PricingService; options: ResolvedAiTokensOptions } {
-  const options = { ratingMode: 'rate-table', markup: 1, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 }, wallets: { enabled: false }, pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: aliases } } as ResolvedAiTokensOptions
+function world(
+  aliases: Record<string, string> = {},
+  strict = true,
+  extra: readonly { provider: string; model: string }[] = [],
+): { pricing: PricingService; options: ResolvedAiTokensOptions; prices: InMemoryPricingStore } {
+  const options = { ratingMode: 'rate-table', markup: 1, holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 }, wallets: { enabled: false }, pricing: { strict, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: aliases } } as ResolvedAiTokensOptions
   const prices = new InMemoryPricingStore()
   void prices.seedPrice({ provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 2_500_000_000n, outputNanoUsdPerMillion: 10_000_000_000n, effectiveFrom: new Date(0) })
-  return { pricing: new PricingService(options, prices), options }
+  for (const row of extra) void prices.seedPrice({ ...row, operation: 'chat', serviceTier: 'standard', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n, effectiveFrom: new Date(0) })
+  return { pricing: new PricingService(options, prices), options, prices }
 }
 
 async function codeOf(run: Promise<unknown>): Promise<string | undefined> {
@@ -89,6 +94,68 @@ describe('a guard built by hand without a pricing service', () => {
     const request: { aiTokens?: { hold?: unknown } } = {}
     await expect(guard.canActivate(new ExecutionContextHost([request], Handler, Handler.prototype.run))).resolves.toBe(true)
     expect(request.aiTokens?.hold).toBeDefined()
+  })
+})
+
+describe('what the preflight asks for when the context names less', () => {
+  const { preset: _preset, ...bare } = context
+  const none = (extra: readonly { provider: string; model: string }[]): ReturnType<typeof world> => world({}, true, extra)
+
+  /** With no preset the hold's provider is `unspecified`, so a price list that names that provider prices the baseModel. */
+  it('looks a baseModel up under the provider `unspecified` when there is no preset', async () => {
+    const { pricing, options } = none([{ provider: 'unspecified', model: 'gpt-4o' }])
+    expect(await codeOf(assertSettlePriceable({ tokens: 10 }, { ...bare, baseModel: 'gpt-4o' }, undefined, pricing, options))).toBeUndefined()
+  })
+
+  /** With neither a preset nor a baseModel the hold's model is `unspecified`; a price list that names it prices the hold. */
+  it('looks the model `unspecified` up when there is no baseModel', async () => {
+    const { pricing, options } = none([{ provider: 'unspecified', model: 'unspecified' }])
+    expect(await codeOf(assertSettlePriceable({ tokens: 10 }, bare, undefined, pricing, options))).toBeUndefined()
+  })
+
+  /** The same context against a list that lacks that row is refused, so the row above is what decides it. */
+  it('refuses the model `unspecified` when the price list does not name it', async () => {
+    const { pricing, options } = none([])
+    expect(await codeOf(assertSettlePriceable({ tokens: 10 }, bare, undefined, pricing, options))).toBe('AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** The refusal carries the reason that names the setting to change, as the whole of its details. */
+  it('refuses with a reason that names baseModel and the way out', async () => {
+    const { pricing, options } = none([])
+    const error = await assertSettlePriceable({ tokens: 10 }, bare, undefined, pricing, options).catch((e: unknown) => e)
+    expect((error as AiTokensException).getResponse()).toMatchObject({
+      error: {
+        details: {
+          reason:
+            'the settle of a { tokens } or { amountNanoUsd } estimate prices the model context.baseModel for the preset provider, and the price list has none for it; set baseModel to a model listed for it, or give the estimate its provider and model',
+        },
+      },
+    })
+  })
+
+  /** Without strict pricing a miss is not an error, so the preflight asks the price list nothing. */
+  it('does not ask the price list under non-strict pricing', async () => {
+    const { pricing, options } = world({}, false)
+    const asked = jest.spyOn(pricing, 'resolveRate')
+    await assertSettlePriceable({ tokens: 10 }, { ...bare, baseModel: 'unlisted' }, undefined, pricing, options)
+    expect(asked).not.toHaveBeenCalled()
+  })
+
+  /** An estimate that names its provider is rated from its own model, so the preflight does not ask either. */
+  it('does not ask the price list for an estimate that names its provider', async () => {
+    const { pricing, options } = world()
+    const asked = jest.spyOn(pricing, 'resolveRate')
+    await assertSettlePriceable({ provider: 'openai', model: 'unlisted', operation: 'chat', inputTokens: 1, maxOutputTokens: 1 }, bare, undefined, pricing, options)
+    expect(asked).not.toHaveBeenCalled()
+  })
+
+  /** The preflight asks the question the hold asks, so the hold reads the price from the cache and the store is read once. */
+  it('costs the store one read for a listed baseModel across the preflight and the hold', async () => {
+    const { pricing, options, prices } = world()
+    const reads = jest.spyOn(prices, 'resolveRate')
+    await assertSettlePriceable({ tokens: 10 }, { ...context, baseModel: 'gpt-4o' }, context.preset, pricing, options)
+    await pricing.resolveRate({ provider: 'openai', model: 'gpt-4o', operation: 'chat', serviceTier: 'standard', at: new Date() })
+    expect(reads).toHaveBeenCalledTimes(1)
   })
 })
 
