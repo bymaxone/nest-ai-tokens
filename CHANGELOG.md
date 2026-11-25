@@ -22,6 +22,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 - `appendEntry` of the Prisma store locks the wallet row before it writes, as `conditionalDebit` and `reconcile` already did. Parallel writers to one wallet queue on that lock.
 
+### Fixed
+
+- The realm guard no longer refuses every billing call in a host that evaluates a second copy of `reflect-metadata` after the package loaded. It recorded every function of `Reflect`, so the functions that polyfill defines again were read as a replaced built-in. It now records only the functions the language defines on `Reflect`; a replaced one is still refused, and no decision of the library reads a polyfill function.
+
 ## [1.1.23] - 2026-11-24
 
 **Apply:** no migration and no option change is needed. This release closes one class of defect: a host that planted `Promise[Symbol.species]`, a `then` or a `constructor` could decide what a store or a callback answered, because the library chained the promise it was given. It now waits for what a host returns with a native `await`, after refusing a native promise that carries a `then` or a `constructor` of its own, and refuses it again when the answer it resolved with has a `then`. A store, a markup policy, a tokenizer, an fx function and the async options factory may still return a `Promise` subclass, a thenable (a plain object or a class instance with a `then`, a query builder) or a native promise of another realm, as in 1.1.22. A Proxy is refused, since its traps are host code: a promise that is a Proxy is refused on every call, and for the function `meter()` runs an answer that is a Proxy is refused too, with `AI_TOKENS_INVALID_CONFIG`, so a provider SDK that wraps its response in a Proxy must be unwrapped by the host before the function returns it. The module also loads when the global `Promise` was replaced before the import (a subclass, bluebird, zone.js, a wrapper): it takes the engine's promise from an async function and never reads the global.
