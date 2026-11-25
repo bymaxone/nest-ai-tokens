@@ -200,7 +200,7 @@ export class MeteringService {
     const input = recordInput(given)
     assertObject('input', input)
     assertMeteringContext(input.context)
-    return (await this.recordSettled(input, onAppended)).record
+    return (await this.recordSettled(input, typeof onAppended === 'function' ? onAppended : undefined)).record
   }
 
   /**

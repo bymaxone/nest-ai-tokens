@@ -204,6 +204,18 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { errorCode, where: 'interceptor' }]])
   })
 
+  /** A context that names no payer cannot be announced for anyone: it is only logged, and the refusal reaches the caller. */
+  it.each<[string, Record<string, unknown>]>([
+    ['no tenant', { scope: CONTEXT.scope, feature: 'chat.reply' }],
+    ['no scope', { tenantId: 'tenant-1', feature: 'chat.reply' }],
+  ])('emits no event for a context with %s', async (_name, context) => {
+    const built = await setup()
+    const error = await run(built.interceptor, undefined, returning({ usage: normalized() }), fixture.metered, {}, context as unknown as MeteringContext)
+    expect(error).toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    expect(built.events.settleFailed).not.toHaveBeenCalled()
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.stringContaining('was not settled'))
+  })
+
   /** A ledger that wrote the row before it threw leaves the usage recorded, so nothing is announced. */
   it('announces nothing with no hold when the row was written', async () => {
     const built = await setup()

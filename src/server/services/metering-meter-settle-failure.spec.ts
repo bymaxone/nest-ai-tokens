@@ -171,4 +171,12 @@ describe('MeteringService.meter() when settling fails after the function served'
     await meter(built, usable, estimate)
     expect(built.events.settleFailed).not.toHaveBeenCalled()
   })
+
+  /** `record()` handed to a caller that passes more arguments, as `map` does, still records and still reports the usage. */
+  it('ignores a second argument of record() that is no function', async () => {
+    const built = await setup()
+    const record = built.metering.record.bind(built.metering) as (input: unknown, extra: unknown) => Promise<unknown>
+    await expect(record({ usage: normalized(), context: CONTEXT }, 0)).resolves.toMatchObject({ status: 'posted' })
+    expect(built.events.usageRecorded).toHaveBeenCalledTimes(1)
+  })
 })

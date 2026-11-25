@@ -15,7 +15,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 - `ai_tokens.settle.failed` (`{ holdId?, correlationId?, errorCode?, where }`, with the tenant and scope on the envelope) and the
   `SettleFailedEventData` type. It says that a served call was not settled, so the host can reconcile the usage from its own
   provider log; the error's message is never carried. A call with no hold has no `holdId`, and
-  `correlationId` is the one of the call's metering context, so set it if you need to match such a call.
+  `correlationId` is the one of the call's metering context, so set it if you need to match such a call. When the ledger could not be
+  read back after the failure, the row may exist all the same, so check the ledger before billing from your provider's log.
 
 ### Fixed
 

@@ -77,7 +77,7 @@ needs them is enabled. OpenTelemetry is not a dependency at all: you hand the li
 
 - ✅ **Five subpaths** — see [Subpath Exports](#-subpath-exports)
 - ✅ **Usage reports** — by scope, feature, model or date, with currency conversion and CSV or JSON export
-- ✅ **Typed events** — ten emitted event types over `@nestjs/event-emitter`, optional
+- ✅ **Typed events** — emitted over `@nestjs/event-emitter`, optional
 - ✅ **OpenTelemetry** — an optional `ITelemetrySink` port for `gen_ai.*` signals, never carrying prompt
   or completion text; the library imports no OpenTelemetry package
 - ✅ **Typed end to end** — TypeScript `strict`, zero `any`
@@ -655,7 +655,8 @@ All event payloads use `bigint` nano-USD internally and `string` decimal at JSON
 When a served call cannot be settled, `MeteringInterceptor` keeps the guard's hold until `holds.ttlSeconds`: its reservation goes
 on counting against the wallet and budget, and a retry with the same idempotency key gets the same hold. `meter()` releases its hold
 at once, so that a failed capture strands no headroom for that long. `meter()` and the interceptor
-emit `ai_tokens.settle.failed`, whose `where` names the caller, for you to reconcile from your provider's log.
+emit `ai_tokens.settle.failed`, whose `where` names the caller, for you to reconcile from your provider's log. When the ledger could
+not be read back after the failure, the row may exist all the same: check the ledger before you bill from that log.
 
 ---
 

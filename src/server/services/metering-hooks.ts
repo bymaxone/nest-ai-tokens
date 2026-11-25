@@ -6,6 +6,7 @@
 
 import type { Logger } from '@nestjs/common'
 import type { SettleFailedEventData, UsageRecord } from '../../shared'
+import { assertScope, assertText } from '../utils/argument-guards'
 import { fieldOf } from '../utils/field-names'
 import { describeError, errorCodeOf } from '../errors/describe-error'
 import type { HoldCaller } from '../interfaces'
@@ -61,6 +62,9 @@ export async function announceSettleFailure(deps: { ledger: LedgerService; event
   logger.warn(`${SETTLE_FAILED_LOG_KEY} ${subject} was not settled: ${describeError(error)}`)
   const errorCode = errorCodeOf(error)
   try {
+    // A context with no payer reaches here when `record()` refused it; an event nobody can be told about is not emitted.
+    assertText('context.tenantId', caller.tenantId)
+    assertScope('context.scope', caller.scope)
     const correlationId = fieldOf(caller, 'correlationId') as string | undefined
     await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(correlationId !== undefined ? { correlationId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
   } catch (failure) {
