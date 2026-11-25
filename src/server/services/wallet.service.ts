@@ -27,7 +27,7 @@ import { suppliedDetails } from '../utils/detail-text'
 import { attachCause } from '../errors/attach-cause'
 import { assertObject, assertOptionalCount, assertOptionalText, assertText, assertWalletRef } from '../utils/argument-guards'
 import { readShape, snapshotOf, withReadDates } from '../utils/date-guards'
-import { ADJUST_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, SETTLE_ADJUSTMENT_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
+import { ADJUST_FIELDS, BALANCE_OPTION_FIELDS, DEBIT_FIELDS, GRANT_FIELDS, REFUND_FIELDS, SETTLE_ADJUSTMENT_FIELDS, WALLET_ENTRY_FILTER_FIELDS, WALLET_REF_FIELDS } from '../utils/input-fields'
 import { isNonZeroBigint, isPositiveBigint } from '../utils/numeric-guards'
 import { storeFailureCode } from '../errors/store-availability'
 import type { IWalletStore, WalletEntryFilter, WalletEntryPage } from '../interfaces'
@@ -41,7 +41,42 @@ export type WalletServiceOptions = Extract<ResolvedWalletsOptions, { enabled: tr
 export interface WalletBalance {
   nanoUsd: bigint
   credits: number
+  /** Present only on a balance asked for with options: the instant the answer was evaluated at. */
+  asOf?: Date
 }
+
+/** Options of {@link WalletService.getBalance} and {@link WalletService.getBalanceBreakdown}. */
+export interface BalanceOptions {
+  /** The instant to answer for; defaults to now. Up to 5 seconds behind now is evaluated at now; further behind is refused. */
+  asOf?: Date
+}
+
+/** One grant that still holds value, in the breakdown of a balance. */
+export interface WalletBalanceBucket {
+  grantEntryId: string
+  remainingNanoUsd: bigint
+  remainingCredits: number
+  priority: number
+  expiresAt?: Date
+  reason?: string
+}
+
+/** What a debit at `asOf` could spend without overdraft, split by grant. */
+export interface WalletBalanceBreakdownResult {
+  asOf: Date
+  nanoUsd: bigint
+  credits: number
+  /** The part no grant holds (overdraft, an unallocated refund); may be negative. */
+  unallocatedNanoUsd: bigint
+  unallocatedCredits: number
+  buckets: WalletBalanceBucket[]
+}
+
+/** How far behind now an `asOf` may be and still be evaluated at now: the time between reading a clock and calling. */
+/** The modes a refund may restore in. */
+const RESTORE_MODES = ['source', 'unallocated'] as const
+
+const AS_OF_TOLERANCE_MS = 5000
 
 /** Input to {@link WalletService.grant}. */
 export interface GrantInput {
@@ -67,6 +102,13 @@ export interface RefundInput {
   usageRecordId?: string
   idempotencyKey: string
   reason: string
+  /**
+   * `'unallocated'` (default) credits the wallet without touching any grant. `'source'` puts the refund back on the grants the debit burned,
+   * in proportion, so their remaining rises and their expiry and priority are unchanged; an expired grant's part is written off.
+   */
+  restore?: 'source' | 'unallocated'
+  /** With `restore: 'source'`: the debit to restore; when absent, the single debit of the wallet with this `usageRecordId`. */
+  debitEntryId?: string
 }
 
 /** Input to {@link WalletService.adjust}. */
@@ -135,11 +177,68 @@ export class WalletService {
    * @param ref The wallet owner (a `'tenant' | 'team' | 'user'`, never `'key'`).
    * @returns The nano-USD balance and its presentation credits.
    */
-  async getBalance(ref: WalletRef): Promise<WalletBalance> {
+  async getBalance(ref: WalletRef, options?: BalanceOptions): Promise<WalletBalance> {
     ref = this.assertOwner(ref)
-    const wallet = await this.store.getWallet(ref)
-    const nanoUsd = wallet?.balanceNanoUsd ?? 0n
-    return { nanoUsd, credits: this.toCredits(nanoUsd) }
+    if (options === undefined) {
+      const wallet = await this.store.getWallet(ref)
+      const nanoUsd = wallet?.balanceNanoUsd ?? 0n
+      return { nanoUsd, credits: this.toCredits(nanoUsd) }
+    }
+    const asOf = this.resolveAsOf(options)
+    if (this.store.balanceAt === undefined) throw this.invalid('the store does not implement balanceAt, which getBalance with options needs')
+    let nanoUsd: bigint
+    try {
+      nanoUsd = await this.store.balanceAt(ref, asOf)
+    } catch (error) {
+      throw this.mapStoreError(error, ref, '')
+    }
+    return { nanoUsd, credits: this.toCredits(nanoUsd), asOf }
+  }
+
+  /**
+   * What a debit at `asOf` could spend without overdraft, split by the grants that hold it: due grants in, pending and expired ones out, by the
+   * same predicates the conditional debit applies. Reads one snapshot and writes nothing.
+   *
+   * @param ref The wallet owner.
+   * @param options `asOf`, defaulting to now; up to 5 seconds behind now is evaluated at now, further behind is refused.
+   * @returns The total, the part held by no grant, and the grants in burn order, with the instant used.
+   * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` for an `asOf` that is invalid or too far behind, or a store without `balanceBreakdown`.
+   */
+  async getBalanceBreakdown(ref: WalletRef, options?: BalanceOptions): Promise<WalletBalanceBreakdownResult> {
+    ref = this.assertOwner(ref)
+    const asOf = this.resolveAsOf(options ?? {})
+    if (this.store.balanceBreakdown === undefined) throw this.invalid('the store does not implement balanceBreakdown')
+    let found: Awaited<ReturnType<NonNullable<IWalletStore['balanceBreakdown']>>>
+    try {
+      found = await this.store.balanceBreakdown(ref, asOf)
+    } catch (error) {
+      throw this.mapStoreError(error, ref, '')
+    }
+    return {
+      asOf,
+      nanoUsd: found.nanoUsd,
+      credits: this.toCredits(found.nanoUsd),
+      unallocatedNanoUsd: found.unallocatedNanoUsd,
+      unallocatedCredits: this.toCredits(found.unallocatedNanoUsd),
+      buckets: found.buckets.map((bucket) => ({
+        grantEntryId: bucket.grantEntryId,
+        remainingNanoUsd: bucket.remainingNanoUsd,
+        remainingCredits: this.toCredits(bucket.remainingNanoUsd),
+        priority: bucket.priority,
+        ...(bucket.expiresAt === undefined ? {} : { expiresAt: bucket.expiresAt }),
+        ...(bucket.reason === undefined ? {} : { reason: bucket.reason }),
+      })),
+    }
+  }
+
+  /** The instant a balance is evaluated at: now when none is given, now for one up to the tolerance behind it, a refusal for one further behind. */
+  private resolveAsOf(given: BalanceOptions): Date {
+    assertObject('options', given)
+    const asOf = withReadDates(given, BALANCE_OPTION_FIELDS, ['asOf'], 'options ').asOf as Date | undefined
+    const now = this.now()
+    if (asOf === undefined) return now
+    if (asOf.getTime() < now.getTime() - AS_OF_TOLERANCE_MS) throw this.invalid('asOf is in the past: a balance is answered for now or later, not for an instant that is gone')
+    return asOf.getTime() < now.getTime() ? now : asOf
   }
 
   /**
@@ -251,6 +350,10 @@ export class WalletService {
     const now = this.now()
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint from 1 to 9223372036854775807')
+    if (input.restore !== undefined && !(RESTORE_MODES as readonly unknown[]).includes(input.restore)) throw this.invalid("refund restore must be 'source' or 'unallocated'")
+    assertOptionalText('debitEntryId', input.debitEntryId)
+    if (input.debitEntryId !== undefined && input.restore !== 'source') throw this.invalid("a debitEntryId names the debit a refund restores: it needs restore: 'source'")
+    if (input.restore === 'source') return this.refundToSource(ref, input, now)
     return this.append(ref, {
       type: 'refund',
       amountNanoUsd: input.amountNanoUsd,
@@ -261,6 +364,29 @@ export class WalletService {
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
     })
+  }
+
+  /** Refund into the grants the debit burned: one store transaction, never an unallocated fallback when the store lacks it. */
+  private async refundToSource(ref: WalletRef, input: RefundInput, now: Date): Promise<WalletEntry> {
+    if (this.store.refundToSource === undefined) throw this.invalid("the store does not implement refundToSource, which restore: 'source' needs")
+    try {
+      return await this.store.refundToSource(ref, {
+        entry: {
+          walletId: '',
+          type: 'refund',
+          amountNanoUsd: input.amountNanoUsd,
+          priority: 0,
+          effectiveAt: now,
+          ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
+          idempotencyKey: input.idempotencyKey,
+          reason: input.reason,
+        },
+        ...(input.debitEntryId !== undefined ? { debitEntryId: input.debitEntryId } : {}),
+        now,
+      })
+    } catch (error) {
+      throw this.mapStoreError(error, ref, input.idempotencyKey)
+    }
   }
 
   /**

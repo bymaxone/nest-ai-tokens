@@ -508,3 +508,154 @@ describe('WalletMissingError', () => {
     expect(new WalletMissingError().isWalletMissing).toBe(true)
   })
 })
+
+describe('WalletService.refund — restore to the source grants', () => {
+  const start = new Date('2030-01-01T00:00:00.000Z')
+
+  /** A service over a pinned clock, with two grants burned by a host debit of 150 under usage id `u-1`. */
+  async function burned(): Promise<{ service: WalletService; store: InMemoryWalletStore; debit: WalletEntry }> {
+    const { service, store } = makeService({ now: () => start })
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g1', reason: 'g', expiresAt: new Date('2031-01-01T00:00:00.000Z') })
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g2', reason: 'g', expiresAt: new Date('2032-01-01T00:00:00.000Z') })
+    const debit = await service.debit(REF, { amountNanoUsd: 150n, usageRecordId: 'u-1', idempotencyKey: 'd1', reason: 'd' })
+    return { service, store, debit }
+  }
+
+  /** Restoring to the source puts the amount back on the burned grants and leaves the entry linked to its debit. */
+  it('restores the burned grants and links the refund to the debit', async () => {
+    const { service, store, debit } = await burned()
+    const refund = await service.refund(REF, { amountNanoUsd: 90n, usageRecordId: 'u-1', idempotencyKey: 'r1', reason: 'r', restore: 'source' })
+    expect(refund.refundsEntryId).toBe(debit.id)
+    expect((await store.openGrants(REF, 'fifo', start)).map((grant) => grant.remainingNanoUsd).sort()).toEqual([60n, 80n])
+    expect((await service.getBalance(REF)).nanoUsd).toBe(140n)
+  })
+
+  /** A named debit is passed to the store as given. */
+  it('restores the debit named by id', async () => {
+    const { service, debit } = await burned()
+    const refund = await service.refund(REF, { amountNanoUsd: 10n, idempotencyKey: 'r1', reason: 'r', restore: 'source', debitEntryId: debit.id })
+    expect(refund.refundsEntryId).toBe(debit.id)
+  })
+
+  /** The default is the unallocated refund of before: no link, no allocation. */
+  it.each([undefined, 'unallocated' as const])('keeps the unallocated refund when restore is %s', async (restore) => {
+    const { service, store } = await burned()
+    const refund = await service.refund(REF, { amountNanoUsd: 90n, idempotencyKey: 'r1', reason: 'r', ...(restore === undefined ? {} : { restore }) })
+    expect(refund.refundsEntryId).toBeUndefined()
+    expect(store.allocationsOf(refund.id)).toEqual([])
+  })
+
+  /** A debitEntryId names the debit to restore, so without restore: 'source' it contradicts the call and is refused. */
+  it.each([undefined, 'unallocated' as const])('refuses a debitEntryId when restore is %s', async (restore) => {
+    const { service, debit } = await burned()
+    await expectRejectCode(
+      service.refund(REF, { amountNanoUsd: 1n, idempotencyKey: 'r1', reason: 'r', debitEntryId: debit.id, ...(restore === undefined ? {} : { restore }) }),
+      'AI_TOKENS_INVALID_CONFIG',
+    )
+    expect((await service.getBalance(REF)).nanoUsd).toBe(50n)
+  })
+
+  /** An unknown restore mode is refused rather than read as the default. */
+  it('refuses a restore mode it does not know', async () => {
+    const { service } = await burned()
+    await expectRejectCode(service.refund(REF, { amountNanoUsd: 1n, idempotencyKey: 'r1', reason: 'r', restore: 'sourse' as never }), 'AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** A store without refundToSource makes the call fail; it never becomes an unallocated refund. */
+  it('refuses restore source on a store that cannot do it, and writes nothing', async () => {
+    const { store } = makeService()
+    const bare = { getWallet: store.getWallet.bind(store), appendEntry: jest.fn(), conditionalDebit: jest.fn(), openGrants: jest.fn(), listEntries: jest.fn(), reconcile: jest.fn() } as unknown as IWalletStore
+    const service = new WalletService(bare, OPTIONS)
+    await expectRejectCode(service.refund(REF, { amountNanoUsd: 1n, idempotencyKey: 'r1', reason: 'r', restore: 'source' }), 'AI_TOKENS_INVALID_CONFIG')
+    expect(bare.appendEntry).not.toHaveBeenCalled()
+  })
+})
+
+describe('WalletService.getBalance and getBalanceBreakdown with an instant', () => {
+  const start = new Date('2030-01-01T00:00:00.000Z')
+
+  /** No options: the materialized read of before, with no asOf on the answer and no call to the new store methods. */
+  it('answers a call without options from the materialized balance, with no asOf', async () => {
+    const { service, store } = makeService({ now: () => start })
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g', reason: 'g' })
+    const spy = jest.spyOn(store, 'balanceAt')
+    expect(await service.getBalance(REF)).toEqual({ nanoUsd: 100n, credits: 1e-7 })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  /** With options, asOf defaults to now; an instant up to 5 s behind is evaluated at now; the answer says which was used. */
+  it.each([
+    ['no asOf', undefined, start],
+    ['an asOf 4 s behind', new Date(start.getTime() - 4000), start],
+    ['an asOf ahead', new Date(start.getTime() + 60_000), new Date(start.getTime() + 60_000)],
+  ] as const)('evaluates at the instant for %s', async (_name, asOf, used) => {
+    const { service } = makeService({ now: () => start })
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g', reason: 'g' })
+    const balance = await service.getBalance(REF, asOf === undefined ? {} : { asOf })
+    expect(balance.asOf).toEqual(used)
+    expect(balance.nanoUsd).toBe(100n)
+  })
+
+  /** An instant further behind than the tolerance is refused: nothing answers for the past. */
+  it('refuses an asOf more than 5 seconds behind now', async () => {
+    const { service } = makeService({ now: () => start })
+    await expectRejectCode(service.getBalance(REF, { asOf: new Date(start.getTime() - 5001) }), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.getBalanceBreakdown(REF, { asOf: new Date(start.getTime() - 60_000) }), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.getBalance(REF, { asOf: new Date('nope') }), 'AI_TOKENS_INVALID_CONFIG')
+  })
+
+  /** A grant not yet effective is out, a due one is in, and the breakdown agrees with the total. */
+  it('counts what could be spent at the instant: pending out, due in', async () => {
+    const { service } = makeService({ now: () => start })
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'live', reason: 'g' })
+    await service.grant(REF, { amountNanoUsd: 40n, idempotencyKey: 'later', reason: 'g', effectiveAt: new Date(start.getTime() + 3_600_000) })
+    expect((await service.getBalance(REF, {})).nanoUsd).toBe(100n)
+    const ahead = new Date(start.getTime() + 7_200_000)
+    const breakdown = await service.getBalanceBreakdown(REF, { asOf: ahead })
+    expect(breakdown.nanoUsd).toBe(140n)
+    expect(breakdown.buckets.map((bucket) => bucket.remainingNanoUsd).sort()).toEqual([100n, 40n])
+    expect(breakdown.unallocatedNanoUsd).toBe(0n)
+    expect(breakdown.asOf).toEqual(ahead)
+  })
+
+  /** A bucket carries its expiry and reason only when the store reported them. */
+  it('maps a bucket with and without an expiry and a reason', async () => {
+    const expiresAt = new Date(start.getTime() + 1000)
+    const store = {
+      getWallet: jest.fn(),
+      balanceBreakdown: jest.fn().mockResolvedValue({
+        asOf: start,
+        nanoUsd: 3_000_000_000n,
+        unallocatedNanoUsd: 0n,
+        buckets: [
+          { grantEntryId: 'a', remainingNanoUsd: 1_000_000_000n, priority: 0, expiresAt, reason: 'why' },
+          { grantEntryId: 'b', remainingNanoUsd: 2_000_000_000n, priority: 1 },
+        ],
+      }),
+    } as unknown as IWalletStore
+    const found = await new WalletService(store, OPTIONS, undefined, () => start).getBalanceBreakdown(REF)
+    expect(found.buckets).toEqual([
+      { grantEntryId: 'a', remainingNanoUsd: 1_000_000_000n, remainingCredits: 1, priority: 0, expiresAt, reason: 'why' },
+      { grantEntryId: 'b', remainingNanoUsd: 2_000_000_000n, remainingCredits: 2, priority: 1 },
+    ])
+  })
+
+  /** A store without the methods is refused with a typed error, never answered from the materialized balance. */
+  it('refuses a store without balanceAt or balanceBreakdown', async () => {
+    const bare = { getWallet: jest.fn() } as unknown as IWalletStore
+    const service = new WalletService(bare, OPTIONS, undefined, () => start)
+    await expectRejectCode(service.getBalance(REF, {}), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.getBalanceBreakdown(REF), 'AI_TOKENS_INVALID_CONFIG')
+    expect(bare.getWallet).not.toHaveBeenCalled()
+  })
+
+  /** A failure of the store on the instant reads, and on the source refund, crosses as a typed error. */
+  it.each([
+    ['balanceAt', (service: WalletService) => service.getBalance(REF, {})],
+    ['balanceBreakdown', (service: WalletService) => service.getBalanceBreakdown(REF)],
+    ['refundToSource', (service: WalletService) => service.refund(REF, { amountNanoUsd: 1n, idempotencyKey: 'r1', reason: 'r', restore: 'source' })],
+  ] as const)('maps a failure of %s to a typed store error', async (method, call) => {
+    const service = new WalletService(throwingStore(method, new Error('driver down')), OPTIONS, undefined, () => start)
+    await expectRejectCode(call(service), 'AI_TOKENS_STORE_ERROR')
+  })
+})

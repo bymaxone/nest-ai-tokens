@@ -12,7 +12,7 @@ import type { Hold, HoldCaller, HoldEstimate, MeteringContext, WalletEntryFilter
 import type { EstimateCostInput, RecordInput } from '../services/metering.service'
 import type { SettleAdjustmentInput } from '../services/wallet.service'
 import type { ResolveRateInput } from '../services/pricing.service'
-import type { AdjustInput, DebitInput, GrantInput, RefundInput } from '../services/wallet.service'
+import type { AdjustInput, BalanceOptions, DebitInput, GrantInput, RefundInput } from '../services/wallet.service'
 import type { UpsertBudgetInput } from '../services/budget.service'
 import type { SummarizeInput } from '../services/usage-report.service'
 
@@ -102,7 +102,7 @@ export const REPORT_FILTER_FIELDS: FieldList<ReportFilter> = {
 }
 
 /** The fields of a filter of wallet entries. */
-export const WALLET_ENTRY_FILTER_FIELDS: FieldList<WalletEntryFilter> = { from: true, to: true, type: true, limit: true, offset: true }
+export const WALLET_ENTRY_FILTER_FIELDS: FieldList<WalletEntryFilter> = { from: true, to: true, type: true, limit: true, offset: true, order: true }
 
 /** The fields of a grant. */
 export const GRANT_FIELDS: FieldList<GrantInput> = { amountNanoUsd: true, priority: true, effectiveAt: true, expiresAt: true, idempotencyKey: true, reason: true }
@@ -111,7 +111,10 @@ export const GRANT_FIELDS: FieldList<GrantInput> = { amountNanoUsd: true, priori
 export const DEBIT_FIELDS: FieldList<DebitInput> = { amountNanoUsd: true, usageRecordId: true, idempotencyKey: true, reason: true }
 
 /** The fields of a refund. */
-export const REFUND_FIELDS: FieldList<RefundInput> = { amountNanoUsd: true, usageRecordId: true, idempotencyKey: true, reason: true }
+export const REFUND_FIELDS: FieldList<RefundInput> = { amountNanoUsd: true, usageRecordId: true, idempotencyKey: true, reason: true, restore: true, debitEntryId: true }
+
+/** The fields of the options of a balance read. */
+export const BALANCE_OPTION_FIELDS: FieldList<BalanceOptions> = { asOf: true }
 
 /** The fields of an adjustment. */
 export const ADJUST_FIELDS: FieldList<AdjustInput> = { amountNanoUsd: true, idempotencyKey: true, reason: true }

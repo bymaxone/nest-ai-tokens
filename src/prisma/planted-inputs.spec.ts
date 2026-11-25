@@ -26,6 +26,7 @@ const OPTIONAL_NAMES = [
   'reversesRecordId', 'providerReportedCostNanoUsd', 'idempotencyKey', 'hash', 'prevHash', 'usageRecordId', 'actor', 'reason',
   'tags', 'feature', 'scope', 'from', 'to', 'limit', 'offset', 'after', 'enforcedOnly', 'isSystemCost', 'newerThan', 'status',
   'priority', 'metadata', 'grantId', 'allocations', 'blockedBy', 'content', 'preset', 'requestId', 'reservedBilledNanoUsd', 'reservedTokens',
+  'debitEntryId', 'refundsEntryId', 'seq', 'balanceAfterNanoUsd', 'asOf',
 ] as const
 
 /** The rows a wallet statement answers with, so that a wallet method goes on to bind the input it was given. */
@@ -63,6 +64,9 @@ const CALLS: Record<string, (s: PrismaAiTokensStore) => Promise<unknown>> = {
   seedPrice: (s) => s.seedPrice({ provider: 'openai', model: 'gpt-5', operation: 'chat', inputNanoUsdPerMillion: 1n, outputNanoUsdPerMillion: 1n }),
   appendEntry: (s) => s.appendEntry(WALLET, grantEntry({ idempotencyKey: 'g1' }), []),
   conditionalDebit: (s) => s.conditionalDebit(WALLET, { ...grantEntry({ idempotencyKey: 'd1' }), type: 'debit', amountNanoUsd: -5n }, 0n, NOW),
+  refundToSource: (s) => s.refundToSource(WALLET, { entry: { ...grantEntry({ idempotencyKey: 'r1' }), type: 'refund', amountNanoUsd: 5n }, debitEntryId: 'e1', now: NOW }),
+  balanceAt: (s) => s.balanceAt(WALLET, NOW),
+  balanceBreakdown: (s) => s.balanceBreakdown(WALLET, NOW),
   listEntries: (s) => s.listEntries(WALLET, {}),
   listEntriesWithoutFilter: (s) => s.listEntries(WALLET),
   findDebitsBefore: (s) => s.findDebitsBefore({ keyPrefixes: ['hold:'], olderThan: NOW, limit: 10 }),

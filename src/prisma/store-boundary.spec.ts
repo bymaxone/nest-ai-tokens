@@ -23,7 +23,7 @@ const DELTA = { nanoUsd: 5n, tokens: 1, count: 1 }
 const INTERNAL = new Set([
   'constructor', 'insert', 'insertChained', 'settleChained', 'updateStatus', 'lastHashWithin', 'getWalletWithin', 'ensureWallet',
   'insertWalletEntry', 'insertAllocations', 'applyBalanceDelta', 'lockWallet', 'insertSystemEntry', 'activateDueGrants',
-  'sweepExpiredGrants', 'burnDown', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict',
+  'sweepExpiredGrants', 'burnDown', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict', 'lockedBalance', 'sourceDebit', 'restorableOf',
 ])
 
 /** A call of a method by its name, for the one the type system marks deprecated and the lint refuses to see called by name. */
@@ -60,6 +60,9 @@ const CALLS: Record<string, (store: PrismaAiTokensStore) => Promise<unknown>> = 
   listEntries: (s) => s.listEntries(WALLET, {}),
   findDebitsBefore: (s) => s.findDebitsBefore({ keyPrefixes: ['hold:'], olderThan: NOW, limit: 10 }),
   reconcile: (s) => s.reconcile(WALLET, NOW),
+  refundToSource: (s) => s.refundToSource(WALLET, { entry: { ...grantEntry({ idempotencyKey: 'r1' }), type: 'refund', usageRecordId: 'u1' }, now: NOW }),
+  balanceAt: (s) => s.balanceAt(WALLET, NOW),
+  balanceBreakdown: (s) => s.balanceBreakdown(WALLET, NOW),
   upsert: (s) => s.upsert({ tenantId: TENANT, scope: USER_SCOPE, window: 'day', limitNanoUsd: 5n, softThresholds: [], policy: 'block' }),
   remove: (s) => s.remove({ tenantId: TENANT, id: 'b1' }),
   findBudgetById: (s) => s.findBudgetById({ tenantId: TENANT, id: 'b1' }),

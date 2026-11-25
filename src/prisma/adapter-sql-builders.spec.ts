@@ -10,7 +10,7 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
 import { T0, T1, bareUsageRow, newRecord, rendered, usageRow } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */
@@ -450,5 +450,29 @@ describe('budget values', () => {
   it('clears the optional columns the caller left out', () => {
     const { features: _f, limitNanoUsd: _n, limitTokens: _t, limitCount: _c, anchorAt: _a, expiresAt: _e, ...rest } = input
     expect(budgetUpdateAssignments(rest).values).toEqual(['user', 'u1', [], null, null, null, 'custom:60', null, null, JSON.stringify([0.8, 1]), 'block'])
+  })
+})
+
+describe('entryDeltaSql and walletEntryOrderSql', () => {
+  const entry = { walletId: '', type: 'grant' as const, amountNanoUsd: 7n, priority: 0, effectiveAt: T0, idempotencyKey: 'k' }
+
+  /** A grant is judged on the database clock: due and unexpired adds its amount, otherwise nothing; any other entry adds its amount. */
+  it('judges a grant on the database clock and adds any other entry as it is', () => {
+    const grant = entryDeltaSql({ ...entry, expiresAt: T1 })
+    expect(grant.text).toContain('CASE WHEN')
+    expect(grant.text).toContain(DB_NOW_SQL.text)
+    expect(grant.values).toEqual(expect.arrayContaining([7n]))
+    const open = entryDeltaSql(entry)
+    expect(open.values).toContain(null)
+    const refund = entryDeltaSql({ ...entry, type: 'refund' })
+    expect(refund.text).not.toContain('CASE')
+    expect(refund.values).toEqual([7n])
+  })
+
+  /** Descending is the exact reverse of ascending, so that one index serves both. */
+  it('orders ascending by default and descending as the exact reverse', () => {
+    expect(walletEntryOrderSql(undefined).text).toBe('"seq" ASC NULLS FIRST, "createdAt" ASC, "id" ASC')
+    expect(walletEntryOrderSql('asc').text).toBe('"seq" ASC NULLS FIRST, "createdAt" ASC, "id" ASC')
+    expect(walletEntryOrderSql('desc').text).toBe('"seq" DESC NULLS LAST, "createdAt" DESC, "id" DESC')
   })
 })

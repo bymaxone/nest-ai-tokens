@@ -492,6 +492,10 @@ export interface WalletEntryRow {
   idempotencyKey: string
   reason: string | null
   createdAt: Date
+  /** Commit order inside the wallet; absent from a row that predates migration 0004 and from a read that does not select it. */
+  seq?: bigint | null
+  balanceAfterNanoUsd?: bigint | null
+  refundsEntryId?: string | null
 }
 
 /** An open-grant row: a wallet entry plus its computed remaining value. */
@@ -571,6 +575,9 @@ export function mapWalletEntryRow(row: WalletEntryRow): WalletEntry {
     idempotencyKey: row.idempotencyKey,
     ...(row.reason !== null ? { reason: row.reason } : {}),
     createdAt: row.createdAt,
+    ...(row.seq !== null && row.seq !== undefined ? { seq: row.seq } : {}),
+    ...(row.balanceAfterNanoUsd !== null && row.balanceAfterNanoUsd !== undefined ? { balanceAfterNanoUsd: row.balanceAfterNanoUsd } : {}),
+    ...(row.refundsEntryId !== null && row.refundsEntryId !== undefined ? { refundsEntryId: row.refundsEntryId } : {}),
   })
 }
 
@@ -598,6 +605,16 @@ export function walletBalanceDelta(entry: WalletEntry): bigint {
 }
 
 /**
+ * The signed amount an entry adds to the materialized balance when it is appended, as SQL: the amount, except a grant that is not due at the database
+ * clock, which adds nothing now and is credited by its activation. The same rule as {@link walletBalanceDelta}, judged on the clock the row's `createdAt` is
+ * written with, so that the balance an entry carries after it agrees with the balance the store then writes.
+ */
+export function entryDeltaSql(entry: NewWalletEntry): Sql {
+  if (entry.type !== 'grant') return sql`${entry.amountNanoUsd}::bigint`
+  return sql`(CASE WHEN ${entry.effectiveAt}::timestamp <= ${DB_NOW_SQL} AND (${entry.expiresAt ?? null}::timestamp IS NULL OR ${entry.expiresAt ?? null}::timestamp > ${DB_NOW_SQL}) THEN ${entry.amountNanoUsd}::bigint ELSE 0::bigint END)`
+}
+
+/**
  * Whether a stored entry has the same content as a replayed one (replay-or-conflict,
  * §15.2). Compares only the stable business payload — type, amount, priority, expiry,
  * usage link, and reason. `effectiveAt` is EXCLUDED because the service defaults it to
@@ -605,8 +622,10 @@ export function walletBalanceDelta(entry: WalletEntry): bigint {
  * spuriously conflict; this mirrors the ledger payload hash, which excludes generated
  * timestamps. Both wallet stores use this same field set so their replay semantics agree.
  */
-export function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry): boolean {
+export function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry, source = false): boolean {
   return (
+    // A refund to its source and a plain refund of the same key are different calls whatever their fields say: the stored row's own link says which it was.
+    ((row.refundsEntryId ?? null) !== null) === source &&
     row.type === entry.type &&
     row.amountNanoUsd === entry.amountNanoUsd &&
     row.priority === entry.priority &&
@@ -614,6 +633,16 @@ export function walletEntryMatches(row: WalletEntryRow, entry: NewWalletEntry): 
     (row.usageRecordId ?? null) === (entry.usageRecordId ?? null) &&
     (row.reason ?? null) === (entry.reason ?? null)
   )
+}
+
+/**
+ * The `ORDER BY` of a statement of wallet entries. Ascending is `seq NULLS FIRST, createdAt, id`: the rows written before migration 0004 have no
+ * sequence and come first in the order they always had. Descending is the exact reverse, so that one index serves both directions.
+ */
+export function walletEntryOrderSql(order: 'asc' | 'desc' | undefined): Sql {
+  return order === 'desc'
+    ? sql`"seq" DESC NULLS LAST, "createdAt" DESC, "id" DESC`
+    : sql`"seq" ASC NULLS FIRST, "createdAt" ASC, "id" ASC`
 }
 
 /** Build the parameterized `WHERE` clause for a wallet-entry filter. */

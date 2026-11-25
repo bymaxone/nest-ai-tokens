@@ -54,6 +54,8 @@ import type {
   PricedModel,
   WalletDebit,
   WalletDebitQuery,
+  RefundToSourceInput,
+  WalletBalanceBreakdown,
   WalletEntryFilter,
   WalletEntryPage,
 } from '../server'
@@ -66,13 +68,13 @@ import { SqlClient, type PrismaRawClient, type SqlExecutor } from './raw-client'
 import { BudgetApplications } from './budget-applications'
 import { guardStoreErrors } from './store-boundary'
 import { adjustWindowSql, consumeWindowSql, ensureWindowSql, findBudgetSql, matchingBudgetsSql, removeBudgetSql, removeBudgetWindowsSql, resetWindowSql, windowSql } from './budget-statements'
-import { empty, join, sql } from './sql'
+import { empty, join, sql, type Sql } from './sql'
 import { clearEffectsOwedSql, effectsOwedForSql, effectsOwedSql, mapOwedRow, withMarkerSql } from './effects-owed-sql'
 import { LedgerIdempotencyConflict, isLedgerIdempotencyConflict } from '../server/services/ledger-idempotency-conflict'
 import { chainHash } from '../server/utils/hash-chain'
 import { attachCause } from '../server/errors/attach-cause'
 import { setErrorMessage } from '../server/errors/set-error-message'
-import { ACTIVATION_REASON, RESERVED_KEY_HELD_MESSAGE, RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
+import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON, EXPIRY_KEY_PREFIX, RESERVED_KEY_HELD_MESSAGE, RESERVED_KEY_HELD_REASON, RESERVED_KEY_REASON, activationKey, expiryKey, isReservedWalletKey } from '../server/utils/wallet-keys'
 import {
   BUDGET_COLUMNS_SQL,
   PRICE_COLUMNS_SQL,
@@ -108,9 +110,13 @@ import {
   usageValues,
   walletAutoCreatable,
   walletBalanceDelta,
+  walletEntryOrderSql,
+  entryDeltaSql,
   walletEntryMatches,
   walletEntryWhere,
 } from './adapter-sql'
+import { balanceAtSql, balanceBreakdownSql, type BreakdownRow } from './balance-statements'
+import { splitByWeights } from './refund-split'
 import { mapWalletDebitRow, openGrantsSql, walletDebitsSql, type WalletDebitRow } from './wallet-statements'
 import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, WalletEntryRow, WalletRow } from './adapter-sql'
 
@@ -134,6 +140,11 @@ function reservedKeyHeld(walletId: string, key: string, grantId: string): AiToke
     setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_HELD_REASON }), RESERVED_KEY_HELD_MESSAGE),
     new Error(`wallet ${walletId}: the reserved key ${key} of grant ${grantId} is held by an entry the store did not write`),
   )
+}
+
+/** The refusal of a refund to its source that the debit, or the amount, cannot take: a typed configuration error, never a driver error. */
+function sourceRefusal(reason: string): AiTokensException {
+  return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
 /**
@@ -441,7 +452,9 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       return await this.prisma.transaction(async (tx) => {
         const wallet = await this.ensureWallet(tx, ref, walletAutoCreatable(entry))
         if (wallet === null) throw new WalletMissingError()
-        const stored = await this.insertWalletEntry(tx, wallet.id, entry)
+        // The wallet row first, as every other writer takes it: the sequence and the balance after the entry are read under it.
+        const balance = await this.lockedBalance(tx, wallet.id)
+        const stored = await this.insertWalletEntry(tx, wallet.id, entry, sql`${balance}::bigint + ${entryDeltaSql(entry)}`)
         await this.insertAllocations(tx, stored.id, allocations)
         await this.applyBalanceDelta(tx, wallet.id, walletBalanceDelta(stored))
         return stored
@@ -470,7 +483,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
           WHERE "id" = ${wallet.id} AND "balanceNanoUsd" - ${pendingGrantsSql(wallet.id, now)} - ${cost} >= ${-overdraftNanoUsd} RETURNING *
         `)
         if (reserved[0] === undefined) return null
-        const debit = await this.insertWalletEntry(tx, wallet.id, entry)
+        const debit = await this.insertWalletEntry(tx, wallet.id, entry, sql`${firstOrThrow(reserved).balanceNanoUsd}::bigint`)
         await this.insertAllocations(tx, debit.id, await this.burnDown(tx, wallet.id, cost, now))
         return debit
       })
@@ -498,11 +511,127 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     // answer with the live species, which a host can make answer for the page and the count.
     const entries = await awaitStatement(
       this.prisma.query<WalletEntryRow[]>(
-        sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY "createdAt" ASC, "id" ASC ${limit} ${offset}`,
+        sql`SELECT * FROM "ai_wallet_entries" WHERE ${where} ORDER BY ${walletEntryOrderSql(filter.order)} ${limit} ${offset}`,
       ),
     )
     const counts = await awaitStatement(this.prisma.query<{ total: bigint }[]>(sql`SELECT COUNT(*)::bigint AS "total" FROM "ai_wallet_entries" WHERE ${where}`))
     return { entries: entries.map(mapWalletEntryRow), total: Number(counts[0]?.total ?? 0n) }
+  }
+
+  async refundToSource(ref: WalletRef, input: RefundToSourceInput): Promise<WalletEntry> {
+    const { entry, debitEntryId, now } = input
+    assertCallerKey(entry.idempotencyKey)
+    try {
+      return await this.prisma.transaction(async (tx) => {
+        const wallet = await this.getWalletWithin(tx, ref)
+        if (wallet === undefined) throw new WalletMissingError()
+        const balance = await this.lockedBalance(tx, wallet.id)
+        // A replay is judged on the stored row's own fields, before the source is resolved: a debit that appeared later with the same usage id
+        // cannot make a retry ambiguous, and a plain refund with this key is a conflict.
+        const prior = await tx.query<WalletEntryRow[]>(sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${entry.idempotencyKey} LIMIT 1`)
+        if (prior[0] !== undefined) {
+          if (walletEntryMatches(prior[0], entry, true) && (debitEntryId === undefined || debitEntryId === prior[0].refundsEntryId)) return mapWalletEntryRow(prior[0])
+          throw new LedgerIdempotencyConflict(ref.tenantId, entry.idempotencyKey)
+        }
+        const debit = await this.sourceDebit(tx, wallet.id, entry, debitEntryId)
+        if (debit.idempotencyKey.startsWith('hold:') || debit.idempotencyKey.startsWith('record:')) throw sourceRefusal('a debit the library wrote itself (hold: / record:) cannot be refunded to its source')
+        const left = await this.restorableOf(tx, wallet.id, debit, entry.amountNanoUsd)
+        const funded = await tx.query<{ grantEntryId: string; amountNanoUsd: bigint; restored: bigint; priority: number; expiresAt: Date | null }[]>(sql`
+          SELECT a."grantEntryId", a."amountNanoUsd", g."priority", g."expiresAt",
+                 COALESCE((SELECT -SUM(b."amountNanoUsd") FROM "ai_wallet_debit_allocations" b JOIN "ai_wallet_entries" r ON r."id" = b."debitEntryId"
+                           WHERE b."grantEntryId" = a."grantEntryId" AND r."refundsEntryId" = ${debit.id}), 0)::bigint AS "restored"
+          FROM "ai_wallet_debit_allocations" a JOIN "ai_wallet_entries" g ON g."id" = a."grantEntryId"
+          WHERE a."debitEntryId" = ${debit.id}
+          ORDER BY g."seq" ASC NULLS FIRST, g."createdAt" ASC, g."id" ASC
+        `)
+        const weights = funded.map((allocation) => allocation.amountNanoUsd - allocation.restored)
+        weights.push(left.available - weights.reduce((sum, weight) => sum + weight, 0n))
+        const shares = splitByWeights(weights, entry.amountNanoUsd)
+        const stored = await this.insertWalletEntry(tx, wallet.id, entry, sql`${balance + entry.amountNanoUsd}::bigint`, debit.id)
+        const parts = funded.map((allocation, index) => ({ ...allocation, part: shares[index] ?? 0n })).filter((allocation) => allocation.part > 0n)
+        await this.insertAllocations(tx, stored.id, parts.map((allocation) => ({ grantEntryId: allocation.grantEntryId, amountNanoUsd: -allocation.part })))
+        await this.applyBalanceDelta(tx, wallet.id, entry.amountNanoUsd)
+        let running = balance + entry.amountNanoUsd
+        for (const grant of parts) {
+          const part = grant.part
+          // A grant that has expired by the clock, or that the sweep already wrote off, takes its part back out in an entry of its own: the refund
+          // raised its remainder, and an expired grant's remainder is not spendable. The key is the refund's, never the sweep's.
+          const swept = await tx.query<{ one: number }[]>(sql`SELECT 1 AS "one" FROM "ai_wallet_entries" WHERE "walletId" = ${wallet.id} AND "idempotencyKey" = ${expiryKey(grant.grantEntryId)} LIMIT 1`)
+          if ((grant.expiresAt === null || grant.expiresAt > now) && swept[0] === undefined) continue
+          running -= part
+          const expiry = await this.insertSystemEntry(tx, wallet.id, {
+            type: 'expiry',
+            amountNanoUsd: -part,
+            priority: grant.priority,
+            idempotencyKey: `${EXPIRY_KEY_PREFIX}refund:${stored.id}:${grant.grantEntryId}`,
+            reason: 'refund restored an expired grant',
+          }, running, now)
+          if (expiry === undefined) throw reservedKeyHeld(wallet.id, `${EXPIRY_KEY_PREFIX}refund:${stored.id}:${grant.grantEntryId}`, grant.grantEntryId)
+          await this.insertAllocations(tx, expiry.id, [{ grantEntryId: grant.grantEntryId, amountNanoUsd: part }])
+          await this.applyBalanceDelta(tx, wallet.id, -part)
+        }
+        return stored
+      })
+    } catch (error) {
+      if (isLedgerIdempotencyConflict(error)) throw error
+      if (isWalletMissing(error)) throw error
+      throw storeError(error)
+    }
+  }
+
+  async balanceAt(ref: WalletRef, asOf: Date): Promise<bigint> {
+    const wallet = await this.getWallet(ref)
+    if (wallet === null) return 0n
+    const rows = await awaitStatement(this.prisma.query<{ balance: bigint }[]>(balanceAtSql(wallet.id, asOf)))
+    return rows[0]?.balance ?? 0n
+  }
+
+  async balanceBreakdown(ref: WalletRef, asOf: Date): Promise<WalletBalanceBreakdown> {
+    const wallet = await this.getWallet(ref)
+    if (wallet === null) return { asOf, nanoUsd: 0n, unallocatedNanoUsd: 0n, buckets: [] }
+    const rows = await awaitStatement(this.prisma.query<BreakdownRow[]>(balanceBreakdownSql(wallet.id, asOf, this.burnOrder)))
+    const buckets = rows.filter((row) => row.kind === 'bucket').map((row) => ({
+      grantEntryId: row.id ?? '',
+      remainingNanoUsd: row.remaining ?? 0n,
+      priority: row.priority ?? 0,
+      ...(row.expiresAt === null ? {} : { expiresAt: row.expiresAt }),
+      ...(row.reason === null ? {} : { reason: row.reason }),
+    }))
+    const nanoUsd = rows.find((row) => row.kind === 'total')?.total ?? 0n
+    return { asOf, nanoUsd, unallocatedNanoUsd: nanoUsd - buckets.reduce((sum, bucket) => sum + bucket.remainingNanoUsd, 0n), buckets }
+  }
+
+  /** The debit a refund to source restores: the one named by id, or the single debit of the wallet that carries the refund's usage id. */
+  private async sourceDebit(tx: SqlExecutor, walletId: string, entry: NewWalletEntry, debitEntryId: string | undefined): Promise<WalletEntry> {
+    if (debitEntryId !== undefined) {
+      const found = await tx.query<WalletEntryRow[]>(sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "id" = ${debitEntryId} AND "type" = 'debit' LIMIT 1`)
+      if (found[0] === undefined) throw sourceRefusal('the debit to restore is not a debit of this wallet')
+      return mapWalletEntryRow(found[0])
+    }
+    if (entry.usageRecordId === undefined) throw sourceRefusal('a source refund names a debit by id or by usageRecordId')
+    const found = await tx.query<WalletEntryRow[]>(sql`SELECT * FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "type" = 'debit' AND "usageRecordId" = ${entry.usageRecordId} LIMIT 2`)
+    const [only] = found
+    if (found.length !== 1 || only === undefined) throw sourceRefusal('the usageRecordId does not name exactly one debit of this wallet')
+    return mapWalletEntryRow(only)
+  }
+
+  /**
+   * What the debit still has room to take back, and the refusal when `amount` is above it. The room is what the debit took, less the refunds already
+   * linked to it, less the refunds and positive adjustments of the wallet that carry its usage id and no link (a refund written before this one existed).
+   * @returns `available`: the room before the cap of unlinked credits, which is what the split weights sum to.
+   */
+  private async restorableOf(tx: SqlExecutor, walletId: string, debit: WalletEntry, amount: bigint): Promise<{ available: bigint }> {
+    const linked = await tx.query<{ sum: bigint }[]>(sql`SELECT COALESCE(SUM("amountNanoUsd"), 0)::bigint AS "sum" FROM "ai_wallet_entries" WHERE "walletId" = ${walletId} AND "type" = 'refund' AND "refundsEntryId" = ${debit.id}`)
+    const unlinked = debit.usageRecordId === undefined
+      ? 0n
+      : firstOrThrow(await tx.query<{ sum: bigint }[]>(sql`
+          SELECT COALESCE(SUM("amountNanoUsd"), 0)::bigint AS "sum" FROM "ai_wallet_entries"
+          WHERE "walletId" = ${walletId} AND "usageRecordId" = ${debit.usageRecordId} AND "refundsEntryId" IS NULL
+            AND ("type" = 'refund' OR ("type" = 'adjustment' AND "amountNanoUsd" > 0 AND "idempotencyKey" NOT LIKE ${`${ACTIVATION_KEY_PREFIX}%`}))
+        `)).sum
+    const available = -debit.amountNanoUsd - firstOrThrow(linked).sum
+    if (amount <= 0n || amount > available - unlinked) throw sourceRefusal('the refund is above what the debit has left to restore')
+    return { available }
   }
 
   async findDebitsBefore(query: WalletDebitQuery): Promise<WalletDebit[]> {
@@ -629,11 +758,15 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     return firstOrThrow(rows)
   }
 
-  /** Insert a wallet entry, returning the stored row. */
-  private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry): Promise<WalletEntry> {
+  /**
+   * Insert a wallet entry, returning the stored row. The wallet row is locked by the caller: the statement takes the next sequence of the
+   * wallet from it, so the sequence is the commit order, and the entry carries the balance the caller says it leaves.
+   */
+  private async insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry, balanceAfter: Sql, refundsEntryId?: string): Promise<WalletEntry> {
     const rows = await tx.query<WalletEntryRow[]>(sql`
-      INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
-      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL})
+      WITH "n" AS (UPDATE "ai_wallets" SET "entrySeq" = "entrySeq" + 1, "updatedAt" = ${DB_NOW_SQL} WHERE "id" = ${walletId} RETURNING "entrySeq")
+      INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt", "seq", "balanceAfterNanoUsd", "refundsEntryId")
+      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL}, (SELECT "entrySeq" FROM "n"), ${balanceAfter}, ${refundsEntryId ?? null})
       RETURNING *
     `)
     return mapWalletEntryRow(firstOrThrow(rows))
@@ -669,6 +802,12 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     await tx.query(sql`SELECT "id" FROM "ai_wallets" WHERE "id" = ${walletId} FOR UPDATE`)
   }
 
+  /** Lock the wallet row, as {@link lockWallet} does, and read the balance it holds once the lock is taken. */
+  private async lockedBalance(tx: SqlExecutor, walletId: string): Promise<bigint> {
+    const rows = await tx.query<{ balanceNanoUsd: bigint }[]>(sql`SELECT "balanceNanoUsd" FROM "ai_wallets" WHERE "id" = ${walletId} FOR UPDATE`)
+    return firstOrThrow(rows).balanceNanoUsd
+  }
+
   /**
    * Insert a system entry (an activation or an expiry) effective at `now` and created on the database clock, once per
    * key. Returns the stored row, or `undefined` when the key already exists.
@@ -678,11 +817,13 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     tx: SqlExecutor,
     walletId: string,
     entry: { type: 'adjustment' | 'expiry'; amountNanoUsd: bigint; priority: number; idempotencyKey: string; reason: string },
+    balanceAfter: bigint,
     now?: Date,
   ): Promise<WalletEntry | undefined> {
     const rows = await tx.query<WalletEntryRow[]>(sql`
-      INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt")
-      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${clockSql(now)}, NULL, NULL, ${entry.idempotencyKey}, ${entry.reason}, ${DB_NOW_SQL})
+      WITH "n" AS (UPDATE "ai_wallets" SET "entrySeq" = "entrySeq" + 1, "updatedAt" = ${DB_NOW_SQL} WHERE "id" = ${walletId} RETURNING "entrySeq")
+      INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt", "seq", "balanceAfterNanoUsd", "refundsEntryId")
+      VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${clockSql(now)}, NULL, NULL, ${entry.idempotencyKey}, ${entry.reason}, ${DB_NOW_SQL}, (SELECT "entrySeq" FROM "n"), ${balanceAfter}, NULL)
       ON CONFLICT ("walletId", "idempotencyKey") DO NOTHING
       RETURNING *
     `)
@@ -706,14 +847,18 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         AND g."effectiveAt" <= ${clockSql(now)} AND (g."expiresAt" IS NULL OR g."expiresAt" > ${clockSql(now)})
         AND NOT ${ACTIVATED_SQL}
     `)
+    // The balance the activations are added to is the signed sum of the entries before them, which is what the balance is set to below:
+    // a wallet whose column had drifted from the entries shows its correction as one jump, at the first entry written after.
+    let running = due.length === 0 ? 0n : firstOrThrow(await tx.query<{ balance: bigint }[]>(sql`SELECT ${SIGNED_BALANCE_SQL}::bigint AS "balance" FROM "ai_wallets" w WHERE w."id" = ${walletId}`)).balance
     for (const grant of due) {
+      running += grant.amountNanoUsd
       const activation = await this.insertSystemEntry(tx, walletId, {
         type: 'adjustment',
         amountNanoUsd: grant.amountNanoUsd,
         priority: grant.priority,
         idempotencyKey: activationKey(grant.id),
         reason: ACTIVATION_REASON,
-      }, now)
+      }, running, now)
       // The wallet row is locked and the grants listed are not activated by shape, so a taken key is an entry the
       // store did not write: crediting without the marker would credit the grant again at the next reconcile.
       if (activation === undefined) throw reservedKeyHeld(walletId, activationKey(grant.id), grant.id)
@@ -732,15 +877,18 @@ export class PrismaAiTokensStore implements IAiTokensStore {
       WHERE g."walletId" = ${walletId} AND g."type" = 'grant' AND ${CREDITED_SQL}
         AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${clockSql(now)}
     `)
+    let running: bigint | undefined
     for (const grant of grants) {
       if (grant.remaining <= 0n) continue
+      running ??= await this.lockedBalance(tx, walletId)
+      running -= grant.remaining
       const expiry = await this.insertSystemEntry(tx, walletId, {
         type: 'expiry',
         amountNanoUsd: -grant.remaining,
         priority: grant.priority,
         idempotencyKey: expiryKey(grant.id),
         reason: 'grant expired',
-      }, now)
+      }, running, now)
       // The wallet row is locked and a swept grant has no remainder, so a taken key here is an entry
       // written outside the store (before the namespace was reserved). Skipping would keep the expired
       // credit spendable, so the debit is refused instead.

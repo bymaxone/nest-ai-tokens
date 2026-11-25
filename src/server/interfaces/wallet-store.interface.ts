@@ -49,6 +49,34 @@ export interface WalletEntryFilter {
   type?: WalletEntryType
   limit?: number
   offset?: number
+  /** `'asc'` (default) lists oldest first in the wallet's commit order; `'desc'` is its exact reverse. */
+  order?: 'asc' | 'desc'
+}
+
+/** One grant that still holds value, as the breakdown of a balance lists it. */
+export interface WalletBucket {
+  grantEntryId: string
+  remainingNanoUsd: bigint
+  priority: number
+  expiresAt?: Date
+  reason?: string
+}
+
+/** What a debit at `asOf` could spend without overdraft, split by grant; `unallocatedNanoUsd` is the part no grant holds (may be negative). */
+export interface WalletBalanceBreakdown {
+  asOf: Date
+  nanoUsd: bigint
+  unallocatedNanoUsd: bigint
+  buckets: WalletBucket[]
+}
+
+/** Input of {@link IWalletStore.refundToSource}: the refund entry (a positive `refund`) and the debit whose grants it restores. */
+export interface RefundToSourceInput {
+  entry: NewWalletEntry
+  /** The debit to restore; when absent the store finds the single debit of the wallet with the entry's `usageRecordId`. */
+  debitEntryId?: string
+  /** The caller's clock: a grant whose `expiresAt` is at or before it counts as expired. */
+  now: Date
 }
 
 /**
@@ -88,6 +116,16 @@ export interface IWalletStore {
    * of debits that no ledger row stands behind inactive.
    */
   findDebitsBefore?(query: WalletDebitQuery): Promise<WalletDebit[]>
+  /**
+   * Optional. Refund a debit into the grants it burned, in one transaction under the wallet lock: one `refund` entry (+r) and negative
+   * allocation rows on those grants, so their remaining rises and nothing posted is updated. See `WalletService.refund` (`restore: 'source'`).
+   * A store without it makes the service refuse `restore: 'source'`; it never falls back to an unallocated refund.
+   */
+  refundToSource?(ref: WalletRef, input: RefundToSourceInput): Promise<WalletEntry>
+  /** Optional. What a debit at `asOf` could spend, as the single answer {@link IWalletStore.conditionalDebit} would judge. */
+  balanceAt?(ref: WalletRef, asOf: Date): Promise<bigint>
+  /** Optional. {@link IWalletStore.balanceAt} split by grant, from one snapshot. */
+  balanceBreakdown?(ref: WalletRef, asOf: Date): Promise<WalletBalanceBreakdown>
   /** Credit due grants and expire lapsed ones as a debit does, then recompute the materialized balance from Σ entries. */
   reconcile(ref: WalletRef, now?: Date): Promise<Wallet>
 }
