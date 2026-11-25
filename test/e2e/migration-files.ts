@@ -16,3 +16,14 @@ export function shippedMigrationSql(): string {
     .map((name) => readFileSync(join(DIRECTORY, name), 'utf8'))
     .join('\n')
 }
+
+/**
+ * One shipped migration by the prefix of its file name (`0003`), so a suite that tests the rollback of a migration reads that file and not
+ * the ones that came after it.
+ */
+export function migrationSqlStartingWith(prefix: string): string {
+  const names = readdirSync(DIRECTORY).filter((name) => name.startsWith(prefix) && name.endsWith('.sql'))
+  const [only] = names
+  if (names.length !== 1 || only === undefined) throw new Error(`expected exactly one migration starting with ${prefix}`)
+  return readFileSync(join(DIRECTORY, only), 'utf8')
+}
