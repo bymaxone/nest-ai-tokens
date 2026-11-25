@@ -10,6 +10,19 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Added
+
+- `ai_tokens.settle.failed` (`{ holdId, errorCode? }`, with the tenant and scope on the envelope) and the `SettleFailedEventData`
+  type. `MeteringInterceptor` emits it when the handler returned and its hold was not settled, so the host can reconcile the usage
+  from its own provider log. The error's message is never carried.
+
+### Fixed
+
+- `MeteringInterceptor` released the guard's hold as `handler threw` when the handler had succeeded and settling failed. The hold
+  now stays pending and the hold reaper releases it after `holds.ttlSeconds`. **Apply:** until then its wallet and budget
+  reservation stays in place, and a retry with the same idempotency key gets the same hold. A consumer of the
+  `ai_tokens.hold.released` event no longer receives one at the time of the failure.
+
 ## [1.1.24] - 2026-11-25
 
 **Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.

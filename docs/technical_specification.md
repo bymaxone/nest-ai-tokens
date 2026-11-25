@@ -1352,7 +1352,7 @@ export class MeteringService {
 
 - **`BudgetGuard`** (`CanActivate`): resolves the context via `scopeResolver` (§4.1), merges the decorator config, and calls `getStatus()`. If any matching hard budget is exhausted → `AI_TOKENS_BUDGET_EXCEEDED`/`_QUOTA_EXCEEDED` before the handler runs. When `@RequireBudget` supplies an `estimate`, the guard additionally places a **hold** and attaches it to the request; otherwise it is **check-only** (a cheaper but racy gate — the §10.8 atomic consume still protects the actual charge at capture/record time).
 - The guard attaches `request.aiTokens = { status: AccessStatus, hold?: Hold, context: MeteringContext }` — the request-enrichment contract the prior `AIGenerationGuard` provides today (`tokensRemaining`, `estimatedTokens`).
-- **`MeteringInterceptor`**: after the handler resolves, extracts the raw usage from the return value using `@Meter`'s `extract` (default: the `usage` property), normalizes via `@Meter`'s `preset`, and either **captures the guard's hold** (when present on the request) or calls `record({ enforce: true })`. On handler error with a hold present, it releases the hold. With `exposeHeaders: true`, sets `x-ai-tokens-cost`, `x-ai-tokens-billed-cost`, and `x-ai-tokens-budget-remaining` response headers (the LiteLLM `x-litellm-response-cost` pattern).
+- **`MeteringInterceptor`**: after the handler resolves, extracts the raw usage from the return value using `@Meter`'s `extract` (default: the `usage` property), normalizes via `@Meter`'s `preset`, and either **captures the guard's hold** (when present on the request) or calls `record({ enforce: true })`. On handler error with a hold present, it releases the hold. When the handler returned and settling failed, it does not release the hold, leaving a pending one to the reaper, emits `ai_tokens.settle.failed` unless the row posted, and rethrows the settle error. With `exposeHeaders: true`, sets `x-ai-tokens-cost`, `x-ai-tokens-billed-cost`, and `x-ai-tokens-budget-remaining` response headers (the LiteLLM `x-litellm-response-cost` pattern).
 
 ### 11.4 Decorators
 
@@ -1416,6 +1416,7 @@ Two delivery channels, both optional and composable (§4.1 `events`):
 | `ai_tokens.usage.recorded` | A record posts (record/capture) | `{ usageRecordId, feature, provider, model, serviceTier, totalTokens, rawCostNanoUsd, billedCostNanoUsd, enforced, isSystemCost }` |
 | `ai_tokens.usage.reversed` | `reverse()` completes | `{ usageRecordId, reversalRecordId, reason }` |
 | `ai_tokens.hold.released` | Explicit release or reaper sweep | `{ holdId, reason, expired: boolean }` |
+| `ai_tokens.settle.failed` | `MeteringInterceptor`: the handler returned and its hold was not settled | `{ holdId, errorCode? }` |
 | `ai_tokens.budget.threshold_crossed` | Window spend crosses a soft threshold | `{ budgetId, threshold, usedFraction, limit, spent, remaining, resetsAt }` (LiteLLM-superset fields) |
 | `ai_tokens.budget.exceeded` | A hard budget blocks a call | `{ budgetId, policy, dimension: 'cost' \| 'tokens' \| 'count', limit, spent, resetsAt }` |
 | `ai_tokens.budget.projected_exceeded` | Burn rate projects crossing before reset | `{ budgetId, projectedAt, usedFraction, resetsAt }` |

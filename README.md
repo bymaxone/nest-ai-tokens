@@ -640,6 +640,7 @@ When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is 
 | `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                    |
 | `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry              |
 | `ai_tokens.hold.released`             | A hold is released without charging                       |
+| `ai_tokens.settle.failed`             | The handler returned and its hold was not settled         |
 | `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                               |
 | `ai_tokens.budget.exceeded`           | A hard budget is exhausted                                |
 | `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                         |

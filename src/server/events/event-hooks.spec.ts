@@ -50,6 +50,15 @@ function makeRecord(over: Partial<UsageRecord> = {}): UsageRecord {
 }
 
 describe('createMeteringEventHooks', () => {
+  /** settleFailed forwards the caller's tenant and scope with the payload it was given. */
+  it('emits settle.failed with the documented payload', async () => {
+    const emit = jest.fn(() => Promise.resolve())
+    const hooks = createMeteringEventHooks({ emit } as unknown as EventDispatcher)
+    const scope = { type: 'user' as const, id: 'u1' }
+    await hooks.settleFailed('tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET' })
+    expect(emit).toHaveBeenCalledWith('ai_tokens.settle.failed', 'tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET' })
+  })
+
   /** usageRecorded maps the record to the documented usage.recorded payload. */
   it('emits usage.recorded with the documented payload', async () => {
     const emit = jest.fn(() => Promise.resolve())

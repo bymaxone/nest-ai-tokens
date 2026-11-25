@@ -43,7 +43,7 @@ async function build(): Promise<MeteringService> {
     outputNanoUsdPerMillion: 10_000_000_000n, unitRates: { web_search_requests: 1n }, effectiveFrom: new Date(0),
   })
   await wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'grant-u1', reason: 'seed' })
-  const events = { usageRecorded: jest.fn(() => Promise.resolve()), priceMissing: jest.fn(() => Promise.resolve()), holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()), audit: jest.fn(() => Promise.resolve()) }
+  const events = { usageRecorded: jest.fn(() => Promise.resolve()), priceMissing: jest.fn(() => Promise.resolve()), holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()), settleFailed: jest.fn(() => Promise.resolve()), audit: jest.fn(() => Promise.resolve()) }
   return new MeteringService(new LedgerService(new InMemoryLedgerStore(), options), new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, undefined, now, new TelemetryEmitter(null), new ContentCapture({ enabled: false }))
 }
 

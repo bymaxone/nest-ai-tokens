@@ -16,6 +16,7 @@ export type AiTokensEventType =
   | 'ai_tokens.usage.recorded'
   | 'ai_tokens.usage.reversed'
   | 'ai_tokens.hold.released'
+  | 'ai_tokens.settle.failed'
   | 'ai_tokens.budget.threshold_crossed'
   | 'ai_tokens.budget.exceeded'
   | 'ai_tokens.budget.projected_exceeded'
@@ -69,6 +70,13 @@ export interface HoldReleasedEventData {
   holdId: string
   reason: string
   expired: boolean
+}
+
+/** `ai_tokens.settle.failed` payload: a hold whose served usage was not settled. */
+export interface SettleFailedEventData {
+  holdId: string
+  /** The failure's code, when it has one. Never its message. */
+  errorCode?: string
 }
 
 /** `ai_tokens.budget.threshold_crossed` payload. */

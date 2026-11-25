@@ -7,7 +7,12 @@
  */
 
 import type { AiTokensErrorResponse } from '@bymax-one/nest-ai-tokens/shared'
-import type { AiTokensException, HoldEstimate } from '@bymax-one/nest-ai-tokens'
+import type { AiTokensException, Hold, HoldEstimate, MeteringContext } from '@bymax-one/nest-ai-tokens'
+import type { ExecutionContext } from '@nestjs/common'
+import { Reflector } from '@nestjs/core'
+import { lastValueFrom, of } from 'rxjs'
+import { Meter } from '../../src/server/enforcement/decorators'
+import { MeteringInterceptor } from '../../src/server/enforcement/metering.interceptor'
 import { HoldReaper } from '../../src/server/enforcement/hold-reaper'
 import { E2E_WALLET, bootMeteringModule, e2eContext, e2eUsage, grantWallet, seedPrice, startPostgres, startRedis, upsertBudget, type Booted, type PostgresFixture, type RedisFixture } from './harness'
 
@@ -22,6 +27,20 @@ function codeOf(error: unknown): string {
 /** Sleep for `ms` milliseconds. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+class Controller {
+  @Meter({ feature: 'chat.reply' })
+  reply(): unknown {
+    return { nothing: true }
+  }
+}
+
+/** Run the interceptor over a held request whose handler returns no usage. */
+function run(interceptor: MeteringInterceptor, context: MeteringContext, hold: Hold): Promise<unknown> {
+  const request = { aiTokens: { status: [], context, hold } }
+  const execution = { getHandler: () => Controller.prototype.reply, getClass: () => Controller, switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }) } as unknown as ExecutionContext
+  return lastValueFrom(interceptor.intercept(execution, { handle: () => of({ nothing: true }) }))
 }
 
 let pg: PostgresFixture
@@ -63,5 +82,31 @@ describe('E2E — hold reaper across replicas (§8.3)', () => {
 
     const error = await app.metering.capture(hold, e2eContext(), e2eUsage()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
+  })
+
+  /**
+   * A handler that succeeded and a settle that failed: the hold stays pending in PostgreSQL with its Redis reservation, a retry with
+   * the same idempotency key gets that hold, and the reaper releases it with its own reason.
+   */
+  it('keeps a hold pending after a failed settle until the reaper releases it', async () => {
+    const context = e2eContext({ idempotencyKey: 'settle-fail-1' })
+    const before = (await app.wallets.getBalance(E2E_WALLET)).nanoUsd
+    const hold = await app.metering.hold(context, ESTIMATE)
+    const interceptor = new MeteringInterceptor(new Reflector(), app.metering, {})
+    expect(codeOf(await run(interceptor, context, hold).catch((e: unknown) => e))).toBe('AI_TOKENS_USAGE_MALFORMED')
+
+    const count = async (): Promise<number | undefined> => (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]?.spent.count
+    expect((await app.ledger.findById(hold.id))?.status).toBe('pending')
+    expect(await count()).toBe(1)
+    expect((await app.wallets.getBalance(E2E_WALLET)).nanoUsd).toBe(before - 6_250_000n)
+    expect((await app.metering.hold(context, ESTIMATE)).id).toBe(hold.id)
+    expect((await app.wallets.getBalance(E2E_WALLET)).nanoUsd).toBe(before - 6_250_000n)
+
+    await sleep(1_300)
+    const restoreSpy = jest.spyOn(app.metering, 'restoreReleasedHold')
+    await new HoldReaper(app.ledger, app.metering, REAPER_OPTIONS).sweep()
+    expect(restoreSpy.mock.calls.map(([record, reason, expired]) => [record.id, reason, expired])).toEqual([[hold.id, 'expired', true]])
+    expect((await app.wallets.getBalance(E2E_WALLET)).nanoUsd).toBe(before)
+    expect(await count()).toBe(0)
   })
 })

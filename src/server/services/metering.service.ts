@@ -48,6 +48,9 @@ import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
+import { NOOP_EVENT_HOOKS, announceSettleFailure } from './metering-hooks'
+import type { MeteringEventHooks } from './metering-hooks'
+export type { MeteringEventHooks } from './metering-hooks'
 import { clearOwed, reverseOrLeaveOwed, settleOwed } from './owed-effects'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import { baseColumns, buildAppendInput, settlementPatch, withBaseModel } from './record-columns'
@@ -116,30 +119,12 @@ export interface EstimateCostInput {
   feature?: string
 }
 
-/** The event hooks the lifecycle fires; the module wires them to the dispatcher (default no-op). */
-export interface MeteringEventHooks {
-  usageRecorded(record: UsageRecord): Promise<void>
-  priceMissing(record: UsageRecord): Promise<void>
-  holdReleased(record: UsageRecord, reason: string, expired: boolean): Promise<void>
-  usageReversed(original: UsageRecord, reversalRecordId: string, reason: string): Promise<void>
-  audit(action: string, details: Record<string, unknown>): Promise<void>
-}
-
 /** The resolved-options subset the metering facade consumes. */
 export type MeteringServiceOptions = Pick<ResolvedAiTokensOptions, 'ratingMode'> & {
   /** Absent in record-only setups that never place a hold. */
   holds?: ResolvedAiTokensOptions['holds']
   /** Absent when the wallet feature is disabled. */
   wallets?: ResolvedAiTokensOptions['wallets']
-}
-
-/** The no-op hooks used until the event dispatcher is wired. */
-const NOOP_EVENT_HOOKS: MeteringEventHooks = {
-  usageRecorded: (): Promise<void> => Promise.resolve(),
-  priceMissing: (): Promise<void> => Promise.resolve(),
-  holdReleased: (): Promise<void> => Promise.resolve(),
-  usageReversed: (): Promise<void> => Promise.resolve(),
-  audit: (): Promise<void> => Promise.resolve(),
 }
 
 /** The neutral scope used for an estimate when the caller supplies none. */
@@ -483,6 +468,16 @@ export class MeteringService {
     await this.effects.settleCapture(settled, reservedBilled, reservedTokens, settled.billedCostNanoUsd, settled.totalTokens)
     await clearOwed(this.ledger, this.logger, settled.id)
     return settled
+  }
+
+  /**
+   * Say that settling a hold failed after the work it covers was served. The hold is not touched: it stays pending until the reaper
+   * releases it. Never throws.
+   *
+   * @internal Called by `MeteringInterceptor`.
+   */
+  reportSettleFailure(hold: Hold, caller: HoldCaller, error: unknown): Promise<void> {
+    return announceSettleFailure({ ledger: this.ledger, events: this.events }, this.logger, hold.id, caller, error)
   }
 
   /**
