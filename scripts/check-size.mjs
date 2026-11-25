@@ -55,12 +55,12 @@ const BUDGETS = [
   // choice of the Proxy test by the caller of `settled`, and the engine-prototype capture of the promise module; the server bundle measures 63_289.
   // 63_367 (server) also holds the handled rejection of a promise refused on a polluted realm and the Proxy-on-chain check kept when thenables are
   // allowed; the server bundle measures 63_337.
-  // 64_201 (server) and 20_147 (prisma) also hold the refund to its source (the debit lookup, the cap, the split by largest remainder, the expiry of a part that lands
+  // 64_201 (server) and 20_268 (prisma) also hold the refund to its source (the debit lookup, the cap, the split by largest remainder, the expiry of a part that lands
   // on an expired grant), the balance at an instant and its breakdown, the per-wallet entry sequence and the order and balance columns of every entry insert, and the
-  // typed refusals and field lists of the new inputs; they measure 64_171 and 20_117.
+  // typed refusals and field lists of the new inputs; they measure 64_171 and 20_238.
   { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 64_201 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 20_147 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 20_268 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 
