@@ -100,8 +100,8 @@ async function setup(): Promise<Stack> {
 }
 
 /** Run the interceptor over a held request and return what the caller sees. */
-async function run(interceptor: MeteringInterceptor, hold: Hold | undefined, handler: CallHandler, target: () => unknown = fixture.metered, response: unknown = {}): Promise<unknown> {
-  const request: { aiTokens?: RequestAiTokens } = { aiTokens: { status: [], context: CONTEXT, ...(hold !== undefined ? { hold } : {}) } }
+async function run(interceptor: MeteringInterceptor, hold: Hold | undefined, handler: CallHandler, target: () => unknown = fixture.metered, response: unknown = {}, given: MeteringContext = CONTEXT): Promise<unknown> {
+  const request: { aiTokens?: RequestAiTokens } = { aiTokens: { status: [], context: given, ...(hold !== undefined ? { hold } : {}) } }
   const context = { getHandler: () => target, getClass: () => Fixture, switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }) } as unknown as ExecutionContext
   return lastValueFrom(interceptor.intercept(context, handler)).catch((error: unknown) => error)
 }
@@ -194,12 +194,56 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect(await run(built.interceptor, hold, returning({ usage: normalized() }))).toBe(failure)
   })
 
-  /** Without a hold there is nothing left pending, so the error passes through alone. */
-  it('announces nothing on the record path, which has no hold', async () => {
+  /** Without a hold the served usage is announced all the same, with no hold id; the error is the handler's caller's as before. */
+  it.each<[string, unknown, string]>([
+    ['usable usage is missing', { nothing: true }, 'AI_TOKENS_USAGE_MALFORMED'],
+    ['the usage cannot be normalized', { usage: { not: 'usable' } }, 'AI_TOKENS_UNKNOWN_PROVIDER'],
+  ])('announces a failed record() with no hold when %s', async (_name, result, errorCode) => {
     const built = await setup()
-    const error = await run(built.interceptor, undefined, returning({ nothing: true }))
-    expect(error).toBeInstanceOf(AiTokensException)
+    expect(await run(built.interceptor, undefined, returning(result))).toMatchObject({ response: { error: { code: errorCode } } })
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { errorCode, where: 'interceptor' }]])
+  })
+
+  /** A ledger that wrote the row before it threw leaves the usage recorded, so nothing is announced. */
+  it('announces nothing with no hold when the row was written', async () => {
+    const built = await setup()
+    const append = built.ledger.append.bind(built.ledger)
+    const failure = new Error('connection lost after commit')
+    jest.spyOn(built.ledger, 'append').mockImplementationOnce(async (...args) => {
+      await append(...args)
+      throw failure
+    })
+    expect(await run(built.interceptor, undefined, returning({ usage: normalized() }))).toBe(failure)
     expect(built.events.settleFailed).not.toHaveBeenCalled()
+  })
+
+  /** A header that cannot be set fails after the row posted: nothing to reconcile. */
+  it('announces nothing with no hold when setting a header fails', async () => {
+    const built = await setup()
+    const failure = new Error('headers already sent')
+    const response = { setHeader: (): never => { throw failure } }
+    expect(await run(built.interceptor, undefined, returning({ usage: normalized() }), fixture.withHeaders, response)).toBe(failure)
+    expect(built.events.settleFailed).not.toHaveBeenCalled()
+  })
+
+  /** The context's own correlation id travels with the event, with a hold or without; one planted on Object.prototype does not. */
+  it.each([true, false])('carries the correlation id of the context (hold: %s)', async (held) => {
+    const built = await setup()
+    const context = { ...CONTEXT, correlationId: 'req-7' }
+    const hold = held ? await built.metering.hold(context, ESTIMATE) : undefined
+    await run(built.interceptor, hold, returning({ nothing: true }), fixture.metered, {}, context)
+    expect((built.events.settleFailed.mock.calls[0] as unknown[])[2]).toMatchObject({ correlationId: 'req-7' })
+  })
+
+  it('takes no correlation id from Object.prototype', async () => {
+    const built = await setup()
+    Object.defineProperty(Object.prototype, 'correlationId', { value: 'planted', configurable: true, writable: true, enumerable: false })
+    try {
+      await run(built.interceptor, undefined, returning({ nothing: true }))
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'correlationId')
+    }
+    expect((built.events.settleFailed.mock.calls[0] as unknown[])[2]).toEqual({ errorCode: 'AI_TOKENS_USAGE_MALFORMED', where: 'interceptor' })
   })
 
   /** A thrown value that is no Error, and an error whose code cannot be read, are announced without a code. */

@@ -76,6 +76,8 @@ export interface HoldReleasedEventData {
 export interface SettleFailedEventData {
   /** The hold that was not settled; absent when `meter()` ran without an estimate. */
   holdId?: string
+  /** The call's `correlationId`, when its context carries one. */
+  correlationId?: string
   errorCode?: string
   /** The caller that could not settle. */
   where: 'interceptor' | 'meter'

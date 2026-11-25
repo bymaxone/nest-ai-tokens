@@ -4,8 +4,8 @@
  * raw usage from the return value (via `@Meter.extract`, default `result.usage`),
  * then either settles the guard's hold (`capture`) or records enforcing post-hoc
  * (`record({ enforce: true })`). On a handler error with a hold present it releases
- * the hold; when settling fails after the handler returned it leaves the hold pending
- * and announces `ai_tokens.settle.failed`. Both rethrow the ORIGINAL error. With
+ * the hold; when settling fails after the handler returned it leaves a hold pending,
+ * and announces `ai_tokens.settle.failed` when the usage was not recorded. Both rethrow the ORIGINAL error. With
  * `exposeHeaders` it sets the three `x-ai-tokens-*` response headers as DECIMAL
  * STRINGS (bigint never crosses the HTTP boundary raw, §15.5). Handlers without a
  * `@Meter` are passed through untouched. `scopeResolver` is TRUSTED INPUT — the
@@ -92,23 +92,33 @@ export class MeteringInterceptor implements NestInterceptor {
 
   /** Settle the handler's usage and set the cost headers; returns the untouched result. */
   private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<unknown> {
-    const usage = extractUsage(result, config)
-    const record = await this.capture(executionContext, config, enrichment, usage)
+    const record = enrichment?.hold !== undefined ? await this.metering.capture(enrichment.hold, enrichment.context, extractUsage(result, config), config.preset) : await this.recordServed(executionContext, config, enrichment, result)
     if (config.exposeHeaders === true) this.setHeaders(executionContext, record, enrichment)
     return result
   }
 
-  /** Capture the guard's hold when present, else record enforcing post-hoc. */
-  private async capture(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, usage: unknown): Promise<UsageRecord> {
-    if (enrichment?.hold !== undefined) return this.metering.capture(enrichment.hold, enrichment.context, usage, config.preset)
+  /**
+   * Record a served call that has no hold. A failure that wrote no row is announced, since nothing else keeps the usage; it needs
+   * the caller's context, so a context that does not resolve announces nothing.
+   */
+  private async recordServed(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<UsageRecord> {
     const context = await this.resolveContext(executionContext, config, enrichment)
-    return this.metering.record({
-      usage,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
-      ...(config.preset !== undefined ? { preset: config.preset } : {}),
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
-      context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
-    })
+    const row = { appended: false }
+    try {
+      return await this.metering.record(
+        {
+          usage: extractUsage(result, config),
+          // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
+          ...(config.preset !== undefined ? { preset: config.preset } : {}),
+          // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
+          context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
+        },
+        () => (row.appended = true),
+      )
+    } catch (error) {
+      if (!row.appended) await this.metering.reportSettleFailure(undefined, context, error)
+      throw error
+    }
   }
 
   /** The metering context: the guard's enrichment, else the host `scopeResolver`. */
