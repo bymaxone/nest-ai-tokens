@@ -273,7 +273,7 @@ export class AiController {
     scope: 'tenant',
     // Name the provider and the model: the settle prices the call with the hold's own. A bare `{ tokens }` or `{ amountNanoUsd }`
     // estimate settles on `context.baseModel` instead (a model listed for the preset's provider), and with none, or with no preset, the guard refuses it under strict pricing on a rate-table mode
-    // (with `pricing.strict: false` it is recorded at 0 USD).
+    // when the price list has no price for that provider and model (with `pricing.strict: false` it is recorded at 0 USD).
     estimate: { provider: 'anthropic', model: 'claude-opus-4', operation: 'chat', inputTokens: 2_000, maxOutputTokens: 1_000 },
   })
   @Meter({
@@ -541,7 +541,8 @@ await budgets.upsertBudget({
 
 // Check status:
 const status = await metering.getStatus(tenantId, { type: 'user', id: userId })
-// status[].remaining, status[].exhausted, status[].policy
+// status.hasAccess and status.blockedBy say whether a budget or the wallet stopped the call;
+// status.budgets[].remaining, .usedFraction and .policy describe each budget
 ```
 
 **Unlimited semantics:** no budget row = unlimited. `limit = 0` = hard block. Never use `null` or `0` to mean unlimited.

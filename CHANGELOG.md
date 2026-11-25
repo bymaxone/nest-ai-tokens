@@ -22,6 +22,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 - `BudgetGuard` could not be built by Nest in a host that names it in `@UseGuards(BudgetGuard)`, including the README's own controller: its constructor parameters carried no `@Inject`, the published build is made without decorator metadata, and Nest reported "can't resolve dependencies of the BudgetGuard (?, +, +, Symbol(BYMAX_AI_TOKENS_OPTIONS))". It failed in every published version. Every parameter now names its token. A consumer-runtime gate now boots a Nest host over HTTP against the packed tarball with the README controller, and proves the guard passes a request under budget, answers 402 or 429 over it, and refuses a hold larger than the budget before the handler runs.
 - `@RequireBudget` with a `{ tokens }` or `{ amountNanoUsd }` estimate on a rate-table mode is refused with `AI_TOKENS_INVALID_CONFIG` (HTTP 500) before the handler runs when `pricing.strict` is true and the price list has no price for the row its hold will record. Such an estimate settles on the model `context.baseModel` names (the placeholder `unspecified` when none, which no rate table lists), so with none or an unlisted one its settle after the provider call was refused with `AI_TOKENS_PRICE_NOT_FOUND` and the served usage was released unbilled; a `baseModel` listed for the preset's provider is placed and billed as before (with no preset the provider is `unspecified`, no `baseModel` is listed for it, and the guard refuses). A provider-reported preset, a rated `{ provider, model, ... }` estimate and `pricing.strict: false` are unchanged; with `strict: false` an unpriced hold on a rate-table mode is recorded at 0 USD, so name provider and model to bill it. A direct `metering.hold()` followed by `capture()` is unchanged.
+- The realm guard no longer refuses every billing call in a host that evaluates a second copy of `reflect-metadata` after the package loaded. It recorded every function of `Reflect`, so the functions that polyfill defines again were read as a replaced built-in. It now records only the functions the language defines on `Reflect`; a replaced one is still refused, and no decision of the library reads a polyfill function.
 
 ### Documentation
 
@@ -30,10 +31,6 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 ### Changed
 
 - `appendEntry` of the Prisma store locks the wallet row before it writes. Parallel writers to one wallet queue on that lock. The cost of the lock, measured on a local PostgreSQL with 8 parallel appends (a relative figure between the two versions, not a capacity): about 1.5 ms at p50 and 2.2 ms at p95 on one wallet (p50 5.1 to 6.6 ms, p95 7.6 to 9.8 ms), and about 0.9 ms at p95 on eight wallets (p95 4.9 to 5.8 ms).
-
-### Fixed
-
-- The realm guard no longer refuses every billing call in a host that evaluates a second copy of `reflect-metadata` after the package loaded. It recorded every function of `Reflect`, so the functions that polyfill defines again were read as a replaced built-in. It now records only the functions the language defines on `Reflect`; a replaced one is still refused, and no decision of the library reads a polyfill function.
 
 ## [1.1.23] - 2026-11-24
 
