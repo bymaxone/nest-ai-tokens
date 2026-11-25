@@ -1,4 +1,5 @@
 import { Inject, Injectable, Module } from '@nestjs/common'
+import type { ExecutionContext } from '@nestjs/common'
 import { DiscoveryModule, DiscoveryService } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import {
@@ -27,7 +28,7 @@ import { BymaxAiTokensModule } from './bymax-ai-tokens.module'
 import type { ResolvedAiTokensOptions } from './config'
 import { providerPresets } from './config/provider-presets'
 import { withoutRealmGuard } from './utils/prototype-guard'
-import { BudgetGuard } from './enforcement'
+import { BudgetGuard, Meter, RequireBudget } from './enforcement'
 import { HoldReaper } from './enforcement/hold-reaper'
 import type { IAiTokensStore, IBudgetCounterStore } from './interfaces'
 import { BudgetService, LedgerService, MeteringService, PricingService, UsageReportService, WalletService } from './services'
@@ -321,6 +322,35 @@ describe('BymaxAiTokensModule', () => {
     expect(moduleRef.get(WalletService)).toBeInstanceOf(WalletService)
     expect(moduleRef.get(BudgetService)).toBeInstanceOf(BudgetService)
     expect(moduleRef.get(BudgetGuard)).toBeInstanceOf(BudgetGuard)
+  })
+
+  /** The guard the module builds carries the pricing service, so its settle preflight runs on a host that takes the guard from the module. */
+  it('builds a guard that refuses a model-less estimate under strict pricing before any hold', async () => {
+    class Handler {
+      run(): void {}
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(Handler.prototype, 'run')!
+    RequireBudget({ estimate: { tokens: 3000 } })(Handler.prototype, 'run', descriptor)
+    Meter({ feature: 'f', preset: providerPresets.anthropic })(Handler.prototype, 'run', descriptor)
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        BymaxAiTokensModule.forRoot({
+          store: makeFullStore(),
+          wallets: {},
+          budgets: {},
+          scopeResolver: () => ({ tenantId: 't', scope: { type: 'user', id: 'u' }, feature: 'f' }),
+          pricing: { seedFromSnapshot: true },
+        }),
+      ],
+    }).compile()
+    const executionContext = {
+      getHandler: () => Handler.prototype.run,
+      getClass: () => Handler,
+      switchToHttp: () => ({ getRequest: () => ({}) }),
+    } as unknown as ExecutionContext
+    await expect(moduleRef.get(BudgetGuard).canActivate(executionContext)).rejects.toMatchObject({
+      response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } },
+    })
   })
 
   /** Telemetry sink and content store bind to their tokens when configured. */
