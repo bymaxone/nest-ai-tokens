@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.24] - 2026-11-25
+
 **Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.
 
 ### Added
@@ -1356,4 +1358,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.21]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.20...v1.1.21
 [1.1.22]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...v1.1.22
 [1.1.23]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...v1.1.23
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.23...HEAD
+[1.1.24]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.23...v1.1.24
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.24...HEAD
