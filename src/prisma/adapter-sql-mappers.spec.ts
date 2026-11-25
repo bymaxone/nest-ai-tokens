@@ -236,7 +236,8 @@ describe('wallet mappers', () => {
   it('maps the sequence, the balance after and the refund link only when they are set', () => {
     const mapped = mapWalletEntryRow(entryRow({ seq: 4n, balanceAfterNanoUsd: 9n, refundsEntryId: 'd1' }))
     expect([mapped.seq, mapped.balanceAfterNanoUsd, mapped.refundsEntryId]).toEqual([4n, 9n, 'd1'])
-    for (const row of [entryRow(), entryRow({ seq: null, balanceAfterNanoUsd: null, refundsEntryId: null })]) {
+    const unselected = entryRow({ seq: undefined as never, balanceAfterNanoUsd: undefined as never, refundsEntryId: undefined as never })
+    for (const row of [entryRow(), entryRow({ seq: null, balanceAfterNanoUsd: null, refundsEntryId: null }), unselected]) {
       const bare = mapWalletEntryRow(row)
       expect(['seq' in bare, 'balanceAfterNanoUsd' in bare, 'refundsEntryId' in bare]).toEqual([false, false, false])
     }

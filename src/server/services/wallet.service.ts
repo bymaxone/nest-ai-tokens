@@ -190,7 +190,7 @@ export class WalletService {
     try {
       nanoUsd = await this.store.balanceAt(ref, asOf)
     } catch (error) {
-      throw this.mapStoreError(error, ref, '')
+      throw this.mapStoreError(error, ref)
     }
     return { nanoUsd, credits: this.toCredits(nanoUsd), asOf }
   }
@@ -212,7 +212,7 @@ export class WalletService {
     try {
       found = await this.store.balanceBreakdown(ref, asOf)
     } catch (error) {
-      throw this.mapStoreError(error, ref, '')
+      throw this.mapStoreError(error, ref)
     }
     return {
       asOf,
@@ -238,7 +238,7 @@ export class WalletService {
     const now = this.now()
     if (asOf === undefined) return now
     if (asOf.getTime() < now.getTime() - AS_OF_TOLERANCE_MS) throw this.invalid('asOf is in the past: a balance is answered for now or later, not for an instant that is gone')
-    return asOf.getTime() < now.getTime() ? now : asOf
+    return new Date(Math.max(asOf.getTime(), now.getTime()))
   }
 
   /**
@@ -495,8 +495,7 @@ export class WalletService {
     try {
       wallet = await this.store.reconcile(ref, this.now())
     } catch (error) {
-      // Stryker disable next-line StringLiteral: the key is read only for an idempotency conflict, which a reconcile never raises
-      throw this.mapStoreError(error, ref, '')
+      throw this.mapStoreError(error, ref)
     }
     // Stryker disable next-line ObjectLiteral,StringLiteral: audit event name and payload are internal observability; tests check the reconciled balance, not event shape
     await this.events.audit('ai_tokens.wallet.reconciled', {
@@ -537,7 +536,7 @@ export class WalletService {
   }
 
   /** Map a store idempotency conflict / missing-wallet signal to the typed catalog error. */
-  private mapStoreError(error: unknown, ref: WalletRef, idempotencyKey: string): AiTokensException {
+  private mapStoreError(error: unknown, ref: WalletRef, idempotencyKey?: string): AiTokensException {
     if (isLedgerIdempotencyConflict(error)) {
       // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: ref.tenantId, idempotencyKey }))

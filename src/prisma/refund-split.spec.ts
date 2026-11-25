@@ -51,6 +51,15 @@ describe('splitByWeights', () => {
     }
   })
 
+  /** The odd unit goes to the slot with the larger remainder, wherever it sits, and to the earlier slot among equals. */
+  it.each([
+    [[2n, 1n], 2n, [1n, 1n]],
+    [[1n, 1n, 1n], 2n, [1n, 1n, 0n]],
+    [[3n, 1n, 2n], 4n, [2n, 1n, 1n]],
+  ])('gives the odd units of %p over %p to the largest remainders', (weights, amount, expected) => {
+    expect(splitByWeights(weights, amount)).toEqual(expected)
+  })
+
   /** A tie in the remainders goes to the earlier slot. */
   it('gives the extra unit to the earlier slot on a tie', () => {
     expect(splitByWeights([1n, 1n], 1n)).toEqual([1n, 0n])
@@ -63,5 +72,6 @@ describe('splitByWeights', () => {
     [[-1n, 5n], 1n],
   ])('refuses %p for %p', (weights, amount) => {
     expect(() => splitByWeights(weights, amount)).toThrow(RangeError)
+    expect(() => splitByWeights(weights, amount)).toThrow('a refund is split over non-negative weights, and is positive and no larger than their sum')
   })
 })

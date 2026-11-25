@@ -101,6 +101,9 @@ describe('the balance statements', () => {
   it('builds the balance at an instant as one statement of the wallet', () => {
     const query = balanceAtSql('w1', T1)
     expect(query.text).toContain('FROM "ai_wallets" w WHERE w."id"')
+    expect(query.text).toContain('w."balanceNanoUsd"')
+    expect(query.text).toContain('GREATEST(')
+    expect(query.values.filter((value) => value === T1)).toHaveLength(5)
     expect(query.values).toContain('w1')
     expect(query.text).not.toContain(';')
   })

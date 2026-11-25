@@ -669,3 +669,84 @@ describe('WalletService.getBalance and getBalanceBreakdown with an instant', () 
     await expectRejectCode(call(service), 'AI_TOKENS_STORE_ERROR')
   })
 })
+
+/** The `details.reason` a refusal carries to the client, or undefined when the call is not refused. */
+async function refusalReason(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise
+  } catch (error) {
+    return ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details?.reason
+  }
+  return undefined
+}
+
+describe('WalletService refusals name their reason', () => {
+  const start = new Date('2030-01-01T00:00:00.000Z')
+  const bare = (store: object): WalletService => new WalletService(store as IWalletStore, OPTIONS, undefined, () => start)
+  const refund = { amountNanoUsd: 1n, idempotencyKey: 'r1', reason: 'r' }
+
+  /** The reason says what is missing, so the host knows which port to supply. */
+  it.each([
+    ['balanceAt', (service: WalletService) => service.getBalance(REF, {}), 'the store does not implement balanceAt, which getBalance with options needs'],
+    ['balanceBreakdown', (service: WalletService) => service.getBalanceBreakdown(REF), 'the store does not implement balanceBreakdown'],
+    ['refundToSource', (service: WalletService) => service.refund(REF, { ...refund, restore: 'source' }), "the store does not implement refundToSource, which restore: 'source' needs"],
+  ] as const)('names the missing store method %s', async (_method, call, reason) => {
+    expect(await refusalReason(call(bare({ getWallet: jest.fn() })))).toBe(reason)
+  })
+
+  /** Each invalid argument of the read and the refund names what was wrong. */
+  it.each([
+    ['an asOf too far behind', (service: WalletService) => service.getBalance(REF, { asOf: new Date(start.getTime() - 5001) }), 'asOf is in the past: a balance is answered for now or later, not for an instant that is gone'],
+    ['options that are not an object', (service: WalletService) => service.getBalance(REF, 'now' as never), 'options must be an object'],
+    ['an unknown restore mode', (service: WalletService) => service.refund(REF, { ...refund, restore: 'sourse' as never }), "refund restore must be 'source' or 'unallocated'"],
+    ['a debitEntryId that is not text', (service: WalletService) => service.refund(REF, { ...refund, restore: 'source', debitEntryId: 7 as never }), 'debitEntryId must be a string'],
+    ['a debitEntryId without restore source', (service: WalletService) => service.refund(REF, { ...refund, debitEntryId: 'd1' }), "a debitEntryId names the debit a refund restores: it needs restore: 'source'"],
+    ['a list order that is not asc or desc', (service: WalletService) => service.getEntries(REF, { order: 'sideways' as never }), "order must be 'asc' or 'desc'"],
+  ] as const)('names the reason for %s', async (_name, call, reason) => {
+    const { service } = makeService({ now: () => start })
+    expect(await refusalReason(call(service))).toBe(reason)
+  })
+
+  /** The instant exactly at the tolerance is still answered, and is answered at now. */
+  it('answers an asOf exactly 5 seconds behind now, at now', async () => {
+    const { service } = makeService({ now: () => start })
+    const balance = await service.getBalance(REF, { asOf: new Date(start.getTime() - 5000) })
+    expect(balance.asOf).toEqual(start)
+  })
+
+  /** An asOf at the same instant as now is answered at that instant, and is not the object the caller passed. */
+  it('answers an asOf equal to now at that instant', async () => {
+    const { service } = makeService({ now: () => start })
+    const asOf = new Date(start.getTime())
+    const balance = await service.getBalance(REF, { asOf })
+    expect(balance.asOf?.getTime()).toBe(start.getTime())
+  })
+
+  /** A bucket has no expiresAt or reason key when the store reported none, not a key holding undefined. */
+  it('leaves the expiry and reason keys off a bucket the store reported without them', async () => {
+    const store = { getWallet: jest.fn(), balanceBreakdown: jest.fn().mockResolvedValue({ asOf: start, nanoUsd: 1n, unallocatedNanoUsd: 0n, buckets: [{ grantEntryId: 'b', remainingNanoUsd: 1n, priority: 1 }] }) }
+    const found = await bare(store).getBalanceBreakdown(REF)
+    expect(Object.keys(found.buckets[0] ?? {}).sort()).toEqual(['grantEntryId', 'priority', 'remainingCredits', 'remainingNanoUsd'])
+  })
+
+  /** A source refund hands the store exactly its entry and the instant, with no key for what the caller did not give. */
+  it('hands the store a source refund with no key for a missing usageRecordId or debitEntryId', async () => {
+    const refundToSource = jest.fn<Promise<unknown>, [WalletRef, { entry: object; debitEntryId?: string }]>().mockResolvedValue({ id: 'e1' })
+    await bare({ getWallet: jest.fn(), refundToSource }).refund(REF, { ...refund, restore: 'source' })
+    expect(refundToSource).toHaveBeenCalledWith(REF, {
+      entry: { walletId: '', type: 'refund', amountNanoUsd: 1n, priority: 0, effectiveAt: start, idempotencyKey: 'r1', reason: 'r' },
+      now: start,
+    })
+    const { entry, ...rest } = refundToSource.mock.calls[0]![1]
+    expect(Object.keys(entry)).not.toContain('usageRecordId')
+    expect(Object.keys(rest)).not.toContain('debitEntryId')
+  })
+
+  /** When the caller names the usage record and the debit, both reach the store. */
+  it('hands the store the usageRecordId and the debitEntryId the caller named', async () => {
+    const refundToSource = jest.fn<Promise<unknown>, [WalletRef, { entry: { usageRecordId?: string }; debitEntryId?: string }]>().mockResolvedValue({ id: 'e1' })
+    await bare({ getWallet: jest.fn(), refundToSource }).refund(REF, { ...refund, restore: 'source', usageRecordId: 'ur1', debitEntryId: 'd1' })
+    expect(refundToSource.mock.calls[0]![1].entry.usageRecordId).toBe('ur1')
+    expect(refundToSource.mock.calls[0]![1].debitEntryId).toBe('d1')
+  })
+})

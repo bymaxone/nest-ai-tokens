@@ -18,12 +18,12 @@ export function splitByWeights(weights: readonly bigint[], amount: bigint): bigi
   const total = weights.reduce((sum, weight) => sum + weight, 0n)
   if (weights.some((weight) => weight < 0n) || amount <= 0n || amount > total) throw new RangeError('a refund is split over non-negative weights, and is positive and no larger than their sum')
   const shares = weights.map((weight) => (amount * weight) / total)
-  // What the floors left is fewer than one unit per slot, so each unit goes to a distinct slot: the largest remainders first, the earlier slot on a tie.
+  // What the floors left is fewer than one unit per slot, so each unit goes to a distinct slot: the largest remainders first; the sort is stable, so the earlier slot on a tie.
   const rest = Number(amount - shares.reduce((sum, share) => sum + share, 0n))
   const bonus = new Set(
     weights
       .map((weight, index) => ({ index, remainder: (amount * weight) % total }))
-      .sort((a, b) => (a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1))
+      .sort((a, b) => Number(b.remainder - a.remainder))
       .slice(0, rest)
       .map((slot) => slot.index),
   )
