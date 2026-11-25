@@ -53,6 +53,15 @@ lib.Meter({ preset: lib.providerPresets.anthropic })(BareController.prototype, '
 UseGuards(lib.BudgetGuard)(BareController)
 UseInterceptors(lib.MeteringInterceptor)(BareController)
 
+// A host route that asks for no estimate: nothing holds, so only the guard's own check can refuse an exhausted budget.
+class PlainController {
+  calls = 0
+  ping() { this.calls += 1; return { ok: true } }
+}
+Controller('plain')(PlainController)
+Post('ping')(PlainController.prototype, 'ping', Object.getOwnPropertyDescriptor(PlainController.prototype, 'ping'))
+UseGuards(lib.BudgetGuard)(PlainController)
+
 class AppModule {}
 Module({
   imports: [
@@ -67,7 +76,7 @@ Module({
       pricing: { seedFromSnapshot: true },
     }),
   ],
-  controllers: [AiController, BareController],
+  controllers: [AiController, BareController, PlainController],
   providers: [AiService],
 })(AppModule)
 
@@ -116,6 +125,19 @@ async function main() {
   await budget('quota', { limitTokens: 100 })
   const quota = await post('quota')
   expect(quota.status === 429 && quota.code === 'AI_TOKENS_QUOTA_EXCEEDED' && !quota.handlerRan && quota.details?.dimension === 'tokens' && typeof quota.details?.budgetId === 'string', 'a token limit of 100 answered ' + quota.status + ' ' + quota.code + ', handler ran: ' + quota.handlerRan)
+
+  // With no estimate there is no hold behind the guard: an exhausted budget on either dimension is refused by the guard alone.
+  const plain = async (tenant) => {
+    const before = app.get(PlainController).calls
+    const res = await fetch(url + '/plain/ping', { method: 'POST', headers: { 'x-tenant': tenant } })
+    return { status: res.status, code: (await res.json().catch(() => ({}))).error?.code, handlerRan: app.get(PlainController).calls !== before }
+  }
+  const plainZero = await plain('zero')
+  expect(plainZero.status === 402 && plainZero.code === 'AI_TOKENS_BUDGET_EXCEEDED' && !plainZero.handlerRan, 'a route with no estimate answered ' + plainZero.status + ' ' + plainZero.code + ' under a spend limit of 0, handler ran: ' + plainZero.handlerRan)
+  await budget('plainquota', { limitTokens: 100 })
+  await budgets.consume({ tenantId: 'plainquota', scope: { type: 'tenant', id: 'plainquota' }, feature: 'doc.summarize' }, { nanoUsd: 0n, tokens: 100, count: 0 }).catch(() => undefined)
+  const plainQuota = await plain('plainquota')
+  expect(plainQuota.status === 429 && plainQuota.code === 'AI_TOKENS_QUOTA_EXCEEDED' && !plainQuota.handlerRan, 'a route with no estimate answered ' + plainQuota.status + ' ' + plainQuota.code + ' under a spent token limit, handler ran: ' + plainQuota.handlerRan)
 
   // A hold larger than what the budget has left is refused by the hold itself, in hold mode.
   await budget('small', { limitNanoUsd: 1_000n })
