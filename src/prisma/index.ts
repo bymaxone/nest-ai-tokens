@@ -54,6 +54,7 @@ import type {
   PricedModel,
   WalletDebit,
   WalletDebitQuery,
+  AppendEntryOptions,
   RefundToSourceInput,
   WalletBalanceBreakdown,
   WalletEntryFilter,
@@ -98,7 +99,7 @@ import {
   walletAutoCreatable,
   walletBalanceDelta,
   walletEntryOrderSql,
-  entryDeltaSql,
+  effectiveAtSql, entryDeltaSql,
   walletEntryMatches,
   walletEntryWhere,
 } from './adapter-sql'
@@ -419,6 +420,7 @@ export class PrismaAiTokensStore implements IAiTokensStore {
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
+    options?: AppendEntryOptions,
   ): Promise<WalletEntry> {
     assertCallerKey(entry.idempotencyKey)
     try {
@@ -427,7 +429,8 @@ export class PrismaAiTokensStore implements IAiTokensStore {
         if (wallet === null) throw new WalletMissingError()
         // The wallet row first, as every other writer takes it: the sequence and the balance after the entry are read under it.
         const balance = await lockedBalance(tx, wallet.id)
-        const stored = await insertWalletEntry(tx, wallet.id, entry, sql`${balance}::bigint + ${entryDeltaSql(entry)}`)
+        const effectiveAt = effectiveAtSql(entry, options?.effectiveAtDefaulted === true)
+        const stored = await insertWalletEntry(tx, wallet.id, entry, sql`${balance}::bigint + ${entryDeltaSql(entry, effectiveAt)}`, undefined, effectiveAt)
         await insertAllocations(tx, stored.id, allocations)
         await applyBalanceDelta(tx, wallet.id, walletBalanceDelta(stored))
         return stored

@@ -10,7 +10,7 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, CREDITED_SQL, DB_NOW_SQL, DB_STORED_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, CREDITED_SQL, DB_NOW_SQL, DB_STORED_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, buildWhere, effectiveAtSql, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, usageValues, walletEntryWhere } from './adapter-sql'
 import { BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, tokenLimitSql } from './budget-rows'
 import { T0, T1, bareUsageRow, newRecord, rendered, usageRow } from '../../test/fakes/prisma-rows'
 
@@ -470,6 +470,18 @@ describe('entryDeltaSql and walletEntryOrderSql', () => {
     const refund = entryDeltaSql({ ...entry, type: 'refund' })
     expect(refund.text).not.toContain('CASE')
     expect(refund.values).toEqual([7n])
+  })
+
+  /** A defaulted instant is the earlier of the caller's and the one `createdAt` is stamped with; a given one is bound as it is. */
+  it('binds a given effectiveAt and bounds a defaulted one by the database clock', () => {
+    const given = effectiveAtSql(entry, false)
+    expect(given.text).not.toContain('LEAST')
+    expect(given.values).toEqual([T0])
+    const defaulted = effectiveAtSql(entry, true)
+    expect(defaulted.text).toContain('LEAST(')
+    expect(defaulted.text).toContain(DB_STORED_NOW_SQL.text)
+    expect(defaulted.values).toEqual([T0])
+    expect(entryDeltaSql(entry, defaulted).text).toContain('LEAST(')
   })
 
   /** Descending is the exact reverse of ascending, so that one index serves both. */

@@ -64,6 +64,28 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
   const ref: WalletRef = { tenantId: 'wallet-contract', ownerType: 'user', ownerId: 'u1' }
 
   describe(`IWalletStore contract — ${label}`, () => {
+    /** A defaulted `effectiveAt` the store's clock has not reached is stored as no later than `createdAt`, and the grant counts at once. */
+    it('stores a defaulted effectiveAt no later than the entry it stamps', async () => {
+      const { store } = await make()
+      const ahead = new Date('2099-01-01T00:00:00.000Z')
+      const entry = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'defaulted', effectiveAt: ahead }), [], { effectiveAtDefaulted: true })
+      expect(entry.effectiveAt.getTime()).toBeLessThanOrEqual(entry.createdAt.getTime())
+      expect(entry.balanceAfterNanoUsd).toBe(100n)
+      expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+    })
+
+    /** A defaulted `effectiveAt` already past is kept, and a given one is kept even when the store's clock has not reached it. */
+    it('keeps an effectiveAt that is earlier or that the host gave', async () => {
+      const { store } = await make()
+      const past = new Date('2020-01-01T00:00:00.000Z')
+      const ahead = new Date('2099-01-01T00:00:00.000Z')
+      const earlier = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'past', effectiveAt: past }), [], { effectiveAtDefaulted: true })
+      const given = await store.appendEntry(ref, grantEntry({ idempotencyKey: 'given', effectiveAt: ahead }))
+      expect(earlier.effectiveAt).toEqual(past)
+      expect(given.effectiveAt).toEqual(ahead)
+      expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
+    })
+
     /** Two concurrent debits against a balance with headroom for one: exactly one wins. */
     it('lets exactly one of two concurrent debits win', async () => {
       const { store } = await make()

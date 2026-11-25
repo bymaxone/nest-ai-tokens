@@ -260,7 +260,7 @@ export class WalletService {
     // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint from 1 to 9223372036854775807')
     this.assertGrantFields(input)
-    const entry = await this.append(ref, {
+    const grant: Omit<NewWalletEntry, 'walletId'> = {
       type: 'grant',
       amountNanoUsd: input.amountNanoUsd,
       priority: input.priority ?? 0,
@@ -269,7 +269,8 @@ export class WalletService {
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-    })
+    }
+    const entry = await this.append(ref, grant, input.effectiveAt === undefined)
     const granted: WalletGrantedEventData = {
       walletId: entry.walletId,
       entryId: entry.id,
@@ -507,10 +508,10 @@ export class WalletService {
   }
 
   /** Append a non-debit entry, mapping a store idempotency/missing-wallet signal to the catalog. */
-  private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>): Promise<WalletEntry> {
+  private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>, effectiveAtDefaulted = false): Promise<WalletEntry> {
     try {
       // Stryker disable next-line StringLiteral: placeholder walletId; the store's insert always assigns the real wallet id and never reads this sentinel, so any string here is equivalent
-      return await this.store.appendEntry(ref, { walletId: '', ...entry })
+      return await this.store.appendEntry(ref, { walletId: '', ...entry }, [], { effectiveAtDefaulted })
     } catch (error) {
       throw this.mapStoreError(error, ref, entry.idempotencyKey)
     }

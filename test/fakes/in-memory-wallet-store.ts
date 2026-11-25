@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto'
 import type { NewWalletEntry, Wallet, WalletEntry, WalletRef } from '@bymax-one/nest-ai-tokens/shared'
 import { deriveIdempotencyKey } from '@bymax-one/nest-ai-tokens/shared'
 import type {
+  AppendEntryOptions,
   IWalletStore,
   OpenGrant,
   RefundToSourceInput,
@@ -119,6 +120,7 @@ export class InMemoryWalletStore implements IWalletStore {
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations: { grantEntryId: string; amountNanoUsd: bigint }[] = [],
+    options?: AppendEntryOptions,
   ): Promise<WalletEntry> {
     assertCallerKey(entry.idempotencyKey)
     const autoCreate = entry.type === 'grant' || (entry.type === 'adjustment' && entry.amountNanoUsd > 0n)
@@ -126,7 +128,9 @@ export class InMemoryWalletStore implements IWalletStore {
     if (wallet === null) throw new WalletMissingError()
     const replay = this.replayOrConflict(ref, wallet, entry)
     if (replay !== null) return replay
-    return this.insert(wallet, entry, allocations)
+    const at = this.now()
+    const due = options?.effectiveAtDefaulted === true && at < entry.effectiveAt ? { ...entry, effectiveAt: at } : entry
+    return this.insert(wallet, due, allocations)
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await -- async so a conflict throw surfaces as a rejected promise; the reserve critical section below stays synchronous (atomic).

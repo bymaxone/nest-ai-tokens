@@ -458,13 +458,18 @@ console.log(balance.nanoUsd) // current balance
 ```
 
 A grant is spendable from its `effectiveAt` (now, when omitted) until its `expiresAt`, judged on your application's
-clock: the service passes the current instant to the store, so a database whose clock differs does not
-move a grant. Entries are ordered by the database's creation time, which is the `'fifo'` burn order and breaks ties in the others. Keep NTP running on the application hosts, since their clocks
+clock: the service passes the current instant to the store with each debit and reconcile. When `effectiveAt` is
+omitted, the Prisma store keeps the earlier of your application's clock and the database's, so the grant is in the
+balance as soon as it is written. Entries are ordered by the database's creation time, which is the `'fifo'` burn order and breaks ties in the others. Keep NTP running on the application hosts, since their clocks
 are the ones that decide and instances that disagree move a grant between them. One that is not
 yet due is credited when it falls due, at the next debit or `reconcile()`, through an `adjustment`
 entry keyed `activate:<grantId>` (reason `grant activated`); that entry is bookkeeping, so a report of
 operator adjustments should skip it. Keys starting `activate:` or `expiry:` are reserved for the store,
 and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
+
+> **Known limit.** An `effectiveAt` you pass is stored as given, `new Date()` included. When your application's clock
+> is ahead of the database's, such a grant is not yet in the stored balance as it is written: it enters at the next debit
+> or `reconcile()`. Omit `effectiveAt` for a grant meant to count at once.
 
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`

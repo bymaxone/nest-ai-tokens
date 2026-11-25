@@ -602,13 +602,21 @@ export function walletBalanceDelta(entry: WalletEntry): bigint {
 }
 
 /**
+ * The `effectiveAt` a new entry is stored with: the one it carries, or, when the caller defaulted it to its own clock,
+ * the earlier of that and the instant `createdAt` is stamped with, so that the entry is never due after it was appended.
+ */
+export function effectiveAtSql(entry: NewWalletEntry, defaulted: boolean): Sql {
+  return defaulted ? sql`LEAST(${entry.effectiveAt}::timestamp, ${DB_STORED_NOW_SQL})` : sql`${entry.effectiveAt}`
+}
+
+/**
  * The signed amount an entry adds to the materialized balance when it is appended, as SQL: the amount, except a grant that is not due at the database
  * clock, which adds nothing now and is credited by its activation. The same rule as {@link walletBalanceDelta}, judged on the clock the row's `createdAt` is
  * written with, so that the balance an entry carries after it agrees with the balance the store then writes.
  */
-export function entryDeltaSql(entry: NewWalletEntry): Sql {
+export function entryDeltaSql(entry: NewWalletEntry, effectiveAt: Sql = sql`${entry.effectiveAt}`): Sql {
   if (entry.type !== 'grant') return sql`${entry.amountNanoUsd}::bigint`
-  return sql`(CASE WHEN ${entry.effectiveAt}::timestamp <= ${DB_STORED_NOW_SQL} AND (${entry.expiresAt ?? null}::timestamp IS NULL OR ${entry.expiresAt ?? null}::timestamp > ${DB_STORED_NOW_SQL}) THEN ${entry.amountNanoUsd}::bigint ELSE 0::bigint END)`
+  return sql`(CASE WHEN ${effectiveAt}::timestamp <= ${DB_STORED_NOW_SQL} AND (${entry.expiresAt ?? null}::timestamp IS NULL OR ${entry.expiresAt ?? null}::timestamp > ${DB_STORED_NOW_SQL}) THEN ${entry.amountNanoUsd}::bigint ELSE 0::bigint END)`
 }
 
 /**

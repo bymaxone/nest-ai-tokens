@@ -10,6 +10,14 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Fixed
+
+- A grant given no `effectiveAt` was left out of the stored balance, and out of the running balance of its entry, when the application clock was ahead of the database clock: it entered only at the next debit or `reconcile()`. The Prisma store now keeps the earlier of the two clocks for such a grant. A given `effectiveAt`, `new Date()` included, is stored unchanged. Entries already written are not changed.
+
+### For store implementors
+
+- `IWalletStore.appendEntry` receives a fourth argument, `{ effectiveAtDefaulted }`. When it is `true`, store the earlier of `entry.effectiveAt` and the instant you stamp `createdAt` with, and judge the balance contribution on the stored value. A store that ignores it behaves as before.
+
 ## [1.1.24] - 2026-11-25
 
 **Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.
