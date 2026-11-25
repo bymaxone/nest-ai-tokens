@@ -10,7 +10,8 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, tokenLimitSql, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, usageValues, walletEntryWhere } from './adapter-sql'
+import { BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, tokenLimitSql } from './budget-rows'
 import { T0, T1, bareUsageRow, newRecord, rendered, usageRow } from '../../test/fakes/prisma-rows'
 
 /** The placeholder of the `number`-th parameter when its value is a date: read as a UTC wall-clock timestamp. */

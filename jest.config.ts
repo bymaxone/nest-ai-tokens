@@ -35,10 +35,11 @@ const config: Config = {
   passWithNoTests: true,
   maxWorkers: '50%',
   // `src/prisma/adapter-sql.ts` (row mappers, value and filter builders, SQL text) is pure and is
-  // covered here. `src/prisma/index.ts`, the store that runs those statements against PostgreSQL, is
-  // owned by the Testcontainers e2e suite and is excluded from the unit gate by name; the `index.ts`
-  // glob would exclude it as well, but a glob hides the reason.
-  collectCoverageFrom: ['src/**/*.ts', '!**/index.ts', '!src/prisma/index.ts', '!**/*.spec.ts'],
+  // covered here. `src/prisma/index.ts`, the store that runs those statements against PostgreSQL, and
+  // `src/prisma/wallet-writes.ts`, the wallet-transaction statements it calls, are owned by the
+  // Testcontainers e2e suite and are excluded from the unit gate by name; the `index.ts` glob would
+  // exclude the first as well, but a glob hides the reason.
+  collectCoverageFrom: ['src/**/*.ts', '!**/index.ts', '!src/prisma/index.ts', '!src/prisma/wallet-writes.ts', '!**/*.spec.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   coverageThreshold: {
     global: {

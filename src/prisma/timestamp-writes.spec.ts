@@ -10,14 +10,16 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BUDGET_COLUMNS, PRICE_COLUMNS, USAGE_COLUMNS } from './adapter-sql'
+import { PRICE_COLUMNS, USAGE_COLUMNS } from './adapter-sql'
+import { BUDGET_COLUMNS } from './budget-rows'
 
 const SRC = join(__dirname)
-const sources = ['index.ts', 'adapter-sql.ts', 'budget-statements.ts', 'effects-owed-sql.ts'].map((file) => ({
+const sources = ['index.ts', 'wallet-writes.ts', 'adapter-sql.ts', 'budget-rows.ts', 'budget-statements.ts', 'effects-owed-sql.ts'].map((file) => ({
   file,
   text: readFileSync(join(SRC, file), 'utf8'),
 }))
 const adapterText = readFileSync(join(SRC, 'adapter-sql.ts'), 'utf8')
+const budgetRowsText = readFileSync(join(SRC, 'budget-rows.ts'), 'utf8')
 const migration = readFileSync(join(SRC, 'migrations/0001_init.sql'), 'utf8')
 
 /** The columns of each table declared `DEFAULT CURRENT_TIMESTAMP` in the shipped migration. */
@@ -98,14 +100,14 @@ describe('timestamp writes', () => {
       }
     }
     expect(checked).toBeGreaterThanOrEqual(7)
-    expect(adapterText).toContain('sql`"policy" = ${input.policy}`, sql`"updatedAt" = ${DB_NOW_SQL}`')
+    expect(budgetRowsText).toContain('sql`"policy" = ${input.policy}`, sql`"updatedAt" = ${DB_NOW_SQL}`')
     expect(adapterText).toContain('sql`"status" = ${to}`, sql`"updatedAt" = ${DB_NOW_SQL}`')
   })
 
   it('writes createdAt and updatedAt of a budget, and never rewrites createdAt on conflict', () => {
     // Why: the budget window anchors on createdAt, so it is the column that mattered.
     expect(BUDGET_COLUMNS.slice(-2)).toEqual(['createdAt', 'updatedAt'])
-    const adapter = adapterText
+    const adapter = adapterText + budgetRowsText
     expect(adapter).not.toMatch(/"createdAt" = \$\{/)
   })
 })

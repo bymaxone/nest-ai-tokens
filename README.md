@@ -467,6 +467,8 @@ that the debit burned, in proportion to what each still has room for, and links 
 `restore: 'source'` is refused with `AI_TOKENS_INVALID_CONFIG`, since it contradicts the call.
 
 ```typescript
+const ref = { tenantId, ownerType: 'user', ownerId: userId } as const
+
 await wallets.refund(ref, {
   amountNanoUsd: 90n,
   usageRecordId: 'u-1',

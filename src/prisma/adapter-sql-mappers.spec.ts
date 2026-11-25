@@ -9,7 +9,8 @@
 
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { NewWalletEntry, WalletEntry } from '../shared'
-import { WalletMissingError, firstOrThrow, isWalletMissing, mapBudgetRow, mapBudgetWindowRow, mapOpenGrantRow, mapPriceRow, mapUsageRow, mapWalletEntryRow, mapWalletRow, parseUnitRates, parseWindow, scopeOf, serializeUnitRates, serializeWindow, walletAutoCreatable, walletBalanceDelta, walletEntryMatches, type WalletRow } from './adapter-sql'
+import { WalletMissingError, firstOrThrow, isWalletMissing, mapOpenGrantRow, mapPriceRow, mapUsageRow, mapWalletEntryRow, mapWalletRow, parseUnitRates, scopeOf, serializeUnitRates, walletAutoCreatable, walletBalanceDelta, walletEntryMatches, type WalletRow } from './adapter-sql'
+import { mapBudgetRow, mapBudgetWindowRow, parseWindow, serializeWindow } from './budget-rows'
 import { T0, T1, T2, usageRow, bareUsageRow, priceRow, entryRow, budgetRow } from '../../test/fakes/prisma-rows'
 
 describe('scopeOf', () => {

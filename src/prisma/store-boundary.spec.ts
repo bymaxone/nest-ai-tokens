@@ -21,9 +21,7 @@ const DELTA = { nanoUsd: 5n, tokens: 1, count: 1 }
 
 /** Methods of the class that are not part of its interface; every other method must be in {@link CALLS}. */
 const INTERNAL = new Set([
-  'constructor', 'insert', 'insertChained', 'settleChained', 'updateStatus', 'lastHashWithin', 'getWalletWithin', 'ensureWallet',
-  'insertWalletEntry', 'insertAllocations', 'applyBalanceDelta', 'lockWallet', 'insertSystemEntry', 'activateDueGrants',
-  'sweepExpiredGrants', 'burnDown', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict', 'lockedBalance', 'sourceDebit', 'restorableOf', 'fundedAllocations', 'expireRestoredParts',
+  'constructor', 'insert', 'insertChained', 'settleChained', 'updateStatus', 'lastHashWithin', 'walletReplay', 'replayOrConflictWallet', 'replayOrConflict',
 ])
 
 /** A call of a method by its name, for the one the type system marks deprecated and the lint refuses to see called by name. */

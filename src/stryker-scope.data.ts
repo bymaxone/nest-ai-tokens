@@ -34,7 +34,7 @@ export const EXCLUSIONS: readonly Exclusion[] = [
       'The store runs its statements against PostgreSQL, so a mutant needs a database to be judged: it has no unit spec, ' +
       'and the Testcontainers suite on the four Prisma cells pins its behaviour. Mutating it would start one database ' +
       'per mutant, hours per cell.',
-    files: ['src/prisma/index.ts'],
+    files: ['src/prisma/index.ts', 'src/prisma/wallet-writes.ts'],
   },
 ]
 
