@@ -486,8 +486,7 @@ await wallets.refund(ref, {
   one's cap counts all of that id's unlinked credits, which is conservative: it can refuse a restore that would have fit,
   and never allows one that does not. A later refund that is not linked to a debit is not capped by this rule.
 - A debit written by `hold()` or `record()` (key `hold:` or `record:`) is refused for `restore: 'source'`: its grants are
-  settled by `capture()`, `release()` and `reverse()`. `reverse()` and the expiry sweep stay unallocated; they are not
-  covered by the no-rollover rule above.
+  settled by `capture()`, `release()` and `reverse()`.
 - Amounts are `bigint` nano-USD and the split is exact: the parts add up to the refund to the nano-USD. The `credits` figures
   that the service returns are `nanoUsd / creditRateNanoUsd` as a `number` for display and are never stored, so a refund
   that is not a whole number of credits restores a fraction of a credit.

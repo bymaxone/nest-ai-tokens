@@ -20,8 +20,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Changed
 
-- The `server` bundle grows to 64171 bytes brotli (budget 63367 to 64201) and the `prisma` bundle to 20117 (budget 17710 to 20147), with the refund to its source, the balance at an instant, and the sequence and balance columns of every wallet entry insert.
-- `appendEntry` of the Prisma store locks the wallet row before it writes, as `conditionalDebit` and `reconcile` already did. Parallel writers to one wallet queue on that lock and cannot deadlock.
+- The `server` and `prisma` brotli budgets in `scripts/check-size.mjs` are raised for the refund to its source, the balance at an instant, and the sequence and balance columns of every wallet entry insert.
+- `appendEntry` of the Prisma store locks the wallet row before it writes, as `conditionalDebit` and `reconcile` already did. Parallel writers to one wallet queue on that lock.
 
 ## [1.1.23] - 2026-11-24
 
