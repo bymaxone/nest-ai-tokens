@@ -2,7 +2,7 @@
 -- Wallet entry order and the link of a refund to its debit: COLUMNS ONLY.
 --
 -- A refund that restores the grants a debit burned (a refund to its source) names the debit it restores, and a statement of
--- the wallet shows the entries in the order they were committed with the balance each one left. "createdAt" cannot give that
+-- the wallet shows the entries the store sequenced in the order they were committed, with the balance each one left. "createdAt" cannot give that
 -- order: it is the database clock at the start of the transaction, so two entries of one wallet can carry the opposite order to
 -- the one they committed in. The order is a sequence the store assigns under the wallet row lock, in the statement that inserts
 -- the entry. This migration adds the columns; migration 0005 adds the indexes and the foreign key that go with them.

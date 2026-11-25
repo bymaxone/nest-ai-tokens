@@ -1,7 +1,7 @@
 /**
  * @fileoverview The two typed refusals the wallet statements raise: a reserved entry key that another entry holds, and a refund to its
  * source that the debit or the amount cannot take. Pure constructors with no query and no transaction, so unit specs judge them;
- * `./wallet-writes` holds only what PostgreSQL judges.
+ * the statements in `./wallet-writes` decide when to raise them and are judged against PostgreSQL.
  * @layer prisma
  */
 
