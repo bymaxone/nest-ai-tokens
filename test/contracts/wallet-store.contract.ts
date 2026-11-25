@@ -463,6 +463,54 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         return { c, debit, now: await c.now() }
       }
 
+      /** A debit written with several allocation rows on one grant is restored by that grant's total, so partial refunds sum to the debit and the last is accepted. */
+      describe('a debit whose allocations repeat a grant', () => {
+        const written = async (rows: readonly (readonly [string, bigint])[]): Promise<{ c: WalletContractStore; debit: WalletEntry }> => {
+          const c = await make()
+          const ids: Record<string, string> = {}
+          for (const key of ['g1', 'g2']) {
+            ids[key] = (await c.store.appendEntry(ref, grantEntry({ idempotencyKey: key, amountNanoUsd: 100n, expiresAt: new Date('2099-01-01T00:00:00.000Z') }))).id
+            await c.advance(5)
+          }
+          const total = rows.reduce((sum, [, amount]) => sum + amount, 0n)
+          const debit = await c.store.appendEntry(ref, debitEntry(total, { idempotencyKey: 'host-debit', usageRecordId: 'u-1' }), rows.map(([key, amount]) => ({ grantEntryId: ids[key] as string, amountNanoUsd: amount })))
+          return { c, debit }
+        }
+
+        it('restores two rows of 50 on one grant by refunds of 60 and 40', async () => {
+          const { c, debit } = await written([['g1', 50n], ['g1', 50n]])
+          const now = await c.now()
+          await c.store.refundToSource!(ref, { entry: refundOf(60n, { idempotencyKey: 'r1', usageRecordId: 'u-1' }), debitEntryId: debit.id, now })
+          expect(await remainingOf(c.store, now)).toEqual({ g1: 60n, g2: 100n })
+          const rest = await c.store.refundToSource!(ref, { entry: refundOf(40n, { idempotencyKey: 'r2', usageRecordId: 'u-1' }), debitEntryId: debit.id, now })
+          expect(rest.amountNanoUsd).toBe(40n)
+          expect(await remainingOf(c.store, now)).toEqual({ g1: 100n, g2: 100n })
+          expect(await c.store.balanceAt!(ref, now)).toBe(200n)
+        })
+
+        it('restores three rows of 30, 30 and 40 on one grant by refunds of 25, 25 and 50', async () => {
+          const { c, debit } = await written([['g1', 30n], ['g1', 30n], ['g1', 40n]])
+          const now = await c.now()
+          for (const [key, amount] of [['a', 25n], ['b', 25n], ['c', 50n]] as const) {
+            await c.store.refundToSource!(ref, { entry: refundOf(amount, { idempotencyKey: key, usageRecordId: 'u-1' }), debitEntryId: debit.id, now })
+          }
+          expect(await remainingOf(c.store, now)).toEqual({ g1: 100n, g2: 100n })
+          expect(await c.store.balanceAt!(ref, now)).toBe(200n)
+        })
+
+        it('restores rows of 70 and 30 on one grant and 50 on another, in proportion to what each grant burned', async () => {
+          const { c, debit } = await written([['g1', 70n], ['g1', 30n], ['g2', 50n]])
+          const now = await c.now()
+          await c.store.refundToSource!(ref, { entry: refundOf(90n, { idempotencyKey: 'r1', usageRecordId: 'u-1' }), debitEntryId: debit.id, now })
+          expect(await remainingOf(c.store, now)).toEqual({ g1: 60n, g2: 80n })
+          expect(await c.store.balanceAt!(ref, now)).toBe(140n)
+          await c.store.refundToSource!(ref, { entry: refundOf(60n, { idempotencyKey: 'r2', usageRecordId: 'u-1' }), debitEntryId: debit.id, now })
+          expect(await remainingOf(c.store, now)).toEqual({ g1: 100n, g2: 100n })
+          const breakdown = await c.store.balanceBreakdown!(ref, now)
+          expect(breakdown.nanoUsd).toBe(200n)
+        })
+      })
+
       /** The refund restores what the debit burned, in proportion to what each grant gave; no grant is created and nothing posted is touched. */
       it('puts the refund back on the grants the debit burned, in proportion, and creates no grant', async () => {
         const { c, debit, now } = await burned()

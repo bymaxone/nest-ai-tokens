@@ -290,7 +290,9 @@ export class InMemoryWalletStore implements IWalletStore {
    * (credited unallocated). Largest remainder over the sum of the weights; the refund never exceeds that sum, so no part exceeds its weight.
    */
   private splitRefund(wallet: Wallet, debit: WalletEntry, earlier: readonly WalletEntry[], left: bigint, amount: bigint): { grant: WalletEntry; part: bigint }[] {
-    const funded = (this.allocations.get(debit.id) ?? []).slice().sort((a, b) => compareEntryOrder(this.grantOf(wallet, a.grantEntryId), this.grantOf(wallet, b.grantEntryId)))
+    const byGrant = new Map<string, bigint>()
+    for (const allocation of this.allocations.get(debit.id) ?? []) byGrant.set(allocation.grantEntryId, (byGrant.get(allocation.grantEntryId) ?? 0n) + allocation.amountNanoUsd)
+    const funded = [...byGrant].map(([grantEntryId, amountNanoUsd]) => ({ grantEntryId, amountNanoUsd })).sort((a, b) => compareEntryOrder(this.grantOf(wallet, a.grantEntryId), this.grantOf(wallet, b.grantEntryId)))
     const restoredOn = (grantId: string): bigint =>
       earlier.reduce((sum, refund) => sum + (this.allocations.get(refund.id) ?? []).filter((a) => a.grantEntryId === grantId).reduce((inner, a) => inner - a.amountNanoUsd, 0n), 0n)
     const weights = funded.map((allocation) => allocation.amountNanoUsd - restoredOn(allocation.grantEntryId))

@@ -37,14 +37,15 @@ export interface FundedAllocation {
   expiresAt: Date | null
 }
 
-/** The grants a debit burned, each with what a refund already restored to it, in the order the debit was split. */
+/** The grants a debit burned, one row per grant with the total it burned and what refunds already restored to it, in the order the debit was split. */
 export async function fundedAllocations(tx: SqlExecutor, debitId: string): Promise<FundedAllocation[]> {
   return tx.query<FundedAllocation[]>(sql`
-        SELECT a."grantEntryId", a."amountNanoUsd", g."priority", g."expiresAt",
+        SELECT a."grantEntryId", SUM(a."amountNanoUsd")::bigint AS "amountNanoUsd", g."priority", g."expiresAt",
                COALESCE((SELECT -SUM(b."amountNanoUsd") FROM "ai_wallet_debit_allocations" b JOIN "ai_wallet_entries" r ON r."id" = b."debitEntryId"
                          WHERE b."grantEntryId" = a."grantEntryId" AND r."refundsEntryId" = ${debitId}), 0)::bigint AS "restored"
         FROM "ai_wallet_debit_allocations" a JOIN "ai_wallet_entries" g ON g."id" = a."grantEntryId"
         WHERE a."debitEntryId" = ${debitId}
+        GROUP BY a."grantEntryId", g."id", g."priority", g."expiresAt", g."seq", g."createdAt"
         ORDER BY g."seq" ASC NULLS FIRST, g."createdAt" ASC, g."id" ASC
       `)
 }
