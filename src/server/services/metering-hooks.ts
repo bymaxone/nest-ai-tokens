@@ -65,8 +65,8 @@ export async function announceSettleFailure(deps: { ledger: LedgerService; event
     // A context with no payer reaches here when `record()` refused it; an event nobody can be told about is not emitted.
     assertText('context.tenantId', caller.tenantId)
     assertScope('context.scope', caller.scope)
-    const correlationId = fieldOf(caller, 'correlationId') as string | undefined
-    await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(correlationId !== undefined ? { correlationId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
+    const correlationId = fieldOf(caller, 'correlationId')
+    await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(typeof correlationId === 'string' ? { correlationId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
   } catch (failure) {
     logger.warn(`${SETTLE_FAILED_LOG_KEY} the event for ${subject} was not delivered: ${describeError(failure)}`)
   }

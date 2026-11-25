@@ -247,6 +247,14 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect((built.events.settleFailed.mock.calls[0] as unknown[])[2]).toMatchObject({ correlationId: 'req-7' })
   })
 
+  /** The payload declares a string: a numeric id, which `record()` refuses, is left out of the event it caused. */
+  it('takes no correlation id that is not a string', async () => {
+    const built = await setup()
+    const context = { ...CONTEXT, correlationId: 7 } as unknown as MeteringContext
+    await run(built.interceptor, undefined, returning({ usage: normalized() }), fixture.metered, {}, context)
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { errorCode: 'AI_TOKENS_INVALID_CONFIG', where: 'interceptor' }]])
+  })
+
   it('takes no correlation id from Object.prototype', async () => {
     const built = await setup()
     Object.defineProperty(Object.prototype, 'correlationId', { value: 'planted', configurable: true, writable: true, enumerable: false })
