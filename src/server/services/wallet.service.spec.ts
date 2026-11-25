@@ -537,7 +537,7 @@ describe('WalletService.refund — restore to the source grants', () => {
     expect(refund.refundsEntryId).toBe(debit.id)
   })
 
-  /** The default is the unallocated refund of before: no link, no allocation. */
+  /** The default refund is unallocated: no link to a debit and no allocation. */
   it.each([undefined, 'unallocated' as const])('keeps the unallocated refund when restore is %s', async (restore) => {
     const { service, store } = await burned()
     const refund = await service.refund(REF, { amountNanoUsd: 90n, idempotencyKey: 'r1', reason: 'r', ...(restore === undefined ? {} : { restore }) })
@@ -574,7 +574,7 @@ describe('WalletService.refund — restore to the source grants', () => {
 describe('WalletService.getBalance and getBalanceBreakdown with an instant', () => {
   const start = new Date('2030-01-01T00:00:00.000Z')
 
-  /** No options: the materialized read of before, with no asOf on the answer and no call to the new store methods. */
+  /** No options: the balance is the materialized one, with no asOf on the answer and no call to `balanceAt` or `balanceBreakdown`. */
   it('answers a call without options from the materialized balance, with no asOf', async () => {
     const { service, store } = makeService({ now: () => start })
     await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g', reason: 'g' })

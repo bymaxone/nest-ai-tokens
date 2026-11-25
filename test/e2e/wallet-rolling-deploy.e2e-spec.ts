@@ -1,5 +1,5 @@
 /**
- * @fileoverview A 1.1.23 writer (no sequence, no running balance) after the new code has written to the same wallet, as in a rolling deploy:
+ * @fileoverview A writer that assigns no sequence and no running balance, next to a writer that does, on one wallet (two releases running together):
  * only the listing order of its rows differs; the stored balance, the running balance of later entries and the refund cap stay right.
  * @layer test
  */
@@ -12,7 +12,7 @@ let pg: PostgresFixture
 beforeAll(async () => { pg = await startPostgres() }, 180_000)
 afterAll(async () => { await pg.stop() })
 
-describe('rolling deploy: a 1.1.23 writer after a new writer', () => {
+describe('rolling deploy: a writer with no sequence next to a writer with one', () => {
   /** The old rows list first, the balance and the cap count them, and the next new entry's running balance includes them. */
   it('keeps the balance and the cap right and only moves the old rows in the listing', async () => {
     const ref: WalletRef = { tenantId: 'roll', ownerType: 'user', ownerId: 'u1' }

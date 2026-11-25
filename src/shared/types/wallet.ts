@@ -48,7 +48,7 @@ export interface WalletEntry {
   createdAt: Date
   /** Position in the wallet's own commit order, assigned under the wallet lock; absent on an entry written before the sequence existed. */
   seq?: bigint
-  /** The wallet balance right after this entry, written with it; absent when it was written before the column existed. */
+  /** The wallet balance right after this entry, written with it; absent when the writer recorded no running balance. */
   balanceAfterNanoUsd?: bigint
   /** On a refund that restored a debit's grants: the debit it refunds. */
   refundsEntryId?: string

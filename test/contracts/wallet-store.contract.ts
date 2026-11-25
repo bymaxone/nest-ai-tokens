@@ -561,7 +561,6 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         expect(debit.id).toBeDefined()
       })
 
-      /** A grant the sweep already expired is treated as expired whatever the caller's clock says: the part is written off, and a later debit still succeeds. */
       /** A part restored to a grant that expired by date and was not swept is taken out again, under its own key and not the sweep's. */
       it('takes a part restored to a grant expired by date out again, under the refund key', async () => {
         const c = await make()
@@ -579,8 +578,8 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         expect(await remainingOf(c.store, await c.now())).toEqual({ g2: 100n })
       })
 
-      /** Once the part has been taken out, the sweep finds nothing left on that grant and writes no second entry. */
-      it('leaves the sweep nothing to take from a grant a refund already emptied', async () => {
+      /** After a refund writes its part off an expired grant, the sweep takes only what the grant still holds: here the 40 the debit left unspent. */
+      it('lets the sweep take only the residual of a grant after a refund wrote its part off', async () => {
         const c = await make()
         const soon = new Date((await c.now()).getTime() + 200)
         await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g1', amountNanoUsd: 100n, expiresAt: soon }))
@@ -594,6 +593,25 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         expect((await c.store.getWallet(ref))!.balanceNanoUsd).toBe(balance - 40n)
       })
 
+      /** A refund that writes off a grant's whole remaining part leaves the sweep nothing: no second expiry entry, and the balance does not move. */
+      it('leaves the sweep nothing to take from a grant a refund emptied', async () => {
+        const c = await make()
+        const soon = new Date((await c.now()).getTime() + 200)
+        const grantId = (await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g1', amountNanoUsd: 100n, expiresAt: soon }))).id
+        const debit = (await c.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'host-debit', usageRecordId: 'u-1' }), 0n))!
+        await c.advance(400)
+        const refund = await c.store.refundToSource!(ref, { entry: refundOf(100n, { idempotencyKey: 'r1', usageRecordId: 'u-1' }), debitEntryId: debit.id, now: await c.now() })
+        const expiries = async (): Promise<string[]> => (await c.store.listEntries(ref)).entries.filter((entry) => entry.type === 'expiry').map((entry) => `${entry.idempotencyKey}:${entry.amountNanoUsd}`)
+        const writtenOff = [`expiry:refund:${refund.id}:${grantId}:-100`]
+        expect(await expiries()).toEqual(writtenOff)
+        const balance = (await c.store.getWallet(ref))!.balanceNanoUsd
+        await c.store.reconcile(ref)
+        expect(await expiries()).toEqual(writtenOff)
+        expect((await c.store.getWallet(ref))!.balanceNanoUsd).toBe(balance)
+        expect(balance).toBe(0n)
+      })
+
+      /** A grant the sweep already expired is treated as expired whatever the caller's clock says: the part is not written off a second time. */
       it('treats a grant with an expiry entry as expired even when the caller clock is behind', async () => {
         const c = await make()
         const soon = new Date((await c.now()).getTime() + 200)

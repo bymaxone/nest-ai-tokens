@@ -83,7 +83,7 @@ export async function sourceDebit(tx: SqlExecutor, walletId: string, entry: NewW
 
 /**
  * What the debit still has room to take back, and the refusal when `amount` is above it. The room is what the debit took, less the refunds already
- * linked to it, less the refunds and positive adjustments of the wallet that carry its usage id and no link (a refund written before this one existed).
+ * linked to it, less the refunds and positive adjustments of the wallet that carry its usage id and no link (a refund or adjustment written without a link).
  * @returns `available`: the room before the cap of unlinked credits, which is what the split weights sum to.
  */
 export async function restorableOf(tx: SqlExecutor, walletId: string, debit: WalletEntry, amount: bigint): Promise<{ available: bigint }> {
@@ -251,7 +251,7 @@ export async function sweepExpiredGrants(tx: SqlExecutor, walletId: string, now?
       reason: 'grant expired',
     }, running, now)
     // The wallet row is locked and a swept grant has no remainder, so a taken key here is an entry
-    // written outside the store (before the namespace was reserved). Skipping would keep the expired
+    // written outside the store under the reserved namespace. Skipping would keep the expired
     // credit spendable, so the debit is refused instead.
     if (expiry === undefined) throw reservedKeyHeld(walletId, expiryKey(grant.id), grant.id)
     await insertAllocations(tx, expiry.id, [{ grantEntryId: grant.id, amountNanoUsd: grant.remaining }])

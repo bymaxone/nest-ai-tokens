@@ -193,7 +193,7 @@ export class InMemoryWalletStore implements IWalletStore {
     return Promise.resolve(wallet)
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- async so a refusal surfaces as a rejected promise; the body stays synchronous (atomic).
+  // `async` so a refusal surfaces as a rejected promise; the body stays synchronous, so the whole refund is atomic.
   async refundToSource(ref: WalletRef, input: RefundToSourceInput): Promise<WalletEntry> {
     const { entry, debitEntryId, now } = input
     assertCallerKey(entry.idempotencyKey)

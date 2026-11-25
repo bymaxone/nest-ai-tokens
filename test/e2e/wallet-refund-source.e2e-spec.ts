@@ -124,7 +124,7 @@ describe('wallet commit order and refund to source on PostgreSQL', () => {
     expect((await pg.store.listEntries(ref, { order: 'desc', limit: 1 })).entries[0]?.seq).toBe(60001n)
   }, 120_000)
 
-  /** The cost of the lock the append now takes: the p95 of same-wallet appends with and without it, measured here and printed. */
+  /** The cost of the lock an append takes: the p95 of same-wallet appends with and without it, measured here and printed. */
   it('reports the p95 of same-wallet appends before and after the lock', async () => {
     const p95 = (samples: number[]): number => [...samples].sort((a, b) => a - b)[Math.floor(samples.length * 0.95)]!
     const run = async (label: string, write: (ref: WalletRef, index: number) => Promise<unknown>): Promise<number> => {

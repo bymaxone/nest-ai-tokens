@@ -7,7 +7,7 @@
 --                                             0004 (NULL) are outside it
 --   "ai_wallet_entries_order_idx"             serves the statement order, ascending and descending: (walletId, seq NULLS
 --                                             FIRST, createdAt, id), so a page of either direction reads the index
---   "ai_wallet_entries_refundsEntryId_idx"    a full index, because the foreign-key rule of this repo refuses a partial one: the lookup of the refunds a debit already has
+--   "ai_wallet_entries_refundsEntryId_idx"    a full index, because every foreign key of this schema needs a full leading index: the lookup of the refunds a debit already has
 --
 -- Locking: CREATE INDEX (without CONCURRENTLY, which cannot run in the implicit transaction of this file) blocks writes to
 -- the table for its duration, and does not block reads; ADD CONSTRAINT ... FOREIGN KEY validates the existing rows under a

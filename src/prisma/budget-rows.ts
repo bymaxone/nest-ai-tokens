@@ -1,8 +1,7 @@
 /**
  * @fileoverview The budget half of the adapter's row handling: the stored form of a budget window, the mappers from a budget row and a
- * window row to the canonical shapes, and the column list, values and conflict assignments of a budget upsert. Split from
- * `./adapter-sql` so that file stays within the length limit; the row shapes and the helpers it shares with the ledger and wallet
- * halves stay there.
+ * window row to the canonical shapes, and the column list, values and conflict assignments of a budget upsert. The row shapes and the
+ * helpers the budget half shares with the ledger and wallet halves live in `./adapter-sql`.
  * @layer prisma
  */
 
