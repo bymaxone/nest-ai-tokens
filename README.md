@@ -640,7 +640,7 @@ When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is 
 | `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                    |
 | `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry              |
 | `ai_tokens.hold.released`             | A hold is released without charging                       |
-| `ai_tokens.settle.failed`             | A served call was not settled by the interceptor / meter  |
+| `ai_tokens.settle.failed`             | `meter()` or a guard's hold left a served call unsettled  |
 | `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                               |
 | `ai_tokens.budget.exceeded`           | A hard budget is exhausted                                |
 | `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                         |
@@ -654,8 +654,8 @@ All event payloads use `bigint` nano-USD internally and `string` decimal at JSON
 
 When a served call cannot be settled, `MeteringInterceptor` keeps the guard's hold until `holds.ttlSeconds`: its reservation goes
 on counting against the wallet and budget, and a retry with the same idempotency key gets the same hold. `meter()` releases its hold
-at once, so that a failed capture strands no headroom for that long. Both emit `ai_tokens.settle.failed`, whose `where` names the
-caller, for you to reconcile from your provider's log.
+at once, so that a failed capture strands no headroom for that long. `meter()`, and the interceptor when it has a guard's hold,
+emit `ai_tokens.settle.failed`, whose `where` names the caller, for you to reconcile from your provider's log.
 
 ---
 
