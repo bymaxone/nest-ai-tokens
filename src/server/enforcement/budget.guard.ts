@@ -55,7 +55,7 @@ export class BudgetGuard implements CanActivate {
    * @param metering The metering facade (hold placement in `@RequireBudget.estimate` mode).
    * @param reflector The NestJS reflector (decorator metadata).
    * @param options The resolved options carrying the required `scopeResolver`.
-   * @param pricing The pricing service the settle preflight asks; a guard built by hand without it skips the preflight.
+   * @param pricing The pricing service the settle preflight asks; a guard constructed with `new` and no pricing service skips the preflight, and a Nest provider of your own for the guard must inject `PricingService` (it is not optional there).
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `scopeResolver` is absent (fail-fast at init).
    */
   constructor(

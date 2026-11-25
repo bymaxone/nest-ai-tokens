@@ -15,16 +15,21 @@ import type { PricingService } from '../services'
  * call, with the served usage released unbilled. The settle prices the row the hold writes, so this asks the pricing service the question
  * `capture()` will ask, of the same identity: the preset's provider (else `unspecified`), `context.baseModel` as the model (else the
  * placeholder `unspecified`, which no rate table lists), chat, the context's tier, and `baseModel` as the requested model. A listed
- * `baseModel` therefore passes and an unlisted one is refused, as is none. A rated estimate (it names its own provider and model, and the
+ * `baseModel` therefore passes for that provider and an unlisted one is refused, as is none. With no preset the provider is `unspecified`, so no
+ * `baseModel` is listed for it and the guard refuses. A rated estimate (it names its own provider and model, and the
  * hold already prices it), a provider-reported mode and non-strict pricing (an unpriced call is recorded at 0 USD by design) pass. The
  * guard asks this; a direct `hold()` does not.
  *
  * The mode is the one `capture()` rates with: the preset's, else the module's. A rating mode a scope resolver puts on its context is read
  * by `record()` only, so it plays no part in the settle of a hold.
  *
+ * Known limit: the guard reads `context.preset`, which `@Meter`'s preset overrides, while the interceptor settles with the preset `@Meter`
+ * names. When the scope resolver supplies the preset and `@Meter` names none, the guard sees that preset and passes, and the settle rates
+ * with the module's mode and may fail with `AI_TOKENS_PRICE_NOT_FOUND`. Name the preset on `@Meter` to keep the two the same.
+ *
  * @param estimate The `@RequireBudget` estimate.
  * @param context The context the hold will be placed with (feature and preset merged in).
- * @param pricing The pricing service; a guard built by hand without it has no strict pricing to protect.
+ * @param pricing The pricing service; a guard constructed with `new` and no pricing service has no price list to ask and skips the preflight.
  * @param options The resolved module options, which carry the rating mode and whether pricing is strict.
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when the settle of the estimate has no price.
  */
@@ -49,7 +54,7 @@ export async function assertSettlePriceable(
     if (!(error instanceof AiTokensException) || (error.getResponse() as { error: { code: string } }).error.code !== 'AI_TOKENS_PRICE_NOT_FOUND') throw error
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
       reason:
-        'the settle of a { tokens } or { amountNanoUsd } estimate prices the model context.baseModel, and the price list has none for it; set baseModel to a listed model, or give the estimate its provider and model',
+        'the settle of a { tokens } or { amountNanoUsd } estimate prices the model context.baseModel for the provider of the preset, and the price list has none for it; set baseModel to a model listed for that provider, or give the estimate its provider and model',
     })
   }
 }
