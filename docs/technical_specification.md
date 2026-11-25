@@ -945,7 +945,7 @@ export interface UsageRecord {
 
 **Balance/spend math always sums records with `status IN ('posted', 'reversed')`** — compensating records are themselves `posted` with negated amounts, so sums stay correct without special-casing.
 
-**The hold reaper** (a periodic sweep inside the module, `holds.reaperIntervalSeconds`) finds `pending` records older than `holds.ttlSeconds` and performs the same restoration as `release()`. It reads 100 at a time, up to 100 batches a sweep, and stops early at a batch of which it could move no hold; a hold is therefore released at the first sweep after its TTL, up to one interval later, or later under a larger backlog. It is a v0.1 deliverable (Phase 4): a hold moves real wallet/budget headroom, so a crash between `hold()` and `capture()` must not strand it. Multi-replica safety: the sweep uses the store's atomic transition (only one replica wins each expired hold).
+**The hold reaper** (a periodic sweep inside the module, `holds.reaperIntervalSeconds`) finds `pending` records older than `holds.ttlSeconds` and performs the same restoration as `release()`. It reads them in bounded batches, and stops early at a batch of which it could move no hold. It is a v0.1 deliverable (Phase 4): a hold moves real wallet/budget headroom, so a crash between `hold()` and `capture()` must not strand it. Multi-replica safety: the sweep uses the store's atomic transition (only one replica wins each expired hold).
 
 ### 8.4 Exactly-once via idempotency keys
 
