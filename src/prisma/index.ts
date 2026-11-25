@@ -105,7 +105,8 @@ import {
 import { BUDGET_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, mapBudgetRow, mapBudgetWindowRow } from './budget-rows'
 import { balanceAtSql, balanceBreakdownSql, type BreakdownRow } from './balance-statements'
 import { splitByWeights } from './refund-split'
-import { activateDueGrants, applyBalanceDelta, burnDown, ensureWallet, expireRestoredParts, fundedAllocations, getWalletWithin, insertAllocations, insertWalletEntry, lockWallet, lockedBalance, restorableOf, sourceDebit, sourceRefusal, sweepExpiredGrants } from './wallet-writes'
+import { activateDueGrants, applyBalanceDelta, burnDown, ensureWallet, expireRestoredParts, fundedAllocations, getWalletWithin, insertAllocations, insertWalletEntry, lockWallet, lockedBalance, restorableOf, sourceDebit, sweepExpiredGrants } from './wallet-writes'
+import { sourceRefusal } from './wallet-refusals'
 import { mapWalletDebitRow, openGrantsSql, walletDebitsSql, type WalletDebitRow } from './wallet-statements'
 import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, WalletEntryRow, WalletRow } from './adapter-sql'
 

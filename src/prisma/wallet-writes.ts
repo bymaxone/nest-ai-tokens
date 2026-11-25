@@ -8,13 +8,9 @@
 
 import { randomUUID } from 'node:crypto'
 import type { NewWalletEntry, WalletEntry, WalletRef } from '../shared'
-// By package specifier, as the store does: see the note on its own import.
-import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { SqlExecutor } from './raw-client'
 import { sql, type Sql } from './sql'
-import { attachCause } from '../server/errors/attach-cause'
-import { setErrorMessage } from '../server/errors/set-error-message'
-import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON, EXPIRY_KEY_PREFIX, RESERVED_KEY_HELD_MESSAGE, RESERVED_KEY_HELD_REASON, activationKey, expiryKey } from '../server/utils/wallet-keys'
+import { ACTIVATION_KEY_PREFIX, ACTIVATION_REASON, EXPIRY_KEY_PREFIX, activationKey, expiryKey } from '../server/utils/wallet-keys'
 import {
   ACTIVATED_SQL,
   CREDITED_SQL,
@@ -30,18 +26,7 @@ import {
   type WalletRow,
 } from './adapter-sql'
 import { openGrantsSql } from './wallet-statements'
-
-/**
- * The refusal for a reserved key that another entry holds. The body names the code and a fixed reason; the wallet,
- * key and grant ride on the cause, for the server-side log, because the body is what a client receives.
- */
-export function reservedKeyHeld(walletId: string, key: string, grantId: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and cause text are internal diagnostics; tests check the code and the identifiers
-  return attachCause(
-    setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_HELD_REASON }), RESERVED_KEY_HELD_MESSAGE),
-    new Error(`wallet ${walletId}: the reserved key ${key} of grant ${grantId} is held by an entry the store did not write`),
-  )
-}
+import { reservedKeyHeld, sourceRefusal } from './wallet-refusals'
 
 /** A grant a debit burned, with the amount it burned and the amount refunds already restored to it. */
 export interface FundedAllocation {
@@ -50,11 +35,6 @@ export interface FundedAllocation {
   restored: bigint
   priority: number
   expiresAt: Date | null
-}
-
-/** The refusal of a refund to its source that the debit, or the amount, cannot take: a typed configuration error, never a driver error. */
-export function sourceRefusal(reason: string): AiTokensException {
-  return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
 /** The grants a debit burned, each with what a refund already restored to it, in the order the debit was split. */
