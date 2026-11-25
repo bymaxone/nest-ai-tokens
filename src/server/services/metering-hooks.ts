@@ -32,28 +32,36 @@ export const NOOP_EVENT_HOOKS: MeteringEventHooks = {
   audit: (): Promise<void> => Promise.resolve(),
 }
 
+/** Where a settle failed, and the hold it was for when there was one. */
+export interface SettleSite {
+  where: SettleFailedEventData['where']
+  holdId?: string
+}
+
 /**
- * Log and emit a failed settle with the hold id and the error's code, never its message. Nothing is announced when the hold's row
- * is posted, since there is then no usage to reconcile; a row that cannot be read is announced. Never throws, so the caller's
- * error is the one that reaches the client.
+ * Log and emit a failed settle with the error's code, never its message. Nothing is announced when the hold's row is posted, since
+ * there is then no usage to reconcile; a row that cannot be read is announced. Never throws, so the caller's error is the one that
+ * reaches the client.
  *
  * @param deps The ledger to read the row from and the hooks to emit through.
  * @param logger The caller's logger.
- * @param holdId The hold that was not settled.
- * @param caller The tenant and payer scope from the host's verified auth context.
+ * @param site Where the settle failed.
+ * @param caller The tenant and payer scope from the host's verified auth context; read only inside the guarded block.
  * @param error What the settle threw.
  */
-export async function announceSettleFailure(deps: { ledger: LedgerService; events: MeteringEventHooks }, logger: Logger, holdId: string, caller: HoldCaller, error: unknown): Promise<void> {
+export async function announceSettleFailure(deps: { ledger: LedgerService; events: MeteringEventHooks }, logger: Logger, site: SettleSite, caller: HoldCaller, error: unknown): Promise<void> {
+  const { holdId, where } = site
+  const subject = holdId === undefined ? 'a metered call' : `hold ${holdId}`
   try {
-    if ((await deps.ledger.findById(holdId))?.status === 'posted') return
+    if (holdId !== undefined && (await deps.ledger.findById(holdId))?.status === 'posted') return
   } catch {
     // The row's state is unknown, so the failure is announced.
   }
-  logger.warn(`${SETTLE_FAILED_LOG_KEY} hold ${holdId} was not settled: ${describeError(error)}`)
+  logger.warn(`${SETTLE_FAILED_LOG_KEY} ${subject} was not settled: ${describeError(error)}`)
   const errorCode = errorCodeOf(error)
   try {
-    await deps.events.settleFailed(caller.tenantId, caller.scope, { holdId, ...(errorCode !== undefined ? { errorCode } : {}) })
+    await deps.events.settleFailed(caller.tenantId, caller.scope, { ...(holdId !== undefined ? { holdId } : {}), ...(errorCode !== undefined ? { errorCode } : {}), where })
   } catch (failure) {
-    logger.warn(`${SETTLE_FAILED_LOG_KEY} the event for hold ${holdId} was not delivered: ${describeError(failure)}`)
+    logger.warn(`${SETTLE_FAILED_LOG_KEY} the event for ${subject} was not delivered: ${describeError(failure)}`)
   }
 }

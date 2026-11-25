@@ -1,3 +1,9 @@
+/**
+ * @fileoverview The interceptor when the handler returned and its hold could not be settled: the hold stays pending for the reaper
+ * and the failure is announced.
+ * @layer server/enforcement
+ */
+
 import { Logger } from '@nestjs/common'
 import type { CallHandler, ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
@@ -128,7 +134,7 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect(await built.statusOf(hold)).toBe('pending')
     expect(await built.balance()).toBe(reserved)
     expect(built.events.holdReleased).not.toHaveBeenCalled()
-    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, errorCode: 'AI_TOKENS_USAGE_MALFORMED' }]])
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, errorCode: 'AI_TOKENS_USAGE_MALFORMED', where: 'interceptor' }]])
   })
 
   /** A store failure is treated the same, propagates as the same instance, and no message text reaches the event or the log. */
@@ -140,7 +146,7 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     expect(await run(built.interceptor, hold, returning({ usage: normalized() }))).toBe(failure)
     expect(await built.statusOf(hold)).toBe('pending')
     expect(built.events.holdReleased).not.toHaveBeenCalled()
-    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, errorCode: 'ECONNRESET' }]])
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, errorCode: 'ECONNRESET', where: 'interceptor' }]])
     expect(JSON.stringify(jest.mocked(Logger.prototype.warn).mock.calls)).not.toContain(SECRET)
   })
 
@@ -150,7 +156,7 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     const hold = await built.metering.hold(CONTEXT, ESTIMATE)
     jest.spyOn(built.ledger, 'transition').mockRejectedValueOnce(Object.assign(new Error('x'), { code: SECRET }))
     await run(built.interceptor, hold, returning({ usage: normalized() }))
-    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id }]])
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, where: 'interceptor' }]])
   })
 
   /** When the row cannot be read back either, the failure is still announced. */
@@ -205,7 +211,7 @@ describe('MeteringInterceptor when settling fails after the handler returned', (
     const hold = await built.metering.hold(CONTEXT, ESTIMATE)
     jest.spyOn(built.ledger, 'transition').mockRejectedValueOnce(thrown)
     expect(await run(built.interceptor, hold, returning({ usage: normalized() }))).toBe(thrown)
-    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id }]])
+    expect(built.events.settleFailed.mock.calls).toEqual([['tenant-1', CONTEXT.scope, { holdId: hold.id, where: 'interceptor' }]])
   })
 
   /** A service wired without event hooks takes the same path and rejects nothing. */

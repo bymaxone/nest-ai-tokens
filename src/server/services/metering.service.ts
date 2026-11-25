@@ -210,17 +210,17 @@ export class MeteringService {
    * another instance, in this process or another, is not serialized with it.
    * @internal
    */
-  private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
+  private async recordSettled(input: RecordInput, onAppended?: () => void): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
-    if (key === undefined) return this.recordOnce(input, undefined)
-    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key))
+    if (key === undefined) return this.recordOnce(input, undefined, onAppended)
+    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key, onAppended))
   }
 
   /**
    * The body of {@link record}, for one call.
    * @internal
    */
-  private async recordOnce(input: RecordInput, key: string | undefined): Promise<RecordOutcome> {
+  private async recordOnce(input: RecordInput, key: string | undefined, onAppended?: () => void): Promise<RecordOutcome> {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
@@ -256,8 +256,9 @@ export class MeteringService {
     try {
       record = await this.ledger.append(withHashedModel(appendInput, parsed.model), callKey)
     } catch (error) {
-      return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis })
+      return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis, onAppended })
     }
+    onAppended?.()
     if (enforcement !== null) await this.effects.commitBudget(enforcement)
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
@@ -273,7 +274,7 @@ export class MeteringService {
    */
   private async afterFailedAppend(
     error: unknown,
-    call: { key: string | undefined; callKey: string; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis },
+    call: { key: string | undefined; callKey: string; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis; onAppended: (() => void) | undefined },
   ): Promise<RecordOutcome> {
     const { key, callKey, appendInput, enforcement, basis } = call
     const conflict = isIdempotencyConflict(error)
@@ -282,6 +283,7 @@ export class MeteringService {
     // A row after an error other than the key conflict is this attempt's own, written before the error reached it, when
     // it is the same payer's and carries this attempt's instant: its charge stays, and a retry with the key replays the row.
     const committed = row !== null && !conflict && sameScope(row.scope, appendInput.scope) && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
+    if (committed) call.onAppended?.()
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
@@ -470,14 +472,9 @@ export class MeteringService {
     return settled
   }
 
-  /**
-   * Say that settling a hold failed after the work it covers was served. The hold is not touched: it stays pending until the reaper
-   * releases it. Never throws.
-   *
-   * @internal Called by `MeteringInterceptor`.
-   */
-  reportSettleFailure(hold: Hold, caller: HoldCaller, error: unknown): Promise<void> {
-    return announceSettleFailure({ ledger: this.ledger, events: this.events }, this.logger, hold.id, caller, error)
+  /** Announce usage that was served and not settled; never throws. @internal Called by `meter()` and `MeteringInterceptor`. */
+  reportSettleFailure(hold: Hold | undefined, caller: HoldCaller, error: unknown, where: 'interceptor' | 'meter' = 'interceptor'): Promise<void> {
+    return announceSettleFailure({ ledger: this.ledger, events: this.events }, this.logger, { where, ...(hold !== undefined ? { holdId: hold.id } : {}) }, caller, error)
   }
 
   /**
@@ -520,10 +517,16 @@ export class MeteringService {
     const startedAt = this.now().getTime()
     if (estimate === undefined) {
       const result = await settled(fn(), true)
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-      const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
-      if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
-      return { result, usage }
+      const row = { appended: false }
+      try {
+        // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
+        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } }, () => (row.appended = true))
+        if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
+        return { result, usage }
+      } catch (error) {
+        if (!row.appended) await this.reportSettleFailure(undefined, context, error, 'meter')
+        throw error
+      }
     }
     const hold = await this.hold(context, estimate)
     let result: T
@@ -538,10 +541,10 @@ export class MeteringService {
       this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     } catch (error) {
-      // Release the reservation so a capture failure (malformed usage, transient store
-      // error) does not strand wallet/budget headroom for the full TTL; a release on an
-      // already-posted hold is a safe no-op. Never mask the original error.
+      // Release so a failed capture strands no wallet or budget headroom for the TTL (a posted
+      // hold is left as it is), then announce the usage. Neither masks the original error.
       await this.release(hold, context, 'capture failed').catch(() => undefined)
+      await this.reportSettleFailure(hold, context, error, 'meter')
       throw error
     }
   }

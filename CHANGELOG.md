@@ -12,9 +12,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ### Added
 
-- `ai_tokens.settle.failed` (`{ holdId, errorCode? }`, with the tenant and scope on the envelope) and the `SettleFailedEventData`
-  type. `MeteringInterceptor` emits it when the handler returned and its hold was not settled, so the host can reconcile the usage
-  from its own provider log. The error's message is never carried.
+- `ai_tokens.settle.failed` (`{ holdId?, errorCode?, where }`, with the tenant and scope on the envelope) and the
+  `SettleFailedEventData` type. It says that a served call was not settled, so the host can reconcile the usage from its own
+  provider log; the error's message is never carried. `where` is `interceptor` or `meter`; `meter()` run without an estimate has no
+  `holdId`.
 
 ### Fixed
 
@@ -22,6 +23,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
   now stays pending and the hold reaper releases it after `holds.ttlSeconds`. **Apply:** until then its wallet and budget
   reservation stays in place, and a retry with the same idempotency key gets the same hold. A consumer of the
   `ai_tokens.hold.released` event no longer receives one at the time of the failure.
+- `MeteringService.meter()` said nothing when the function had served and its usage could not be settled. It now emits
+  `ai_tokens.settle.failed`, after releasing the hold when there is one; the release and the thrown error are unchanged.
 
 ## [1.1.24] - 2026-11-25
 

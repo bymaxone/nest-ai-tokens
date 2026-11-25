@@ -72,11 +72,13 @@ export interface HoldReleasedEventData {
   expired: boolean
 }
 
-/** `ai_tokens.settle.failed` payload: a hold whose served usage was not settled. */
+/** Payload of `ai_tokens.settle.failed`: served usage that the ledger does not hold as posted. */
 export interface SettleFailedEventData {
-  holdId: string
-  /** The failure's code, when it has one. Never its message. */
+  /** The hold that was not settled; absent when `meter()` ran without an estimate. */
+  holdId?: string
   errorCode?: string
+  /** The caller that could not settle. */
+  where: 'interceptor' | 'meter'
 }
 
 /** `ai_tokens.budget.threshold_crossed` payload. */

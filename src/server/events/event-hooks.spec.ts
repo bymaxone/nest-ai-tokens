@@ -55,8 +55,8 @@ describe('createMeteringEventHooks', () => {
     const emit = jest.fn(() => Promise.resolve())
     const hooks = createMeteringEventHooks({ emit } as unknown as EventDispatcher)
     const scope = { type: 'user' as const, id: 'u1' }
-    await hooks.settleFailed('tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET' })
-    expect(emit).toHaveBeenCalledWith('ai_tokens.settle.failed', 'tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET' })
+    await hooks.settleFailed('tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET', where: 'interceptor' })
+    expect(emit).toHaveBeenCalledWith('ai_tokens.settle.failed', 'tenant-1', scope, { holdId: 'h1', errorCode: 'ECONNRESET', where: 'interceptor' })
   })
 
   /** usageRecorded maps the record to the documented usage.recorded payload. */
