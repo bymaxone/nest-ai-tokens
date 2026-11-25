@@ -1,7 +1,7 @@
 /**
  * @fileoverview The two typed refusals the wallet statements raise: a reserved entry key that another entry holds, and a refund to its
  * source that the debit or the amount cannot take. Pure constructors with no query and no transaction, so unit specs judge them;
- * the statements in `./wallet-writes` decide when to raise them and are judged against PostgreSQL.
+ * the callers that decide when to raise them are judged against PostgreSQL.
  * @layer prisma
  */
 
@@ -16,7 +16,6 @@ import { RESERVED_KEY_HELD_MESSAGE, RESERVED_KEY_HELD_REASON } from '../server/u
  * key and grant ride on the cause, for the server-side log, because the body is what a client receives.
  */
 export function reservedKeyHeld(walletId: string, key: string, grantId: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and cause text are internal diagnostics; tests check the code and the identifiers
   return attachCause(
     setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_HELD_REASON }), RESERVED_KEY_HELD_MESSAGE),
     new Error(`wallet ${walletId}: the reserved key ${key} of grant ${grantId} is held by an entry the store did not write`),
