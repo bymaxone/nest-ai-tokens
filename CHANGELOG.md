@@ -14,12 +14,12 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 - `ai_tokens.settle.failed` (`{ holdId?, correlationId?, errorCode?, where }`, with the tenant and scope on the envelope) and the
   `SettleFailedEventData` type. It says that a served call was not settled, so the host can reconcile the usage from its own
-  provider log; the error's message is never carried. `where` is `interceptor` or `meter`. A call with no hold has no `holdId`, and
+  provider log; the error's message is never carried. A call with no hold has no `holdId`, and
   `correlationId` is the one of the call's metering context, so set it if you need to match such a call.
 
 ### Fixed
 
-- `MeteringInterceptor` released the guard's hold as `handler threw` when the handler had succeeded and settling failed. The hold
+- `MeteringInterceptor` released the guard's hold as `handler threw` when the handler had succeeded and settling failed. A pending hold
   now stays pending and the hold reaper releases it after `holds.ttlSeconds`. **Apply:** until then its wallet and budget
   reservation stays in place, and a retry with the same idempotency key gets the same hold. A consumer of the
   `ai_tokens.hold.released` event no longer receives one at the time of the failure.
