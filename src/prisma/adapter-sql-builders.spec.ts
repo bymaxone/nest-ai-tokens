@@ -10,7 +10,7 @@
 import type { Sql } from './sql'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import type { Budget, LedgerFilter, NewPriceVersion } from '../shared'
-import { ACTIVATED_SQL, CREDITED_SQL, DB_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, usageValues, walletEntryWhere } from './adapter-sql'
+import { ACTIVATED_SQL, CREDITED_SQL, DB_NOW_SQL, DB_STORED_NOW_SQL, clockSql, pendingGrantsSql, DUE_AT_APPEND_SQL, GRANT_REMAINING_JOINED_SQL, GRANT_REMAINING_JOIN_SQL, GRANT_REMAINING_SQL, PRICE_COLUMNS, PRICE_COLUMNS_SQL, SIGNED_BALANCE_SQL, USAGE_COLUMNS, USAGE_COLUMNS_SQL, buildWhere, mapUsageRow, priceValues, spendableBalanceSql, entryDeltaSql, walletEntryOrderSql, statusAssignments, usageValues, walletEntryWhere } from './adapter-sql'
 import { BUDGET_COLUMNS, BUDGET_COLUMNS_SQL, budgetUpdateAssignments, budgetValues, tokenLimitSql } from './budget-rows'
 import { T0, T1, bareUsageRow, newRecord, rendered, usageRow } from '../../test/fakes/prisma-rows'
 
@@ -462,6 +462,8 @@ describe('entryDeltaSql and walletEntryOrderSql', () => {
     const grant = entryDeltaSql({ ...entry, expiresAt: T1 })
     expect(grant.text).toContain('CASE WHEN')
     expect(grant.text).toContain(DB_NOW_SQL.text)
+    expect(DB_STORED_NOW_SQL.text).toBe(`(${DB_NOW_SQL.text}::timestamp(3))`)
+    expect(grant.text.split(DB_STORED_NOW_SQL.text)).toHaveLength(3)
     expect(grant.values).toEqual(expect.arrayContaining([7n]))
     const open = entryDeltaSql(entry)
     expect(open.values).toContain(null)

@@ -604,6 +604,8 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         const expiries = async (): Promise<string[]> => (await c.store.listEntries(ref)).entries.filter((entry) => entry.type === 'expiry').map((entry) => `${entry.idempotencyKey}:${entry.amountNanoUsd}`)
         const writtenOff = [`expiry:refund:${refund.id}:${grantId}:-100`]
         expect(await expiries()).toEqual(writtenOff)
+        const written = (await c.store.listEntries(ref)).entries
+        expect(written.filter((entry) => entry.id === refund.id || entry.type === 'expiry').map((entry) => entry.balanceAfterNanoUsd)).toEqual([100n, 0n])
         const balance = (await c.store.getWallet(ref))!.balanceNanoUsd
         await c.store.reconcile(ref)
         expect(await expiries()).toEqual(writtenOff)
@@ -659,6 +661,19 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         expect((await store.listEntries(ref)).entries.map((entry) => entry.id)).toEqual(asc)
       })
 
+      /** A sweep's expiry entry carries the balance the sweep leaves, and the wallet ends on it. */
+      it('writes the balance the sweep leaves on its expiry entry', async () => {
+        const c = await make()
+        const soon = new Date((await c.now()).getTime() + 200)
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'brief', amountNanoUsd: 100n, expiresAt: soon }))
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'lasting', amountNanoUsd: 50n }))
+        await c.advance(400)
+        await c.store.reconcile(ref)
+        const entries = (await c.store.listEntries(ref)).entries
+        expect(entries.map((entry) => [entry.type, entry.balanceAfterNanoUsd])).toEqual([['grant', 100n], ['grant', 150n], ['expiry', 50n]])
+        expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(50n)
+      })
+
       /** Activating several due grants: each activation entry carries the running balance, and the last equals the wallet. */
       it('writes the running balance on each activation of one debit', async () => {
         const c = await make()
@@ -695,6 +710,45 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
         expect(after.nanoUsd).toBe(-30n)
         expect(after.buckets).toEqual([])
         expect(after.unallocatedNanoUsd).toBe(-30n)
+      })
+
+      /** A due grant no debit has activated counts, an expired one no sweep has taken does not, and a future instant sees what falls due by then. */
+      it('counts a due grant not yet activated, drops an expired one not yet swept, and looks ahead', async () => {
+        const c = await make()
+        const start = await c.now()
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'brief', amountNanoUsd: 30n, expiresAt: new Date(start.getTime() + 150) }))
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'due', amountNanoUsd: 100n, effectiveAt: new Date(start.getTime() + 150) }))
+        await c.advance(400)
+        const now = await c.now()
+        expect((await c.store.getWallet(ref))?.balanceNanoUsd).toBe(30n)
+        expect(await c.store.balanceAt!(ref, now)).toBe(100n)
+        const breakdown = await c.store.balanceBreakdown!(ref, now)
+        expect(breakdown.nanoUsd).toBe(100n)
+        expect(breakdown.buckets.map((bucket) => bucket.remainingNanoUsd)).toEqual([100n])
+        expect(breakdown.unallocatedNanoUsd).toBe(0n)
+        const hour = 3_600_000
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'later', amountNanoUsd: 40n, effectiveAt: new Date(now.getTime() + hour) }))
+        expect(await c.store.balanceAt!(ref, now)).toBe(100n)
+        expect(await c.store.balanceAt!(ref, new Date(now.getTime() + 2 * hour))).toBe(140n)
+      })
+
+      /** The grants come in burn order, each with its priority, reason and expiry, and a grant with neither reason nor expiry carries neither. */
+      it('lists the grants in burn order with their priority, reason and expiry', async () => {
+        const c = await make()
+        const start = await c.now()
+        const hour = 3_600_000
+        const at = (hours: number): Date => new Date(start.getTime() + hours * hour)
+        const bare = grantEntry({ idempotencyKey: 'bare', amountNanoUsd: 5n, priority: 4 })
+        delete bare.reason
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'late', amountNanoUsd: 10n, priority: 7, reason: 'late', expiresAt: at(2) }))
+        await c.store.appendEntry(ref, bare)
+        await c.store.appendEntry(ref, grantEntry({ idempotencyKey: 'soon', amountNanoUsd: 20n, priority: 1, reason: 'soon', expiresAt: at(1) }))
+        const breakdown = await c.store.balanceBreakdown!(ref, await c.now())
+        expect(breakdown.buckets.map(({ remainingNanoUsd, priority, reason, expiresAt }) => ({ remainingNanoUsd, priority, reason, expiresAt }))).toEqual([
+          { remainingNanoUsd: 20n, priority: 1, reason: 'soon', expiresAt: at(1) },
+          { remainingNanoUsd: 10n, priority: 7, reason: 'late', expiresAt: at(2) },
+          { remainingNanoUsd: 5n, priority: 4, reason: undefined, expiresAt: undefined },
+        ])
       })
     })
   })

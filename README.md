@@ -466,6 +466,8 @@ that the debit burned, in proportion to what each still has room for, and links 
 (`refundsEntryId`). Pass `debitEntryId` to name the debit, or `usageRecordId` to find it (the wallet must have exactly one debit with that id, or the refund is refused); a `debitEntryId` without
 `restore: 'source'` is refused with `AI_TOKENS_INVALID_CONFIG`, since it contradicts the call.
 
+A product sold in whole credits picks the rate (`creditRateNanoUsd`) and never grants or debits a fraction of a credit: every amount is in nano-USD, and credits are only how a balance is shown.
+
 ```typescript
 const ref = { tenantId, ownerType: 'user', ownerId: userId } as const
 

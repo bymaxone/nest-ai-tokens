@@ -72,10 +72,10 @@ export interface WalletBalanceBreakdownResult {
   buckets: WalletBalanceBucket[]
 }
 
-/** How far behind now an `asOf` may be and still be evaluated at now: the time between reading a clock and calling. */
 /** The modes a refund may restore in. */
 const RESTORE_MODES = ['source', 'unallocated'] as const
 
+/** How far behind now an `asOf` may be and still be evaluated at now: the time between reading a clock and calling. */
 const AS_OF_TOLERANCE_MS = 5000
 
 /** Input to {@link WalletService.grant}. */
@@ -334,8 +334,8 @@ export class WalletService {
   }
 
   /**
-   * Refund a previous debit (a plain `refund` credit entry). Never resurrects an
-   * expired grant — the credit is unallocated balance (§9.3). Refunds are always
+   * Refund a previous debit. With no `restore`, or `restore: 'unallocated'`, a plain `refund` credit entry that no grant owns: it never resurrects an
+   * expired grant, the credit is unallocated balance (§9.3). With `restore: 'source'`, the amount goes back on the grants the debit burned. Refunds are always
    * allowed (they can restore a negative balance).
    *
    * @param ref The wallet owner.
@@ -476,6 +476,7 @@ export class WalletService {
     if (clean !== undefined) {
       assertOptionalCount('limit', clean.limit)
       assertOptionalCount('offset', clean.offset)
+      if (clean.order !== undefined && clean.order !== 'asc' && clean.order !== 'desc') throw this.invalid("order must be 'asc' or 'desc'")
     }
     return this.store.listEntries(ref, clean)
   }

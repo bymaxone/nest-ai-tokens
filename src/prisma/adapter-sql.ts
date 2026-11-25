@@ -608,7 +608,7 @@ export function walletBalanceDelta(entry: WalletEntry): bigint {
  */
 export function entryDeltaSql(entry: NewWalletEntry): Sql {
   if (entry.type !== 'grant') return sql`${entry.amountNanoUsd}::bigint`
-  return sql`(CASE WHEN ${entry.effectiveAt}::timestamp <= ${DB_NOW_SQL} AND (${entry.expiresAt ?? null}::timestamp IS NULL OR ${entry.expiresAt ?? null}::timestamp > ${DB_NOW_SQL}) THEN ${entry.amountNanoUsd}::bigint ELSE 0::bigint END)`
+  return sql`(CASE WHEN ${entry.effectiveAt}::timestamp <= ${DB_STORED_NOW_SQL} AND (${entry.expiresAt ?? null}::timestamp IS NULL OR ${entry.expiresAt ?? null}::timestamp > ${DB_STORED_NOW_SQL}) THEN ${entry.amountNanoUsd}::bigint ELSE 0::bigint END)`
 }
 
 /**
@@ -659,6 +659,12 @@ export function walletEntryWhere(walletId: string, filter: WalletEntryFilter): S
  * with an application instant.
  */
 export const DB_NOW_SQL = sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`
+
+/**
+ * {@link DB_NOW_SQL} rounded to the millisecond, as the `TIMESTAMP(3)` `createdAt` column stores it. A judgment that must agree with the
+ * stored row's `createdAt` compares on this clock, since the unrounded one can sit a fraction of a millisecond on the other side of an instant.
+ */
+export const DB_STORED_NOW_SQL = sql`(${DB_NOW_SQL}::timestamp(3))`
 
 /**
  * The instant a wallet statement judges a grant's `effectiveAt` and `expiresAt` on: the caller's `now` as a bound

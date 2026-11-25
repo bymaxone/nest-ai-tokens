@@ -265,6 +265,16 @@ describe('WalletService', () => {
     expect(all.total).toBe(2)
   })
 
+  /** An order other than the two the store knows is refused like any other unknown input, and both known ones are answered. */
+  it('refuses a list order other than asc or desc', async () => {
+    const { service } = makeService()
+    await service.grant(REF, { amountNanoUsd: 100n, idempotencyKey: 'g1', reason: 'seed' })
+    await expectRejectCode(service.getEntries(REF, { order: 'sideways' as 'asc' }), 'AI_TOKENS_INVALID_CONFIG')
+    await expectRejectCode(service.getEntries(REF, { order: '' as 'asc' }), 'AI_TOKENS_INVALID_CONFIG')
+    expect((await service.getEntries(REF, { order: 'asc' })).total).toBe(1)
+    expect((await service.getEntries(REF, { order: 'desc' })).total).toBe(1)
+  })
+
   /** reconcile recomputes the balance and emits audit. */
   it('reconciles and emits audit', async () => {
     const { service, store, audits } = makeService()
