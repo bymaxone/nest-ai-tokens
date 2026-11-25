@@ -87,6 +87,8 @@ Known limits:
 - A Prisma query is a lazy thenable whose own `then` sends the query. The library lets it through on a driver call of the Prisma adapter and on the metered function of `meter()`, since that `then` is the driver's or the provider's code and cannot be told from a planted one.
 - A rejected native promise that a store gives both a `constructor` and a `then` of its own is refused, but its rejection can stay unhandled, since the wait that handles it reads that `constructor` and calls that `then`.
 - A one-shot `Promise[Symbol.species]` getter that hands back a genuine, already resolved native promise cannot be told from the engine's answer.
+- An accessor `then` on a row is read by code of the host, and what a read does is not controlled. A plain row with an accessor `then` that a store method returns synchronously is refused by the store guard. A row that an asynchronous method resolves with is not refused: the host's own `await` and the copy the guard makes each read the `then`, and the row is answered as a copy.
+- The `getPrototypeOf` trap of a Proxy row runs when the store guard decides whether the row is a plain object. A Proxy row returned synchronously is refused afterwards; one an asynchronous method resolves with is copied and answered.
 
 ### Supply chain
 
