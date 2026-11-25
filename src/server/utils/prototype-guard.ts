@@ -35,11 +35,33 @@ const loaded = Object.getOwnPropertyDescriptors(Object.prototype) as Record<stri
  * The standard namespaces and constructors the library's call sites rely on. Every function-valued data property of each of them, and of its
  * prototype, is recorded when the module loads and compared by identity at every check, so no list of the functions the library calls has to be
  * kept: a function replaced after import, whichever it is, is counted. `Object.prototype` is left out, because it is compared by descriptor.
+ * `Reflect` is left out too: only the functions the language defines on it are recorded, in {@link REFLECT_CALLS}.
  * `Promise` is left out too, and so are its prototype and its binding: tracing and monitoring agents wrap it after load on healthy hosts, so
  * the code that settles a store result or serializes the writes of a call uses `await`, which does not look the global up. `JSON` is left out
  * because a host's own tests spy on it: the library turns values into text with the `JSON.stringify` of load time instead.
  */
-const STANDARD = 'Object Reflect Array Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
+const STANDARD = 'Object Array Math Number String Boolean Set Map WeakMap WeakSet ArrayBuffer DataView TextEncoder BigInt Date Symbol Error RegExp Function Uint8Array Proxy'
+
+/**
+ * The functions the language defines on `Reflect`. Not the whole object: the metadata polyfill that Nest needs puts its own functions there, and
+ * a second copy of it, which a host with two versions of it loads, defines them again after this module has recorded the first. No decision of
+ * the library reads one of them.
+ */
+const REFLECT_CALLS: readonly string[] = [
+  'apply',
+  'construct',
+  'defineProperty',
+  'deleteProperty',
+  'get',
+  'getOwnPropertyDescriptor',
+  'getPrototypeOf',
+  'has',
+  'isExtensible',
+  'ownKeys',
+  'preventExtensions',
+  'set',
+  'setPrototypeOf',
+]
 
 /**
  * The global names the call sites resolve when they run. A name rebound to another object leaves every function recorded above as it was and
@@ -139,6 +161,7 @@ export const BUILT_INS: readonly Met[] = (() => {
     nodeCrypto,
   )
   const found = recordFunctions(owners)
+  for (const met of recordFunctions([Reflect])) if (REFLECT_CALLS.includes(met.name as string)) found.push(met)
   for (const name of BOUND.split(' ')) {
     const bound: unknown = Reflect.get(globalThis, name)
     found.push({ owner: globalThis, name, met: bound })
