@@ -66,9 +66,7 @@ export class BudgetGuard implements CanActivate {
     @Inject(PricingService) private readonly pricing?: PricingService,
   ) {
     if (options.scopeResolver === undefined) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'BudgetGuard requires options.scopeResolver to resolve the caller scope',
       })
     }
@@ -122,17 +120,12 @@ function exhaustedError(status: BudgetStatus, feature: string): AiTokensExceptio
   // A dimension the budget does not limit is absent from its limit, so the limit is read as fields: a key planted on Object.prototype is no limit.
   const limit = fieldsOf(status.limit, LIMIT_FIELDS)
   if (limit.nanoUsd !== undefined && status.spent.nanoUsd >= limit.nanoUsd) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check error code only
     return new AiTokensException('AI_TOKENS_BUDGET_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'cost' }))
   }
-  // Stryker disable next-line ConditionalExpression: CE true on `limit.tokens !== undefined` is equivalent: with it forced true, the remaining `status.spent.tokens >= limit.tokens` compares a number against `undefined` (NaN), which is always false, so a budget with no tokens limit never yields a spurious quota error
-  if (limit.tokens !== undefined && status.spent.tokens >= limit.tokens) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics
+  if (status.spent.tokens >= (limit.tokens ?? Number.POSITIVE_INFINITY)) {
     return new AiTokensException('AI_TOKENS_QUOTA_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'tokens' }))
   }
-  // Stryker disable next-line ConditionalExpression: CE true on `limit.count !== undefined` is equivalent: with it forced true, the remaining `status.spent.count >= limit.count` compares a number against `undefined` (NaN), which is always false, so a budget with no count limit never yields a spurious quota error
-  if (limit.count !== undefined && status.spent.count >= limit.count) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics
+  if (status.spent.count >= (limit.count ?? Number.POSITIVE_INFINITY)) {
     return new AiTokensException('AI_TOKENS_QUOTA_EXCEEDED', undefined, suppliedDetails({ budgetId: status.budgetId, dimension: 'count' }))
   }
   return null

@@ -144,4 +144,27 @@ describe('BudgetGuard — what a refusal carries', () => {
     await service.consume(context(), { nanoUsd: 0n, tokens: 0, count: 1 })
     await expect(guard.canActivate(executionContext(fixture.plain))).resolves.toBe(true)
   })
+
+  it.each([
+    ['tokens', { limitTokens: 100 }, { nanoUsd: 0n, tokens: 99, count: 0 }, { nanoUsd: 0n, tokens: 1, count: 0 }],
+    ['count', { limitCount: 2 }, { nanoUsd: 0n, tokens: 0, count: 1 }, { nanoUsd: 0n, tokens: 0, count: 1 }]
+  ])('admits below the %s limit and refuses from the limit on', async (dimension, limit, below, step) => {
+    // Scenario: the limit itself is exhausted, and so is anything above it.
+    const { guard, service } = makeGuard()
+    const budget = await service.upsertBudget({ tenantId: TENANT, scope: USER_SCOPE, window: 'month', policy: 'block', ...limit })
+    await service.consume(context(), below)
+    await expect(guard.canActivate(executionContext(fixture.plain))).resolves.toBe(true)
+    await service.consume(context(), step)
+    expect(detailsOf(await refusal(guard.canActivate(executionContext(fixture.plain))))).toEqual({ budgetId: budget.id, dimension })
+    await service.adjust(context(), step)
+    expect(detailsOf(await refusal(guard.canActivate(executionContext(fixture.plain))))).toEqual({ budgetId: budget.id, dimension })
+  })
+
+  it('reads a dimension the budget does not limit as unlimited, however much was spent', async () => {
+    // Scenario: a cost budget carries no token or count limit, so neither can refuse a call.
+    const { guard, service } = makeGuard()
+    await service.upsertBudget({ tenantId: TENANT, scope: USER_SCOPE, window: 'month', policy: 'block', limitNanoUsd: 100n })
+    await service.adjust(context(), { nanoUsd: 0n, tokens: Number.MAX_SAFE_INTEGER, count: Number.MAX_SAFE_INTEGER })
+    await expect(guard.canActivate(executionContext(fixture.plain))).resolves.toBe(true)
+  })
 })
