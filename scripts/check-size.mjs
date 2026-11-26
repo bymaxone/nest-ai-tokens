@@ -61,11 +61,11 @@ const BUDGETS = [
   // 64_628 (server) also holds the `@Inject` of the three services the guard names beside its options token, which a host's `@UseGuards(BudgetGuard)` is built from, the
   // refusal, before the handler, of a model-less hold estimate that strict pricing could only fail to settle, and the record of the thirteen functions the language defines on
   // `Reflect` in place of every function of it; the server bundle measures 64_598.
-  // 65_919 (server) also holds the settle failure that leaves the interceptor's hold pending, the `ai_tokens.settle.failed` event of the interceptor and of
+  // 65_861 (server) also holds the settle failure that leaves the interceptor's hold pending, the `ai_tokens.settle.failed` event of the interceptor and of
   // `meter()`, with or without a hold, the interceptor's single catch that keeps the handler's error apart from the settle's, the announcement that survives a host
   // logger or substitute service that throws, the bound on its correlation id, the append watch that is the only second argument `record()` honours and the
-  // reaper's further batches; the server bundle measures 65_889.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_919 },
+  // reaper's further batches; the server bundle measures 65_831.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_861 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
   { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 19_498 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
