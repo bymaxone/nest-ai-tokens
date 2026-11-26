@@ -36,7 +36,7 @@ jobs:
       # The per-push run reuses the cached baseline, so its cost follows what the push changed:
       # 303 tested mutants took 12 min, 1,051 took 24 min and 1,449 took 83.5 min, each run on
       # 1 checker and 1 test runner, then 2 runners once checking ends. With no baseline it cannot
-      # finish here: the 8 shards of "Mutation (full)" add up to 705 job-minutes, so dispatch that
+      # finish here: the 8 shards of "Mutation (full)" add up to 764 job-minutes, so dispatch that
       # workflow to rebuild the baseline. The job is CANCELLED rather than failed at the ceiling,
       # which reads as an infrastructure blip instead of a budget.
       mutation-timeout-minutes: 180
