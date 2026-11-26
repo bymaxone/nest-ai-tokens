@@ -121,6 +121,17 @@ describe('the realm guard', () => {
     }
   })
 
+  it.each(['get', 'set'] as const)('counts a standard accessor whose %s alone was replaced', (side) => {
+    const kept = Object.getOwnPropertyDescriptor(Object.prototype, '__proto__')!
+    try {
+      Object.defineProperty(Object.prototype, '__proto__', { ...kept, [side]: function replaced(): void {} })
+      expect(pollutedNames()).toBe(1)
+    } finally {
+      Object.defineProperty(Object.prototype, '__proto__', kept)
+    }
+    expect(pollutedNames()).toBe(0)
+  })
+
   it('counts a standard name that is deleted, overwritten by another function, or a constructor that no longer names Object', () => {
     const toString = Object.getOwnPropertyDescriptor(Object.prototype, 'toString')!
     const constructor = Object.getOwnPropertyDescriptor(Object.prototype, 'constructor')!
