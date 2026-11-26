@@ -35,13 +35,13 @@ jobs:
     with:
       # The ceiling is per shard job. A shard costs about (static mutants x its dry-run seconds x 2.2 +
       # other mutants x 1 s) / test runners, because each static mutant re-runs the whole suite. Hosted
-      # runners vary 1.9x on the same work (27.5 s to 53.2 s net dry run), and the planner balances by
+      # runners vary 1.8x on the same work (27.3 s to 48.8 s net dry run), and the planner balances by
       # test executions without weighing static mutants, so shard times spread widely on equal
-      # weights. Measured on eight shards at concurrency 2: the shards took 31 to 104 minutes, the
-      # slowest 104. A ceiling that cuts a shard loses the whole run, so it is 1.5 times the slowest
-      # measured shard, rounded up to 160. Re-measure and move it when the suite or the shard count
+      # weights. Measured on eight shards at concurrency 2: the shards took 44 to 130 minutes, the
+      # slowest 130. A ceiling that cuts a shard loses the whole run, so it is 1.5 times the slowest
+      # measured shard, rounded up to 200. Re-measure and move it when the suite or the shard count
       # changes.
-      timeout-minutes: 160
+      timeout-minutes: 200
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
@@ -51,8 +51,8 @@ jobs:
       # hosted runner has 16 GB, so two of them and their parent are what one runner holds. The count
       # and the concurrency are passed here, not written into stryker.config.json, which the per-push
       # incremental job and local runs share.
-      # The static mutants (about 6% of the mutants, about 71% of the test time) each re-run the whole
-      # suite, and 69% of that static cost sits in three places: the seed table (100 mutants),
-      # prisma/sql.ts (50) and the error messages (16).
+      # The static mutants (368 of the 4,795 tested) each re-run the whole suite. The files with most
+      # of them are the seed table (64), argument-guards.ts (50), prisma/sql.ts (34),
+      # prototype-guard.ts (34) and store-availability.ts (32).
       shards: 8
       concurrency: 2
