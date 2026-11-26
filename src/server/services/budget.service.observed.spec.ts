@@ -154,6 +154,17 @@ describe('BudgetService — the counter and store trouble each warning names', (
     expect(warn).toHaveBeenCalledWith(`failed to adjust budget counter ${COUNTER_KEY(budget.id)}`)
   })
 
+  it('increments the counter on an adjust of one nano-USD', async () => {
+    // Scenario: the smallest positive adjust is an increment, never a decrement of a negated amount.
+    const incrIfBelow = jest.fn().mockResolvedValue(true)
+    const decr = jest.fn().mockResolvedValue(undefined)
+    const { service } = makeService({ options: { counter: counterOf({ incrIfBelow, decr }) } })
+    const budget = await service.upsertBudget(budgetInput())
+    await service.adjust(context(), delta(1n))
+    expect(incrIfBelow).toHaveBeenCalledWith(COUNTER_KEY(budget.id), 1n, expect.any(BigInt), expect.any(Number))
+    expect(decr).not.toHaveBeenCalled()
+  })
+
   it('names the counter key when an overflowing increment forces a resync', async () => {
     // Scenario: the counter refuses an increment at its ceiling and is reseeded from the database; the warning says so.
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
