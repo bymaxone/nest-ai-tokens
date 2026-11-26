@@ -175,6 +175,7 @@ describe('MeteringService.meter() when settling fails after the function served'
   /** `record()` handed to a caller that passes more arguments, as `map` or `async.map` does, records and leaves each of them alone. */
   it.each<[string, (touched: string[]) => unknown]>([
     ['a number', () => 0],
+    ['null', () => null],
     ['a callback', (touched) => () => touched.push('called')],
     [
       'a callback that throws',

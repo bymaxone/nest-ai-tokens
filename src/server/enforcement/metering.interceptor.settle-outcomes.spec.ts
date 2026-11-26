@@ -163,6 +163,18 @@ describe('MeteringInterceptor settle outcomes', () => {
     expect(await run(built.interceptor, hold, { handle: () => throwError(() => down) })).toBe(down)
   })
 
+  /** The line the logger refused is reported under a stable key, for an operator to search by. */
+  it('names the release failure by its log key when the logger refuses the line', async () => {
+    const built = await setup()
+    const hold = await built.metering.hold(CONTEXT, ESTIMATE)
+    jest.spyOn(built.metering, 'release').mockRejectedValueOnce(new Error('release down'))
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementationOnce(() => {
+      throw new Error('logger down')
+    })
+    await run(built.interceptor, hold, { handle: () => throwError(() => down) })
+    expect(warn).toHaveBeenLastCalledWith(expect.stringMatching(/^ai_tokens\.hold\.release_failed /))
+  })
+
   /** The reservation of an unsettled hold is given back with what the event carries. */
   it('releases an unsettled hold by the holdId, tenant and scope of the event', async () => {
     const built = await setup()
