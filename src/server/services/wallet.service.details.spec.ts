@@ -41,6 +41,10 @@ describe('WalletService refusal details', () => {
   /** A host reads which rule refused its call. */
   it.each([
     ['a debit with no usageRecordId and no reason', (s: WalletService) => s.debit(REF, { amountNanoUsd: 1n, idempotencyKey: 'k' }), 'a debit without a usageRecordId must carry a reason'],
+    ['a zero grant', (s: WalletService) => s.grant(REF, { amountNanoUsd: 0n, idempotencyKey: 'k', reason: 'r' }), 'grant amount must be a bigint from 1 to 9223372036854775807'],
+    ['a zero debit', (s: WalletService) => s.debit(REF, { amountNanoUsd: 0n, idempotencyKey: 'k', reason: 'r' }), 'debit amount must be a bigint from 1 to 9223372036854775807'],
+    ['a zero refund', (s: WalletService) => s.refund(REF, { amountNanoUsd: 0n, idempotencyKey: 'k', reason: 'r' }), 'refund amount must be a bigint from 1 to 9223372036854775807'],
+    ['a zero adjustment', (s: WalletService) => s.adjust(REF, { amountNanoUsd: 0n, idempotencyKey: 'k', reason: 'r' }), 'adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807'],
     ['a zero settlement adjustment', (s: WalletService) => s.settleAdjustment(REF, { amountNanoUsd: 0n, idempotencyKey: 'k', reason: 'r' }), 'settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807'],
     ['a key-scoped owner', (s: WalletService) => s.getBalance({ ...REF, ownerType: 'key' as never }), "'key' scopes cannot own a wallet"],
     ['a fractional priority', (s: WalletService) => s.grant(REF, { amountNanoUsd: 1n, priority: 0.5, idempotencyKey: 'k', reason: 'r' }), 'grant priority must be a whole number'],
@@ -104,5 +108,51 @@ describe('WalletService audit and event payloads', () => {
     audits.length = 0
     await service.reconcile(REF)
     expect(audits).toEqual([['ai_tokens.wallet.reconciled', { tenantId: 't1', walletId: entry.walletId, balanceNanoUsd: '5' }]])
+  })
+})
+
+describe('WalletService, what the store is handed', () => {
+  /** An optional field the caller leaves out is no key of the entry, and the wallet id is left for the store to assign. */
+  it.each([
+    ['grant', (s: WalletService) => s.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', reason: 'r' }), 'appendEntry', ['amountNanoUsd', 'effectiveAt', 'idempotencyKey', 'priority', 'reason', 'type', 'walletId']],
+    ['refund', (s: WalletService) => s.refund(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', reason: 'r' }), 'appendEntry', ['amountNanoUsd', 'effectiveAt', 'idempotencyKey', 'priority', 'reason', 'type', 'walletId']],
+    ['settlement adjustment', (s: WalletService) => s.settleAdjustment(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', reason: 'r' }), 'appendEntry', ['amountNanoUsd', 'effectiveAt', 'idempotencyKey', 'priority', 'reason', 'type', 'walletId']],
+    ['debit with a reason only', (s: WalletService) => s.debit(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', reason: 'r' }), 'conditionalDebit', ['amountNanoUsd', 'effectiveAt', 'idempotencyKey', 'priority', 'reason', 'type', 'walletId']],
+    ['debit with a record only', (s: WalletService) => s.debit(REF, { amountNanoUsd: 5n, idempotencyKey: 'k', usageRecordId: 'u' }), 'conditionalDebit', ['amountNanoUsd', 'effectiveAt', 'idempotencyKey', 'priority', 'type', 'usageRecordId', 'walletId']],
+  ] as const)('hands the store only the fields of a %s', async (_name, act, method, keys) => {
+    const { service, store } = makeService()
+    await store.appendEntry(REF, { walletId: '', type: 'grant', amountNanoUsd: 100n, priority: 0, effectiveAt: new Date(0), idempotencyKey: 'seed', reason: 'r' })
+    const write = jest.spyOn(store, method)
+    await act(service)
+    const entry = write.mock.calls[0]?.[1]
+    expect(Object.keys(entry ?? {}).sort()).toEqual(keys)
+    expect(entry?.walletId).toBe('')
+  })
+
+  /** A record id the caller gives is passed on by a refund and by a settlement adjustment. */
+  it.each([
+    ['refund', (s: WalletService) => s.refund(REF, { amountNanoUsd: 5n, usageRecordId: 'u', idempotencyKey: 'k', reason: 'r' })],
+    ['settlement adjustment', (s: WalletService) => s.settleAdjustment(REF, { amountNanoUsd: 5n, usageRecordId: 'u', idempotencyKey: 'k', reason: 'r' })],
+  ])('passes the record id of a %s', async (_name, act) => {
+    const { service } = makeService()
+    await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'g', reason: 'r' })
+    expect(await act(service)).toMatchObject({ usageRecordId: 'u' })
+  })
+
+  /** The expiry of a grant reaches both the entry and the event. */
+  it('passes the expiry of a grant to the entry and the event', async () => {
+    const { service, granted } = makeService()
+    const expiresAt = new Date('2999-01-01T00:00:00.000Z')
+    const entry = await service.grant(REF, { amountNanoUsd: 5n, expiresAt, idempotencyKey: 'g', reason: 'r' })
+    expect(entry.expiresAt).toEqual(expiresAt)
+    expect(granted).toEqual([{ walletId: entry.walletId, entryId: entry.id, amountNanoUsd: 5n, expiresAt }])
+  })
+
+  /** A function is not the store's missing-wallet signal, whatever it carries. */
+  it('reads a thrown function that carries the missing-wallet mark as a store error', async () => {
+    const { service, store } = makeService()
+    jest.spyOn(store, 'appendEntry').mockRejectedValue(Object.assign(() => undefined, { isWalletMissing: true }))
+    const error = await service.refund(REF, { amountNanoUsd: 1n, idempotencyKey: 'f', reason: 'r' }).catch((thrown: unknown) => thrown as AiTokensException)
+    expect((error as AiTokensException).getResponse()).toMatchObject({ error: { code: 'AI_TOKENS_STORE_ERROR' } })
   })
 })
