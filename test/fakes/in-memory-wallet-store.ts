@@ -567,9 +567,11 @@ function refusal(reason: string): AiTokensException {
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
-/** Order two grants by `(createdAt, id)`: the order a split breaks its ties in. */
+/** Order two grants by `seq NULLS FIRST, createdAt, id`, as the SQL store does: the order a split breaks its ties in. */
 function compareEntryOrder(a: WalletEntry, b: WalletEntry): number {
-  return a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  // Sequences start at 1, so reading a missing one as 0 puts it first.
+  const bySequence = Number((a.seq ?? 0n) - (b.seq ?? 0n))
+  return bySequence || a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 /** Signal that a wallet does not exist for a non-creating entry — mapped to insufficient credits. */

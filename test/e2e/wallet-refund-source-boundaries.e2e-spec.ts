@@ -68,7 +68,7 @@ async function debited(ref: WalletRef, spend: bigint, usage: string, amount = sp
 
 describe('refund to source: the tenant boundary of every lookup', () => {
   /** A foreign wallet holding the sweep's key for this wallet's grant must not make the grant look swept: it is not expired, so no expiry is written. */
-  it('does not read another wallet’s entry as the sweep of this wallet’s grant (W-er-14)', async () => {
+  it('does not read another wallet’s entry as the sweep of this wallet’s grant', async () => {
     const a = freshRef()
     const b = freshRef()
     const { grant, debit } = await debited(a, 100n, 'u-1')
@@ -83,7 +83,7 @@ describe('refund to source: the tenant boundary of every lookup', () => {
   })
 
   /** A debit named by id is a debit of this wallet only: a grant, or a negative adjustment, of the same wallet is not one. */
-  it('refuses an entry that is not a debit, naming why (W-sd-2)', async () => {
+  it('refuses an entry that is not a debit, naming why', async () => {
     const ref = freshRef()
     const { grant } = await debited(ref, 40n, 'u-1', 100n)
     const adjustment = await pg.store.appendEntry(ref, { ...grantEntry({ idempotencyKey: 'neg' }), type: 'adjustment', amountNanoUsd: -50n })
@@ -105,7 +105,7 @@ describe('refund to source: the tenant boundary of every lookup', () => {
   })
 
   /** Another wallet's debit with the same usage id does not make this wallet's debit ambiguous. */
-  it('names the one debit of this wallet by usage id when another wallet has one too (W-sd-9)', async () => {
+  it('names the one debit of this wallet by usage id when another wallet has one too', async () => {
     const a = freshRef()
     const b = freshRef()
     const mine = await debited(a, 100n, 'shared')
@@ -115,7 +115,7 @@ describe('refund to source: the tenant boundary of every lookup', () => {
   })
 
   /** Neither an id nor a usage id: refused, and the reason says so rather than that no debit matched. */
-  it('refuses a refund that names no debit by either handle (W-sd-5)', async () => {
+  it('refuses a refund that names no debit by either handle', async () => {
     const ref = freshRef()
     await debited(ref, 100n, 'u-1')
     const body = await bodyOf(pg.store.refundToSource!(ref, { entry: refundOf(10n, 'r1'), now: new Date() }))
@@ -124,7 +124,7 @@ describe('refund to source: the tenant boundary of every lookup', () => {
   })
 
   /** An unlinked refund of another wallet that carries the same usage id does not eat into this debit's room. */
-  it('does not count another wallet’s unlinked refund against this debit (W-ro-9)', async () => {
+  it('does not count another wallet’s unlinked refund against this debit', async () => {
     const a = freshRef()
     const b = freshRef()
     const { debit } = await debited(a, 100n, 'shared')
@@ -137,7 +137,7 @@ describe('refund to source: the tenant boundary of every lookup', () => {
 
 describe('refund to source: the room a debit has left', () => {
   /** A credit that is linked to the debit but is not a refund is not a refund's room. */
-  it('counts only refunds among the entries linked to the debit (W-ro-1)', async () => {
+  it('counts only refunds among the entries linked to the debit', async () => {
     const ref = freshRef()
     const { walletId, debit } = await debited(ref, 100n, 'u-1')
     await rawEntry(walletId, { id: 'linked-adjustment', type: 'adjustment', amount: 30n, key: 'linked-adjustment', refundsEntryId: debit.id })
@@ -146,7 +146,7 @@ describe('refund to source: the room a debit has left', () => {
   })
 
   /** A refund linked to another debit of the wallet does not take this debit's room. */
-  it('counts only the refunds linked to this debit, not those of another debit (W-ro-2)', async () => {
+  it('counts only the refunds linked to this debit, not those of another debit', async () => {
     const ref = freshRef()
     await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 300n, expiresAt: FUTURE }))
     const d1 = (await pg.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'd1', usageRecordId: 'u-1' }), 0n))!
@@ -157,7 +157,7 @@ describe('refund to source: the room a debit has left', () => {
   })
 
   /** A refund of the other debit that burned the same grant is not what was restored to this debit's share of it. */
-  it('restores a debit’s share of a grant by the refunds linked to it, not by every refund that touched the grant (W-fa-2)', async () => {
+  it('restores a debit’s share of a grant by the refunds linked to it, not by every refund that touched the grant', async () => {
     const ref = freshRef()
     const grant = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 200n, expiresAt: FUTURE }))
     const d1 = (await pg.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'd1', usageRecordId: 'u-1' }), 0n))!
@@ -172,7 +172,7 @@ describe('refund to source: the room a debit has left', () => {
    * A debit of 100 with an unlinked +20 activation adjustment, a +30 adjustment, a -30 adjustment and a 0 adjustment of its usage id: only the +30 takes
    * room, so 70 is the most a refund can restore.
    */
-  it('counts only the positive, non-activation adjustments of the usage id (W-ro-6, W-ro-8)', async () => {
+  it('counts only the positive, non-activation adjustments of the usage id', async () => {
     const ref = freshRef()
     const { walletId, debit } = await debited(ref, 100n, 'u-1')
     await rawEntry(walletId, { id: 'activation', type: 'adjustment', amount: 20n, key: 'activate:some-grant', usage: 'u-1' })
@@ -186,7 +186,7 @@ describe('refund to source: the room a debit has left', () => {
   })
 
   /** Nothing and less than nothing are refused as a refund of the source, not left to the split to throw. */
-  it('refuses a refund of zero and of a negative amount as a typed refusal (W-ro-12, W-ro-16)', async () => {
+  it('refuses a refund of zero and of a negative amount as a typed refusal', async () => {
     const ref = freshRef()
     const { debit } = await debited(ref, 100n, 'u-1')
     for (const amount of [0n, -5n]) {
@@ -199,7 +199,7 @@ describe('refund to source: the room a debit has left', () => {
 
 describe('refund to source: an expired grant takes its part back out', () => {
   /** The refund is judged at the clock it is handed: a grant that expires exactly then is expired. */
-  it('writes the expiry of a grant that expires exactly at the refund’s clock (W-er-2)', async () => {
+  it('writes the expiry of a grant that expires exactly at the refund’s clock', async () => {
     const ref = freshRef()
     const expiresAt = new Date(Date.now() + 3_600_000)
     const grant = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, expiresAt }))
@@ -212,7 +212,7 @@ describe('refund to source: an expired grant takes its part back out', () => {
   })
 
   /** The entry that takes the part back out carries the grant's priority, so a priority-ordered read of the wallet puts it with the grant. */
-  it('gives the compensating expiry the priority of its grant (W-er-15)', async () => {
+  it('gives the compensating expiry the priority of its grant', async () => {
     const ref = freshRef()
     const grant = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, priority: 7, expiresAt: new Date(Date.now() + 3_600_000) }))
     const debit = (await pg.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'd', usageRecordId: 'u-1' }), 0n))!
@@ -227,7 +227,7 @@ describe('refund to source: an expired grant takes its part back out', () => {
    * the id the refund is given inside its own transaction, so no row can hold it beforehand: the collision is FORCED here by an AFTER INSERT
    * trigger that writes the key as the refund lands.
    */
-  it('refuses the refund whole when a trigger forces another entry onto the compensating key (W-er-11)', async () => {
+  it('refuses the refund whole when a trigger forces another entry onto the compensating key', async () => {
     const ref = freshRef()
     const grant = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, expiresAt: new Date(Date.now() + 3_600_000) }))
     const debit = (await pg.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'd', usageRecordId: 'u-1' }), 0n))!
@@ -270,7 +270,7 @@ describe('refund to source: the order a debit’s grants are read in, one key at
   }
 
   /** The sequence is the first key: the grant committed first is read first. */
-  it('reads the grant committed first before the one committed after it (W-fa-5)', async () => {
+  it('reads the grant committed first before the one committed after it', async () => {
     const ref = freshRef()
     const g1 = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g1', amountNanoUsd: 50n, expiresAt: FUTURE }))
     const g2 = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g2', amountNanoUsd: 50n, expiresAt: FUTURE }))
@@ -278,7 +278,7 @@ describe('refund to source: the order a debit’s grants are read in, one key at
   })
 
   /** A grant written before the sequence existed has none, and is read before one that has it. */
-  it('reads a grant without a sequence before one that has it (W-fa-6)', async () => {
+  it('reads a grant without a sequence before one that has it', async () => {
     const ref = freshRef()
     const sequenced = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g1', amountNanoUsd: 50n, expiresAt: FUTURE }))
     await rawEntry(sequenced.walletId, { id: 'zz-legacy', type: 'grant', amount: 50n, key: 'legacy', createdAt: '2099-02-01T00:00:00.000Z' })
@@ -286,7 +286,7 @@ describe('refund to source: the order a debit’s grants are read in, one key at
   })
 
   /** Two grants without a sequence are read oldest first, whatever their ids. */
-  it('reads the older of two grants without a sequence first (W-fa-7)', async () => {
+  it('reads the older of two grants without a sequence first', async () => {
     const ref = freshRef()
     const seed = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'seed', amountNanoUsd: 1n, expiresAt: FUTURE }))
     await rawEntry(seed.walletId, { id: 'b-older', type: 'grant', amount: 50n, key: 'older', createdAt: '2020-01-01T00:00:00.000Z' })
@@ -295,7 +295,7 @@ describe('refund to source: the order a debit’s grants are read in, one key at
   })
 
   /** Two grants without a sequence and written at the same instant are read by id. */
-  it('reads the lower id first when two grants without a sequence share a time (W-fa-8)', async () => {
+  it('reads the lower id first when two grants without a sequence share a time', async () => {
     const ref = freshRef()
     const seed = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'seed', amountNanoUsd: 1n, expiresAt: FUTURE }))
     await rawEntry(seed.walletId, { id: 'a-low', type: 'grant', amount: 50n, key: 'low', createdAt: '2020-01-01T00:00:00.000Z' })
@@ -338,7 +338,7 @@ describe('refund to source: replay and wallet resolution', () => {
   })
 
   /** Two wallets of one tenant and owner id, of different owner types, are two wallets. */
-  it('resolves the wallet by its owner type as well (W-gw-2)', async () => {
+  it('resolves the wallet by its owner type as well', async () => {
     const team: WalletRef = { tenantId: 'shared-tenant', ownerType: 'team', ownerId: 'x' }
     const user: WalletRef = { tenantId: 'shared-tenant', ownerType: 'user', ownerId: 'x' }
     await pg.store.appendEntry(team, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 10n }))
@@ -348,7 +348,7 @@ describe('refund to source: replay and wallet resolution', () => {
   })
 
   /** Only a grant or a positive adjustment brings a wallet into being; a debit or a negative adjustment on a ref with no wallet is refused and leaves none behind. */
-  it('creates no wallet for an entry that can only spend (W-ew-2)', async () => {
+  it('creates no wallet for an entry that can only spend', async () => {
     for (const entry of [debitEntry(5n, { idempotencyKey: 'd' }), grantEntry({ idempotencyKey: 'a', type: 'adjustment', amountNanoUsd: -5n })]) {
       const ref = freshRef()
       await expect(pg.store.appendEntry(ref, entry)).rejects.toThrow()
@@ -366,7 +366,7 @@ describe('refund to source: replay and wallet resolution', () => {
   })
 
   /** A refund of another wallet that names this wallet's debit is not a refund of this wallet. */
-  it('counts only this wallet’s refunds among those linked to the debit (W-ro-18)', async () => {
+  it('counts only this wallet’s refunds among those linked to the debit', async () => {
     const a = freshRef()
     const b = freshRef()
     const { debit } = await debited(a, 100n, 'u-1')
@@ -379,7 +379,7 @@ describe('refund to source: replay and wallet resolution', () => {
 
 describe('wallet statements: the clock, the sequence and the lock', () => {
   /** Two first writes to one new wallet race on its creation; a trigger holds the first insert so both have looked and found nothing. */
-  it('lets two first writes to a new wallet both land on the one wallet (W-ew-4)', async () => {
+  it('lets two first writes to a new wallet both land on the one wallet', async () => {
     const ref = freshRef()
     await pg.prisma.$executeRawUnsafe(`CREATE FUNCTION slow_wallet_insert() RETURNS trigger AS $$ BEGIN PERFORM pg_sleep(0.6); RETURN NEW; END $$ LANGUAGE plpgsql`)
     await pg.prisma.$executeRawUnsafe(`CREATE TRIGGER slow_wallet_insert BEFORE INSERT ON "ai_wallets" FOR EACH ROW EXECUTE FUNCTION slow_wallet_insert()`)
@@ -395,7 +395,7 @@ describe('wallet statements: the clock, the sequence and the lock', () => {
   })
 
   /** The system entries a refund writes take the sequence one step at a time, so the order stays gapless. */
-  it('keeps the order gapless across the expiry a refund writes (W-is-1)', async () => {
+  it('keeps the order gapless across the expiry a refund writes', async () => {
     const ref = freshRef()
     await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, expiresAt: new Date(Date.now() + 3_600_000) }))
     const debit = (await pg.store.conditionalDebit(ref, debitEntry(100n, { idempotencyKey: 'd', usageRecordId: 'u-1' }), 0n))!
@@ -405,7 +405,7 @@ describe('wallet statements: the clock, the sequence and the lock', () => {
   })
 
   /** A grant that expires exactly at the clock is swept at it, and is not credited at it. */
-  it('sweeps a credited grant at the instant it expires (W-sw-2)', async () => {
+  it('sweeps a credited grant at the instant it expires', async () => {
     const ref = freshRef()
     const expiresAt = new Date(Date.now() + 3_600_000)
     await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, expiresAt }))
@@ -414,7 +414,7 @@ describe('wallet statements: the clock, the sequence and the lock', () => {
     expect(kinds).toEqual(['grant', 'expiry'])
   })
 
-  it('does not credit a grant at the instant it expires (W-ad-3)', async () => {
+  it('does not credit a grant at the instant it expires', async () => {
     const ref = freshRef()
     const expiresAt = new Date(Date.now() + 7_200_000)
     await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n, effectiveAt: new Date(Date.now() + 3_600_000), expiresAt }))
@@ -424,7 +424,7 @@ describe('wallet statements: the clock, the sequence and the lock', () => {
   })
 
   /** With nothing due, an activation pass leaves the stored balance alone, whatever it holds. */
-  it('leaves the stored balance as it is when no grant is due (W-ad-9)', async () => {
+  it('leaves the stored balance as it is when no grant is due', async () => {
     const ref = freshRef()
     const grant = await pg.store.appendEntry(ref, grantEntry({ idempotencyKey: 'g', amountNanoUsd: 100n }))
     await pg.prisma.$executeRawUnsafe(`UPDATE "ai_wallets" SET "balanceNanoUsd" = 130 WHERE "id" = '${grant.walletId}'`)
