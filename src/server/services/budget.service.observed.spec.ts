@@ -127,6 +127,19 @@ describe('BudgetService — a threshold is announced once per window', () => {
   })
 })
 
+describe('BudgetService — what releasing one of two attempts gives back', () => {
+  it('keeps the movement while another attempt of the same key holds it', async () => {
+    // Scenario: two attempts share one keyed movement; releasing one drops its reference and leaves the spend.
+    const { service } = makeService()
+    await service.upsertBudget(budgetInput())
+    await service.consume(context(), delta(10n), NOW, 'k', 'first')
+    await service.consume(context(), delta(10n), NOW, 'k', 'second')
+    await service.release(context(), delta(10n), NOW, 'k', 'first')
+    const [status] = await service.status(context().tenantId, context().scope)
+    expect(status?.spent.nanoUsd).toBe(10n)
+  })
+})
+
 describe('BudgetService — the counter and store trouble each warning names', () => {
   const COUNTER_KEY = (budgetId: string): string => `ai_tokens:budget:${budgetId}:2026-06-01T00:00:00.000Z:cost`
   const counterOf = (over: Record<string, unknown> = {}): never =>

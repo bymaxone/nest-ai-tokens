@@ -55,6 +55,11 @@ describe('budget.keys — the time a counter lives and the dimensions a delta to
     expect(counterTtlSeconds(START, null)).toBe(34_560_000)
   })
 
+  it('leaves out a dimension the budget does not limit', () => {
+    // Scenario: an unlimited dimension has no counter, even when the delta moves it.
+    expect(counterDimensions({ nanoUsd: 5n, tokens: 1, count: 1 }, { tokens: 10 }).map((d) => d.name)).toEqual(['tokens'])
+  })
+
   it('leaves out a dimension the delta does not move', () => {
     // Scenario: a zero delta must not cost a counter round trip.
     const limits = { nanoUsd: 10n, tokens: 10, count: 10 }
