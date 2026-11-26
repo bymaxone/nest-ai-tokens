@@ -65,9 +65,11 @@ const BUDGETS = [
   // `meter()`, with or without a hold, the interceptor's single catch that keeps the handler's error apart from the settle's, the announcement that survives a host
   // logger or substitute service that throws, the bound on its correlation id, the append watch that is the only second argument `record()` honours and the
   // reaper's further batches; the server bundle measures 65_831.
-  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_861 },
+  // 65_905 (server) and 19_572 (prisma) also hold the fourth argument of a wallet append that says a grant's `effectiveAt` was defaulted, and the
+  // earlier-of-two-clocks expression the Prisma store writes for it; they measure 65_875 and 19_542.
+  { name: 'server (NestJS module + services)', path: 'dist/server/index.mjs', brotli: 65_905 },
   { name: 'shared (types + normalizers + cost math)', path: 'dist/shared/index.mjs', brotli: 10_000 },
-  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 19_498 },
+  { name: 'prisma (store adapter)', path: 'dist/prisma/index.mjs', brotli: 19_572 },
   { name: 'redis (budget counter)', path: 'dist/redis/index.mjs', brotli: 5_000 },
 ]
 

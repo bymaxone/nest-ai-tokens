@@ -93,4 +93,32 @@ describe('wallet grants are judged on the application clock', () => {
     expect((await store.getWallet(REF))?.balanceNanoUsd).toBe(0n)
     expect((await service.reconcile(REF)).nanoUsd).toBe(0n)
   })
+
+  /*
+   * Invariant: a grant given no `effectiveAt` counts as it is appended although the store clock has not reached the
+   * application's instant, while one the host gave is kept as given.
+   */
+  it('counts a grant with no effectiveAt as it is appended and keeps a given one', async () => {
+    const { service, store } = skewed()
+    const omitted = await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'a', reason: 'r' })
+    const given = await service.grant(REF, { amountNanoUsd: 7n, effectiveAt: new Date(START), idempotencyKey: 'b', reason: 'r' })
+    expect(omitted.effectiveAt).toEqual(new Date(START - SKEW_MS))
+    expect(given.effectiveAt).toEqual(new Date(START))
+    expect((await store.getWallet(REF))?.balanceNanoUsd).toBe(5n)
+  })
+
+  /*
+   * Invariant: only a grant tells the store its instant was defaulted; the other entries the service stamps keep the
+   * application clock, which is the one their grants are judged on.
+   */
+  it('tells the store about a defaulted instant for a grant with none and for no other entry', async () => {
+    const { service, store } = skewed()
+    const append = jest.spyOn(store, 'appendEntry')
+    await service.grant(REF, { amountNanoUsd: 5n, idempotencyKey: 'a', reason: 'r' })
+    await service.grant(REF, { amountNanoUsd: 5n, effectiveAt: new Date(START), idempotencyKey: 'b', reason: 'r' })
+    await service.adjust(REF, { amountNanoUsd: 1n, idempotencyKey: 'c', reason: 'r' })
+    expect(append.mock.calls.map((call) => call[3])).toEqual([{ effectiveAtDefaulted: true }, { effectiveAtDefaulted: false }, { effectiveAtDefaulted: false }])
+    // No allocations are named: a store that tests the argument for presence is called as it was.
+    expect(append.mock.calls.map((call) => call[2])).toStrictEqual([undefined, undefined, undefined])
+  })
 })

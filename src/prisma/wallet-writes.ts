@@ -127,11 +127,11 @@ export async function ensureWallet(tx: SqlExecutor, ref: WalletRef, autoCreate: 
  * Insert a wallet entry, returning the stored row. The wallet row is locked by the caller: the statement takes the next sequence of the
  * wallet from it, so the sequence is the commit order, and the entry carries the balance the caller says it leaves.
  */
-export async function insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry, balanceAfter: Sql, refundsEntryId?: string): Promise<WalletEntry> {
+export async function insertWalletEntry(tx: SqlExecutor, walletId: string, entry: NewWalletEntry, balanceAfter: Sql, refundsEntryId?: string, effectiveAt: Sql = sql`${entry.effectiveAt}`): Promise<WalletEntry> {
   const rows = await tx.query<WalletEntryRow[]>(sql`
     WITH "n" AS (UPDATE "ai_wallets" SET "entrySeq" = "entrySeq" + 1, "updatedAt" = ${DB_NOW_SQL} WHERE "id" = ${walletId} RETURNING "entrySeq")
     INSERT INTO "ai_wallet_entries" ("id", "walletId", "type", "amountNanoUsd", "priority", "effectiveAt", "expiresAt", "usageRecordId", "idempotencyKey", "reason", "createdAt", "seq", "balanceAfterNanoUsd", "refundsEntryId")
-    VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${entry.effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL}, (SELECT "entrySeq" FROM "n"), ${balanceAfter}, ${refundsEntryId ?? null})
+    VALUES (${randomUUID()}, ${walletId}, ${entry.type}, ${entry.amountNanoUsd}, ${entry.priority}, ${effectiveAt}, ${entry.expiresAt ?? null}, ${entry.usageRecordId ?? null}, ${entry.idempotencyKey}, ${entry.reason ?? null}, ${DB_NOW_SQL}, (SELECT "entrySeq" FROM "n"), ${balanceAfter}, ${refundsEntryId ?? null})
     RETURNING *
   `)
   return mapWalletEntryRow(firstOrThrow(rows))

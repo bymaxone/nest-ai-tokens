@@ -79,6 +79,15 @@ export interface RefundToSourceInput {
   now: Date
 }
 
+/** What {@link IWalletStore.appendEntry} is told about an entry besides its fields. */
+export interface AppendEntryOptions {
+  /**
+   * The host gave no `effectiveAt`, so the entry carries the caller's current instant. A store that stamps `createdAt` from a
+   * clock of its own stores the earlier of the two, and judges the entry's balance contribution on what it stored.
+   */
+  effectiveAtDefaulted?: boolean
+}
+
 /**
  * The prepaid wallet port.
  *
@@ -99,6 +108,7 @@ export interface IWalletStore {
     ref: WalletRef,
     entry: NewWalletEntry,
     allocations?: { grantEntryId: string; amountNanoUsd: bigint }[],
+    options?: AppendEntryOptions,
   ): Promise<WalletEntry>
   /**
    * Atomic conditional debit against the materialized balance. `null` = insufficient (§9.4). Judged at `now`, it first credits, once each, the
