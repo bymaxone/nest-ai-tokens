@@ -24,11 +24,29 @@ describe('money guards against values the type does not allow', () => {
     expect(() => formatNanoUsd(1n, { decimals: decimals as never })).toThrow(RangeError)
   })
 
-  /** The message names the function and the range. */
-  it('formatNanoUsd names itself and the range in the refusal', () => {
-    // Scenario: a host reads the message to find which option was out of range.
-    expect(() => formatNanoUsd(1n, { decimals: 10 })).toThrow(
+  /** The message names the function and the range, on either side of it. */
+  it.each([-1, 10])('formatNanoUsd names itself and the range when refusing %p', (decimals) => {
+    // Scenario: a host reads the message to find which option was out of range. A negative value
+    // also fails inside bigint arithmetic, with another message, so the message tells them apart.
+    expect(() => formatNanoUsd(1n, { decimals })).toThrow(
       'formatNanoUsd: decimals must be an integer in [0, 9]'
     )
   })
+})
+
+describe('money at the values where the sign of the amount is zero or absent', () => {
+  /** Both zeroes and an amount that rounds to nothing convert to the one bigint zero. */
+  it.each([0, -0, 1e-12, -1e-12])('floatUsdToNanoUsd converts %p to 0n', (usd) => {
+    // Scenario: bigint has no negative zero, so a zero amount carries no sign.
+    expect(floatUsdToNanoUsd(usd)).toBe(0n)
+  })
+
+  /** NaN and the infinities have no sign to convert and stop at the guard. */
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'floatUsdToNanoUsd refuses %p at the guard',
+    (usd) => {
+      // Scenario: the message shows the refusal is the guard's, not a bigint conversion error.
+      expect(() => floatUsdToNanoUsd(usd)).toThrow('floatUsdToNanoUsd: expected a finite number')
+    }
+  )
 })
