@@ -36,6 +36,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
+import { isAppendWatch } from '../utils/append-watch'
 import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts, newVisit } from '../utils/argument-guards'
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
@@ -48,6 +49,9 @@ import type { ReplayBasis } from '../utils/replay-match'
 import { sameScope, scopeOwnsWallet, scopeToWalletRef } from '../utils/scope-wallet'
 import type { LedgerAppendInput } from './ledger.service'
 import type { LedgerService } from './ledger.service'
+import { NOOP_EVENT_HOOKS, announceSettleFailure } from './metering-hooks'
+import type { MeteringEventHooks } from './metering-hooks'
+export type { MeteringEventHooks } from './metering-hooks'
 import { clearOwed, reverseOrLeaveOwed, settleOwed } from './owed-effects'
 import type { MarkupResolver, ResolvedMarkup } from './markup.resolver'
 import { baseColumns, buildAppendInput, settlementPatch, withBaseModel } from './record-columns'
@@ -116,30 +120,12 @@ export interface EstimateCostInput {
   feature?: string
 }
 
-/** The event hooks the lifecycle fires; the module wires them to the dispatcher (default no-op). */
-export interface MeteringEventHooks {
-  usageRecorded(record: UsageRecord): Promise<void>
-  priceMissing(record: UsageRecord): Promise<void>
-  holdReleased(record: UsageRecord, reason: string, expired: boolean): Promise<void>
-  usageReversed(original: UsageRecord, reversalRecordId: string, reason: string): Promise<void>
-  audit(action: string, details: Record<string, unknown>): Promise<void>
-}
-
 /** The resolved-options subset the metering facade consumes. */
 export type MeteringServiceOptions = Pick<ResolvedAiTokensOptions, 'ratingMode'> & {
   /** Absent in record-only setups that never place a hold. */
   holds?: ResolvedAiTokensOptions['holds']
   /** Absent when the wallet feature is disabled. */
   wallets?: ResolvedAiTokensOptions['wallets']
-}
-
-/** The no-op hooks used until the event dispatcher is wired. */
-const NOOP_EVENT_HOOKS: MeteringEventHooks = {
-  usageRecorded: (): Promise<void> => Promise.resolve(),
-  priceMissing: (): Promise<void> => Promise.resolve(),
-  holdReleased: (): Promise<void> => Promise.resolve(),
-  usageReversed: (): Promise<void> => Promise.resolve(),
-  audit: (): Promise<void> => Promise.resolve(),
 }
 
 /** The neutral scope used for an estimate when the caller supplies none. */
@@ -207,14 +193,16 @@ export class MeteringService {
    * budget feature.
    *
    * @param input The usage, its preset/normalizer, and the metering context.
+   * @param tracked Not for callers. Every value but the library's own append watch is ignored, neither read nor called.
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
-  async record(given: RecordInput): Promise<UsageRecord> {
+  async record(given: RecordInput, ...tracked: unknown[]): Promise<UsageRecord> {
     const input = recordInput(given)
     assertObject('input', input)
     assertMeteringContext(input.context)
-    return (await this.recordSettled(input)).record
+    const [watch] = tracked
+    return (await this.recordSettled(input, isAppendWatch(watch) ? () => { watch.mark() } : undefined)).record
   }
 
   /**
@@ -225,17 +213,17 @@ export class MeteringService {
    * another instance, in this process or another, is not serialized with it.
    * @internal
    */
-  private async recordSettled(input: RecordInput): Promise<RecordOutcome> {
+  private async recordSettled(input: RecordInput, onAppended?: () => void): Promise<RecordOutcome> {
     const key = input.context.idempotencyKey
-    if (key === undefined) return this.recordOnce(input, undefined)
-    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key))
+    if (key === undefined) return this.recordOnce(input, undefined, onAppended)
+    return this.inflight.run(jsonText([input.context.tenantId, key]), () => this.recordOnce(input, key, onAppended))
   }
 
   /**
    * The body of {@link record}, for one call.
    * @internal
    */
-  private async recordOnce(input: RecordInput, key: string | undefined): Promise<RecordOutcome> {
+  private async recordOnce(input: RecordInput, key: string | undefined, onAppended?: () => void): Promise<RecordOutcome> {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
@@ -271,8 +259,9 @@ export class MeteringService {
     try {
       record = await this.ledger.append(withHashedModel(appendInput, parsed.model), callKey)
     } catch (error) {
-      return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis })
+      return this.afterFailedAppend(error, { key, callKey, appendInput, enforcement, basis, onAppended })
     }
+    onAppended?.()
     if (enforcement !== null) await this.effects.commitBudget(enforcement)
     if (rating.priceMissing) await this.events.priceMissing(record)
     await this.events.usageRecorded(record)
@@ -288,7 +277,7 @@ export class MeteringService {
    */
   private async afterFailedAppend(
     error: unknown,
-    call: { key: string | undefined; callKey: string; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis },
+    call: { key: string | undefined; callKey: string; appendInput: LedgerAppendInput; enforcement: Enforcement | null; basis: ReplayBasis; onAppended: (() => void) | undefined },
   ): Promise<RecordOutcome> {
     const { key, callKey, appendInput, enforcement, basis } = call
     const conflict = isIdempotencyConflict(error)
@@ -297,6 +286,7 @@ export class MeteringService {
     // A row after an error other than the key conflict is this attempt's own, written before the error reached it, when
     // it is the same payer's and carries this attempt's instant: its charge stays, and a retry with the key replays the row.
     const committed = row !== null && !conflict && sameScope(row.scope, appendInput.scope) && row.occurredAt.getTime() === appendInput.occurredAt.getTime()
+    if (committed) call.onAppended?.()
     // A keyed call keeps its wallet debit, which a retry replays, only when the row found is the same call shape and
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
@@ -485,6 +475,11 @@ export class MeteringService {
     return settled
   }
 
+  /** Announce usage that was served and not settled; never throws. @internal Called by `meter()` and `MeteringInterceptor`. */
+  reportSettleFailure(hold: Hold | undefined, caller: HoldCaller, error: unknown, where: 'interceptor' | 'meter' = 'interceptor'): Promise<void> {
+    return announceSettleFailure({ ledger: this.ledger, events: this.events }, this.logger, { where, ...(hold !== undefined ? { holdId: hold.id } : {}) }, caller, error)
+  }
+
   /**
    * Void a hold: `pending → released`, restoring wallet/budget in full (§2.2 step
    * 4). NEVER bills. A no-op (with a warning) on an already-captured hold; a no-op
@@ -525,10 +520,16 @@ export class MeteringService {
     const startedAt = this.now().getTime()
     if (estimate === undefined) {
       const result = await settled(fn(), true)
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-      const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } })
-      if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
-      return { result, usage }
+      const row = { appended: false }
+      try {
+        // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
+        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } }, () => (row.appended = true))
+        if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
+        return { result, usage }
+      } catch (error) {
+        if (!row.appended) await this.reportSettleFailure(undefined, context, error, 'meter')
+        throw error
+      }
     }
     const hold = await this.hold(context, estimate)
     let result: T
@@ -543,10 +544,10 @@ export class MeteringService {
       this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
       return { result, usage }
     } catch (error) {
-      // Release the reservation so a capture failure (malformed usage, transient store
-      // error) does not strand wallet/budget headroom for the full TTL; a release on an
-      // already-posted hold is a safe no-op. Never mask the original error.
+      // Release so a failed capture strands no wallet or budget headroom for the TTL (a posted
+      // hold is left as it is), then announce the usage. Neither masks the original error.
       await this.release(hold, context, 'capture failed').catch(() => undefined)
+      await this.reportSettleFailure(hold, context, error, 'meter')
       throw error
     }
   }

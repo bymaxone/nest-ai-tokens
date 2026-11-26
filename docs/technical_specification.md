@@ -945,7 +945,7 @@ export interface UsageRecord {
 
 **Balance/spend math always sums records with `status IN ('posted', 'reversed')`** — compensating records are themselves `posted` with negated amounts, so sums stay correct without special-casing.
 
-**The hold reaper** (a periodic sweep inside the module, `holds.reaperIntervalSeconds`) finds `pending` records older than `holds.ttlSeconds` and performs the same restoration as `release()`. It is a v0.1 deliverable (Phase 4): a hold moves real wallet/budget headroom, so a crash between `hold()` and `capture()` must not strand it. Multi-replica safety: the sweep uses the store's atomic transition (only one replica wins each expired hold).
+**The hold reaper** (a periodic sweep inside the module, `holds.reaperIntervalSeconds`) finds `pending` records older than `holds.ttlSeconds` and performs the same restoration as `release()`. It reads them in bounded batches, and stops early at a batch of which it could move no hold. It is a v0.1 deliverable (Phase 4): a hold moves real wallet/budget headroom, so a crash between `hold()` and `capture()` must not strand it. Multi-replica safety: the sweep uses the store's atomic transition (only one replica wins each expired hold).
 
 ### 8.4 Exactly-once via idempotency keys
 
@@ -1302,7 +1302,10 @@ export class MeteringService {
     occurredAt?: Date                    // default now; backfills pass the original time
   }): Promise<UsageRecord>
 
-  /** hold (estimate) → run fn → capture (actuals); release on error. ctx.preset drives normalization. */
+  /**
+   * hold (estimate) → run fn → capture (actuals); release on error. ctx.preset drives normalization. When fn served and the
+   * settle failed, emits ai_tokens.settle.failed (after the release, when there is a hold) unless the ledger shows the row posted, and rethrows.
+   */
   meter<T>(
     fn: () => Promise<T>,
     context: MeteringContext,
@@ -1352,7 +1355,7 @@ export class MeteringService {
 
 - **`BudgetGuard`** (`CanActivate`): resolves the context via `scopeResolver` (§4.1), merges the decorator config, and calls `getStatus()`. If any matching hard budget is exhausted → `AI_TOKENS_BUDGET_EXCEEDED`/`_QUOTA_EXCEEDED` before the handler runs. When `@RequireBudget` supplies an `estimate`, the guard additionally places a **hold** and attaches it to the request; otherwise it is **check-only** (a cheaper but racy gate — the §10.8 atomic consume still protects the actual charge at capture/record time).
 - The guard attaches `request.aiTokens = { status: AccessStatus, hold?: Hold, context: MeteringContext }` — the request-enrichment contract the prior `AIGenerationGuard` provides today (`tokensRemaining`, `estimatedTokens`).
-- **`MeteringInterceptor`**: after the handler resolves, extracts the raw usage from the return value using `@Meter`'s `extract` (default: the `usage` property), normalizes via `@Meter`'s `preset`, and either **captures the guard's hold** (when present on the request) or calls `record({ enforce: true })`. On handler error with a hold present, it releases the hold. With `exposeHeaders: true`, sets `x-ai-tokens-cost`, `x-ai-tokens-billed-cost`, and `x-ai-tokens-budget-remaining` response headers (the LiteLLM `x-litellm-response-cost` pattern).
+- **`MeteringInterceptor`**: after the handler resolves, extracts the raw usage from the return value using `@Meter`'s `extract` (default: the `usage` property), normalizes via `@Meter`'s `preset`, and either **captures the guard's hold** (when present on the request) or calls `record({ enforce: true })`. On handler error with a hold present, it releases the hold. When the handler returned with a hold present and settling failed, it does not release the hold, leaving a pending one to the reaper, emits `ai_tokens.settle.failed` unless the ledger shows the row posted, and rethrows the settle error. A handler that fails after emitting a value ends the stream with its own error and releases the hold, with no event for the capture that release defeats. Without a hold, and with a context that names a tenant and scope, a failure after the context resolved and before `record()` confirmed its row was written emits the same event. The interceptor keeps a hold it failed to settle until its TTL, so the reservation of a served call goes on counting and a retry with the same idempotency key gets the same hold; `meter()` releases its hold on a failed capture, so that it strands no headroom for the TTL, and emits the same event. With `exposeHeaders: true`, sets `x-ai-tokens-cost`, `x-ai-tokens-billed-cost`, and `x-ai-tokens-budget-remaining` response headers (the LiteLLM `x-litellm-response-cost` pattern).
 
 ### 11.4 Decorators
 
@@ -1416,6 +1419,7 @@ Two delivery channels, both optional and composable (§4.1 `events`):
 | `ai_tokens.usage.recorded` | A record posts (record/capture) | `{ usageRecordId, feature, provider, model, serviceTier, totalTokens, rawCostNanoUsd, billedCostNanoUsd, enforced, isSystemCost }` |
 | `ai_tokens.usage.reversed` | `reverse()` completes | `{ usageRecordId, reversalRecordId, reason }` |
 | `ai_tokens.hold.released` | Explicit release or reaper sweep | `{ holdId, reason, expired: boolean }` |
+| `ai_tokens.settle.failed` | `MeteringInterceptor` or `meter()`: the call was served and not confirmed as settled | `{ holdId?, correlationId?, errorCode?, where: 'interceptor' \| 'meter' }`; `correlationId` only when it is text of at most 256 characters with no NUL |
 | `ai_tokens.budget.threshold_crossed` | Window spend crosses a soft threshold | `{ budgetId, threshold, usedFraction, limit, spent, remaining, resetsAt }` (LiteLLM-superset fields) |
 | `ai_tokens.budget.exceeded` | A hard budget blocks a call | `{ budgetId, policy, dimension: 'cost' \| 'tokens' \| 'count', limit, spent, resetsAt }` |
 | `ai_tokens.budget.projected_exceeded` | Burn rate projects crossing before reset | `{ budgetId, projectedAt, usedFraction, resetsAt }` |

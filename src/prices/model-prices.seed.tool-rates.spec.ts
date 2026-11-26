@@ -77,7 +77,7 @@ function build(
     usageRecorded: jest.fn(() => Promise.resolve()),
     priceMissing: jest.fn(() => Promise.resolve()),
     holdReleased: jest.fn(() => Promise.resolve()),
-    usageReversed: jest.fn(() => Promise.resolve()),
+    usageReversed: jest.fn(() => Promise.resolve()), settleFailed: jest.fn(() => Promise.resolve()),
     audit: jest.fn(() => Promise.resolve()),
   }
   const telemetry = new TelemetryEmitter(opts.telemetry ?? null)

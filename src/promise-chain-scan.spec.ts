@@ -18,8 +18,8 @@ const EXEMPT: readonly { file: string; text: string; reason: string }[] = [
   { file: 'server/utils/absorb-host-call.ts', text: 'Promise.resolve(call()).catch((error: unknown) => {', reason: 'Absorbs a host callback: the chain result is discarded and only logs the failure.' },
   { file: 'server/enforcement/metering.interceptor.ts', text: "const released = this.metering.release(enrichment.hold, enrichment.context, 'handler threw').catch(() => {", reason: 'The release of a hold after a handler threw: the chain result is only awaited to keep the failure from escaping, never read.' },
   { file: 'server/utils/prototype-guard.ts', text: 'if (result instanceof Promise) return result.finally(() => void (active = was)) as T', reason: 'The test seam withoutRealmGuard restores a flag after a promise settles; it is removed from the shipped bundle and the result is the caller own promise.' },
-  ...['usageRecorded', 'priceMissing', 'holdReleased', 'usageReversed', 'audit'].map((name) => ({
-    file: 'server/services/metering.service.ts',
+  ...['usageRecorded', 'priceMissing', 'holdReleased', 'usageReversed', 'settleFailed', 'audit'].map((name) => ({
+    file: 'server/services/metering-hooks.ts',
     text: `${name}: (): Promise<void> => Promise.resolve(),`,
     reason: 'A resolved promise of nothing for a no-op event hook; it carries no value.',
   })),

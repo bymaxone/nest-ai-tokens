@@ -16,6 +16,7 @@ import type {
   HoldReleasedEventData,
   MeteringScope,
   PriceMissingEventData,
+  SettleFailedEventData,
   UsageRecord,
   UsageRecordedEventData,
   UsageReversedEventData,
@@ -67,6 +68,8 @@ export function createMeteringEventHooks(dispatcher: EventDispatcher): MeteringE
       const data: UsageReversedEventData = { usageRecordId: original.id, reversalRecordId, reason }
       return dispatcher.emit('ai_tokens.usage.reversed', original.tenantId, original.scope, data)
     },
+    settleFailed: (tenantId: string, scope: MeteringScope, data: SettleFailedEventData): Promise<void> =>
+      dispatcher.emit('ai_tokens.settle.failed', tenantId, scope, data),
     audit: (action: string, details: Record<string, unknown>): Promise<void> => dispatcher.audit(action, details),
   }
 }
