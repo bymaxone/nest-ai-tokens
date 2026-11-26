@@ -16,6 +16,7 @@ export type AiTokensEventType =
   | 'ai_tokens.usage.recorded'
   | 'ai_tokens.usage.reversed'
   | 'ai_tokens.hold.released'
+  | 'ai_tokens.settle.failed'
   | 'ai_tokens.budget.threshold_crossed'
   | 'ai_tokens.budget.exceeded'
   | 'ai_tokens.budget.projected_exceeded'
@@ -69,6 +70,20 @@ export interface HoldReleasedEventData {
   holdId: string
   reason: string
   expired: boolean
+}
+
+/**
+ * Payload of `ai_tokens.settle.failed`: served usage the library could not confirm as posted. When the ledger could not be read
+ * after the failure the row may exist, so check the ledger before billing it again.
+ */
+export interface SettleFailedEventData {
+  /** The hold that was not settled; absent when the call had no hold. */
+  holdId?: string
+  /** The call's `correlationId`, when its context carries one. */
+  correlationId?: string
+  errorCode?: string
+  /** The caller that could not settle. */
+  where: 'interceptor' | 'meter'
 }
 
 /** `ai_tokens.budget.threshold_crossed` payload. */

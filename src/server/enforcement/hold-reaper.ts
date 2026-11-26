@@ -24,8 +24,10 @@ import type { MeteringService } from '../services/metering.service'
 import type { BudgetReferenceSweeper } from './budget-reference-sweeper'
 import type { OrphanDebitSweeper } from './orphan-debit-sweeper'
 
-/** The maximum number of expired holds reclaimed per sweep. */
+/** The number of expired holds read at a time. */
 const REAP_BATCH_SIZE = 100
+/** The most batches of expired holds one sweep reclaims, so that no backlog keeps a sweep from ending. */
+const REAP_BATCHES_PER_SWEEP = 100
 /** The maximum number of owed rows the settlement sweep finishes per tick. */
 const OWED_BATCH_SIZE = 100
 /** Milliseconds per second (interval/TTL are configured in seconds). */
@@ -162,7 +164,8 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   }
 
   /**
-   * Reclaim one batch of expired pending holds. For each: win the atomic
+   * Reclaim the expired pending holds, then run the settlement sweeps. Batches are read while one comes back full, up to a bound, and
+   * a batch of which no hold could be moved ends the reclaiming, so that the next tick retries it. For each hold: win the atomic
    * `pending → released` claim (a `null` result means another replica won — skip),
    * then run the shared restoration + `hold.released` emission. A failure on one
    * hold is logged and never aborts the batch; a failure of the expired-hold scan
@@ -171,16 +174,29 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
    */
   async sweep(): Promise<void> {
     const cutoff = new Date(this.now().getTime() - this.options.holds.ttlSeconds * MS_PER_SECOND)
-    let expired: UsageRecord[]
-    try {
-      expired = await this.ledger.findExpiredHolds(cutoff, REAP_BATCH_SIZE)
-    } catch (error) {
-      this.logger.warn(`${SCAN_FAILED_LOG_KEY} ${describeError(error)}`)
-      return
+    for (let batch = 0; batch < REAP_BATCHES_PER_SWEEP; batch += 1) {
+      let expired: UsageRecord[]
+      try {
+        expired = await this.ledger.findExpiredHolds(cutoff, REAP_BATCH_SIZE)
+      } catch (error) {
+        this.logger.warn(`${SCAN_FAILED_LOG_KEY} ${describeError(error)}`)
+        return
+      }
+      const moved = await this.reap(expired)
+      if (expired.length < REAP_BATCH_SIZE || !moved) break
     }
+    await this.settleOwed()
+    await this.sweepReferences()
+    await this.sweepOrphans()
+  }
+
+  /** Release each of these holds and restore what it reserved; returns whether any left `pending`, here or on another replica. */
+  private async reap(expired: readonly UsageRecord[]): Promise<boolean> {
+    let moved = false
     for (const record of expired) {
       try {
         const claimed = await this.ledger.transition(record.id, 'pending', 'released', undefined, {})
+        moved = true
         if (claimed === null) continue
         // Stryker disable next-line StringLiteral: 'expired' reason string is internal audit text; tests check that holds are released, not the reason string
         await this.metering.restoreReleasedHold(claimed, 'expired', true)
@@ -190,9 +206,7 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         this.logger.warn(`failed to reap expired hold ${record.id}`)
       }
     }
-    await this.settleOwed()
-    await this.sweepReferences()
-    await this.sweepOrphans()
+    return moved
   }
 
   /** Give the wallet debits no row stands behind their verdict, when the sweep is on and the stores can list them. */

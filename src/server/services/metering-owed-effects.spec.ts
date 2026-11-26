@@ -71,7 +71,7 @@ async function build(withoutMarkerCalls = false): Promise<Built> {
   const budgets = new BudgetService(new InMemoryBudgetStore({ now }), ledger, options.budgets as never, now)
   const events: MockEvents = {
     usageRecorded: jest.fn(() => Promise.resolve()), priceMissing: jest.fn(() => Promise.resolve()),
-    holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()),
+    holdReleased: jest.fn(() => Promise.resolve()), usageReversed: jest.fn(() => Promise.resolve()), settleFailed: jest.fn(() => Promise.resolve()),
     audit: jest.fn(() => Promise.resolve()),
   }
   const service = new MeteringService(ledger, new PricingService(options, pricingStore), new MarkupResolver(options), options, events, wallets, budgets, now, new TelemetryEmitter(null), new ContentCapture({ enabled: false }))

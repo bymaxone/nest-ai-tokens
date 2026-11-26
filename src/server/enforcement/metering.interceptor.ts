@@ -4,7 +4,9 @@
  * raw usage from the return value (via `@Meter.extract`, default `result.usage`),
  * then either settles the guard's hold (`capture`) or records enforcing post-hoc
  * (`record({ enforce: true })`). On a handler error with a hold present it releases
- * the hold and rethrows the ORIGINAL error — never swallowing it. With
+ * the hold; when settling fails after the handler returned it leaves a hold pending,
+ * and announces `ai_tokens.settle.failed` when the usage was not recorded. The handler's error and the settle's each reach the
+ * caller as the ORIGINAL error. With
  * `exposeHeaders` it sets the three `x-ai-tokens-*` response headers as DECIMAL
  * STRINGS (bigint never crosses the HTTP boundary raw, §15.5). Handlers without a
  * `@Meter` are passed through untouched. `scopeResolver` is TRUSTED INPUT — the
@@ -22,7 +24,9 @@ import type { UsageRecord } from '../../shared'
 import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
-import type { MeteringContext } from '../interfaces'
+import type { Hold, MeteringContext } from '../interfaces'
+import { absorbHostCall } from '../utils/absorb-host-call'
+import { appendWatch } from '../utils/append-watch'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
@@ -30,8 +34,21 @@ import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
 
+/** The log key of a failure to write the line about a hold that could not be released. */
+const RELEASE_FAILED_LOG_KEY = 'ai_tokens.hold.release_failed'
+
 /** Every field of the guard's enrichment, mapped to `true` so that the compiler keeps the list complete. */
 const ENRICHMENT_FIELDS: { readonly [K in keyof Required<RequestAiTokens>]: true } = { status: true, context: true, hold: true }
+
+/** What a settle threw, marked so that the one catch of the pipeline can tell it from the handler's own error. */
+class SettleFailure {
+  constructor(readonly thrown: unknown) {}
+}
+
+/** What one intercepted call knows about its handler. */
+interface CallState {
+  handlerFailed: boolean
+}
 
 /** The response shape the interceptor writes headers through (adapter-agnostic). */
 interface HeaderSink {
@@ -67,7 +84,7 @@ export class MeteringInterceptor implements NestInterceptor {
 
   /**
    * Capture (or record) the handler's usage after it resolves; release the guard's
-   * hold on a handler error.
+   * hold on a handler error, and leave it pending when settling fails.
    *
    * @param executionContext The request execution context.
    * @param next The downstream handler.
@@ -82,31 +99,70 @@ export class MeteringInterceptor implements NestInterceptor {
     // an enrichment nor the hold the guard did not place.
     const given = fieldOf(request, 'aiTokens')
     const enrichment = typeof given === 'object' && given !== null ? fieldsOf(given as RequestAiTokens, ENRICHMENT_FIELDS) : undefined
+    const call: CallState = { handlerFailed: false }
     return next.handle().pipe(
-      mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result))),
-      catchError((error: unknown) => this.onError(enrichment, error)),
+      mergeMap((result: unknown) => from(this.settle(executionContext, config, enrichment, result, call)).pipe(catchError((error: unknown) => throwError(() => new SettleFailure(error))))),
+      // One catch, after the settle: a handler that fails while a settle is in flight ends the stream with its own error.
+      catchError((error: unknown) => {
+        if (error instanceof SettleFailure) return throwError(() => error.thrown)
+        call.handlerFailed = true
+        return this.onError(enrichment, error)
+      }),
     )
   }
 
   /** Settle the handler's usage and set the cost headers; returns the untouched result. */
-  private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<unknown> {
-    const usage = extractUsage(result, config)
-    const record = await this.capture(executionContext, config, enrichment, usage)
+  private async settle(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown, call: CallState): Promise<unknown> {
+    const record = enrichment?.hold !== undefined ? await this.captureHeld(enrichment.hold, enrichment.context, config, result, call) : await this.recordServed(executionContext, config, enrichment, result)
     if (config.exposeHeaders === true) this.setHeaders(executionContext, record, enrichment)
     return result
   }
 
-  /** Capture the guard's hold when present, else record enforcing post-hoc. */
-  private async capture(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, usage: unknown): Promise<UsageRecord> {
-    if (enrichment?.hold !== undefined) return this.metering.capture(enrichment.hold, enrichment.context, usage, config.preset)
+  /**
+   * Settle the guard's hold. A failure leaves the hold pending for the reaper and is announced from here, so that a caller that
+   * stops waiting takes nothing with it. A handler that failed meanwhile releases the hold itself, and a capture that loses to that
+   * release is no settle failure.
+   */
+  private async captureHeld(hold: Hold, context: MeteringContext, config: MeterConfig, result: unknown, call: CallState): Promise<UsageRecord> {
+    try {
+      return await this.metering.capture(hold, context, extractUsage(result, config), config.preset)
+    } catch (error) {
+      if (!call.handlerFailed) await this.announce(hold, context, error)
+      throw error
+    }
+  }
+
+  /** Announce a failed settle. A substitute metering service without the method, or one whose method fails, leaves the settle error as it is. */
+  private async announce(hold: Hold | undefined, context: MeteringContext, error: unknown): Promise<void> {
+    try {
+      await this.metering.reportSettleFailure(hold, context, error)
+    } catch {
+      // The settle error is the one that reaches the caller.
+    }
+  }
+
+  /**
+   * Record a served call that has no hold. A failure that wrote no row is announced, since nothing else keeps the usage; it needs
+   * the caller's context, so a context that does not resolve announces nothing.
+   */
+  private async recordServed(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<UsageRecord> {
     const context = await this.resolveContext(executionContext, config, enrichment)
-    return this.metering.record({
-      usage,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
-      ...(config.preset !== undefined ? { preset: config.preset } : {}),
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
-      context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
-    })
+    const watch = appendWatch()
+    try {
+      return await this.metering.record(
+        {
+          usage: extractUsage(result, config),
+          // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
+          ...(config.preset !== undefined ? { preset: config.preset } : {}),
+          // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
+          context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
+        },
+        watch,
+      )
+    } catch (error) {
+      if (!watch.appended) await this.announce(undefined, context, error)
+      throw error
+    }
   }
 
   /** The metering context: the guard's enrichment, else the host `scopeResolver`. */
@@ -128,8 +184,11 @@ export class MeteringInterceptor implements NestInterceptor {
     // Stryker disable next-line StringLiteral: release reason is internal audit text; tests check error propagation behavior
     const released = this.metering.release(enrichment.hold, enrichment.context, 'handler threw').catch(() => {
       // Stryker disable next-line BlockStatement: best-effort hold release; the reaper reclaims unreleased holds
-      // Stryker disable next-line StringLiteral: logger text is internal observability
-      this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
+      // The logger is the host's, and a line it cannot write must not replace the handler's error.
+      absorbHostCall(this.logger, RELEASE_FAILED_LOG_KEY, () => {
+        // Stryker disable next-line StringLiteral: logger text is internal observability
+        this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
+      })
     })
     return from(released).pipe(mergeMap(() => throwError(() => error)))
   }

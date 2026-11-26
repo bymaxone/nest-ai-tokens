@@ -12,7 +12,7 @@ import type { PricingService } from '../services'
 
 /**
  * Refuse, before any handler or reservation, an estimate whose settle would be refused with `AI_TOKENS_PRICE_NOT_FOUND` after the provider
- * call, with the served usage released unbilled. The settle prices the row the hold writes, so this asks the pricing service the question
+ * call, with the served usage left unbilled: `MeteringInterceptor` leaves the hold pending for the reaper and `meter()` releases it. The settle prices the row the hold writes, so this asks the pricing service the question
  * `capture()` will ask, of the same identity: the preset's provider (else `unspecified`), `context.baseModel` as the model (else the
  * placeholder `unspecified`, which no rate table lists), chat, the context's tier, and `baseModel` as the requested model. A listed
  * `baseModel` therefore passes for that provider and an unlisted one is refused, as is none. With no preset the provider is `unspecified`, so no

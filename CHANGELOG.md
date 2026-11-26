@@ -10,6 +10,35 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+### Added
+
+- `ai_tokens.settle.failed` (`{ holdId?, correlationId?, errorCode?, where }`, with the tenant and scope on the envelope) and the
+  `SettleFailedEventData` type. It says that a served call was not settled, so the host can reconcile the usage from its own
+  provider log; the error's message is never carried. A call with no hold has no `holdId`, and
+  `correlationId` is the one of the call's metering context, so set it if you need to match such a call; it is carried when it is text
+  of at most 256 characters with no NUL. When the ledger could not be read back after the failure, the row may exist all the same, so
+  check the ledger before billing from your provider's log.
+  - **Known limit.** The event is a snapshot: the row may post after it, and `LedgerFilter` has no `correlationId`.
+  - **Known limit.** The error reaches the caller after the delivery, so a sink that never settles holds the failed request.
+  - **Known limit.** A small budget or wallet can refuse further calls until the reaper releases an unsettled hold; `release()` it by
+    the event's `holdId`, tenant and scope to free it sooner.
+  - **Apply:** `AiTokensEventType` gains a member, so a `switch` that must cover every type needs a case for it.
+
+### Fixed
+
+- `MeteringInterceptor` released the guard's hold as `handler threw` when the handler had succeeded and settling failed. A pending hold
+  now stays pending and the hold reaper releases it after TTL, normally within one interval. **Apply:** until then its wallet and budget
+  reservation stays in place, and a retry with the same idempotency key gets the same hold. A consumer of the
+  `ai_tokens.hold.released` event no longer receives one at the time of the failure.
+- `MeteringInterceptor` without a guard's hold now emits `ai_tokens.settle.failed` when the handler returned and `record()` failed
+  before writing its row. The thrown error is unchanged.
+- `MeteringService.meter()` now emits `ai_tokens.settle.failed` when the function had served and its usage could not be
+  settled, after releasing the hold when there is one; the release and the thrown error are unchanged.
+- The hold reaper reclaimed at most 100 expired holds per sweep, so a backlog kept its reservations for many sweeps after the TTL. A
+  sweep now reads further batches while one comes back full, up to 100 batches.
+  - **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches,
+    with a warning each time.
+
 ## [1.1.24] - 2026-11-25
 
 **Apply:** run `0004_wallet_entry_order.sql`, then `0005_wallet_entry_order_indexes.sql`, before you update the package. 0004 only adds columns and 0005 only adds indexes and a foreign key; neither rewrites a row, and each header documents its rollback. Entries written before 0004 keep `seq` and `balanceAfterNanoUsd` null and sort first in the order they always had. During a rolling deploy, an instance still on the previous release writes entries with a null `seq`, so those entries list before the ones the new code wrote; the balance, the running balance of later entries and the refund cap count them correctly.

@@ -149,3 +149,8 @@ void _exMsg
 void _safeValue
 void _collector
 void _collectorUsage
+
+// — server: `record` handed to a caller that passes more than one argument —
+import type { MeteringService as RecordingService } from '@bymax-one/nest-ai-tokens'
+
+export const _recordEach = (metering: RecordingService, inputs: Parameters<RecordingService['record']>[0][]): Promise<unknown>[] => inputs.map(metering.record, metering)

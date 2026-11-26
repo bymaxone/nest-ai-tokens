@@ -77,7 +77,7 @@ needs them is enabled. OpenTelemetry is not a dependency at all: you hand the li
 
 - ✅ **Five subpaths** — see [Subpath Exports](#-subpath-exports)
 - ✅ **Usage reports** — by scope, feature, model or date, with currency conversion and CSV or JSON export
-- ✅ **Typed events** — ten emitted event types over `@nestjs/event-emitter`, optional
+- ✅ **Typed events** — emitted over `@nestjs/event-emitter`, optional
 - ✅ **OpenTelemetry** — an optional `ITelemetrySink` port for `gen_ai.*` signals, never carrying prompt
   or completion text; the library imports no OpenTelemetry package
 - ✅ **Typed end to end** — TypeScript `strict`, zero `any`
@@ -640,6 +640,7 @@ When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is 
 | `ai_tokens.usage.recorded`            | A usage record is posted to the ledger                    |
 | `ai_tokens.usage.reversed`            | A record is reversed by a compensating entry              |
 | `ai_tokens.hold.released`             | A hold is released without charging                       |
+| `ai_tokens.settle.failed`             | The interceptor or `meter()` left a served call unsettled |
 | `ai_tokens.budget.threshold_crossed`  | A soft threshold is crossed                               |
 | `ai_tokens.budget.exceeded`           | A hard budget is exhausted                                |
 | `ai_tokens.budget.projected_exceeded` | An estimate would exceed a budget                         |
@@ -650,6 +651,22 @@ When `@nestjs/event-emitter` is installed and `EventEmitterModule.forRoot()` is 
 | `ai_tokens.audit`                     | An auditable operation completed                          |
 
 All event payloads use `bigint` nano-USD internally and `string` decimal at JSON boundaries.
+
+When a served call cannot be settled, `MeteringInterceptor` leaves the guard's hold to the reaper, which releases it after
+`holds.ttlSeconds`, normally within one `holds.reaperIntervalSeconds`. Until then its reservation goes on counting against the wallet and budget, and a retry with the same
+idempotency key gets the same hold. To give the reservation back sooner, call `release()` with a hold whose `id` is the event's
+`holdId`, which is the only field of the hold it reads, and a caller of the envelope's `tenantId` and `scope`. `meter()` releases its hold
+at once, so that a failed capture strands no headroom for that long. `meter()` and the interceptor
+emit `ai_tokens.settle.failed`, whose `where` names the caller, for you to reconcile from your provider's log. When the ledger could
+not be read back after the failure, the row may exist all the same: check the ledger before you bill from that log.
+`correlationId` is carried when it is text of at most 256 characters with no NUL.
+
+**Known limits of `ai_tokens.settle.failed`.**
+
+- It is a snapshot: the row may post after it, and `LedgerFilter` has no `correlationId` to look it up by.
+- The error reaches the caller after the event is delivered, so a sink that never settles holds the failed request.
+- A small budget or wallet can refuse further calls while an unsettled hold's reservation waits for the reaper; `release()` it as above.
+- `AiTokensEventType` gains a member, so a `switch` that must cover every type needs a case for it.
 
 ---
 
@@ -823,6 +840,7 @@ specific to security is below.
   sweep's late end does not mark the fresh sweep as finished. At most two sweeps run at once, each holding a store connection until
   the store gives it up: while an abandoned sweep is still running, a second stall starts no third sweep, with one
   `ai_tokens.hold_reaper.sweep_blocked` line per run of such ticks, and the reaper sweeps again when either settles. The timer never stops.
+  **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches, with a warning each time.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.
