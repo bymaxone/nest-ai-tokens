@@ -151,15 +151,13 @@ function checkStorableTokens(usage: NormalizedUsage): NormalizedUsage {
 
 /** Whether a value is a complete, well-typed {@link NormalizedUsage} (every token field finite). */
 export function isNormalizedUsage(usage: unknown): usage is NormalizedUsage {
-  // Stryker disable next-line ConditionalExpression: redundant sub-condition: the `typeof usage !== 'object' → false` variant leaves `usage === null`, and any non-object non-null value is still rejected downstream by `typeof candidate.provider !== 'string'`, so it is behavior-preserving
   if (typeof usage !== 'object' || usage === null) return false
   const candidate = usage as Record<string, unknown>
   if (typeof candidate.provider !== 'string' || typeof candidate.model !== 'string') return false
   if (typeof candidate.operation !== 'string' || !(AI_OPERATIONS as readonly string[]).includes(candidate.operation)) {
     return false
   }
-  // Stryker disable next-line ConditionalExpression: redundant sub-condition: the `typeof candidate[field] === 'number' → true` variant still fails the `Number.isFinite(candidate[field])` operand for a non-number field, so `.every` returns false either way
-  return TOKEN_FIELDS.every((field) => typeof candidate[field] === 'number' && Number.isFinite(candidate[field]))
+  return TOKEN_FIELDS.every((field) => Number.isFinite(candidate[field]))
 }
 
 /** Discriminate a `{ provider, model, … }` estimate (variant A). */
@@ -206,11 +204,9 @@ export function assertHoldEstimate(estimate: HoldEstimate): void {
       ? [['tokens', estimate.tokens]]
       : []
   for (const [name, value] of fields) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the field name
     if (!isCount(value)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} of a hold estimate must be a whole number of 0 or more` })
   }
   if (!isRatedEstimate(estimate) && !isTokenEstimate(estimate) && !isNonNegativeBigint(estimate.amountNanoUsd)) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the field name
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'amountNanoUsd of a hold estimate must be a bigint from 0 to 9223372036854775807' })
   }
 }
@@ -260,7 +256,6 @@ async function rateHoldEstimate(
       operation: estimate.operation,
       serviceTier: tier,
       at,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { baseModel: undefined } is equivalent to {} because resolveRate reads input.baseModel (undefined either way) — same cache key and same `baseModel !== undefined` resolution branch
       ...(context.baseModel !== undefined ? { baseModel: context.baseModel } : {}),
     })
     const rawEstimateNanoUsd = rate === null ? 0n : ratedCost(usage, rate).totalNanoUsd
@@ -291,9 +286,7 @@ async function resolveTokenEstimate(
   at: Date,
 ): Promise<ResolvedHoldEstimate> {
   if (context.preset === undefined) {
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       reason: 'a { tokens } hold estimate requires context.preset to identify the provider',
     })
   }
@@ -325,13 +318,10 @@ export function normalizeCaptureUsage(usage: unknown, normalizer?: (raw: unknown
       return checkUsageCounts(normalizer(usage))
     } catch (error) {
       if (error instanceof AiTokensException) throw error
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics
       throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the normalizer could not read the usage token fields' })
     }
   }
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
   throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     reason: 'capture requires an already-normalized usage or a preset normalizer',
   })
 }
@@ -350,7 +340,6 @@ export function assertCaller(caller: unknown, signature: string): asserts caller
   const { tenantId, scope } = (caller ?? {}) as Partial<HoldCaller>
   if (typeof tenantId !== 'string' || tenantId === '' || typeof scope?.type !== 'string' || typeof scope.id !== 'string') {
     const message = `${signature}: the second argument must be the caller { tenantId, scope } (since 1.1.15)`
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics beyond the code and the message
     throw setErrorMessage(new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: message }), message)
   }
 }
