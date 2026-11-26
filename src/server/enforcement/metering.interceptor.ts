@@ -186,7 +186,6 @@ export class MeteringInterceptor implements NestInterceptor {
       // Stryker disable next-line BlockStatement: best-effort hold release; the reaper reclaims unreleased holds
       // The logger is the host's, and a line it cannot write must not replace the handler's error.
       absorbHostCall(this.logger, RELEASE_FAILED_LOG_KEY, () => {
-        // Stryker disable next-line StringLiteral: logger text is internal observability
         this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
       })
     })
