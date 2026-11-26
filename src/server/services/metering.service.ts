@@ -36,6 +36,7 @@ import type { CostEstimate, Hold, HoldCaller, HoldEstimate, MeterResult, Meterin
 import { isOrphanClaim, lateAppend } from '../utils/orphan-claim'
 import { withHashedModel } from '../utils/hashed-model'
 import { KeyedSerial } from '../utils/keyed-serial'
+import { isAppendWatch } from '../utils/append-watch'
 import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts, newVisit } from '../utils/argument-guards'
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
@@ -192,7 +193,7 @@ export class MeteringService {
    * budget feature.
    *
    * @param input The usage, its preset/normalizer, and the metering context.
-   * @param tracked Not for callers. A function given first is called once this call's own row is in the ledger; anything else is ignored.
+   * @param tracked Not for callers. Every value but the library's own append watch is ignored, neither read nor called.
    * @returns The posted usage record.
    * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when `enforce: true` without wallets/budgets; normalize/rate errors; post-hoc budget/quota/credits errors.
    */
@@ -200,8 +201,8 @@ export class MeteringService {
     const input = recordInput(given)
     assertObject('input', input)
     assertMeteringContext(input.context)
-    const [onAppended] = tracked
-    return (await this.recordSettled(input, typeof onAppended === 'function' ? (onAppended as () => void) : undefined)).record
+    const [watch] = tracked
+    return (await this.recordSettled(input, isAppendWatch(watch) ? () => { watch.mark() } : undefined)).record
   }
 
   /**

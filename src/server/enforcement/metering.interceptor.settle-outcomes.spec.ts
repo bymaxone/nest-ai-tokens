@@ -152,6 +152,17 @@ describe('MeteringInterceptor settle outcomes', () => {
     expect(built.events.settleFailed).toHaveBeenCalledTimes(1)
   })
 
+  /** A release that fails, with a logger that cannot write the line about it, leaves the handler's error as it is. */
+  it('keeps the handler error when the release fails and the logger throws', async () => {
+    const built = await setup()
+    const hold = await built.metering.hold(CONTEXT, ESTIMATE)
+    jest.spyOn(built.metering, 'release').mockRejectedValueOnce(new Error('release down'))
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      throw new Error('logger down')
+    })
+    expect(await run(built.interceptor, hold, { handle: () => throwError(() => down) })).toBe(down)
+  })
+
   /** The reservation of an unsettled hold is given back with what the event carries. */
   it('releases an unsettled hold by the holdId, tenant and scope of the event', async () => {
     const built = await setup()

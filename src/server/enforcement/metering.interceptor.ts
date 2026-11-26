@@ -25,12 +25,17 @@ import { BYMAX_AI_TOKENS_OPTIONS } from '../bymax-ai-tokens.constants'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
+import { absorbHostCall } from '../utils/absorb-host-call'
+import { appendWatch } from '../utils/append-watch'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
 import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
+
+/** The log key of a failure to write the line about a hold that could not be released. */
+const RELEASE_FAILED_LOG_KEY = 'ai_tokens.hold.release_failed'
 
 /** Every field of the guard's enrichment, mapped to `true` so that the compiler keeps the list complete. */
 const ENRICHMENT_FIELDS: { readonly [K in keyof Required<RequestAiTokens>]: true } = { status: true, context: true, hold: true }
@@ -142,7 +147,7 @@ export class MeteringInterceptor implements NestInterceptor {
    */
   private async recordServed(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined, result: unknown): Promise<UsageRecord> {
     const context = await this.resolveContext(executionContext, config, enrichment)
-    const row = { appended: false }
+    const watch = appendWatch()
     try {
       return await this.metering.record(
         {
@@ -152,10 +157,10 @@ export class MeteringInterceptor implements NestInterceptor {
           // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
           context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
         },
-        () => (row.appended = true),
+        watch,
       )
     } catch (error) {
-      if (!row.appended) await this.announce(undefined, context, error)
+      if (!watch.appended) await this.announce(undefined, context, error)
       throw error
     }
   }
@@ -179,8 +184,11 @@ export class MeteringInterceptor implements NestInterceptor {
     // Stryker disable next-line StringLiteral: release reason is internal audit text; tests check error propagation behavior
     const released = this.metering.release(enrichment.hold, enrichment.context, 'handler threw').catch(() => {
       // Stryker disable next-line BlockStatement: best-effort hold release; the reaper reclaims unreleased holds
-      // Stryker disable next-line StringLiteral: logger text is internal observability
-      this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
+      // The logger is the host's, and a line it cannot write must not replace the handler's error.
+      absorbHostCall(this.logger, RELEASE_FAILED_LOG_KEY, () => {
+        // Stryker disable next-line StringLiteral: logger text is internal observability
+        this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)
+      })
     })
     return from(released).pipe(mergeMap(() => throwError(() => error)))
   }

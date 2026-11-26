@@ -172,11 +172,52 @@ describe('MeteringService.meter() when settling fails after the function served'
     expect(built.events.settleFailed).not.toHaveBeenCalled()
   })
 
-  /** `record()` handed to a caller that passes more arguments, as `map` does, still records and still reports the usage. */
-  it('ignores a second argument of record() that is no function', async () => {
+  /** `record()` handed to a caller that passes more arguments, as `map` or `async.map` does, records and leaves each of them alone. */
+  it.each<[string, (touched: string[]) => unknown]>([
+    ['a number', () => 0],
+    ['a callback', (touched) => () => touched.push('called')],
+    [
+      'a callback that throws',
+      (touched) => () => {
+        touched.push('called')
+        throw new Error('host callback')
+      },
+    ],
+    ['an object', (touched) => ({ get appended() { touched.push('read'); return false }, mark: () => touched.push('called') })],
+    [
+      'a proxy',
+      (touched) =>
+        new Proxy(
+          {},
+          {
+            get: () => void touched.push('get'),
+            has: () => touched.push('has') < 0,
+            getPrototypeOf: () => {
+              touched.push('prototype')
+              return null
+            },
+          },
+        ),
+    ],
+  ])('ignores a second argument of record() that is %s', async (_name, second) => {
     const built = await setup()
+    const touched: string[] = []
     const record = built.metering.record.bind(built.metering) as (input: unknown, extra: unknown) => Promise<unknown>
-    await expect(record({ usage: normalized(), context: CONTEXT }, 0)).resolves.toMatchObject({ status: 'posted' })
+    await expect(record({ usage: normalized(), context: CONTEXT }, second(touched))).resolves.toMatchObject({ status: 'posted' })
+    expect(touched).toEqual([])
     expect(built.events.usageRecorded).toHaveBeenCalledTimes(1)
+  })
+
+  /** The line about an event that could not be delivered is the host logger's too, and `meter()` has nothing behind it to catch. */
+  it('keeps the settle error when the sink rejects and the logger throws', async () => {
+    const built = await setup()
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      throw new Error('logger down')
+    })
+    built.events.settleFailed.mockRejectedValueOnce(new Error('bus down'))
+    const failure = new Error('store down')
+    jest.spyOn(built.ledger, 'append').mockRejectedValueOnce(failure)
+    expect(await meter(built, usable)).toBe(failure)
+    expect(built.events.settleFailed).toHaveBeenCalledTimes(1)
   })
 })
