@@ -58,3 +58,26 @@ describe('the reason of a refused configuration names what is missing', () => {
     expect(reasonOf({ store: makeFullStore(), markup: {} })).toBe('markup policy must implement a resolve() method')
   })
 })
+
+describe('the reason of a refused option value says what it must be', () => {
+  it.each([
+    [{ markup: 0 }, 'markup must be a finite number greater than 0'],
+    [{ budgets: null }, 'budgets must be an object, or left out'],
+    [{ ledger: { hashChain: 'false' } }, 'ledger.hashChain must be true or false'],
+    [{ scopeResolver: 'user' }, 'scopeResolver must be a function'],
+    [{ holds: [] }, 'holds must be an object'],
+    [{ pricing: { strict: 'false' } }, 'pricing.strict must be true or false'],
+    [{ budgets: { defaultPolicy: 'blok' } }, 'budgets.defaultPolicy must be one of block, throttle or allow'],
+    [{ ratingMode: 'table' }, 'ratingMode must be one of rate-table or provider-reported'],
+    [{ budgets: { alertThresholds: 0.8 } }, 'budget alert thresholds must be a list of numbers within (0, 1]'],
+    [{ budgets: { alertThresholds: [2] } }, 'budget alert thresholds must be numbers within (0, 1]'],
+    [{ holds: { ttlSeconds: 0 } }, 'holds.ttlSeconds must be an integer from 1 to 2147483647'],
+    [{ settlement: { retentionSeconds: 1 } }, 'settlement.retentionSeconds must exceed settlement.graceSeconds and holds.ttlSeconds'],
+    [{ pricing: { cacheTtlMs: 0 } }, 'pricing.cacheTtlMs must be a positive integer number of milliseconds'],
+    [{ wallets: { creditRateNanoUsd: 0n } }, 'wallets.creditRateNanoUsd must be a bigint from 1 to 9223372036854775807'],
+    [{ wallets: { overdraftNanoUsd: -1n } }, 'wallets.overdraftNanoUsd must be a bigint from 0 to 9223372036854775807'],
+  ])('for %p', (options, reason) => {
+    // Scenario: a host reads which option was refused and the values it takes.
+    expect(reasonOf({ store: makeFullStore(), ...options })).toBe(reason)
+  })
+})
