@@ -57,7 +57,7 @@
     "low": 100,
     "break": 100
   },
-  "concurrency": 1,
+  "concurrency": 2,
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json"
 }
