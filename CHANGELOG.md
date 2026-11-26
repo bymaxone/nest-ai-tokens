@@ -10,6 +10,10 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.25] - 2026-11-26
+
+**Apply:** no database migration and no option change. A host with its own `IWalletStore` (`appendEntry` now receives a fourth argument), a `switch` that must cover every `AiTokensEventType`, a consumer of `ai_tokens.hold.released` or a client that retries after a failed settle should read the **Apply** notes below.
+
 ### Added
 
 - `ai_tokens.settle.failed` (`{ holdId?, correlationId?, errorCode?, where }`, with the tenant and scope on the envelope) and the
@@ -1395,4 +1399,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.22]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.21...v1.1.22
 [1.1.23]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...v1.1.23
 [1.1.24]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.23...v1.1.24
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.24...HEAD
+[1.1.25]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.24...v1.1.25
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.25...HEAD
