@@ -34,10 +34,10 @@ jobs:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
       # The ceiling is per shard job. A shard costs about (static mutants x its dry-run seconds x 2.2 +
-      # other mutants x 1 s) / workers, because each static mutant re-runs the whole suite. Hosted
+      # other mutants x 1 s) / test runners, because each static mutant re-runs the whole suite. Hosted
       # runners vary 1.9x on the same work (27.5 s to 53.2 s net dry run), and the planner balances by
       # test executions without weighing static mutants, so shard times spread widely on equal
-      # weights. Measured on eight shards of two workers: the shards took 31 to 104 minutes, the
+      # weights. Measured on eight shards at concurrency 2: the shards took 31 to 104 minutes, the
       # slowest 104. A ceiling that cuts a shard loses the whole run, so it is 1.5 times the slowest
       # measured shard, rounded up to 160. Re-measure and move it when the suite or the shard count
       # changes.
@@ -45,9 +45,10 @@ jobs:
       # A unit spec the mutation run did not run fails the job; the one spec that reads source text
       # instead of executing it is listed with its reason in scripts/mutation-inventory.exempt.json.
       inventory: enforce
-      # Eight shards of two workers each. The cold run grows with the suite, so it is split across
-      # runners instead of given a longer one. A worker grows to several GiB over a long run and the
-      # hosted runner has 16 GB, so two workers and their parent are what one runner holds. The count
+      # Eight shards at concurrency 2: with the checker, each runs 1 checker and 1 test runner, then
+      # 2 runners once checking ends. The cold run grows with the suite, so it is split across runners
+      # instead of given a longer one. A test runner grows to several GiB over a long run and the
+      # hosted runner has 16 GB, so two of them and their parent are what one runner holds. The count
       # and the concurrency are passed here, not written into stryker.config.json, which the per-push
       # incremental job and local runs share.
       # The static mutants (about 6% of the mutants, about 71% of the test time) each re-run the whole
