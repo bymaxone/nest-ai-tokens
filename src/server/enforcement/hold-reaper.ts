@@ -183,20 +183,20 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         return
       }
       const moved = await this.reap(expired)
-      if (expired.length < REAP_BATCH_SIZE || moved === 0) break
+      if (expired.length < REAP_BATCH_SIZE || !moved) break
     }
     await this.settleOwed()
     await this.sweepReferences()
     await this.sweepOrphans()
   }
 
-  /** Release each of these holds and restore what it reserved; returns how many left `pending`, here or on another replica. */
-  private async reap(expired: readonly UsageRecord[]): Promise<number> {
-    let moved = 0
+  /** Release each of these holds and restore what it reserved; returns whether any left `pending`, here or on another replica. */
+  private async reap(expired: readonly UsageRecord[]): Promise<boolean> {
+    let moved = false
     for (const record of expired) {
       try {
         const claimed = await this.ledger.transition(record.id, 'pending', 'released', undefined, {})
-        moved += 1
+        moved = true
         if (claimed === null) continue
         // Stryker disable next-line StringLiteral: 'expired' reason string is internal audit text; tests check that holds are released, not the reason string
         await this.metering.restoreReleasedHold(claimed, 'expired', true)

@@ -117,6 +117,27 @@ describe('MeteringService.meter() when settling fails after the function served'
     expect(built.events.settleFailed).not.toHaveBeenCalled()
   })
 
+  /** The lines an operator searches by: the log key, what was not settled or delivered, and the error's name. */
+  it.each([ESTIMATE, undefined])('logs a failed settle and an undelivered event under the settle key (estimate %#)', async (estimate) => {
+    const built = await setup()
+    jest.spyOn(built.ledger, estimate === undefined ? 'append' : 'transition').mockRejectedValueOnce(new Error('store down'))
+    built.events.settleFailed.mockRejectedValueOnce(new Error('bus down'))
+    await meter(built, usable, estimate)
+    const holdId = (built.events.settleFailed.mock.calls[0] as [unknown, unknown, { holdId?: string }])[2].holdId
+    const subject = estimate === undefined ? 'a metered call' : `hold ${String(holdId)}`
+    expect(holdId === undefined).toBe(estimate === undefined)
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(`ai_tokens.settle.failed ${subject} was not settled: name=Error`)
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(`ai_tokens.settle.failed the event for ${subject} was not delivered: name=Error`)
+  })
+
+  /** With no hold the payload has no `holdId` key at all, and no key for the other values it lacks. */
+  it('sends no key for a value the failure does not have', async () => {
+    const built = await setup()
+    jest.spyOn(built.ledger, 'append').mockRejectedValueOnce(new Error('store down'))
+    await meter(built, usable)
+    expect((built.events.settleFailed.mock.calls[0] as unknown[])[2]).toStrictEqual({ where: 'meter' })
+  })
+
   /** A function that throws served nothing to settle, with or without a hold. */
   it.each([ESTIMATE, undefined])('announces nothing when the function throws (estimate %#)', async (estimate) => {
     const built = await setup()

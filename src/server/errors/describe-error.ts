@@ -25,8 +25,9 @@ export function errorCodeOf(error: unknown): string | undefined {
   try {
     return error instanceof Error ? readCode(error) : undefined
   } catch {
-    return undefined
+    // A value that cannot be read has no code.
   }
+  return undefined
 }
 
 /**
