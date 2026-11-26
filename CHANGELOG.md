@@ -36,7 +36,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
   settled, after releasing the hold when there is one; the release and the thrown error are unchanged.
 - The hold reaper reclaimed at most 100 expired holds per sweep, so a backlog kept its reservations for many sweeps after the TTL. A
   sweep now reads further batches while one comes back full, up to 100 batches.
-  - **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches, up to 100 times a tick,
+  - **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches,
     with a warning each time.
 
 ## [1.1.24] - 2026-11-25

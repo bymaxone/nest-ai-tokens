@@ -840,7 +840,7 @@ specific to security is below.
   sweep's late end does not mark the fresh sweep as finished. At most two sweeps run at once, each holding a store connection until
   the store gives it up: while an abandoned sweep is still running, a second stall starts no third sweep, with one
   `ai_tokens.hold_reaper.sweep_blocked` line per run of such ticks, and the reaper sweeps again when either settles. The timer never stops.
-  **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches, up to 100 times a tick, with a warning each time.
+  **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches, with a warning each time.
 - **The scope resolver is trusted input.** `scopeResolver` decides whose budget and wallet a request
   draws on, so it must read the host's **verified** auth context, never the body or query: a resolver
   that reads a tenant id from request input lets a caller bill someone else.
