@@ -4,8 +4,9 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
-# No token scope by default: the job below declares the two it reads.
-permissions: {}
+# The default for a job that declares no permissions of its own; the job below declares its own.
+permissions:
+  contents: read
 
 jobs:
   attribution:
