@@ -12,7 +12,7 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [1.1.25] - 2026-11-26
 
-**Apply:** no migration and no option change is needed. The **Apply** notes below say what a host may have to change.
+**Apply:** no database migration and no option change. A host with its own `IWalletStore` (`appendEntry` now receives a fourth argument), a `switch` that must cover every `AiTokensEventType`, a consumer of `ai_tokens.hold.released` or a client that retries after a failed settle should read the **Apply** notes below.
 
 ### Added
 
