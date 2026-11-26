@@ -511,7 +511,7 @@ export class WalletService {
   private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>, effectiveAtDefaulted = false): Promise<WalletEntry> {
     try {
       // Stryker disable next-line StringLiteral: placeholder walletId; the store's insert always assigns the real wallet id and never reads this sentinel, so any string here is equivalent
-      return await this.store.appendEntry(ref, { walletId: '', ...entry }, [], { effectiveAtDefaulted })
+      return await this.store.appendEntry(ref, { walletId: '', ...entry }, undefined, { effectiveAtDefaulted })
     } catch (error) {
       throw this.mapStoreError(error, ref, entry.idempotencyKey)
     }

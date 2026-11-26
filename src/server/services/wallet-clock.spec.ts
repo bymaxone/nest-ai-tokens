@@ -118,5 +118,7 @@ describe('wallet grants are judged on the application clock', () => {
     await service.grant(REF, { amountNanoUsd: 5n, effectiveAt: new Date(START), idempotencyKey: 'b', reason: 'r' })
     await service.adjust(REF, { amountNanoUsd: 1n, idempotencyKey: 'c', reason: 'r' })
     expect(append.mock.calls.map((call) => call[3])).toEqual([{ effectiveAtDefaulted: true }, { effectiveAtDefaulted: false }, { effectiveAtDefaulted: false }])
+    // No allocations are named: a store that tests the argument for presence is called as it was.
+    expect(append.mock.calls.map((call) => call[2])).toStrictEqual([undefined, undefined, undefined])
   })
 })
