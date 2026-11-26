@@ -471,6 +471,10 @@ and a clash fails with `AI_TOKENS_INVALID_CONFIG`.
 > is ahead of the database's, such a grant is not yet in the stored balance as it is written: it enters at the next debit
 > or `reconcile()`. Omit `effectiveAt` for a grant meant to count at once.
 
+> **Known limit.** A grant with no `effectiveAt` whose `expiresAt` is already past on your application's clock, but not
+> yet on the database's, is counted in the stored balance as it is written. A plain `getBalance()` shows it until the
+> next debit or `reconcile()`, which writes its `expiry` entry; a debit cannot spend it.
+
 > **`getBalance()` can trail the clock.** It reads the stored balance, which changes at a debit or a
 > `reconcile()`, so a grant that has just fallen due is not in it until one of them runs. Call `reconcile()`
 > when you need the figure that includes every due grant.

@@ -39,10 +39,12 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
   - **Known limit.** A hold that keeps failing to be released can be tried again in each of a sweep's batches,
     with a warning each time.
 - A grant given no `effectiveAt` was left out of the stored balance, and out of the running balance of its entry, when the application clock was ahead of the database clock: it entered only at the next debit or `reconcile()`. The Prisma store now keeps the earlier of the two clocks for such a grant. A given `effectiveAt`, `new Date()` included, is stored unchanged. Entries already written are not changed.
+  - **Known limit.** Such a grant whose `expiresAt` is already past on the application clock, but not yet on the database clock, shows in a plain `getBalance()` until the next debit or `reconcile()`; a debit cannot spend it.
 
 ### For store implementors
 
 - `IWalletStore.appendEntry` receives a fourth argument, `{ effectiveAtDefaulted }`. When it is `true`, store the earlier of `entry.effectiveAt` and the instant you stamp `createdAt` with, and judge the balance contribution on the stored value. A store that ignores it behaves as before.
+  - **Apply:** `WalletService` now passes four arguments on every `appendEntry` call, the third `undefined`. A store with an optional fourth parameter of its own, such as a transaction handle, no longer type-checks against `IWalletStore` when that type is unrelated to `AppendEntryOptions`, and is handed `{ effectiveAtDefaulted }` in that position at run time: move that parameter.
 
 ## [1.1.24] - 2026-11-25
 

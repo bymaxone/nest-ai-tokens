@@ -86,6 +86,19 @@ export function runWalletStoreContract(label: string, make: () => Promise<Wallet
       expect((await store.getWallet(ref))?.balanceNanoUsd).toBe(100n)
     })
 
+    /** A debit and a refund to its source are stored with the `effectiveAt` they carry. */
+    it('stores the effectiveAt a debit and a refund carry', async () => {
+      const { store, now } = await make()
+      const debited = new Date('2021-02-03T04:05:06.000Z')
+      const refunded = new Date('2022-03-04T05:06:07.000Z')
+      await store.appendEntry(ref, grantEntry({ idempotencyKey: 'g' }))
+      const debit = (await store.conditionalDebit(ref, debitEntry(40n, { idempotencyKey: 'd', effectiveAt: debited }), 0n))!
+      const entry = grantEntry({ type: 'refund', amountNanoUsd: 40n, idempotencyKey: 'r', effectiveAt: refunded })
+      const refund = await store.refundToSource!(ref, { entry, debitEntryId: debit.id, now: await now() })
+      expect(debit.effectiveAt).toEqual(debited)
+      expect(refund.effectiveAt).toEqual(refunded)
+    })
+
     /** Two concurrent debits against a balance with headroom for one: exactly one wins. */
     it('lets exactly one of two concurrent debits win', async () => {
       const { store } = await make()
