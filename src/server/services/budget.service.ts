@@ -654,18 +654,12 @@ export class BudgetService {
     const fractionBefore = usedFraction(before, located.limits)
     const fractionAfter = usedFraction(after, located.limits)
     const emitted = this.notifiedThreshold.get(key) ?? 0
-    let highest = emitted
-    // Stryker disable next-line MethodExpression: [...arr].sort vs arr.sort: store.findMatching returns new objects each call, so in-place mutation is observable only across calls (harmless reorder of a fresh copy each time)
-    // Stryker disable next-line ArithmeticOperator: a+b sort comparator produces descending order but mis-tracks `highest`; due to the monotonic fractionBefore invariant the wrong `highest` causes no re-emission in practice
     for (const threshold of [...located.budget.softThresholds].sort((a, b) => a - b)) {
-      // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: CE/EQ on `threshold > emitted`: monotonic fractionBefore ≥ emitted means `threshold ≤ emitted` ⟹ `threshold ≤ fractionBefore`, so `threshold > fractionBefore` already blocks re-emission; the emitted guard is redundant. LogicalOperator (&&→||) between the two guards is inert too: a threshold is emitted exactly when the fraction first reaches it, so `threshold > emitted` ⟺ `threshold > fractionBefore`, and the AND/OR of two equal guards coincide
       if (threshold > emitted && threshold > fractionBefore && threshold <= fractionAfter) {
         await this.emitThreshold(context, located, threshold, fractionAfter, after)
-        highest = threshold
+        this.notifiedThreshold.set(key, threshold)
       }
     }
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: highest > emitted: mutations (>=, <=, false) all produce no-ops in practice because the monotonic fractionBefore invariant prevents re-emission even with a stale notifiedThreshold value
-    if (highest > emitted) this.notifiedThreshold.set(key, highest)
     await this.signalProjection(context, located, fractionAfter)
   }
 
