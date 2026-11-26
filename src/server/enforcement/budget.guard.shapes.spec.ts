@@ -136,4 +136,12 @@ describe('BudgetGuard — what a refusal carries', () => {
     const error = await refusal(guard.canActivate(executionContext(fixture.plain)))
     expect(detailsOf(error)).toEqual({ budgetId: budget.id, dimension })
   })
+
+  it('admits a call while the spent count is below the count limit', async () => {
+    // Scenario: a count limit refuses when it is reached, not merely by being set.
+    const { guard, service } = makeGuard()
+    await service.upsertBudget({ tenantId: TENANT, scope: USER_SCOPE, window: 'month', limitCount: 2 })
+    await service.consume(context(), { nanoUsd: 0n, tokens: 0, count: 1 })
+    await expect(guard.canActivate(executionContext(fixture.plain))).resolves.toBe(true)
+  })
 })
