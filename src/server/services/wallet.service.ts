@@ -257,7 +257,6 @@ export class WalletService {
     const input = withReadDates(given, GRANT_FIELDS, ['effectiveAt', 'expiresAt'], 'grant ')
     assertEntryText(input, true)
     const now = this.now()
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('grant amount must be a bigint from 1 to 9223372036854775807')
     this.assertGrantFields(input)
     const grant: Omit<NewWalletEntry, 'walletId'> = {
@@ -265,7 +264,6 @@ export class WalletService {
       amountNanoUsd: input.amountNanoUsd,
       priority: input.priority ?? 0,
       effectiveAt: input.effectiveAt ?? now,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { expiresAt: undefined } is equivalent to {} because InMemoryWalletStore and consumers check expiresAt !== undefined
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
@@ -275,11 +273,9 @@ export class WalletService {
       walletId: entry.walletId,
       entryId: entry.id,
       amountNanoUsd: entry.amountNanoUsd,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { expiresAt: undefined } is equivalent to {} because event consumers check expiresAt !== undefined
       ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
     }
     await this.events.granted(ref, granted)
-    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check method completion, not event payload shape
     await this.events.audit('ai_tokens.wallet.granted', {
       tenantId: ref.tenantId,
       walletId: entry.walletId,
@@ -307,23 +303,18 @@ export class WalletService {
     const input = snapshotOf(given, DEBIT_FIELDS)
     assertEntryText(input, false)
     const now = this.now()
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('debit amount must be a bigint from 1 to 9223372036854775807')
     if (input.usageRecordId === undefined && input.reason === undefined) {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw this.invalid('a debit without a usageRecordId must carry a reason')
     }
     const entry: NewWalletEntry = {
-      // Stryker disable next-line StringLiteral: placeholder walletId; the store's insert always assigns the real wallet id and never reads this sentinel, so any string here is equivalent
       walletId: '',
       type: 'debit',
       amountNanoUsd: -input.amountNanoUsd,
       priority: 0,
       effectiveAt: now,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { reason: undefined } is equivalent to {} because store and consumers check reason !== undefined
       ...(input.reason !== undefined ? { reason: input.reason } : {}),
     }
     const debited = await this.conditionalDebit(ref, entry, input.amountNanoUsd, now)
@@ -349,7 +340,6 @@ export class WalletService {
     const input = snapshotOf(given, REFUND_FIELDS)
     assertEntryText(input, true)
     const now = this.now()
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isPositiveBigint(input.amountNanoUsd)) throw this.invalid('refund amount must be a bigint from 1 to 9223372036854775807')
     if (input.restore !== undefined && !(RESTORE_MODES as readonly unknown[]).includes(input.restore)) throw this.invalid("refund restore must be 'source' or 'unallocated'")
     assertOptionalText('debitEntryId', input.debitEntryId)
@@ -360,7 +350,6 @@ export class WalletService {
       amountNanoUsd: input.amountNanoUsd,
       priority: 0,
       effectiveAt: now,
-      // Stryker disable next-line ConditionalExpression,ObjectLiteral: CE true / OL {}: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
@@ -406,7 +395,6 @@ export class WalletService {
     const input = snapshotOf(given, ADJUST_FIELDS)
     assertEntryText(input, true)
     const now = this.now()
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     const entry = await this.append(ref, {
       type: 'adjustment',
@@ -416,7 +404,6 @@ export class WalletService {
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
     })
-    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check method completion, not event payload shape
     await this.events.audit('ai_tokens.wallet.adjusted', {
       tenantId: ref.tenantId,
       walletId: entry.walletId,
@@ -445,15 +432,12 @@ export class WalletService {
     assertObject('input', given)
     const input = snapshotOf(given, SETTLE_ADJUSTMENT_FIELDS)
     const now = this.now()
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if (!isNonZeroBigint(input.amountNanoUsd)) throw this.invalid('settlement adjustment amount must be a non-zero bigint within -9223372036854775808 to 9223372036854775807')
     return this.append(ref, {
       type: 'adjustment',
       amountNanoUsd: input.amountNanoUsd,
       priority: 0,
       effectiveAt: now,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { usageRecordId: undefined } is equivalent to {} because store and consumers check usageRecordId !== undefined
       ...(input.usageRecordId !== undefined ? { usageRecordId: input.usageRecordId } : {}),
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
@@ -498,7 +482,6 @@ export class WalletService {
     } catch (error) {
       throw this.mapStoreError(error, ref)
     }
-    // Stryker disable next-line ObjectLiteral,StringLiteral: audit event name and payload are internal observability; tests check the reconciled balance, not event shape
     await this.events.audit('ai_tokens.wallet.reconciled', {
       tenantId: ref.tenantId,
       walletId: wallet.id,
@@ -510,7 +493,6 @@ export class WalletService {
   /** Append a non-debit entry, mapping a store idempotency/missing-wallet signal to the catalog. */
   private async append(ref: WalletRef, entry: Omit<NewWalletEntry, 'walletId'>, effectiveAtDefaulted = false): Promise<WalletEntry> {
     try {
-      // Stryker disable next-line StringLiteral: placeholder walletId; the store's insert always assigns the real wallet id and never reads this sentinel, so any string here is equivalent
       return await this.store.appendEntry(ref, { walletId: '', ...entry }, undefined, { effectiveAtDefaulted })
     } catch (error) {
       throw this.mapStoreError(error, ref, entry.idempotencyKey)
@@ -527,7 +509,6 @@ export class WalletService {
     }
     if (result === null) {
       const wallet = await this.store.getWallet(ref)
-      // Stryker disable next-line ObjectLiteral: error context fields are diagnostic; tests check the error code (AI_TOKENS_INSUFFICIENT_CREDITS), not the payload shape
       throw new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, {
         balanceNanoUsd: (wallet?.balanceNanoUsd ?? 0n).toString(),
         requestedNanoUsd: requested.toString(),
@@ -539,11 +520,9 @@ export class WalletService {
   /** Map a store idempotency conflict / missing-wallet signal to the typed catalog error. */
   private mapStoreError(error: unknown, ref: WalletRef, idempotencyKey?: string): AiTokensException {
     if (isLedgerIdempotencyConflict(error)) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: ref.tenantId, idempotencyKey }))
     }
     if (isWalletMissing(error)) {
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics
       return new AiTokensException('AI_TOKENS_INSUFFICIENT_CREDITS', undefined, { reason: 'wallet does not exist' })
     }
     return error instanceof AiTokensException
@@ -556,7 +535,6 @@ export class WalletService {
     assertObject('wallet', given)
     const ref = readShape(given, { fields: WALLET_REF_FIELDS }, 'wallet.') as unknown as WalletRef
     assertWalletRef(ref)
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
     if ((ref.ownerType as string) === 'key') throw this.invalid("'key' scopes cannot own a wallet")
     return ref
   }
@@ -568,13 +546,11 @@ export class WalletService {
 
   /** Refuse a grant whose priority is not a whole number or whose dates are not valid dates: an `Invalid Date` compares false with every instant. */
   private assertGrantFields(input: GrantInput): void {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (input.priority !== undefined && !Number.isInteger(input.priority)) throw this.invalid('grant priority must be a whole number')
   }
 
   /** Build the invalid-config exception with an actionable reason. */
   private invalid(reason: string): AiTokensException {
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
   }
 }
@@ -586,7 +562,6 @@ interface WalletMissingShape {
 
 /** Narrow an unknown thrown value to the wallet-missing store signal. */
 function isWalletMissing(error: unknown): error is WalletMissingShape {
-  // Stryker disable next-line ConditionalExpression: CE false on `typeof error !== 'object'`: non-object primitives also fail `.isWalletMissing === true` (returns undefined), giving the same false result; the guard is defensive but the outcome is identical for all realistic inputs
   if (typeof error !== 'object' || error === null) return false
   return (error as Record<string, unknown>).isWalletMissing === true
 }

@@ -53,7 +53,6 @@ const BUDGET_METHODS = [
 
 /** Build the invalid-config exception with an actionable reason. */
 function invalidConfig(reason: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral: error context { reason } is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
@@ -65,16 +64,13 @@ function firstMissingMethod(store: object, methods: readonly string[]): string |
 /** Assert the store exists and implements the always-required ledger + pricing ports. */
 function validateStorePorts(options: BymaxAiTokensModuleOptions): void {
   const store: unknown = options.store
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check error code only
   if (store === undefined) throw invalidConfig('options.store is required')
   const missingLedger = firstMissingMethod(options.store, LEDGER_METHODS)
   if (missingLedger !== undefined) {
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     throw invalidConfig(`store is missing the required ledger method "${missingLedger}"`)
   }
   const missingPricing = firstMissingMethod(options.store, PRICING_METHODS)
   if (missingPricing !== undefined) {
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     throw invalidConfig(`store is missing the required pricing method "${missingPricing}"`)
   }
 }
@@ -83,12 +79,10 @@ function validateStorePorts(options: BymaxAiTokensModuleOptions): void {
 function validateFeaturePorts(options: BymaxAiTokensModuleOptions): void {
   if (options.wallets !== undefined) {
     const missing = firstMissingMethod(options.store, WALLET_METHODS)
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     if (missing !== undefined) throw invalidConfig(`wallets enabled but store is missing "${missing}"`)
   }
   if (options.budgets !== undefined) {
     const missing = firstMissingMethod(options.store, BUDGET_METHODS)
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     if (missing !== undefined) throw invalidConfig(`budgets enabled but store is missing "${missing}"`)
   }
 }
@@ -107,13 +101,11 @@ function validateMarkup(markup: number | IMarkupPolicy | undefined): void {
     try {
       resolveMultiplier4dp(markup)
     } catch {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       throw invalidConfig('markup must be a finite number greater than 0')
     }
     return
   }
   if (typeof fieldOf(markup, 'resolve') !== 'function') {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('markup policy must implement a resolve() method')
   }
 }
@@ -130,7 +122,6 @@ function validateProtections(given: BymaxAiTokensModuleOptions): void {
   for (const group of NULL_REFUSED_GROUPS) {
     const value: unknown = fieldOf(given, group)
     if (value === null) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       throw invalidConfig(`${group} must be an object, or left out`)
     }
   }
@@ -139,7 +130,6 @@ function validateProtections(given: BymaxAiTokensModuleOptions): void {
   const hashChain: unknown = fieldOf(ledger, 'hashChain')
   // The flag is read as truthy, so a string such as 'false' would switch the chain on, and null is not a way to leave it off.
   if (hashChain !== undefined && typeof hashChain !== 'boolean') {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('ledger.hashChain must be true or false')
   }
 }
@@ -164,18 +154,15 @@ const SWITCH_OPTIONS = [
 function validateShapes(options: BymaxAiTokensModuleOptions): void {
   for (const name of FUNCTION_OPTIONS) {
     const value: unknown = Reflect.get(options, name)
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (value !== undefined && typeof value !== 'function') throw invalidConfig(`${name} must be a function`)
   }
   for (const name of GROUP_OPTIONS) {
     const value: unknown = Reflect.get(options, name)
     // A null group was dropped from the options before this point, so what is not an object here is a value of another kind.
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (value !== undefined && (typeof value !== 'object' || Array.isArray(value))) throw invalidConfig(`${name} must be an object`)
   }
   for (const [group, name] of SWITCH_OPTIONS) {
     const value: unknown = Reflect.get(Reflect.get(options, group) ?? Object.create(null), name)
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     if (value !== undefined && typeof value !== 'boolean') throw invalidConfig(`${group}.${name} must be true or false`)
   }
 }
@@ -183,11 +170,9 @@ function validateShapes(options: BymaxAiTokensModuleOptions): void {
 /** Refuse a budget policy or a rating mode that is not a documented value: a typo must not mean no limit, or another price. */
 function validateEnums(options: BymaxAiTokensModuleOptions): void {
   if (options.budgets?.defaultPolicy !== undefined && !isBudgetPolicy(options.budgets.defaultPolicy)) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('budgets.defaultPolicy must be one of block, throttle or allow')
   }
   if (options.ratingMode !== undefined && !isRatingMode(options.ratingMode)) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('ratingMode must be one of rate-table or provider-reported')
   }
 }
@@ -196,11 +181,9 @@ function validateEnums(options: BymaxAiTokensModuleOptions): void {
 function validateBudgetThresholds(options: BymaxAiTokensModuleOptions): void {
   const thresholds = options.budgets?.alertThresholds
   if (thresholds === undefined) return
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   if (!Array.isArray(thresholds)) throw invalidConfig('budget alert thresholds must be a list of numbers within (0, 1]')
   for (const threshold of thresholds as unknown[]) {
     if (!isFraction(threshold)) {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw invalidConfig('budget alert thresholds must be numbers within (0, 1]')
     }
   }
@@ -216,7 +199,6 @@ const MAX_TTL_SECONDS = 2_147_483_647
 function requireBoundedInteger(option: string, value: number | undefined, max: number): void {
   if (value === undefined) return
   if (!Number.isInteger(value) || value < 1 || value > max) {
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     throw invalidConfig(`${option} must be an integer from 1 to ${String(max)}`)
   }
 }
@@ -243,7 +225,6 @@ function validateSettlement(options: BymaxAiTokensModuleOptions): void {
   const grace = settlement?.graceSeconds ?? D.settlement.graceSeconds
   const ttl = options.holds?.ttlSeconds ?? D.holds.ttlSeconds
   if (retention <= grace || retention <= ttl) {
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     throw invalidConfig('settlement.retentionSeconds must exceed settlement.graceSeconds and holds.ttlSeconds')
   }
 }
@@ -265,7 +246,6 @@ function validatePricing(options: BymaxAiTokensModuleOptions): void {
   if (cacheTtlMs === undefined) return
   if (!Number.isInteger(cacheTtlMs) || cacheTtlMs <= 0) {
     throw invalidConfig(
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       'pricing.cacheTtlMs must be a positive integer number of milliseconds',
     )
   }
@@ -276,11 +256,9 @@ function validateWallets(options: BymaxAiTokensModuleOptions): void {
   const wallets = options.wallets
   if (wallets === undefined) return
   if (wallets.creditRateNanoUsd !== undefined && !isPositiveBigint(wallets.creditRateNanoUsd)) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('wallets.creditRateNanoUsd must be a bigint from 1 to 9223372036854775807')
   }
   if (wallets.overdraftNanoUsd !== undefined && !isNonNegativeBigint(wallets.overdraftNanoUsd)) {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     throw invalidConfig('wallets.overdraftNanoUsd must be a bigint from 0 to 9223372036854775807')
   }
 }

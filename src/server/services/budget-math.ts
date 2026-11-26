@@ -24,11 +24,8 @@ export function featureMatches(features: string[] | undefined, feature: string):
 /** The limits object for a budget (only defined dimensions), with no prototype: a dimension it does not limit is absent, not a key planted on `Object.prototype`. */
 export function limitsOf(budget: Budget): BudgetLimits {
   return Object.assign(Object.create(null) as BudgetLimits, {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} because all consumers check limits.nanoUsd !== undefined
     ...(budget.limitNanoUsd !== undefined ? { nanoUsd: budget.limitNanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} because all consumers check limits.tokens !== undefined
     ...(budget.limitTokens !== undefined ? { tokens: budget.limitTokens } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} because all consumers check limits.count !== undefined
     ...(budget.limitCount !== undefined ? { count: budget.limitCount } : {}),
   })
 }
@@ -93,11 +90,8 @@ export function ratio(spent: bigint, limit: bigint): number {
 /** The limit snapshot (present dimensions only) for an event payload. */
 export function limitSnapshot(limits: BudgetLimits): { nanoUsd?: bigint; tokens?: number; count?: number } {
   return {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.nanoUsd !== undefined ? { nanoUsd: limits.nanoUsd } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.tokens !== undefined ? { tokens: limits.tokens } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.count !== undefined ? { count: limits.count } : {}),
   }
 }
@@ -110,11 +104,8 @@ export function spendSnapshot(spend: BudgetWindowSpend): { nanoUsd: bigint; toke
 /** The remaining snapshot (limited dimensions only, floored at zero) for an event payload. */
 export function remainingSnapshot(limits: BudgetLimits, spend: BudgetWindowSpend): { nanoUsd?: bigint; tokens?: number; count?: number } {
   return {
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { nanoUsd: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.nanoUsd !== undefined ? { nanoUsd: max0(limits.nanoUsd - spend.spentNanoUsd) } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { tokens: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.tokens !== undefined ? { tokens: Math.max(0, limits.tokens - spend.spentTokens) } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { count: undefined } is equivalent to {} for event consumers who check field !== undefined
     ...(limits.count !== undefined ? { count: Math.max(0, limits.count - spend.spentCount) } : {}),
   }
 }
@@ -167,7 +158,6 @@ export function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | 
   const limits = limitsOf(budget)
   return {
     budgetId: budget.id,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { features: undefined } is equivalent to {} because status consumers check features !== undefined
     ...(budget.features !== undefined ? { features: budget.features } : {}),
     window: budget.window,
     windowStart,
@@ -182,6 +172,6 @@ export function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | 
 
 /** Floor a bigint at zero. */
 export function max0(value: bigint): bigint {
-  // Stryker disable next-line EqualityOperator: value <= 0n: when value = 0n, both branches yield 0n (equivalent); distinguishable only for value = 0n case which produces the same output
+  // Stryker disable next-line EqualityOperator: `<=` is equivalent to `<`, both give 0n for 0n
   return value < 0n ? 0n : value
 }
