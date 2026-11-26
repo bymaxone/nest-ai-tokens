@@ -27,6 +27,12 @@ describe('column lists', () => {
     expect(PRICE_COLUMNS_SQL.text.startsWith('"id", "provider", "model"')).toBe(true)
     expect(BUDGET_COLUMNS_SQL.text.endsWith('"createdAt", "updatedAt"')).toBe(true)
   })
+
+  /** The names the statements carry are the columns of the schema: a renamed one fails here, not only against a database. */
+  it('names the price and budget columns of the schema', () => {
+    expect(PRICE_COLUMNS_SQL.text).toBe('"id", "provider", "model", "operation", "serviceTier", "inputNanoUsdPerMillion", "outputNanoUsdPerMillion", "cacheReadNanoUsdPerMillion", "cacheWrite5mNanoUsdPerMillion", "cacheWrite1hNanoUsdPerMillion", "reasoningNanoUsdPerMillion", "audioInNanoUsdPerMillion", "audioOutNanoUsdPerMillion", "imageInNanoUsdPerMillion", "imageOutNanoUsdPerMillion", "tierThresholdTokens", "tierInputNanoUsdPerMillion", "tierOutputNanoUsdPerMillion", "unitRates", "currency", "effectiveFrom", "effectiveTo", "source"')
+    expect(BUDGET_COLUMNS_SQL.text).toBe('"id", "tenantId", "scopeType", "scopeId", "features", "limitNanoUsd", "limitTokens", "limitCount", "window", "anchorAt", "expiresAt", "softThresholds", "policy", "createdAt", "updatedAt"')
+  })
 })
 
 /** The value bound to each column of `usageValues` for the record of `newRecord()`. */

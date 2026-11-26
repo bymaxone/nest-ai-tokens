@@ -117,6 +117,8 @@ const IDENTIFIER_ROWS: Row[] = [
   ['budgets.upsertBudget', [0, 'scope', 'type'], NUMBER, TEXT('scope.type')],
   ['budgets.upsertBudget', [0, 'scope', 'id'], NUMBER, TEXT('scope.id')],
   ['budgets.upsertBudget', [0, 'id'], NUMBER, TEXT('id')],
+  ['budgets.upsertBudget', [0, 'limitTokens'], -1, 'limitTokens must be a whole number of 0 or more (§10.2)'],
+  ['budgets.upsertBudget', [0, 'limitCount'], -1, 'limitCount must be a whole number of 0 or more (§10.2)'],
   ['budgets.upsertBudget', [0, 'features'], STRING, LIST('features')],
   ['budgets.upsertBudget', [0, 'features'], [NUMBER], LIST('features')],
   ['budgets.rotateWindow', [0], NUMBER, TEXT('budgetId')],
@@ -137,6 +139,15 @@ const IDENTIFIER_ROWS: Row[] = [
   ['pricing.upsertPrice', [0, 'operation'], NUMBER, TEXT('operation')],
   ['pricing.upsertPrice', [0, 'inputNanoUsdPerMillion'], STRING, AMOUNT('inputNanoUsdPerMillion')],
   ['pricing.upsertPrice', [0, 'outputNanoUsdPerMillion'], -1n, AMOUNT('outputNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'cacheReadNanoUsdPerMillion'], -1n, AMOUNT('cacheReadNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'cacheWrite5mNanoUsdPerMillion'], -1n, AMOUNT('cacheWrite5mNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'cacheWrite1hNanoUsdPerMillion'], -1n, AMOUNT('cacheWrite1hNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'reasoningNanoUsdPerMillion'], -1n, AMOUNT('reasoningNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'audioInNanoUsdPerMillion'], -1n, AMOUNT('audioInNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'audioOutNanoUsdPerMillion'], -1n, AMOUNT('audioOutNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'imageInNanoUsdPerMillion'], -1n, AMOUNT('imageInNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'imageOutNanoUsdPerMillion'], -1n, AMOUNT('imageOutNanoUsdPerMillion')],
+  ['pricing.upsertPrice', [0, 'tierInputNanoUsdPerMillion'], -1n, AMOUNT('tierInputNanoUsdPerMillion')],
   ['pricing.upsertPrice', [0, 'serviceTier'], NUMBER, TEXT('serviceTier')],
   ['pricing.upsertPrice', [0, 'tierThresholdTokens'], STRING, COUNT('tierThresholdTokens')],
   ['pricing.getPriceHistory', [3], NUMBER, TEXT('serviceTier')],
@@ -171,6 +182,15 @@ describe('the reason of a refused argument', () => {
     const args = await def.base()
     setAt(args, path, value)
     expect(await reasonOf(() => def.run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${reason}`)
+  })
+
+  /** A bad name field is named before a bad count, though the rate lookup would refuse the name later. */
+  it.each(['provider', 'model', 'operation'])('names a bad %s of an estimate before its bad inputTokens', async (field) => {
+    const def = (await rig()).calls['metering.estimateCost']!
+    const args = await def.base()
+    setAt(args, [0, field], NUMBER)
+    setAt(args, [0, 'inputTokens'], STRING)
+    expect(await reasonOf(() => def.run(args))).toBe(`AI_TOKENS_INVALID_CONFIG ${TEXT(field)}`)
   })
 
   /** Each guarded argument of the right kind is accepted: a guard that refused more than it should fails here. */

@@ -81,13 +81,13 @@ interface Consumed {
   delta: BudgetDelta
   increments: CounterIncrement[]
   /** The application the consumption was recorded under, so a rollback drops the reference this attempt took. */
-  keyed?: Keyed
+  keyed: Keyed | undefined
 }
 
 /** The counter fast-path outcome: a hard reject (with its failing dimension) or a pass to the DB. */
 type FastPathResult =
   | { rejected: true; failing: FailingDimension }
-  | { rejected: false; increments: CounterIncrement[]; available: boolean }
+  | { rejected: false; increments: CounterIncrement[] }
 
 /** The int64 ceiling used as the limit for an unconditional counter increment (capture ±delta never re-blocks). */
 const UNBOUNDED_COUNTER_LIMIT = 9_223_372_036_854_775_807n
@@ -139,11 +139,9 @@ export class BudgetService {
     assertTenant(input.tenantId)
     this.assertLimits(input)
     assertWindowKind(input.window)
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the option name
     const given: unknown = input.policy
     if (given !== undefined && given !== null && !isBudgetPolicy(given)) throw invalid('policy must be one of block, throttle or allow')
     const softThresholds = input.softThresholds ?? [...this.options.alertThresholds]
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics; tests check the code and the field name
     if (!Array.isArray(softThresholds) || !(softThresholds as unknown[]).every(isFraction)) throw invalid('softThresholds must be a list of numbers within (0, 1]')
     if (input.id !== undefined) {
       const existing = await this.store.findBudgetById({ tenantId: input.tenantId, id: input.id })
@@ -151,7 +149,6 @@ export class BudgetService {
     }
     const budget = await this.store.upsert(budgetInput({ ...input, softThresholds, policy: input.policy ?? this.options.defaultPolicy, createdAt: this.now() }))
     if (budget.tenantId !== input.tenantId) throw unavailableBudgetId()
-    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the upsert result and the audit action, not the event payload shape
     await this.events.audit('ai_tokens.budget.upserted', { tenantId: budget.tenantId, budgetId: budget.id })
     return budget
   }
@@ -168,7 +165,6 @@ export class BudgetService {
     // A budget of another tenant answers as an unknown id does: nothing is removed and nothing is audited.
     if ((await this.findOwned({ tenantId, id: budgetId })) === null) return
     await this.store.remove({ tenantId, id: budgetId })
-    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check the method completes, not the event payload shape
     await this.events.audit('ai_tokens.budget.removed', { tenantId, budgetId })
   }
 
@@ -209,12 +205,10 @@ export class BudgetService {
         try {
           await counter.reset(counterKey(budgetId, windowStart, dimension.name))
         } catch {
-          // Stryker disable next-line StringLiteral: logger text is internal observability
           this.logger.warn(`failed to reset budget counter for ${budgetId}`)
         }
       }
     }
-    // Stryker disable next-line ObjectLiteral: audit payload is internal observability; tests check window rotation behavior, not event payload shape
     await this.events.audit('ai_tokens.budget.rotated', { tenantId: budget.tenantId, budgetId, windowStart: start.toISOString() })
   }
 
@@ -345,15 +339,13 @@ export class BudgetService {
    */
   private async adjustCounter(counter: IBudgetCounterStore, key: string, amount: bigint, authoritative: bigint, ttl: number): Promise<void> {
     try {
-      // Stryker disable next-line EqualityOperator: `< 0n` vs `<= 0n` differ only at amount === 0n, which never reaches adjustCounter: counterDimensions omits any dimension whose delta component is 0, so `amount` is always non-zero here
-      if (amount < 0n) {
+      if (amount < 1n) {
         await counter.decr(key, -amount)
         return
       }
       if (await counter.incrIfBelow(key, amount, UNBOUNDED_COUNTER_LIMIT, ttl)) return
       await this.resyncCounter(counter, key, authoritative, ttl)
     } catch {
-      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`failed to adjust budget counter ${key}`)
     }
   }
@@ -366,7 +358,6 @@ export class BudgetService {
     // is intentionally not checked (unlike the overflowing increment that got us here). It restores
     // counter == DB-window instead of trusting the overflowed fast-path value.
     await counter.incrIfBelow(key, authoritative, UNBOUNDED_COUNTER_LIMIT, ttl)
-    // Stryker disable next-line StringLiteral: logger text is internal observability
     this.logger.warn(`budget counter ${key} overflowed the int64 ceiling; resynced to the database window spend`)
   }
 
@@ -384,8 +375,9 @@ export class BudgetService {
     windowStart = readDate('windowStart', windowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
-    // Stryker disable next-line ObjectLiteral: the `to` upper bound is redundant with the §10.7 predicate: recordConsumesBudget re-filters `occurredAt < windowEnd`, so dropping `to` from the query filter yields the identical reconciled record set (the outer filter → {} is killed by the reconcile test)
-    const filter = { tenantId: budget.tenantId, from: windowStart, ...(windowEnd !== null ? { to: windowEnd } : {}) }
+    // Stryker disable next-line ObjectLiteral: without `to` the query returns later records too, and recordConsumesBudget drops them by `occurredAt < windowEnd`
+    const upperBound = windowEnd !== null ? { to: windowEnd } : {}
+    const filter = { tenantId: budget.tenantId, from: windowStart, ...upperBound }
     const records = await this.ledger.query(filter)
     const computed: BudgetWindowSpend = { spentNanoUsd: 0n, spentTokens: 0, spentCount: 0 }
     for (const record of records) {
@@ -451,8 +443,7 @@ export class BudgetService {
       if (!replayed) await this.softOverLimit(context, located, before, delta)
     }
     // Every budget this attempt holds a reference on is kept for the rollback of a later budget's block, which drops only these references.
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { keyed: undefined } is equivalent to {} because the rollback checks keyed === undefined
-    consumed.push({ located, delta, increments, ...(keyed !== undefined ? { keyed } : {}) })
+    consumed.push({ located, delta, increments, keyed })
     // A replayed application moved nothing, so there is no new spend to signal.
     if (!replayed) await this.signalThresholds(context, located, before, addSpend(before, delta))
   }
@@ -490,7 +481,7 @@ export class BudgetService {
     const counter = this.options.counter
     if (counter === undefined) return guardOf(await this.consumeInStore(located, delta, keyed))
     const fast = await this.counterFastPath(counter, located, delta)
-    if (!fast.rejected) return this.databaseConsume(counter, located, delta, fast.increments, fast.available, keyed)
+    if (!fast.rejected) return this.databaseConsume(counter, located, delta, fast.increments, keyed)
     if (keyed === undefined) return { ok: false, increments: [], failing: fast.failing }
     // A retry whose application is already recorded is over the counter only because its own consumption is in it:
     // the database, which holds the application, decides.
@@ -503,7 +494,7 @@ export class BudgetService {
    * (whose `incrIfBelow` returned `false`) so the block raises the correct §16 code
    * — a count/token quota is a 429, not the spend 402 the DB-window default would
    * infer when the counter is ahead of the window row. Otherwise it reports the
-   * increments made and whether the counter was available (an outage falls back to DB).
+   * increments made; an outage gives them back and reports none (the DB decides).
    */
   private async counterFastPath(
     counter: IBudgetCounterStore,
@@ -522,13 +513,11 @@ export class BudgetService {
         await this.decrCounters(counter, increments)
         return { rejected: true, failing: dimensionCode(dimension.name) }
       }
-      return { rejected: false, increments, available: true }
+      return { rejected: false, increments }
     } catch {
       await this.decrCounters(counter, increments)
-      // Stryker disable next-line StringLiteral: logger text is internal observability; callers observe return value, not warning text
       this.logger.warn(`budget counter unavailable for ${located.budget.id}; falling back to the database`)
-      // Stryker disable next-line BooleanLiteral: `available` only gates decrCounters(counter, increments), and on this outage path `increments` is []; flipping the flag cannot change any observable behaviour (decr of [] is a no-op; the returned increments stay [])
-      return { rejected: false, increments: [], available: false }
+      return { rejected: false, increments: [] }
     }
   }
 
@@ -538,34 +527,27 @@ export class BudgetService {
     located: LocatedWindow,
     delta: BudgetDelta,
     increments: CounterIncrement[],
-    counterAvailable: boolean,
     keyed?: Keyed,
   ): Promise<GuardResult> {
     try {
       const outcome = await this.consumeInStore(located, delta, keyed)
       if (outcome === 'replayed') {
         // Nothing moved, so the increments the fast path just made are given back.
-        // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []`, so decrementing is a no-op
-        if (counterAvailable) await this.decrCounters(counter, increments)
+        await this.decrCounters(counter, increments)
         return { ok: true, increments: [], replayed: true }
       }
       if (outcome === 'mismatch') {
-        // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []`, so decrementing is a no-op
-        if (counterAvailable) await this.decrCounters(counter, increments)
+        await this.decrCounters(counter, increments)
         return { ok: false, increments: [], mismatch: true }
       }
       if (outcome === 'refused') {
-        // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
-        if (counterAvailable) await this.decrCounters(counter, increments)
+        await this.decrCounters(counter, increments)
         return { ok: false, increments: [] }
       }
-      return { ok: true, increments: counterAvailable ? increments : [] }
+      return { ok: true, increments }
     } catch (error) {
-      // Stryker disable next-line ConditionalExpression: CE→true is inert: `counterAvailable === false` implies `increments === []` (the outage path returns no increments), so guarding the decr is equivalent to always decrementing an empty list
-      if (counterAvailable) await this.decrCounters(counter, increments)
-      // Stryker disable next-line ObjectLiteral: empty error context {} is the intended shape for STORE_ERROR
+      await this.decrCounters(counter, increments)
       if (this.options.failClosed) throw attachCause(new AiTokensException(storeFailureCode(error), undefined, {}), error)
-      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`budget store unavailable for ${located.budget.id}; allowing (failClosed disabled)`)
       return { ok: true, increments: [] }
     }
@@ -577,7 +559,6 @@ export class BudgetService {
       try {
         await counter.decr(increment.key, increment.amount)
       } catch {
-        // Stryker disable next-line StringLiteral: logger text is internal observability
         this.logger.warn(`failed to roll back budget counter ${increment.key}`)
       }
     }
@@ -604,7 +585,6 @@ export class BudgetService {
       spent: spendSnapshot(before),
       resetsAt: located.windowEnd,
     })
-    // Stryker disable next-line ObjectLiteral: exception context is internal diagnostics; the asserted dimension travels on the exceeded event above, and tests check only the thrown error code
     throw new AiTokensException(failing.code, undefined, suppliedDetails({ budgetId: located.budget.id, dimension: failing.dimension }))
   }
 
@@ -635,7 +615,6 @@ export class BudgetService {
   private async throttle(context: MeteringContext, located: LocatedWindow, before: BudgetWindowSpend): Promise<void> {
     const status = buildStatus(located.budget, located.windowStart, located.windowEnd, before)
     if (this.options.onThrottle === undefined) {
-      // Stryker disable next-line StringLiteral: logger text is internal observability
       this.logger.warn(`budget ${located.budget.id} exceeded with policy 'throttle' but no onThrottle callback is configured`)
       return
     }
@@ -654,18 +633,12 @@ export class BudgetService {
     const fractionBefore = usedFraction(before, located.limits)
     const fractionAfter = usedFraction(after, located.limits)
     const emitted = this.notifiedThreshold.get(key) ?? 0
-    let highest = emitted
-    // Stryker disable next-line MethodExpression: [...arr].sort vs arr.sort: store.findMatching returns new objects each call, so in-place mutation is observable only across calls (harmless reorder of a fresh copy each time)
-    // Stryker disable next-line ArithmeticOperator: a+b sort comparator produces descending order but mis-tracks `highest`; due to the monotonic fractionBefore invariant the wrong `highest` causes no re-emission in practice
     for (const threshold of [...located.budget.softThresholds].sort((a, b) => a - b)) {
-      // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: CE/EQ on `threshold > emitted`: monotonic fractionBefore ≥ emitted means `threshold ≤ emitted` ⟹ `threshold ≤ fractionBefore`, so `threshold > fractionBefore` already blocks re-emission; the emitted guard is redundant. LogicalOperator (&&→||) between the two guards is inert too: a threshold is emitted exactly when the fraction first reaches it, so `threshold > emitted` ⟺ `threshold > fractionBefore`, and the AND/OR of two equal guards coincide
       if (threshold > emitted && threshold > fractionBefore && threshold <= fractionAfter) {
         await this.emitThreshold(context, located, threshold, fractionAfter, after)
-        highest = threshold
+        this.notifiedThreshold.set(key, threshold)
       }
     }
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator: highest > emitted: mutations (>=, <=, false) all produce no-ops in practice because the monotonic fractionBefore invariant prevents re-emission even with a stale notifiedThreshold value
-    if (highest > emitted) this.notifiedThreshold.set(key, highest)
     await this.signalProjection(context, located, fractionAfter)
   }
 
@@ -690,7 +663,6 @@ export class BudgetService {
 
   /** Emit `projected_exceeded` once per window when the burn rate projects crossing before reset. */
   private async signalProjection(context: MeteringContext, located: LocatedWindow, fraction: number): Promise<void> {
-    // Stryker disable next-line ConditionalExpression: CE false on `fraction <= 0`: zero fraction yields elapsedMs/0 = Infinity → projectedAt = Infinity ≥ windowEnd → exits anyway; equivalent
     if (located.windowEnd === null || fraction <= 0 || fraction >= 1) return
     const key = windowKey(located.budget.id, located.windowStart)
     if (this.projected.has(key)) return
@@ -737,7 +709,6 @@ export class BudgetService {
   /** Load a budget by id or throw an invalid-config error. */
   private async requireBudget(key: BudgetKey): Promise<Budget> {
     const budget = await this.findOwned(key)
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     if (budget === null) throw invalid('the budget does not exist')
     return budget
   }
@@ -752,7 +723,6 @@ export class BudgetService {
   private async matching(tenantId: string, scope: MeteringScope): Promise<Budget[]> {
     const rows = await this.store.findMatching(tenantId, lookupScope(tenantId, scope))
     // An answer that is no array is not read as an empty list: no budget row means unlimited, so the call fails closed instead.
-    // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
     if (!Array.isArray(rows)) throw invalid('the store answered the budgets of a tenant with something that is no list')
     return filterList(
       mapList(rows, (row) => budgetRow(row)),
@@ -763,18 +733,15 @@ export class BudgetService {
   /** Validate the §10.2 limit rules: no negatives and at least one limit dimension. */
   private assertLimits(input: UpsertBudgetInput): void {
     if (input.limitNanoUsd !== undefined && !isNonNegativeBigint(input.limitNanoUsd)) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       throw invalid('limitNanoUsd must be a bigint from 0 to 9223372036854775807 (§10.2)')
     }
     for (const [name, value] of [
       ['limitTokens', input.limitTokens],
       ['limitCount', input.limitCount],
     ] as const) {
-      // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
       if (value !== undefined && !isCount(value)) throw invalid(`${name} must be a whole number of 0 or more (§10.2)`)
     }
     if (input.limitNanoUsd === undefined && input.limitTokens === undefined && input.limitCount === undefined) {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       throw invalid('a budget must define at least one limit dimension')
     }
   }
@@ -782,12 +749,10 @@ export class BudgetService {
 
 /** The refusal of a budget id another tenant owns: a config error that does not say whose it is. */
 function unavailableBudgetId(): AiTokensException {
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   return invalid('budget id is not available')
 }
 
 /** Build the invalid-config exception with an actionable reason. */
 function invalid(reason: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }

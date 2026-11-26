@@ -71,9 +71,9 @@ export async function announceSettleFailure(deps: { ledger: LedgerService; event
   const errorCode = errorCodeOf(error)
   try {
     // A context with no payer reaches here when `record()` refused it; an event nobody can be told about is not emitted.
-    // Stryker disable next-line StringLiteral: equivalent: the label reaches only the message of an error caught below, whose message is never read
+    // Stryker disable next-line StringLiteral: equivalent: the label reaches only `details.reason` of an error caught below, which is described by its name and code
     assertText('context.tenantId', caller.tenantId)
-    // Stryker disable next-line StringLiteral: equivalent: the label reaches only the message of an error caught below, whose message is never read
+    // Stryker disable next-line StringLiteral: equivalent: the label reaches only `details.reason` of an error caught below, which is described by its name and code
     assertScope('context.scope', caller.scope)
     // Bounded like any supplied value an error may carry, and without the NUL a text column cannot hold.
     const given = fieldOf(caller, 'correlationId')
