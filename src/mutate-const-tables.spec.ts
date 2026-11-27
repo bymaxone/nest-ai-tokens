@@ -257,10 +257,15 @@ describe('mutate-const-tables', () => {
   })
 
   // The self-test imports the script's functions, so an import must not start a run.
-  it('should not run when it is only imported', () => {
+  it.each([
+    ['with no argument', []],
+    ['with an argument that is not a file', ['no-such-file']]
+  ])('should not run when it is only imported %s', (_how, args) => {
     const importer = `await import(${JSON.stringify(pathToFileURL(SCRIPT).href)})`
 
-    const result = spawnSync('node', ['--input-type=module', '-e', importer], { encoding: 'utf8' })
+    const result = spawnSync('node', ['--input-type=module', '-e', importer, ...args], {
+      encoding: 'utf8'
+    })
 
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('')
