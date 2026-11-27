@@ -88,6 +88,7 @@ function build(
     clock?: () => Date
     telemetry?: ITelemetrySink
     content?: IContentStore
+    hashChain?: boolean
   } = {},
 ): Built {
   const now = opts.clock ?? ((): Date => new Date())
@@ -98,7 +99,7 @@ function build(
   const options = {
     ratingMode: opts.ratingMode ?? 'rate-table',
     markup: opts.markup ?? 1,
-    ledger: { hashChain: false },
+    ledger: { hashChain: opts.hashChain ?? false },
     pricing: { strict: opts.strict ?? true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
     holds: { ttlSeconds: opts.ttlSeconds ?? 3_600, reaperIntervalSeconds: 300 },
     wallets: opts.wallets
@@ -1668,5 +1669,34 @@ describe('MeteringService hold settlement across a budget window boundary (§10.
     await built.service.release(hold, context(), 'client gave up')
 
     expect(await spentIn(built, budgetId, WINDOW_ONE)).toBe(0n)
+  })
+})
+
+describe('MeteringService.reverse of a compensating record', () => {
+  /** Reversing a reversal is refused: the wallet, the budget, the ledger and its chain stay as the first reversal left them. */
+  it('refuses it and moves nothing', async () => {
+    const built = build({ wallets: true, budgets: true, hashChain: true })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    await upsertBudget(built)
+    const original = await built.service.record({ usage: normalized(), context: context({ enforce: true }) })
+    const compensating = await built.service.reverse(original.id, 'first')
+    const state = async (): Promise<unknown> => ({
+      wallet: await built.wallets!.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }),
+      budgets: await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' }),
+      rows: await built.ledgerStore.query({ tenantId: 'tenant-1' }),
+    })
+    const before = await state()
+    built.events.usageReversed.mockClear()
+    built.events.audit.mockClear()
+
+    const error = await built.service.reverse(compensating.id, 'second').catch((e: unknown) => e)
+
+    expect(codeOf(error)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(await state()).toStrictEqual(before)
+    expect(built.events.usageReversed).not.toHaveBeenCalled()
+    expect(built.events.audit).not.toHaveBeenCalled()
+    const chain = await new LedgerService(built.ledgerStore, { ledger: { hashChain: true } } as ResolvedAiTokensOptions).verifyChain('tenant-1')
+    expect(chain).toMatchObject({ valid: true, unchainedCount: 0 })
   })
 })

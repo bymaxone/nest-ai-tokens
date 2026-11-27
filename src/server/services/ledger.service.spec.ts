@@ -528,6 +528,37 @@ describe('LedgerService.reverse', () => {
     await expectConflict(service.reverse(original.id, 'second'))
   })
 
+  /** A compensating record is `posted`, but reversing it would count the charge again with no debit behind it. */
+  it('rejects reversing a compensating record and writes nothing', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(makeInput(), 'k')
+    const compensating = await service.reverse(original.id, 'first')
+
+    const error = await service.reverse(compensating.id, 'second').catch((caught: unknown) => caught)
+
+    expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details).toEqual({ reason: 'cannot reverse a compensating record', recordId: compensating.id })
+    expect(await store.query({ tenantId: 'tenant-1' })).toHaveLength(2)
+    const stored = await service.findById(compensating.id)
+    expect(stored?.status).toBe('posted')
+    expect(stored?.reversedByRecordId).toBeUndefined()
+  })
+
+  /** A retry of a reversal that stopped between the compensating append and the annotation finishes it with the same record. */
+  it('finishes an interrupted reversal on retry with the same compensating record', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(makeInput(), 'k')
+    jest.spyOn(store, 'transition').mockRejectedValueOnce(new Error('connection reset'))
+    await expect(service.reverse(original.id, 'first')).rejects.toThrow('connection reset')
+
+    const compensating = await service.reverse(original.id, 'retry')
+
+    expect(await store.query({ tenantId: 'tenant-1' })).toHaveLength(2)
+    expect((await service.findById(original.id))?.reversedByRecordId).toBe(compensating.id)
+  })
+
   /** For arbitrary amounts, the compensating record exactly negates the original. */
   it('exactly negates arbitrary amounts and nets to zero (property)', async () => {
     await fc.assert(

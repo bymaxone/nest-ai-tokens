@@ -561,7 +561,7 @@ export class MeteringService {
    * @param usageRecordId The posted record to reverse.
    * @param reason The caller's stated reason.
    * @returns The compensating record.
-   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
+   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing, not `posted`, or itself compensating.
    */
   async reverse(usageRecordId: string, reason: string): Promise<UsageRecord> {
     assertTexts({ usageRecordId, reason })

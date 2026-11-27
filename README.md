@@ -697,7 +697,7 @@ All errors are `AiTokensException extends HttpException`. Use the exported `AI_T
 | `AI_TOKENS_HOLD_NOT_FOUND`       | 404  | `capture()`/`release()` on an unknown hold or one of another caller              |
 | `AI_TOKENS_HOLD_EXPIRED`         | 410  | `capture()` after the reaper swept the hold (retry via `record()`)               |
 | `AI_TOKENS_HOLD_ALREADY_SETTLED` | 409  | `capture()` after `release()`                                                    |
-| `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed record |
+| `AI_TOKENS_IDEMPOTENCY_CONFLICT` | 409  | Same idempotency key, different request; or reversing an already-reversed or a compensating record |
 | `AI_TOKENS_STREAM_USAGE_MISSING` | 422  | Stream ended without provider usage and no tokenizer fallback available          |
 | `AI_TOKENS_STORE_ERROR`          | 500  | Persistence adapter raised an error that retrying does not fix                   |
 | `AI_TOKENS_STORE_UNAVAILABLE`    | 503  | Persistence adapter cannot serve the call now; retry it (no `Retry-After` is set) |

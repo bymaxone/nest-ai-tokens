@@ -113,6 +113,8 @@ export interface BootOptions {
   seedFromSnapshot?: boolean
   /** Bind a wallet feature (default true); `false` boots with budgets only. */
   wallets?: boolean
+  /** Chain the ledger rows with hashes (default off). */
+  hashChain?: boolean
 }
 
 /** The booted module and its resolved services. */
@@ -134,6 +136,7 @@ export async function bootMeteringModule(options: BootOptions): Promise<Booted> 
       BymaxAiTokensModule.forRoot({
         store: options.store,
         markup: options.markup ?? 1,
+        ledger: { hashChain: options.hashChain ?? false },
         pricing: { seedFromSnapshot: options.seedFromSnapshot ?? false, strict: false },
         ...(options.wallets === false ? {} : { wallets: { overdraftNanoUsd: options.overdraftNanoUsd ?? 0n } }),
         budgets: options.counter !== undefined ? { counter: options.counter } : {},

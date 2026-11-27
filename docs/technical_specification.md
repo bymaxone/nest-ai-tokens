@@ -961,7 +961,7 @@ The idempotency key should be **derived from request content** (`deriveIdempoten
 2. Annotates the original: `status: 'posted' → 'reversed'` + `reversedByRecordId` — **the only permitted post-posting mutation**, an annotation that never alters amounts (`ILedgerStore.transition()` enforces this).
 3. If the original was `enforced`: refunds the linked wallet debit (a `refund` entry) and releases the budget-window consumption — cost, tokens, **and count** — plus the live counter.
 
-`LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. The effects a transition or a reversal owes are recorded in a separate table, `ai_usage_effects_owed` (migration `0003`), written by the same statement and deleted once they ran, so the ledger table gains no column and step 2 stays the only post-posting mutation. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`; reversing a `pending`/`released` record is invalid (use `release()`).
+`LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. The effects a transition or a reversal owes are recorded in a separate table, `ai_usage_effects_owed` (migration `0003`), written by the same statement and deleted once they ran, so the ledger table gains no column and step 2 stays the only post-posting mutation. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`, and so does reversing a compensating record (one with `reversesRecordId`): a charge reversed by mistake is recorded again as new usage. Reversing a `pending`/`released` record is invalid (use `release()`).
 
 This is the prior implementation's refund-on-failure made first-class: a refunded user immediately regains quota headroom, including the operation-count headroom.
 
@@ -1944,7 +1944,7 @@ export class AiTokensException extends HttpException {
 | `AI_TOKENS_HOLD_NOT_FOUND`        | 404  | `capture()`/`release()` on an unknown hold — or one from another tenant (§14.4)           |
 | `AI_TOKENS_HOLD_EXPIRED`          | 410  | `capture()` on a hold the reaper already swept (retryable via `record()`)                 |
 | `AI_TOKENS_HOLD_ALREADY_SETTLED`  | 409  | `capture()` after `release()` (conflicting settlement; repeat `capture()` is idempotent — §11.1) |
-| `AI_TOKENS_IDEMPOTENCY_CONFLICT`  | 409  | Same idempotency key with a different payload hash; or reversing an already-reversed record |
+| `AI_TOKENS_IDEMPOTENCY_CONFLICT`  | 409  | Same idempotency key with a different payload hash; or reversing an already-reversed or a compensating record |
 | `AI_TOKENS_STREAM_USAGE_MISSING`  | 422  | Stream ended without provider usage and no tokenizer fallback was available               |
 | `AI_TOKENS_STORE_ERROR`           | 500  | The persistence adapter raised an error that retrying does not fix                        |
 | `AI_TOKENS_STORE_UNAVAILABLE`     | 503  | The persistence adapter cannot serve the call now (connection, timeout, retryable conflict) |

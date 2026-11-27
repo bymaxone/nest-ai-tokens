@@ -334,7 +334,7 @@ export class LedgerService {
    * 1–2). Appends a `posted` record that exactly negates the original's token
    * counts and costs (keyed `reverse:<id>`, so a retry is a clean replay), then
    * annotates the original `posted → reversed`. Reversing a `pending`/`released`
-   * or already-`reversed` record is invalid and throws
+   * record, an already-`reversed` one or a compensating one is invalid and throws
    * `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
    *
    * ADMIN PLANE: reversal is a privileged mutation — the host MUST restrict it to
@@ -347,7 +347,7 @@ export class LedgerService {
    * @param _reason The caller's stated reason: not persisted here, and never echoed in the conflict details.
    * @param owed When given, the compensating record carries the effects-owed marker from its own insert.
    * @returns The compensating record.
-   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing or not `posted`.
+   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` when the record is missing, not `posted`, or itself compensating.
    */
   async reverse(recordId: string, _reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const original = await this.store.findById(recordId)
@@ -358,6 +358,10 @@ export class LedgerService {
         reason: original === null ? 'record not found' : `cannot reverse a ${original.status} record`,
         ...suppliedDetails({ recordId }),
       })
+    }
+    // A compensating row is `posted`; negating it would count the charge again, and no wallet debit stands behind that row.
+    if (original.reversesRecordId !== undefined) {
+      throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'cannot reverse a compensating record', ...suppliedDetails({ recordId }) })
     }
     const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`, owed)
     await this.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
