@@ -152,7 +152,6 @@ export class UsageReportService {
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
     // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only
     this.assertWithinMaxRows(records.length, 'export')
-    // Stryker disable next-line StringLiteral,ObjectLiteral: audit event name and payload are internal observability; tests check record output, not audit events
     this.audit('ai_tokens.audit', { action: 'export', tenantId: filter.tenantId, format, rows: records.length })
     return Readable.from(this.serialize(records, format))
   }

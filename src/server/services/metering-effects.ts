@@ -138,7 +138,6 @@ export class MeteringEffects {
       try {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: delta.billedNanoUsd, idempotencyKey: `hold-rollback:${ledgerKey}`, reason: 'hold rollback' })
       } catch {
-        // Stryker disable next-line StringLiteral: logger.warn text is internal observability; the observable contract is that compensateHold resolves (best-effort)
         this.logger.warn('failed to refund a hold debit during rollback')
       }
     }
@@ -146,7 +145,6 @@ export class MeteringEffects {
     try {
       await this.budgets.release(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
     } catch {
-      // Stryker disable next-line StringLiteral: logger.warn text is internal observability
       this.logger.warn('failed to release a budget reservation during rollback')
     }
   }
@@ -282,7 +280,6 @@ export class MeteringEffects {
         await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `reverse:${record.id}`, reason })
       } catch (error) {
         failure = error
-        // Stryker disable next-line StringLiteral: logger.warn text is internal observability
         this.logger.warn('failed to refund a wallet debit during reversal')
       }
     }
@@ -291,7 +288,6 @@ export class MeteringEffects {
         await this.budgets.adjust(contextOf(record), { nanoUsd: -record.billedCostNanoUsd, tokens: -record.totalTokens, count: -1 }, record.occurredAt, `reverse:${record.id}`)
       } catch (error) {
         failure ??= error
-        // Stryker disable next-line StringLiteral: logger.warn text is internal observability
         this.logger.warn('failed to release a budget consumption during reversal')
       }
     }

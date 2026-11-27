@@ -494,9 +494,7 @@ export class MeteringService {
     const { hold, caller } = holdOwnerArguments(givenHold, givenCaller)
     assertText('reason', reason)
     const record = await this.loadHoldRecord(hold, caller, 'release(hold, caller, reason)')
-    // Stryker disable next-line BlockStatement: 'posted' status returns via the !== 'pending' guard below; body is logger.warn only
     if (record.status === 'posted') {
-      // Stryker disable next-line StringLiteral: logger text is internal observability; callers observe that release is a no-op for captured holds
       this.logger.warn(`release() called on an already-captured hold ${record.id}; ignoring (release never bills)`)
       return
     }

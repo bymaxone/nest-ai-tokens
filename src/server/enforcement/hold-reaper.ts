@@ -198,11 +198,8 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
         const claimed = await this.ledger.transition(record.id, 'pending', 'released', undefined, {})
         moved = true
         if (claimed === null) continue
-        // Stryker disable next-line StringLiteral: 'expired' reason string is internal audit text; tests check that holds are released, not the reason string
         await this.metering.restoreReleasedHold(claimed, 'expired', true)
-      // Stryker disable next-line BlockStatement: best-effort per-hold reaping; a failure on one hold never aborts the batch
       } catch {
-        // Stryker disable next-line StringLiteral: logger text is internal observability
         this.logger.warn(`failed to reap expired hold ${record.id}`)
       }
     }

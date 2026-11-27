@@ -46,7 +46,7 @@ describe('EventDispatcher', () => {
     const sink: IEventSink = { deliver: () => Promise.reject(new Error('webhook down')) }
     const dispatcher = makeDispatcher({ sink })
     await expect(dispatcher.emit('ai_tokens.usage.recorded', 't1', undefined, {})).resolves.toBeUndefined()
-    expect(errorSpy).toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('event sink delivery failed for ai_tokens.usage.recorded ('))
   })
 
   /** With no sink configured, emit is a safe no-op. */
@@ -78,7 +78,7 @@ describe('EventDispatcher', () => {
     const dispatcher = makeDispatcher({ emitter: true, sink, get: jest.fn().mockReturnValue(emitter) })
     await dispatcher.onModuleInit()
     await expect(dispatcher.emit('ai_tokens.usage.recorded', 't1', undefined, {})).resolves.toBeUndefined()
-    expect(errorSpy).toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('event emitter listener failed for ai_tokens.usage.recorded ('))
     expect(delivered).toHaveLength(1)
   })
 
