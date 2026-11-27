@@ -41,6 +41,7 @@ import { isAppendWatch } from '../utils/append-watch'
 import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts, newVisit } from '../utils/argument-guards'
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
+import { max0, minBig } from './budget-math'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
 import { fieldOf } from '../utils/field-names'
@@ -732,10 +733,8 @@ export class MeteringService {
   private async walletSection(tenantId: string, scope: MeteringScope): Promise<AccessStatus['wallet'] | undefined> {
     if (this.wallets === undefined || !scopeOwnsWallet(scope)) return undefined
     const balance = await this.wallets.getBalance(scopeToWalletRef(tenantId, scope))
-    // Stryker disable next-line EqualityOperator: < vs <= at balance.nanoUsd === 0n: both branches contribute 0n to the sum (either the literal 0n or a zero balance), so overdraftRemainingNanoUsd is identical
-    const overdraftRemainingNanoUsd = this.overdraftNanoUsd + (balance.nanoUsd < 0n ? balance.nanoUsd : 0n)
-    // Stryker disable next-line EqualityOperator: < vs <= at overdraftRemainingNanoUsd === 0n: both yield 0n (the floor literal or the value itself), so the returned overdraftRemainingNanoUsd is identical
-    return { balanceNanoUsd: balance.nanoUsd, credits: balance.credits, overdraftRemainingNanoUsd: overdraftRemainingNanoUsd < 0n ? 0n : overdraftRemainingNanoUsd }
+    const overdraftRemainingNanoUsd = this.overdraftNanoUsd + minBig(balance.nanoUsd, 0n)
+    return { balanceNanoUsd: balance.nanoUsd, credits: balance.credits, overdraftRemainingNanoUsd: max0(overdraftRemainingNanoUsd) }
   }
 
   /** Resolve the normalizer chain and produce the normalized usage. */
