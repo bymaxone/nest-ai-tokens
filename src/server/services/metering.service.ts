@@ -27,6 +27,7 @@ import type {
   UsageNormalizer,
   UsageRecord,
 } from '../../shared'
+import { defined } from '../utils/defined'
 import { ratedCost } from '../utils/rated-cost'
 import { settled } from '../utils/host-settled'
 import type { ResolvedAiTokensOptions } from '../config'
@@ -368,8 +369,7 @@ export class MeteringService {
       model: input.model,
       operation: input.operation,
       serviceTier,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { feature: undefined } is equivalent to {} because markup.resolve treats absent and undefined feature the same
-      ...(input.feature !== undefined ? { feature: input.feature } : {}),
+      ...defined({ feature: input.feature }),
     })
     return { rawCostNanoUsd, billedCostNanoUsd: markup.apply(rawCostNanoUsd) }
   }
@@ -520,8 +520,7 @@ export class MeteringService {
       const result = await settled(fn(), true)
       const row = { appended: false }
       try {
-        // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } }, () => (row.appended = true))
+        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...defined({ preset: context.preset }), context: { ...context, enforce: true } }, () => (row.appended = true))
         if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
         return { result, usage }
       } catch (error) {
@@ -646,8 +645,7 @@ export class MeteringService {
           priceMissing: false,
           status: 'pending',
           isSystemCost,
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { systemCostCategory: undefined } is equivalent to {}
-          ...(context.systemCostCategory !== undefined ? { systemCostCategory: context.systemCostCategory } : {}),
+          ...defined({ systemCostCategory: context.systemCostCategory }),
           enforced: !isSystemCost,
           occurredAt,
         },

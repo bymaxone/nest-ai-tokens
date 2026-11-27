@@ -18,6 +18,7 @@ import { isLegalLedgerTransition, isLegalTransitionPatchKey } from '../../shared
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { defined } from '../utils/defined'
 import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { methodOf } from '../utils/field-names'
@@ -419,14 +420,11 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
   return {
     tenantId: original.tenantId,
     scope: original.scope,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { beneficiary: undefined } is equivalent to {} because downstream consumers check !== undefined
-    ...(original.beneficiary !== undefined ? { beneficiary: original.beneficiary } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedBy: undefined } is equivalent to {}
-    ...(original.requestedBy !== undefined ? { requestedBy: original.requestedBy } : {}),
+    ...defined({ beneficiary: original.beneficiary }),
+    ...defined({ requestedBy: original.requestedBy }),
     provider: original.provider,
     model: original.model,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedModel: undefined } is equivalent to {}
-    ...(original.requestedModel !== undefined ? { requestedModel: original.requestedModel } : {}),
+    ...defined({ requestedModel: original.requestedModel }),
     operation: original.operation,
     serviceTier: original.serviceTier,
     feature: original.feature,
@@ -452,13 +450,10 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
     priceMissing: original.priceMissing,
     status: 'posted',
     reversesRecordId: original.id,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { correlationId: undefined } is equivalent to {}
-    ...(original.correlationId !== undefined ? { correlationId: original.correlationId } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestId: undefined } is equivalent to {}
-    ...(original.requestId !== undefined ? { requestId: original.requestId } : {}),
+    ...defined({ correlationId: original.correlationId }),
+    ...defined({ requestId: original.requestId }),
     isSystemCost: original.isSystemCost,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { systemCostCategory: undefined } is equivalent to {}
-    ...(original.systemCostCategory !== undefined ? { systemCostCategory: original.systemCostCategory } : {}),
+    ...defined({ systemCostCategory: original.systemCostCategory }),
     enforced: original.enforced,
     occurredAt: original.occurredAt,
   }

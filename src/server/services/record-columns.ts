@@ -5,6 +5,7 @@
  * @layer server
  */
 
+import { defined } from '../utils/defined'
 import type { NormalizedUsage, ServiceTier, UsageRecord } from '../../shared'
 import type { MeteringContext } from '../interfaces'
 import type { LedgerAppendInput } from './ledger.service'
@@ -47,8 +48,7 @@ export function buildAppendInput(args: {
     priceMissing: rating.priceMissing,
     status: 'posted',
     isSystemCost: context.isSystemCost ?? false,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { systemCostCategory: undefined } is equivalent to {} because JS property access treats absent and undefined the same
-    ...(context.systemCostCategory !== undefined ? { systemCostCategory: context.systemCostCategory } : {}),
+    ...defined({ systemCostCategory: context.systemCostCategory }),
     enforced,
     occurredAt,
   }
@@ -72,20 +72,16 @@ export function baseColumns(
   return {
     tenantId: context.tenantId,
     scope: context.scope,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { beneficiary: undefined } is equivalent to {} for property access and truthiness-based filters
-    ...(context.beneficiary !== undefined ? { beneficiary: context.beneficiary } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedBy: undefined } is equivalent to {}
-    ...(context.requestedBy !== undefined ? { requestedBy: context.requestedBy } : {}),
+    ...defined({ beneficiary: context.beneficiary }),
+    ...defined({ requestedBy: context.requestedBy }),
     provider: usage.provider,
     model: usage.model,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedModel: undefined } is equivalent to {} for downstream consumers
-    ...(context.baseModel !== undefined ? { requestedModel: context.baseModel } : {}),
+    ...defined({ requestedModel: context.baseModel }),
     operation: usage.operation,
     serviceTier,
     feature: context.feature,
     tags: context.tags ?? [],
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { correlationId: undefined } is equivalent to {} because it's only read via record.correlationId
-    ...(context.correlationId !== undefined ? { correlationId: context.correlationId } : {}),
+    ...defined({ correlationId: context.correlationId }),
   }
 }
 
