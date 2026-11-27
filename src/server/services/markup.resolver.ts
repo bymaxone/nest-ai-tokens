@@ -77,9 +77,7 @@ export class MarkupResolver {
     try {
       return await settled(policy.resolve(context))
     } catch {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'markup policy failed to resolve a multiplier',
       })
     }
@@ -90,9 +88,7 @@ export class MarkupResolver {
     try {
       return resolveMultiplier4dp(raw)
     } catch {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'markup policy returned an invalid multiplier',
         valueType: typeof raw,
       })

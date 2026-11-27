@@ -21,7 +21,6 @@ const LAST_SUPPORTED_MS = 253_402_300_799_999
 
 /** The typed refusal of an input that is not a valid date. */
 function notADate(name: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the input name
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be a valid date` })
 }
 
@@ -35,7 +34,6 @@ function notADate(name: string): AiTokensException {
 export function assertDate(name: string, value: unknown): void {
   if (!isValidDate(value)) throw notADate(name)
   const time = Date.prototype.getTime.call(value)
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the input name
   if (time < FIRST_SUPPORTED_MS || time > LAST_SUPPORTED_MS) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be a date from the year 1 to the year 9999` })
 }
 

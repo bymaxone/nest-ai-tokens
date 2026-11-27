@@ -39,7 +39,6 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  * host's; so is a row with a `then` on its chain. A promise (`pending`) may be a subclass of `Promise` or a thenable, whose `then` is the store's own.
  */
 function accepted(result: unknown, pending: boolean): void {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
   if (refusesPromise(result, pending, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' })
 }
 
@@ -59,7 +58,6 @@ function copied<T>(value: T): T {
     return ownCopy(value)
   } catch (error) {
     if (!(error instanceof RangeError)) throw error
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check the error code only
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a record a store takes or returns is nested too deep, or its class chain is too long' })
   }
 }

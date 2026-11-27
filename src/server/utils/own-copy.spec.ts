@@ -122,6 +122,7 @@ describe('ownCopy', () => {
   it('copies a leaf at the deepest allowed level and refuses the one a level below', () => {
     expect(() => ownCopy(nest(8))).not.toThrow()
     expect(() => ownCopy(nest(9))).toThrow(RangeError)
+    expect(() => ownCopy(nest(9))).toThrow('a record is nested deeper than a store takes or returns')
   })
 
   it('refuses a list nested too deep and a record that contains itself', () => {

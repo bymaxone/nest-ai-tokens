@@ -16,7 +16,6 @@ import { fieldNamesOf, fieldOf } from './field-names'
 
 /** The typed refusal of a map that cannot be listed, which names nothing the host wrote. */
 function unlistable(): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and that the usage is refused
   return new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the usage holds an object that lists no field' })
 }
 
@@ -51,7 +50,6 @@ function guarded<T>(read: () => T): T {
     return read()
   } catch (error) {
     if (error instanceof AiTokensException) throw error
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and that the usage is refused
     throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the usage could not be read' })
   }
 }

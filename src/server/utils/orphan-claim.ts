@@ -58,7 +58,6 @@ export function isOrphanClaim(row: Pick<UsageRecord, 'provider' | 'feature'>): b
  */
 export function lateAppend(logger: Logger, claim: UsageRecord): AiTokensException {
   logger.warn(`${LATE_APPEND_LOG_KEY} claim=${claim.id}`)
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: claim.tenantId, idempotencyKey: claim.idempotencyKey }))
 }
 

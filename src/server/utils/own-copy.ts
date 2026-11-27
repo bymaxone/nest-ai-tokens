@@ -61,7 +61,6 @@ function isBuiltIn(value: object): boolean {
  */
 export function ownCopy<T>(value: T, depth = 0): T {
   if (typeof value !== 'object' || value === null) return value
-  // Stryker disable next-line StringLiteral: error text is internal diagnostics
   if (depth > MAX_DEPTH) throw new RangeError('a record is nested deeper than a store takes or returns')
   if (Array.isArray(value)) return mapList(value as unknown[], (element: unknown) => ownCopy(element, depth + 1)) as T
   const plain = isPlain(value)

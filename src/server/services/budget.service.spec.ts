@@ -27,6 +27,14 @@ describe('BudgetService — CRUD (§10.5)', () => {
     }
   })
 
+  /** The refusal says which kinds and lengths a window may have. */
+  it('names the supported window kinds in the refusal', async () => {
+    const { service } = makeService()
+    await expect(service.upsertBudget(budgetInput({ window: 'hour' as never }))).rejects.toMatchObject({
+      response: { error: { details: { reason: "window must be 'day', 'week', 'month', 'total' or { customSeconds } with a positive whole number of seconds up to 3153600000 (100 years)" } } },
+    })
+  })
+
   /** Every documented kind, and the bounds of a custom window, are accepted. */
   it('accepts each documented window kind', async () => {
     const { service } = makeService()
