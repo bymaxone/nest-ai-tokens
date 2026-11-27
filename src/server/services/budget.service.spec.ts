@@ -411,6 +411,15 @@ describe('BudgetService — reconcile & status (§10.6/§10.7)', () => {
     expect(window?.spentCount).toBe(2)
   })
 
+  /** The ledger is asked for the window alone: it starts at the given date and ends where the budget resets. */
+  it('bounds the ledger query by the end of the window', async () => {
+    const { service, ledgerStore } = makeService()
+    const budget = await service.upsertBudget(budgetInput({ window: 'month', limitNanoUsd: 1_000n }))
+    const query = jest.spyOn(ledgerStore, 'query')
+    await service.reconcileWindow(budget.id, TENANT, new Date('2026-06-01T00:00:00.000Z'))
+    expect(query.mock.calls[0]![0]).toMatchObject({ from: new Date('2026-06-01T00:00:00.000Z'), to: new Date('2026-07-01T00:00:00.000Z') })
+  })
+
   /** reconcileWindow handles a 'total' window (no upper bound). */
   it('reconciles a total window', async () => {
     const { service, store, ledgerStore } = makeService()

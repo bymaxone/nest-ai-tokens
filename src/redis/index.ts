@@ -42,7 +42,6 @@ function boxed(client: Redis): ClientBox {
  * store's own error.
  */
 async function reply<T>(pending: Promise<T>): Promise<T> {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
   if (refusesPromise(pending, true, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
   try {
     return await pending
@@ -82,7 +81,6 @@ const MAX_CLOSE_TIMEOUT_MS = 2_147_483_647
 function requireMillis(name: string, value: number | undefined, fallback: number): number {
   if (value === undefined) return fallback
   if (!Number.isInteger(value) || value < 1 || value > MAX_CLOSE_TIMEOUT_MS) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error reason template is internal diagnostics; tests check the code and the option name
     throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${name} must be an integer from 1 to ${String(MAX_CLOSE_TIMEOUT_MS)}` })
   }
   return value
@@ -273,7 +271,7 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
     if (this.#closed) throw new Error('counter store is closed')
     this.#connecting ??= this.connect(this.#source)
     const connecting = this.#connecting
-    // Stryker disable next-line ObjectLiteral,StringLiteral,BooleanLiteral: error reason is an internal diagnostic; tests check the code. BooleanLiteral false->true: equivalent: `connecting` is always the intrinsic promise of the async connect(), which returns at the PROMISE_PROTOTYPE branch of refusesPromise before `thenables` is read
+    // Stryker disable next-line BooleanLiteral: equivalent: `connecting` is always the intrinsic promise of the async connect(), which refusesPromise answers before it reads `thenables`
     if (refusesPromise(connecting, false, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'the connection reads a constructor or then of its own' })
     return await connecting
   }

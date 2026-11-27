@@ -1,4 +1,5 @@
 import type { ModuleRef } from '@nestjs/core'
+import { EventEmitter2 } from '@nestjs/event-emitter'
 import { resolveEmitterChannel } from './event-emitter.bridge'
 
 describe('resolveEmitterChannel', () => {
@@ -17,6 +18,13 @@ describe('resolveEmitterChannel', () => {
     const channel = await resolveEmitterChannel(moduleRef, true)
     channel?.emit('ai_tokens.usage.recorded', { id: 'e1' })
     expect(emitter.emit).toHaveBeenCalledWith('ai_tokens.usage.recorded', { id: 'e1' })
+  })
+
+  /** The emitter is the application's global one, so the lookup is not limited to the library's own module. */
+  it('looks EventEmitter2 up across the whole application', async () => {
+    const get = jest.fn().mockReturnValue({ emit: jest.fn() })
+    await resolveEmitterChannel({ get } as unknown as ModuleRef, true)
+    expect(get).toHaveBeenCalledWith(EventEmitter2, { strict: false })
   })
 
   /** Enabled but the peer/instance is not provided: silently disabled. */

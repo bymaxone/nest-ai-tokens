@@ -375,7 +375,6 @@ export class BudgetService {
     windowStart = readDate('windowStart', windowStart)
     const budget = await this.requireBudget({ tenantId, id: budgetId })
     const windowEnd = resetsAtFor(budget, windowStart)
-    // Stryker disable next-line ObjectLiteral: without `to` the query returns later records too, and recordConsumesBudget drops them by `occurredAt < windowEnd`
     const upperBound = windowEnd !== null ? { to: windowEnd } : {}
     const filter = { tenantId: budget.tenantId, from: windowStart, ...upperBound }
     const records = await this.ledger.query(filter)

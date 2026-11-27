@@ -169,6 +169,16 @@ describe('MeteringInterceptor', () => {
     const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => CONTEXT })
     const error = await lastValueFrom(interceptor.intercept(executionContext(fixture.noUsage), handlerOf({ nothing: true }))).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details).toEqual({ reason: 'the handler result carried no extractable usage' })
+  })
+
+  /** With neither a guard nor a scopeResolver there is no caller to record for, and the refusal says which option is missing. */
+  it('names the missing scopeResolver when no guard ran', async () => {
+    const built = makeMetering()
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, {})
+    const error = await lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: normalized() }))).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details).toEqual({ reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
   })
 
   /** A handler error with a hold releases it and rethrows the ORIGINAL error. */

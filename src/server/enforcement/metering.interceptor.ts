@@ -154,7 +154,6 @@ export class MeteringInterceptor implements NestInterceptor {
           usage: extractUsage(result, config),
           // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
           ...(config.preset !== undefined ? { preset: config.preset } : {}),
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
           context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
         },
         watch,
@@ -169,7 +168,6 @@ export class MeteringInterceptor implements NestInterceptor {
   private async resolveContext(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined): Promise<MeteringContext> {
     if (enrichment !== undefined) return enrichment.context
     if (this.scopeResolver === undefined) {
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
     }
     const resolved = await settled(this.scopeResolver(executionContext))
@@ -202,11 +200,9 @@ export class MeteringInterceptor implements NestInterceptor {
 
 /** Extract the raw usage from the handler result, or fail as malformed. */
 function extractUsage(result: unknown, config: MeterConfig): unknown {
-  // Stryker disable next-line ConditionalExpression: CE true on `typeof value === 'object'` is equivalent: the `value !== null` operand still excludes null, and for any non-object non-null primitive `.usage` is undefined — identical to the else branch — so the extracted value is unchanged
   const extract = config.extract ?? ((value: unknown): unknown => (typeof value === 'object' && value !== null ? fieldOf(value, 'usage') : undefined))
   const usage = extract(result)
   if (usage === undefined || usage === null) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the handler result carried no extractable usage' })
   }
   return usage
