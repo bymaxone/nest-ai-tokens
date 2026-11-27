@@ -123,7 +123,12 @@ export class LedgerService {
    * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a payload mismatch, or when `reversesRecordId` names a compensating record.
    */
   async append(input: LedgerAppendInput, ctxKey?: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
-    if (input.reversesRecordId !== undefined) await this.assertNotCompensating(input.reversesRecordId)
+    if (input.reversesRecordId !== undefined) assertNotCompensating(await this.store.findById(input.reversesRecordId))
+    return await this.write(input, ctxKey, owed)
+  }
+
+  /** The write of {@link append}, for an input whose link has been checked. */
+  private async write(input: LedgerAppendInput, ctxKey?: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const record: NewUsageRecord = {
       ...input,
       idempotencyKey: ctxKey ?? randomUUID(),
@@ -360,17 +365,10 @@ export class LedgerService {
         ...suppliedDetails({ recordId }),
       })
     }
-    const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`, owed)
+    assertNotCompensating(original)
+    const compensating = await this.write(buildCompensatingRecord(original), `reverse:${recordId}`, owed)
     await this.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
     return compensating
-  }
-
-  /** A compensating row is `posted`; negating it would count the charge again, and no wallet debit stands behind that row. */
-  private async assertNotCompensating(recordId: string): Promise<void> {
-    const target = await this.store.findById(recordId)
-    if (target?.reversesRecordId !== undefined) {
-      throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'cannot reverse a compensating record', ...suppliedDetails({ recordId }) })
-    }
   }
 
   /**
@@ -399,6 +397,13 @@ export class LedgerService {
         })
       }
     }
+  }
+}
+
+/** A compensating row is `posted`; negating it would count the charge again, and no wallet debit stands behind that row. */
+function assertNotCompensating(target: UsageRecord | null): void {
+  if (target?.reversesRecordId !== undefined) {
+    throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'cannot reverse a compensating record', ...suppliedDetails({ recordId: target.id }) })
   }
 }
 
