@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -85,6 +85,22 @@ describe('parseOptions', () => {
 })
 
 describe('the command', () => {
+  // A skipped run exits 0, so a spelling that does not run the script passes the gate.
+  it('runs when its path goes through a symlink', () => {
+    const root = pkg({ 'src/a.ts': 300, 'dist/a.mjs': 200 })
+    symlinkSync(dirname(SCRIPT), join(root, 'linked'), 'dir')
+    const result = spawnSync(process.execPath, [join(root, 'linked', 'check-dist-fresh.mjs')], { cwd: root, encoding: 'utf8' })
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /dist\/a\.mjs is older than src\/a\.ts/)
+  })
+
+  it('does not run when it is only imported', () => {
+    const importer = `await import(${JSON.stringify(new URL('./check-dist-fresh.mjs', import.meta.url).href)})`
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', importer, 'no-such-file'], { cwd: pkg({}), encoding: 'utf8' })
+    assert.equal(result.status, 0)
+    assert.equal(result.stdout + result.stderr, '')
+  })
+
   it('passes a build newer than its sources', () => {
     const root = pkg({ 'src/a.ts': 100, 'tsup.config.ts': 100, 'dist/a.mjs': 200 })
     assert.equal(cli(root).status, 0)

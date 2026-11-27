@@ -6,9 +6,9 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { headerProblem, parseBaseline, problemsOf } from './check-spec-headers.mjs'
@@ -107,6 +107,28 @@ function run(root, baselineText) {
 }
 
 describe('the command', () => {
+  // A skipped run exits 0, so a spelling that does not run the script passes the gate.
+  it('runs when its path goes through a symlink', () => {
+    const root = scratch({ 'src/bad.spec.ts': 'import x from "x"\n' })
+    try {
+      writeFileSync(join(root, 'baseline.json'), '{"files":[]}')
+      symlinkSync(dirname(SCRIPT), join(root, 'linked'), 'dir')
+      const script = join(root, 'linked', 'check-spec-headers.mjs')
+      const result = spawnSync(process.execPath, [script, '--root', root, '--baseline', join(root, 'baseline.json')], { encoding: 'utf8' })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /src\/bad\.spec\.ts/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not run when it is only imported', () => {
+    const importer = `await import(${JSON.stringify(new URL('./check-spec-headers.mjs', import.meta.url).href)})`
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', importer, 'no-such-file'], { encoding: 'utf8' })
+    assert.equal(result.status, 0)
+    assert.equal(result.stdout + result.stderr, '')
+  })
+
   it('exits 0 for a spec with a header and one on the baseline, in the unit and end-to-end names', () => {
     const root = scratch({ 'src/ok.spec.ts': GOOD, 'src/old.spec.ts': 'import x from "x"\n', 'test/e2e/new-spec.ts': GOOD })
     try {
