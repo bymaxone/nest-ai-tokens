@@ -19,13 +19,14 @@ class CounterStoreError extends Error {
 
 /** The code of a failure: the first word of a reply of the server, else its `code`, kept only when it has the shape of a code. */
 function codeOf(failure: unknown): string | undefined {
+  let word: unknown
   try {
     const { name, message, code } = failure as { name?: unknown; message?: unknown; code?: unknown }
-    const word = name === 'ReplyError' ? String(message).split(' ', 1)[0] : code
-    return isCodeShaped(word) ? word : undefined
+    word = name === 'ReplyError' ? String(message).split(' ', 1)[0] : code
   } catch {
-    return undefined
+    // A failure that cannot be read has no code.
   }
+  return isCodeShaped(word) ? word : undefined
 }
 
 /**
