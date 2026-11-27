@@ -19,7 +19,7 @@ let app: Booted
 
 beforeAll(async () => {
   pg = await startPostgres()
-  app = await bootMeteringModule({ store: pg.store })
+  app = await bootMeteringModule({ store: pg.store, hashChain: true })
   await seedPrice(app.pricing)
   await grantWallet(app.wallets, 100_000_000n)
   await upsertBudget(app.budgets, { limitCount: 1, limitTokens: 100_000, limitNanoUsd: 100_000_000n })
@@ -46,5 +46,21 @@ describe('E2E — reversal restores headroom (§8.5)', () => {
     // Headroom recovered: the next call now succeeds.
     const next = await app.metering.record({ usage: e2eUsage(), context: e2eContext({ idempotencyKey: 'rev-3', enforce: true }) })
     expect(next.status).toBe('posted')
+
+    // §8.5: reversing the reversal is refused, a retry of the first reversal stays a conflict, and nothing moves.
+    const compensating = await app.metering.reverse(next.id, 'e2e refund')
+    const state = async (): Promise<unknown> => ({
+      wallet: (await app.wallets.getBalance(E2E_WALLET)).nanoUsd,
+      spent: (await app.budgets.status('e2e', { type: 'user', id: 'u1' }))[0]?.spent,
+      rows: (await app.ledger.query({ tenantId: 'e2e' })).length,
+    })
+    const before = await state()
+    const reversal = await app.metering.reverse(compensating.id, 'again').catch((e: unknown) => e)
+    const retry = await app.metering.reverse(next.id, 'e2e refund').catch((e: unknown) => e)
+
+    expect(codeOf(reversal)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(codeOf(retry)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(await state()).toEqual(before)
+    expect(await app.ledger.verifyChain('e2e')).toMatchObject({ valid: true, unchainedCount: 0 })
   })
 })
