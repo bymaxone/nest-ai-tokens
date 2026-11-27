@@ -27,6 +27,7 @@ import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
 import { absorbHostCall } from '../utils/absorb-host-call'
 import { appendWatch } from '../utils/append-watch'
+import { defined } from '../utils/defined'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
@@ -152,8 +153,7 @@ export class MeteringInterceptor implements NestInterceptor {
       return await this.metering.record(
         {
           usage: extractUsage(result, config),
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
-          ...(config.preset !== undefined ? { preset: config.preset } : {}),
+          ...defined({ preset: config.preset }),
           context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
         },
         watch,
@@ -171,8 +171,7 @@ export class MeteringInterceptor implements NestInterceptor {
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
     }
     const resolved = await settled(this.scopeResolver(executionContext))
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,ObjectLiteral: equivalent: this context feeds the no-guard record() path, and record() derives its preset from config.preset directly (passed above), never from context.preset — so adding, omitting, or flipping this spread has no observable effect
-    return { ...resolved, feature: config.feature, ...(config.preset !== undefined ? { preset: config.preset } : {}) }
+    return { ...resolved, feature: config.feature, ...defined({ preset: config.preset }) }
   }
 
   /** Release the guard's hold (if any) and rethrow the ORIGINAL handler error. */

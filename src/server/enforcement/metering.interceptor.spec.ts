@@ -153,6 +153,20 @@ describe('MeteringInterceptor', () => {
     expect((await built.wallets.getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
   })
 
+  /** Without a guard, the context handed to a metering service the host supplies carries the handler's preset, over the resolver's own. */
+  it.each([
+    ['the handler preset', fixture.presetMetered, providerPresets.openaiChat, { model: 'gpt-5', usage: { prompt_tokens: 1000, completion_tokens: 500 } }],
+    ['the resolver preset when the handler names none', fixture.metered, providerPresets.openaiResponses, { usage: normalized() }],
+  ])('passes %s in the context of record()', async (_name, handler, expected, served) => {
+    const built = makeMetering()
+    await seed(built.pricingStore)
+    await built.wallets.grant({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' }, { amountNanoUsd: 100_000_000n, idempotencyKey: 'g1', reason: 'seed' })
+    const record = jest.spyOn(built.metering, 'record')
+    const interceptor = new MeteringInterceptor(new Reflector(), built.metering, { scopeResolver: () => ({ ...CONTEXT, preset: providerPresets.openaiResponses }) })
+    await lastValueFrom(interceptor.intercept(executionContext(handler), handlerOf(served)))
+    expect((record.mock.calls[0]![0].context as { preset?: unknown }).preset).toBe(expected)
+  })
+
   /** A custom extract pulls usage from a non-default field. */
   it('uses a custom extract', async () => {
     const built = makeMetering(() => CONTEXT)
