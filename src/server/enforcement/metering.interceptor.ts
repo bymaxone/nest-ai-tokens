@@ -181,9 +181,7 @@ export class MeteringInterceptor implements NestInterceptor {
   private onError(enrichment: RequestAiTokens | undefined, error: unknown): Observable<never> {
     if (enrichment?.hold === undefined) return throwError(() => error)
     const holdId = enrichment.hold.id
-    // Stryker disable next-line StringLiteral: release reason is internal audit text; tests check error propagation behavior
     const released = this.metering.release(enrichment.hold, enrichment.context, 'handler threw').catch(() => {
-      // Stryker disable next-line BlockStatement: best-effort hold release; the reaper reclaims unreleased holds
       // The logger is the host's, and a line it cannot write must not replace the handler's error.
       absorbHostCall(this.logger, RELEASE_FAILED_LOG_KEY, () => {
         this.logger.warn(`failed to release hold ${holdId} after a handler error; the reaper will reclaim it`)

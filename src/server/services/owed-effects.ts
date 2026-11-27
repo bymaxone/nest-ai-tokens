@@ -90,7 +90,6 @@ export async function clearOwed(ledger: LedgerService, logger: Logger, id: strin
   try {
     await ledger.clearEffectsOwed(id)
   } catch {
-    // Stryker disable next-line StringLiteral: logger text is internal observability
     logger.warn(`failed to clear the effects-owed marker of ${id}`)
   }
 }
@@ -109,7 +108,6 @@ export async function reverseOrLeaveOwed(deps: OwedEffectsDeps, logger: Logger, 
   try {
     await reverseAfterCapture(deps, original, reason)
   } catch {
-    // Stryker disable next-line StringLiteral: logger text is internal observability
     logger.warn('a leg of a reversal failed; its effects are left to the settlement sweep')
     return
   }

@@ -832,7 +832,7 @@ describe('MeteringService.release', () => {
     // mutation would skip that branch (no warn), so we assert the warn is emitted.
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     await built.service.release(hold, context(), 'late')
-    expect(warnSpy).toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('release() called on an already-captured hold '))
     warnSpy.mockRestore()
     expect((await (built.wallets!).getBalance({ tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' })).nanoUsd).toBe(93_750_000n)
     expect(built.events.holdReleased).not.toHaveBeenCalled()
