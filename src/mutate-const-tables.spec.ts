@@ -17,7 +17,8 @@ import {
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const SCRIPT = resolve(__dirname, '..', 'scripts', 'mutate-const-tables.mjs')
 const REPOSITORY_MODULES = resolve(__dirname, '..', 'node_modules')
@@ -233,6 +234,37 @@ describe('mutate-const-tables', () => {
 
     expect(result.status).toBe(2)
     expect(result.stderr).toContain('Usage: node scripts/mutate-const-tables.mjs')
+  })
+
+  // A run that skips `main` exits 0 with no output, which reads as every mutant killed. Every
+  // spelling of the script's path must therefore run it.
+  it.each([
+    ['through a symlinked directory', 'linked-dir', []],
+    ['through a symlinked file', 'linked-file.mjs', []],
+    ['with --preserve-symlinks-main', 'linked-file.mjs', ['--preserve-symlinks-main']]
+  ])('should run when invoked %s', (_, link, flags) => {
+    const root = repo({ 'src/table.ts': TABLE }, ['a: 1'])
+    const asDirectory = link === 'linked-dir'
+    symlinkSync(asDirectory ? dirname(SCRIPT) : SCRIPT, join(root, link))
+    const script = asDirectory ? join(root, link, basename(SCRIPT)) : join(root, link)
+
+    const result = spawnSync('node', [...flags, script, '--root', root, ...CHECKER], {
+      encoding: 'utf8'
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain('2 mutant(s) survived')
+  })
+
+  // The self-test imports the script's functions, so an import must not start a run.
+  it('should not run when it is only imported', () => {
+    const importer = `await import(${JSON.stringify(pathToFileURL(SCRIPT).href)})`
+
+    const result = spawnSync('node', ['--input-type=module', '-e', importer], { encoding: 'utf8' })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('')
   })
 
   // A command that already fails would kill every mutant and report a clean run.

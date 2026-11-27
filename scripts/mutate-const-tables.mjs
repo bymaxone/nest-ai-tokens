@@ -63,10 +63,10 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util'
 
 /** Files that are never mutated: specs, tests, declaration files and barrels. */
@@ -487,7 +487,20 @@ async function main() {
   process.exitCode = 1
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+/**
+ * Whether Node was started on this file. Both sides are resolved to real paths: a symlinked
+ * spelling that compared unequal would skip the run and still exit 0.
+ */
+function isEntryPoint() {
+  const entry = process.argv[1]
+  return (
+    entry !== undefined &&
+    existsSync(entry) &&
+    realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url))
+  )
+}
+
+if (isEntryPoint())
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`)
     process.exit(EXIT_USAGE)
