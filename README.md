@@ -836,7 +836,7 @@ specific to security is below.
   a `'close'` event clears, and a client that has already ended never emits one, which keeps the process
   alive about two seconds longer.
 - **A failed counter command rejects with the store's own error.** Its message is `counter command failed` and its `code`, when
-  the failure has one, is the code of the Redis reply or of the client (`OOM`, `READONLY`, `ECONNREFUSED`); the error of the
+  the failure has one, is the code of the Redis reply or of the client (`OOM`, `READONLY`); the error of the
   client is not passed on. A connection URL that cannot be parsed rejects with `invalid connection URL`.
 - **A stopped Redis costs one timeout, then the database answers.** The client a `RedisBudgetCounterStore` creates from a URL
   retries a command once and fails it after `commandTimeoutMs` (default 500 ms, a whole number from 1 to 2,147,483,647). Measured
