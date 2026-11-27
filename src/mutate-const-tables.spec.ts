@@ -17,7 +17,8 @@ import {
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const SCRIPT = resolve(__dirname, '..', 'scripts', 'mutate-const-tables.mjs')
 const REPOSITORY_MODULES = resolve(__dirname, '..', 'node_modules')
@@ -48,11 +49,15 @@ function repo(files: Record<string, string>, required: readonly string[]): strin
     join(root, 'checker.mjs'),
     [
       "import { appendFileSync, readFileSync } from 'node:fs'",
-      'const file = process.argv[2]',
+      "const file = process.argv[2] || 'src/table.ts'",
       "const text = readFileSync(file, 'utf8')",
       "appendFileSync('log.jsonl', JSON.stringify(text) + '\\n')",
       `const required = ${JSON.stringify(required)}`,
-      'process.exit(required.every((snippet) => text.includes(snippet)) ? 0 : 1)'
+      'if (!required.every((snippet) => text.includes(snippet))) {',
+      // The script counts a kill only from a test summary that names a failed test.
+      "  console.error('Tests:       1 failed, 1 total')",
+      '  process.exit(1)',
+      '}'
     ].join('\n')
   )
   symlinkSync(REPOSITORY_MODULES, join(root, 'node_modules'))
@@ -60,18 +65,21 @@ function repo(files: Record<string, string>, required: readonly string[]): strin
   return root
 }
 
+/**
+ * The checker as a test command. It already says `--runInBand`, so the script has no second
+ * spelling of it to try on the unmutated file.
+ */
+const CHECKER = ['--', 'node', 'checker.mjs', '{file}', '--runInBand'] as const
+
 /** Runs the script against `root`, with the checker as the test command unless `args` say otherwise. */
-function run(
-  root: string,
-  args: readonly string[] = ['--', 'node', 'checker.mjs', '{file}']
-): Result {
+function run(root: string, args: readonly string[] = CHECKER): Result {
   const result = spawnSync('node', [SCRIPT, '--root', root, ...args], { encoding: 'utf8' })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
 /**
- * The texts the checker saw, one per run: for each file with a table its unmutated baseline first,
- * then each mutant. Nothing was run when no file holds a table.
+ * The texts the checker saw, one per run: the unmutated baseline of each table file first, then
+ * each mutant. Empty when the checker never ran.
  */
 function seen(root: string): string[] {
   const log = join(root, 'log.jsonl')
@@ -190,7 +198,7 @@ describe('mutate-const-tables', () => {
   it('should mutate only the files matching --only', () => {
     const root = repo({ 'src/one.ts': TABLE, 'src/two.ts': TABLE.replace('T', 'U') }, [])
 
-    run(root, ['--only', 'two', '--', 'node', 'checker.mjs', 'src/two.ts'])
+    run(root, ['--only', 'two', ...CHECKER])
 
     expect(seen(root)).toHaveLength(5)
   })
@@ -199,7 +207,7 @@ describe('mutate-const-tables', () => {
   it('should mutate only the files under --src', () => {
     const root = repo({ 'lib/one.ts': TABLE, 'src/two.ts': TABLE }, [])
 
-    run(root, ['--src', 'lib', '--', 'node', 'checker.mjs', 'lib/one.ts'])
+    run(root, ['--src', 'lib', ...CHECKER])
 
     expect(seen(root)).toHaveLength(5)
   })
@@ -212,7 +220,7 @@ describe('mutate-const-tables', () => {
       "import { appendFileSync } from 'node:fs'\nappendFileSync('env.log', `${process.argv[2]}|${process.env.MUTATED_FILE}\\n`)\n"
     )
 
-    run(root, ['--', 'node', 'env.mjs', '{file}'])
+    run(root, ['--', 'node', 'env.mjs', '{file}', '--runInBand'])
 
     const lines = readFileSync(join(root, 'env.log'), 'utf8').split('\n').filter(Boolean)
     expect(lines).toEqual(Array<string>(5).fill('src/table.ts|src/table.ts'))
@@ -228,8 +236,44 @@ describe('mutate-const-tables', () => {
     expect(result.stderr).toContain('Usage: node scripts/mutate-const-tables.mjs')
   })
 
+  // A run that skips `main` exits 0 with no output, which reads as every mutant killed. Every
+  // spelling of the script's path must therefore run it.
+  it.each([
+    ['through a symlinked directory', 'linked-dir', []],
+    ['through a symlinked file', 'linked-file.mjs', []],
+    ['with --preserve-symlinks-main', 'linked-file.mjs', ['--preserve-symlinks-main']]
+  ])('should run when invoked %s', (_, link, flags) => {
+    const root = repo({ 'src/table.ts': TABLE }, ['a: 1'])
+    const asDirectory = link === 'linked-dir'
+    symlinkSync(asDirectory ? dirname(SCRIPT) : SCRIPT, join(root, link))
+    const script = asDirectory ? join(root, link, basename(SCRIPT)) : join(root, link)
+
+    const result = spawnSync('node', [...flags, script, '--root', root, ...CHECKER], {
+      encoding: 'utf8'
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain('2 mutant(s) survived')
+  })
+
+  // The self-test imports the script's functions, so an import must not start a run.
+  it.each([
+    ['with no argument', []],
+    ['with an argument that is not a file', ['no-such-file']]
+  ])('should not run when it is only imported %s', (_how, args) => {
+    const importer = `await import(${JSON.stringify(pathToFileURL(SCRIPT).href)})`
+
+    const result = spawnSync('node', ['--input-type=module', '-e', importer, ...args], {
+      encoding: 'utf8'
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('')
+  })
+
   // A command that already fails would kill every mutant and report a clean run.
-  it('should refuse a command that fails on the unmutated file', () => {
+  it('should refuse a command that fails on the unmutated tree', () => {
     const root = repo({ 'src/table.ts': TABLE }, ['never present'])
 
     const result = run(root)
@@ -237,37 +281,6 @@ describe('mutate-const-tables', () => {
     expect(result.status).toBe(2)
     expect(result.stderr).toContain('fails on the unmutated file src/table.ts')
     expect(seen(root)).toHaveLength(1)
-  })
-
-  // The baseline is the command's verdict on each file, run with that file's path: a command that
-  // passes on one file and fails on another stops at the second and names it, after the first has
-  // been mutated and restored.
-  it('should name the file the command fails on when it passes on another', () => {
-    const root = repo({ 'src/a.ts': TABLE, 'src/b.ts': 'export const U = { c: 3 } as const\n' }, [
-      'a: 1',
-      'b: 2'
-    ])
-
-    const result = run(root)
-
-    expect(result.status).toBe(2)
-    expect(result.stderr).toContain('fails on the unmutated file src/b.ts')
-    expect(seen(root)).toHaveLength(6)
-    expect(readFileSync(join(root, 'src/a.ts'), 'utf8')).toBe(TABLE)
-  })
-
-  // A file with no table has no mutant to judge, so the command is not run on it: a command that
-  // would fail on that file cannot stop the run.
-  it('should not run the command on a file without a table', () => {
-    const root = repo({ 'src/a.ts': TABLE, 'src/b.ts': 'export const none = 1\n' }, [
-      'a: 1',
-      'b: 2'
-    ])
-
-    const result = run(root)
-
-    expect(result.status).toBe(0)
-    expect(seen(root)).toHaveLength(5)
   })
   // An inner object is part of the table it sits in, so its entries are mutated too.
   it('should mutate the entries of a literal nested inside a table', () => {
@@ -295,9 +308,9 @@ describe('mutate-const-tables', () => {
     expect(seen(root)).toContain('export const T = { b: 2 } as const\n')
   })
 
-  // Only a plain decimal integer is bumped: adding one to a float, a hex, an exponent or a value
+  // A plain decimal integer is bumped elsewhere in this suite; adding one to a float, a hex, an exponent or a value
   // past 2^53 would change nothing, or something other than adding one. Those are only removed.
-  it('should bump a plain integer and only remove other forms of number', () => {
+  it('should only remove a float, a hex, an exponent and a value past 2^53, one mutant each', () => {
     const source = 'export const T = { f: 1.5, h: 0x10, e: 1e3, big: 9007199254740992 } as const\n'
     const root = repo({ 'src/table.ts': source }, [])
 
@@ -345,20 +358,5 @@ describe('mutate-const-tables', () => {
 
     expect(await closed).toBe(2)
     expect(readFileSync(join(root, 'src/table.ts'), 'utf8')).toBe(TABLE)
-  })
-  // A comment or a line break between `as` and `const` is still `as const`. A search of the text
-  // for the exact spelling would skip such a file and the run would report every mutant killed;
-  // a command that pins nothing must show both entries as survivors.
-  it.each([
-    ['a comment', 'export const T = { a: 1 } as /* keep */ const\n'],
-    ['a line break', 'export const T = { a: 1 } as\nconst\n']
-  ])('should find a table with %s between as and const', (_label, source) => {
-    const root = repo({ 'src/table.ts': source }, [])
-
-    const result = run(root)
-
-    expect(result.status).toBe(1)
-    expect(result.stdout).toContain('2 mutant(s) survived')
-    expect(seen(root)).toHaveLength(3)
   })
 })

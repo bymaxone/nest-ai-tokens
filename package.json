@@ -85,7 +85,7 @@
     "db:generate": "prisma generate",
     "docs:check": "node scripts/check-jsdoc.mjs && tsc --noEmit -p tsconfig.e2e.json",
     "check:spec-headers": "node scripts/check-spec-headers.mjs",
-    "lint": "eslint src && node scripts/check-spec-headers.mjs && node --test scripts/check-spec-headers.test.mjs && node --test scripts/check-dist-fresh.test.mjs",
+    "lint": "eslint src && node scripts/check-spec-headers.mjs && node --test scripts/check-spec-headers.test.mjs && node --test scripts/check-dist-fresh.test.mjs && node --test scripts/mutate-const-tables.test.mjs",
     "lint:fix": "eslint src --fix",
     "mutation": "stryker run",
     "mutation:full": "node -e \"require('node:fs').rmSync('reports/stryker-incremental.json',{force:true,recursive:true})\" && stryker run",
