@@ -511,6 +511,25 @@ describe('record({ enforce: true }) retries', () => {
     expect(await balance(built)).toBe(10_000_000_000n)
   })
 
+  /** A supplied instant is part of the call: a row of another instant is not this call, and the attempt's own count is given back. */
+  it('gives back the count of a failed attempt that supplied another instant than the stored row', async () => {
+    const built = build({ budgets: true })
+    await seedGpt5(built.pricingStore)
+    await upsertBudget(built, { limitNanoUsd: 1_000_000_000n })
+    const call = context({ enforce: true, idempotencyKey: 'k-instant' })
+    const first = new Date()
+    const winner = await built.service.record({ usage: normalized(), context: call, occurredAt: first })
+    const delta = { nanoUsd: winner.billedCostNanoUsd, tokens: winner.totalTokens, count: 1 }
+    await built.budgets!.release(context(), delta, winner.occurredAt, 'record:k-instant')
+    jest.spyOn(built.ledgerStore, 'findByIdempotencyKey').mockResolvedValueOnce(null)
+    jest.spyOn(built.ledgerStore, 'append').mockRejectedValueOnce(new Error('connection reset'))
+
+    await expect(built.service.record({ usage: normalized(), context: call, occurredAt: new Date(first.getTime() + 1) })).rejects.toThrow('connection reset')
+
+    const [status] = await built.budgets!.status('tenant-1', { type: 'user', id: 'u1' })
+    expect(status!.spent.count).toBe(0)
+  })
+
   it('keeps the charge of a call without a key whose ledger append committed before the error reached the caller', async () => {
     const built = build({ wallets: true })
     await seedGpt5(built.pricingStore)

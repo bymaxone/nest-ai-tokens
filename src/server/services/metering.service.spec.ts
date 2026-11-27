@@ -750,6 +750,20 @@ describe('MeteringService.capture', () => {
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
   })
 
+  /** The hold has expired at the instant its time to live ends, not only after it. */
+  it('reports a released hold as expired at the exact end of its time to live', async () => {
+    let clock = new Date(Date.now() + 3_600_000)
+    const built = build({ wallets: true, ttlSeconds: 60, clock: () => clock })
+    await seedGpt5(built.pricingStore)
+    await grant(built, 100_000_000n)
+    const hold = await built.service.hold(context(), ESTIMATE_A)
+    const record = await built.ledgerStore.findById(hold.id)
+    await built.service.release(hold, context(), 'abort')
+    clock = new Date(record!.createdAt.getTime() + 60_000)
+    const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
+  })
+
   /** A reversed hold record is already-settled (409), never routed through the released-branch expiry check. */
   it('treats a reversed hold record as already-settled rather than expired', async () => {
     // Freeze the injected clock an hour ahead of real time so the wallet grant (whose effectiveAt is stamped from

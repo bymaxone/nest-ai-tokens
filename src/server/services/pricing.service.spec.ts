@@ -327,6 +327,81 @@ describe('PricingService.resolveRate', () => {
   })
 })
 
+describe('PricingService.resolveRate cache and model chain', () => {
+  const request = { provider: 'openai', operation: 'chat', at: AT } as const
+
+  /** Two instants inside one cache window share the cached answer. */
+  it('reads the store once for two instants of the same cache window', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'gpt-5', operation: 'chat' })
+    const spy = jest.spyOn(store, 'resolveRate')
+    const service = new PricingService(options(), store)
+    await service.resolveRate({ ...request, model: 'gpt-5' })
+    await service.resolveRate({ ...request, model: 'gpt-5', at: new Date(AT.getTime() + 1_000) })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  /** A cached answer is stale at the instant it expires. */
+  it('reads the store again at the exact expiry of a cached answer', async () => {
+    let clock = 0
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'gpt-5', operation: 'chat' })
+    const spy = jest.spyOn(store, 'resolveRate')
+    const service = new PricingService(options(), store, () => clock)
+    await service.resolveRate({ ...request, model: 'gpt-5' })
+    clock = 300_000
+    await service.resolveRate({ ...request, model: 'gpt-5' })
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  /** The undated row answers a dated model before the prefix search, whatever order the store lists the models in. */
+  it('prefers the normalized id over a dated row listed first', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'gpt-5.2-2026-01-01', operation: 'chat' })
+    await seed(store, { provider: 'openai', model: 'gpt-5.2', operation: 'chat' })
+    const service = new PricingService(options(), store)
+    const rate = await service.resolveRate({ ...request, model: 'gpt-5.2-2026-03-14' })
+    expect(rate?.model).toBe('gpt-5.2')
+  })
+
+  /** A model that normalizes to itself is not read a second time. */
+  it('does not repeat the exact read for a model that is already normalized', async () => {
+    const store = new InMemoryPricingStore()
+    const spy = jest.spyOn(store, 'resolveRate')
+    const service = new PricingService(options({ strict: false }), store)
+    await service.resolveRate({ ...request, model: 'unpriced' })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  /** A normalized id with no row of its own still goes on to the prefix search. */
+  it('searches by prefix when the normalized id has no row', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'gpt-5', operation: 'chat' })
+    const service = new PricingService(options(), store)
+    const rate = await service.resolveRate({ ...request, model: 'gpt-5-preview-2026-03-14' })
+    expect(rate?.model).toBe('gpt-5')
+  })
+
+  /** A priced name of one character is a prefix like any other. */
+  it('matches a priced model of one character by prefix', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'o', operation: 'chat' })
+    const service = new PricingService(options(), store)
+    const rate = await service.resolveRate({ ...request, model: 'o-preview' })
+    expect(rate?.model).toBe('o')
+  })
+
+  /** Two dated rows of one name are prefixes of the same length: the one the store lists first answers. */
+  it('takes the first listed of two prefixes of the same length', async () => {
+    const store = new InMemoryPricingStore()
+    await seed(store, { provider: 'openai', model: 'gpt-5.2-2026-01-01', operation: 'chat' })
+    await seed(store, { provider: 'openai', model: 'gpt-5.2-2026-02-01', operation: 'chat' })
+    const service = new PricingService(options(), store)
+    const rate = await service.resolveRate({ ...request, model: 'gpt-5.2-preview' })
+    expect(rate?.model).toBe('gpt-5.2-2026-01-01')
+  })
+})
+
 describe('PricingService.upsertPrice / getPriceHistory', () => {
   /** Upsert closes the open row and inserts a new one; history returns both. */
   it('closes the open row and records history', async () => {
