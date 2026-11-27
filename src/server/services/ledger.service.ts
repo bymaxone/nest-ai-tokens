@@ -120,9 +120,10 @@ export class LedgerService {
    * @param input The record content (without `idempotencyKey`/`totalTokens`).
    * @param ctxKey The host-supplied idempotency key, when available.
    * @returns The stored record (new or the existing one on a matching replay).
-   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a payload mismatch.
+   * @throws {AiTokensException} `AI_TOKENS_IDEMPOTENCY_CONFLICT` on a payload mismatch, or when `reversesRecordId` names a compensating record.
    */
   async append(input: LedgerAppendInput, ctxKey?: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
+    if (input.reversesRecordId !== undefined) await this.assertNotCompensating(input.reversesRecordId)
     const record: NewUsageRecord = {
       ...input,
       idempotencyKey: ctxKey ?? randomUUID(),
@@ -359,13 +360,17 @@ export class LedgerService {
         ...suppliedDetails({ recordId }),
       })
     }
-    // A compensating row is `posted`; negating it would count the charge again, and no wallet debit stands behind that row.
-    if (original.reversesRecordId !== undefined) {
-      throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'cannot reverse a compensating record', ...suppliedDetails({ recordId }) })
-    }
     const compensating = await this.append(buildCompensatingRecord(original), `reverse:${recordId}`, owed)
     await this.transition(original.id, 'posted', 'reversed', { reversedByRecordId: compensating.id })
     return compensating
+  }
+
+  /** A compensating row is `posted`; negating it would count the charge again, and no wallet debit stands behind that row. */
+  private async assertNotCompensating(recordId: string): Promise<void> {
+    const target = await this.store.findById(recordId)
+    if (target?.reversesRecordId !== undefined) {
+      throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'cannot reverse a compensating record', ...suppliedDetails({ recordId }) })
+    }
   }
 
   /**

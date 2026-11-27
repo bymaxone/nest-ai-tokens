@@ -545,6 +545,29 @@ describe('LedgerService.reverse', () => {
     expect(stored?.reversedByRecordId).toBeUndefined()
   })
 
+  /** The same refusal for a host that links its own correction through `append`. */
+  it('rejects appending a record that reverses a compensating record and writes nothing', async () => {
+    const store = new InMemoryLedgerStore()
+    const service = new LedgerService(store)
+    const original = await service.append(makeInput(), 'k')
+    const compensating = await service.reverse(original.id, 'first')
+
+    const error = await service.append(makeInput({ reversesRecordId: compensating.id }), 'k2').catch((caught: unknown) => caught)
+
+    expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.details).toEqual({ reason: 'cannot reverse a compensating record', recordId: compensating.id })
+    expect(await store.query({ tenantId: 'tenant-1' })).toHaveLength(2)
+  })
+
+  /** A link to an ordinary record, or to one this store does not hold, is the host's own business. */
+  it('appends a record linked to an ordinary or an unknown record', async () => {
+    const service = new LedgerService(new InMemoryLedgerStore())
+    const original = await service.append(makeInput(), 'k')
+
+    await expect(service.append(makeInput({ reversesRecordId: original.id }), 'k2')).resolves.toMatchObject({ reversesRecordId: original.id })
+    await expect(service.append(makeInput({ reversesRecordId: 'elsewhere' }), 'k3')).resolves.toMatchObject({ reversesRecordId: 'elsewhere' })
+  })
+
   /** A retry of a reversal that stopped between the compensating append and the annotation finishes it with the same record. */
   it('finishes an interrupted reversal on retry with the same compensating record', async () => {
     const store = new InMemoryLedgerStore()

@@ -10,12 +10,13 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
-**Apply:** no database migration and no option change. A host that reverses a compensating record now gets
-`AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+**Apply:** no database migration and no option change. A host that reverses a compensating record, or appends a record
+that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
 
 ### Fixed
 
-- `reverse()` refuses a compensating record, one with `reversesRecordId`. It used to accept it: the ledger and the budget
+- `reverse()` refuses a compensating record, one with `reversesRecordId`, and `LedgerService.append()` refuses a record
+  whose `reversesRecordId` names one. `reverse()` used to accept it: the ledger and the budget
   counted the charge again while the wallet was not debited. Rows already written that way are not repaired; they are the
   compensating records whose `reversesRecordId` points at another compensating record.
 
