@@ -10,7 +10,7 @@
  * accepts a live `Redis` instance, or a connection URL that is lazily connected via
  * a DYNAMIC import so the base library never statically depends on the client.
  * Connection URLs (which may embed credentials) are never logged or placed on an
- * exception.
+ * exception, and a failed command rejects without the client's error.
  * @layer redis
  */
 
@@ -21,6 +21,7 @@ import type { IBudgetCounterStore } from '../server'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { types } from 'node:util'
 import { refusesPromise } from '../shared/utils/native-promise'
+import { commandFailure } from './command-errors'
 
 /**
  * The client, in an object with no prototype. A client reached through a promise is read for `then` by the engine, on its class chain,
@@ -37,12 +38,17 @@ function boxed(client: Redis): ClientBox {
 
 /**
  * Wait for what a command of the client returned with a native `await`, once the promise is known to run no `constructor` or `then` of the
- * host: a one-shot plant of either, while the command ran, would make the wait answer for Redis.
+ * host: a one-shot plant of either, while the command ran, would make the wait answer for Redis. A rejected command is answered by the
+ * store's own error.
  */
 async function reply<T>(pending: Promise<T>): Promise<T> {
   // Stryker disable next-line ObjectLiteral,StringLiteral: error reason is an internal diagnostic; tests check the code
   if (refusesPromise(pending, true, types.isProxy)) throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'a promise the Redis client returned reads a constructor or then of its own' })
-  return await pending
+  try {
+    return await pending
+  } catch (error) {
+    throw commandFailure(error)
+  }
 }
 
 /** Construction options for {@link RedisBudgetCounterStore}. */
@@ -278,7 +284,13 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
     // One retry per command and a command timeout, so a stopped Redis answers in the time of the timeout; the offline queue stays on, so a command issued while the connection is still opening waits for it.
     // A store closed while the client was loading opens none, so no connection outlives the shutdown.
     if (this.#closed) throw new Error('counter store is closed')
-    const client = new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    let client: Redis
+    try {
+      client = new RedisClient(url, { maxRetriesPerRequest: 1, enableOfflineQueue: true, commandTimeout: this.commandTimeoutMs })
+    } catch {
+      // The error of a URL that cannot be parsed keeps the URL as a field.
+      throw new Error('invalid connection URL')
+    }
     this.#owned = client
     return boxed(client)
   }

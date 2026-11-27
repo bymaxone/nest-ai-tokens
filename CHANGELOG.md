@@ -11,7 +11,14 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 ## [Unreleased]
 
 **Apply:** no database migration and no option change. A host that reverses a compensating record, or appends a record
-that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
+that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A host that calls `RedisBudgetCounterStore` itself and reads the
+`message` or `command` of a rejection should read its `code`.
+
+### Changed
+
+- A command that fails now rejects `RedisBudgetCounterStore` with the store's own error: the message `counter command failed`
+  and, when the failure has one, its `code` (`OOM`, `READONLY`, `ECONNREFUSED`). The error of the Redis client, with its
+  message, command and arguments, is not passed on. A connection URL that cannot be parsed rejects with `invalid connection URL`.
 
 ### Fixed
 

@@ -27,6 +27,7 @@
     "src/shared/**/*.ts",
     "src/prices/model-prices.seed.ts",
     "src/redis/index.ts",
+    "src/redis/command-errors.ts",
     "src/prisma/adapter-sql.ts",
     "src/prisma/balance-statements.ts",
     "src/prisma/budget-applications.ts",

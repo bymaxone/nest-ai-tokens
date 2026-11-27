@@ -260,7 +260,8 @@ A proxy/gateway (LiteLLM, Helicone, Portkey) requires a separate process, a netw
 │   │   ├── schema.prisma.fragment            # models for the host's multi-file schema
 │   │   └── migrations/                       # SQL for the seven tables
 │   └── redis/                               # official counter (subpath "./redis")
-│       └── index.ts                          # RedisBudgetCounterStore
+│       ├── index.ts                          # RedisBudgetCounterStore
+│       └── command-errors.ts                 # the error a failed command rejects with
 ├── test/                                    # e2e (Testcontainers + Postgres [+ Redis])
 ├── scripts/check-size.mjs
 └── docs/
@@ -1235,7 +1236,7 @@ WHERE budget_id = :id AND window_start = :ws
   AND (:limitCount IS NULL OR spent_count    + :count  <= :limitCount)
 ```
 
-When a Redis `IBudgetCounterStore` is configured, the live counter is the fast path (`incrIfBelow` per dimension, key `ai_tokens:budget:{budgetId}:{windowStartISO}:{dimension}`, TTL = window length + 1h grace, values stored as int64 strings); `failClosed: true` keeps budgets a hard ceiling even if the counter store degrades (falls back to the DB conditional consume; if the DB is also unavailable, the call fails closed).
+When a Redis `IBudgetCounterStore` is configured, the live counter is the fast path (`incrIfBelow` per dimension, key `ai_tokens:budget:{budgetId}:{windowStartISO}:{dimension}`, TTL = window length + 1h grace, values stored as int64 strings); `failClosed: true` keeps budgets a hard ceiling even if the counter store degrades (falls back to the DB conditional consume; if the DB is also unavailable, the call fails closed). A failed command rejects the shipped Redis store with its own error, a fixed message and at most the `code` of the failure, never the error of the client; a connection URL that cannot be parsed rejects with `invalid connection URL`.
 
 ---
 
