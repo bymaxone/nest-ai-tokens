@@ -107,7 +107,6 @@ export class MeteringEffects {
    */
   async reserveHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, occurredAt: Date): Promise<void> {
     if (this.budgets !== undefined) await this.budgets.consume(context, budgetDelta(delta), occurredAt, reserveKey(ledgerKey), attempt)
-    // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract; signed=false/true are equivalent for non-negative amounts
     const leg = this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false)
     if (leg === null) return
     try {
@@ -132,7 +131,6 @@ export class MeteringEffects {
    * @param releaseBudget Whether the budget movement recorded under the hold's key is this attempt's own to give back.
    */
   async compensateHold(context: MeteringContext, delta: EffectDelta, ledgerKey: string, attempt: string, occurredAt: Date, refundWallet = true, releaseBudget = true): Promise<void> {
-    // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = refundWallet ? this.legFor(context.tenantId, context.scope, delta.billedNanoUsd, false) : null
     if (leg !== null) {
       try {
@@ -160,7 +158,6 @@ export class MeteringEffects {
    * @param scope The payer of the attempt that is asking.
    */
   sharesHoldDebit(row: UsageRecord, scope: MeteringScope): boolean {
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const shared = row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
     return shared && (!isOrphanClaim(row) || claimShares(row, 'hold:'))
   }
@@ -242,7 +239,6 @@ export class MeteringEffects {
     if (this.budgets !== undefined) {
       await this.budgets.release(contextOf(record), { nanoUsd: record.billedCostNanoUsd, tokens: record.totalTokens, count: 1 }, record.occurredAt, reserveKey(record.idempotencyKey))
     }
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg === null) return
     await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, usageRecordId: record.id, idempotencyKey: `release:${record.id}`, reason: 'hold released' })
@@ -258,7 +254,6 @@ export class MeteringEffects {
   async restoreOrphanDebit(record: UsageRecord): Promise<void> {
     const refund = record.requestId === undefined ? null : rollbackOfDebit(record.requestId)
     if (refund === null) return
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg === null) return
     await leg.wallets.refund(leg.ref, { amountNanoUsd: record.billedCostNanoUsd, idempotencyKey: refund.key, reason: refund.reason })
@@ -273,7 +268,6 @@ export class MeteringEffects {
    */
   async reverseEffects(record: UsageRecord, reason: string): Promise<void> {
     let failure: unknown
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(record.tenantId, record.scope, record.billedCostNanoUsd, false)
     if (leg !== null) {
       try {
@@ -320,7 +314,6 @@ export class MeteringEffects {
    */
   sharesDebit(row: UsageRecord, scope: MeteringScope): boolean {
     const record = row.status === 'posted' || row.status === 'reversed' || claimShares(row, 'record:')
-    // Stryker disable next-line BooleanLiteral: billedCostNanoUsd is always ≥ 0n by contract
     return record && row.enforced && !row.isSystemCost && sameScope(row.scope, scope) && this.legFor(row.tenantId, row.scope, row.billedCostNanoUsd, false) !== null
   }
 
@@ -337,7 +330,6 @@ export class MeteringEffects {
     const delta = enforcementDelta(enforcement)
     const context = enforcementContext(enforcement)
     if (this.budgets !== undefined) await this.budgets.consume(context, delta, enforcement.occurredAt, recordKey(enforcement.key), enforcement.attempt)
-    // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = this.legFor(enforcement.tenantId, enforcement.scope, enforcement.billedNanoUsd, false)
     if (leg === null) return
     try {
@@ -359,7 +351,6 @@ export class MeteringEffects {
    * @param releaseBudget Whether the budget movement recorded under the call's key is this attempt's own to give back.
    */
   async withdraw(enforcement: Enforcement, refundWallet: boolean, releaseBudget = true): Promise<void> {
-    // Stryker disable next-line BooleanLiteral: billedNanoUsd is always ≥ 0n by contract
     const leg = refundWallet ? this.legFor(enforcement.tenantId, enforcement.scope, enforcement.billedNanoUsd, false) : null
     if (leg !== null) {
       try {
