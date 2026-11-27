@@ -5,9 +5,8 @@ import type { Config } from 'jest'
  * CommonJS-flavored `tsconfig.jest.json`. Worker count is capped at 50% to keep
  * memory bounded in CI and local runs. The global coverage threshold is 100% so
  * the per-PR `pnpm test:cov` gate enforces the same floor as the release gate,
- * with no drift. `passWithNoTests` keeps the gate green on an empty scaffold,
- * and `collectCoverageFrom` is scoped so the threshold never trips on zero
- * collected files.
+ * with no drift. A run that matches no test fails when `CI` is `true` and passes
+ * otherwise, and `collectCoverageFrom` is scoped to the shipped sources.
  */
 const config: Config = {
   rootDir: '.',
@@ -32,7 +31,7 @@ const config: Config = {
   },
   clearMocks: true,
   restoreMocks: true,
-  passWithNoTests: true,
+  passWithNoTests: process.env['CI'] !== 'true',
   maxWorkers: '50%',
   // `src/prisma/adapter-sql.ts` (row mappers, value and filter builders, SQL text) is pure and is
   // covered here. `src/prisma/index.ts`, the store that runs those statements against PostgreSQL, and
