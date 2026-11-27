@@ -141,7 +141,6 @@ export class LedgerService {
       return await this.store.append(record, payloadHash, this.hashChainEnabled, owed)
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: error.tenantId, idempotencyKey: error.idempotencyKey }))
       }
       throw error
@@ -359,9 +358,7 @@ export class LedgerService {
   async reverse(recordId: string, _reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const original = await this.store.findById(recordId)
     if (original?.status !== 'posted') {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: original === null ? 'record not found' : `cannot reverse a ${original.status} record`,
         ...suppliedDetails({ recordId }),
       })
@@ -382,18 +379,14 @@ export class LedgerService {
    */
   private assertLegalTransition(from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): void {
     if (!isLegalLedgerTransition(from, to)) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-        // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
         reason: `illegal transition ${from} → ${to}`,
       })
     }
     if (patch === undefined) return
     for (const key of Object.keys(patch)) {
       if (!isLegalTransitionPatchKey(from, to, key)) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
           reason: `${from} → ${to} may not patch "${key}"`,
         })
       }

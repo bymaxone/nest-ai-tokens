@@ -46,11 +46,12 @@ function codeOf(error: AiTokensException): string {
 }
 
 /** Assert a promise rejects with a 409 idempotency conflict. */
-async function expectConflict(promise: Promise<unknown>): Promise<void> {
+async function expectConflict(promise: Promise<unknown>, reason?: string): Promise<void> {
   const error = await promise.catch((caught: unknown) => caught)
   expect(error).toBeInstanceOf(AiTokensException)
   expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
   expect((error as AiTokensException).getStatus()).toBe(409)
+  if (reason !== undefined) expect((error as AiTokensException).getResponse()).toMatchObject({ error: { details: { reason } } })
 }
 
 describe('LedgerService.append', () => {
@@ -107,6 +108,7 @@ describe('LedgerService.append', () => {
     expect(error).toBeInstanceOf(AiTokensException)
     expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
     expect((error as AiTokensException).getStatus()).toBe(409)
+    expect((error as AiTokensException).getResponse()).toMatchObject({ error: { details: { tenantId: 'tenant-1', idempotencyKey: 'key-1' } } })
   })
 
   /** Without a key, each call writes a distinct record (no dedupe). */
@@ -359,7 +361,7 @@ describe('LedgerService.transition', () => {
   /** A release voids a hold, so a non-annotation column (settlement pricing metadata) is rejected. */
   it('rejects a non-annotation patch on release', async () => {
     const { service, record } = await appendWith('pending')
-    await expectConflict(service.transition(record.id, 'pending', 'released', { priceVersionId: 'price-2' }))
+    await expectConflict(service.transition(record.id, 'pending', 'released', { priceVersionId: 'price-2' }), 'pending → released may not patch "priceVersionId"')
   })
 
   /** posted → reversed annotates with reversedByRecordId. */
@@ -391,7 +393,7 @@ describe('LedgerService.transition', () => {
   /** An illegal (from, to) pair is a caller bug → conflict. */
   it('rejects an illegal posted → pending transition', async () => {
     const { service, record } = await appendWith('posted')
-    await expectConflict(service.transition(record.id, 'posted', 'pending'))
+    await expectConflict(service.transition(record.id, 'posted', 'pending'), 'illegal transition posted → pending')
   })
 
   /** A legal pair whose record is in another state returns null (atomic claim). */
@@ -508,7 +510,7 @@ describe('LedgerService.reverse', () => {
   /** Reversing a missing record is a conflict. */
   it('rejects reversing a missing record', async () => {
     const service = new LedgerService(new InMemoryLedgerStore())
-    await expectConflict(service.reverse('absent', 'x'))
+    await expectConflict(service.reverse('absent', 'x'), 'record not found')
   })
 
   /** Reversing a non-posted record is a conflict. */
@@ -516,7 +518,7 @@ describe('LedgerService.reverse', () => {
     const store = new InMemoryLedgerStore()
     const service = new LedgerService(store)
     const hold = await service.append(makeInput({ status: 'pending' }), 'k')
-    await expectConflict(service.reverse(hold.id, 'x'))
+    await expectConflict(service.reverse(hold.id, 'x'), 'cannot reverse a pending record')
   })
 
   /** A second reverse of the same record is blocked (already reversed). */

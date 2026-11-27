@@ -24,6 +24,11 @@ function codeOf(error: unknown): string {
   return ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code
 }
 
+/** Read the error body from a thrown `AiTokensException`. */
+function errorOf(error: unknown): AiTokensErrorResponse['error'] {
+  return ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error
+}
+
 /** A representative metering context; `over` replaces any field. */
 function context(over: Partial<MeteringContext> = {}): MeteringContext {
   return { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', ...over }
@@ -211,6 +216,7 @@ describe('MeteringService.record', () => {
     async (usage) => {
       const error = await build().service.record({ usage, context: context() }).catch((e: unknown) => e)
       expect(codeOf(error)).toBe('AI_TOKENS_UNKNOWN_PROVIDER')
+      expect(errorOf(error).details).toEqual({ reason: 'raw usage requires a preset or normalizer, or an already-normalized usage' })
     },
   )
 
@@ -343,6 +349,15 @@ describe('MeteringService.record', () => {
   it('rejects enforce: true without wallets/budgets', async () => {
     const error = await build().service.record({ usage: normalized(), context: context({ enforce: true }) }).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(errorOf(error).details).toEqual({ reason: 'enforce requires the wallets or budgets feature to be enabled' })
+  })
+
+  /** A normalizer that fails on the usage is reported as malformed usage, with a reason that quotes none of it. */
+  it('reports a normalizer that throws as malformed usage', async () => {
+    const preset = { ...providerPresets.openaiChat, normalizer: (): never => { throw new TypeError('cannot read usage') } }
+    const error = await build().service.record({ usage: {}, preset, context: context() }).catch((e: unknown) => e)
+    expect(codeOf(error)).toBe('AI_TOKENS_USAGE_MALFORMED')
+    expect(errorOf(error).details).toEqual({ reason: 'the normalizer could not read the usage token fields' })
   })
 
   /** enforce: true debits the wallet and consumes the budget after the ledger write. */
@@ -683,6 +698,7 @@ describe('MeteringService.capture', () => {
     await built.service.release(hold, context(), 'abort')
     const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_ALREADY_SETTLED')
+    expect(errorOf(error).details).toEqual({ holdId: hold.id })
   })
 
   /** hold.expiresAt must be createdAt + ttlSeconds × 1000ms (not ÷ 1000ms) — kills ArithmeticOperator × vs ÷ mutation. */
@@ -713,6 +729,7 @@ describe('MeteringService.capture', () => {
     await built.service.release(hold, context(), 'expired')
     const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_EXPIRED')
+    expect(errorOf(error).details).toEqual({ holdId: hold.id })
   })
 
   /** A released hold captured WITHIN its TTL is a 409, not a 410 — pins ttlSeconds × 1000 (not ÷ 1000). */
@@ -1132,6 +1149,7 @@ describe('MeteringService coverage edges', () => {
     jest.spyOn(built.ledgerStore, 'findById').mockResolvedValueOnce(pending).mockResolvedValueOnce(null)
     const error = await built.service.capture(hold, context(), normalized()).catch((e: unknown) => e)
     expect(codeOf(error)).toBe('AI_TOKENS_HOLD_NOT_FOUND')
+    expect(errorOf(error).details).toEqual({ holdId: hold.id })
   })
 
   /** Rollback failures during hold compensation are logged, never masking the insert error. */

@@ -228,9 +228,7 @@ export class MeteringService {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'enforce requires the wallets or budgets feature to be enabled',
       })
     }
@@ -685,7 +683,6 @@ export class MeteringService {
     assertCaller(caller, signature)
     const record = await this.ledger.findById(hold.id)
     if (record !== null && record.tenantId === caller.tenantId && sameScope(record.scope, caller.scope)) return record
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: hold.id }))
   }
 
@@ -697,18 +694,15 @@ export class MeteringService {
       const expiredAt = record.createdAt.getTime() + ttlSeconds * 1_000
       // Stryker disable next-line EqualityOperator: >= vs >: InMemoryLedgerStore uses real-clock createdAt (not injected), making now === expiredAt at millisecond precision impossible to construct in unit tests; only observable in integration
       if (this.now().getTime() >= expiredAt) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
         throw new AiTokensException('AI_TOKENS_HOLD_EXPIRED', undefined, suppliedDetails({ holdId: record.id }))
       }
     }
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
     throw new AiTokensException('AI_TOKENS_HOLD_ALREADY_SETTLED', undefined, suppliedDetails({ holdId: record.id }))
   }
 
   /** Reload a record by id, or fail HOLD_NOT_FOUND when it vanished mid-capture. */
   private async reload(id: string): Promise<UsageRecord> {
     const record = await this.ledger.findById(id)
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     if (record === null) throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: id }))
     return record
   }
@@ -749,9 +743,7 @@ export class MeteringService {
     const normalizer = input.normalizer ?? input.preset?.normalizer
     if (normalizer !== undefined) return checkUsageCounts(this.normalize(normalizer, input.usage))
     if (isNormalizedUsage(input.usage)) return checkUsageCounts(input.usage)
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER', undefined, {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       reason: 'raw usage requires a preset or normalizer, or an already-normalized usage',
     })
   }
@@ -767,7 +759,6 @@ export class MeteringService {
       return normalizer(usage)
     } catch (error) {
       if (error instanceof AiTokensException) throw error
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the normalizer could not read the usage token fields' })
     }
   }
