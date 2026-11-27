@@ -51,6 +51,11 @@ describe('chainHash', () => {
     expect(chainHash(null, makeRecord())).toBe(hash)
   })
 
+  /** The first record of a chain is hashed as following the empty string, and stored chains depend on it. */
+  it('hashes a genesis record as following the empty string', () => {
+    expect(chainHash(null, makeRecord())).toBe(chainHash('', makeRecord()))
+  })
+
   /** A different previous hash changes the result (chain linkage). */
   it('changes when the previous hash differs', () => {
     expect(chainHash('aaaa', makeRecord())).not.toBe(chainHash('bbbb', makeRecord()))

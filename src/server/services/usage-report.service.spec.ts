@@ -612,4 +612,23 @@ describe('UsageReportService filter isolation', () => {
     const [summary] = await service.summarize({ ...BASE, enforcedOnly: true })
     expect(summary?.records).toBe(1)
   })
+
+  /** A name the caller left out is absent from the store's filter, not present as `undefined`. */
+  it('sends the store only the names the caller gave', async () => {
+    const { service, ledgerStore } = build()
+    const query = jest.spyOn(ledgerStore, 'query')
+    await service.export(FILTER, 'json')
+    expect(Object.keys(query.mock.calls[0]?.[0] ?? {}).sort()).toEqual(['from', 'limit', 'status', 'tenantId', 'to'])
+  })
+
+  /** Both reads that refuse a partial result say which one it was, the limit, and what to do. */
+  it.each(['summarize', 'export'] as const)('names the %s refusal over the row limit', async (operation) => {
+    const { service, ledger } = build({ maxExportRows: 1 })
+    await ledger.append(appendInput(), 'a')
+    await ledger.append(appendInput(), 'b')
+    const refused = operation === 'summarize' ? service.summarize({ ...FILTER, groupBy: [] }) : service.export(FILTER, 'json')
+    await expect(refused).rejects.toMatchObject({
+      response: { error: { details: { reason: `${operation} exceeds reporting.maxExportRows (1); paginate the filter` } } },
+    })
+  })
 })

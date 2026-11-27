@@ -6,7 +6,6 @@
  * @layer server
  */
 
-// Stryker disable BooleanLiteral: equivalent: a list is read for its names, and the `true` of each is never looked at; this file must stay data-only, so that no boolean with a meaning is ever hidden under this directive
 import type { MeteringScope, NormalizedUsage, PriceVersion, ProviderId, ProviderPreset, ReportFilter, WalletRef, LedgerFilter } from '../../shared'
 import type { Hold, HoldCaller, HoldEstimate, MeteringContext, WalletEntryFilter } from '../interfaces'
 import type { EstimateCostInput, RecordInput } from '../services/metering.service'

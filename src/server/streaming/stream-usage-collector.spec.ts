@@ -246,4 +246,43 @@ describe('StreamUsageCollector', () => {
     expect(usage.inputTokens).toBe(0)
     expect(usage.outputTokens).toBe(1)
   })
+
+  /** A second finalize is refused with the reason. */
+  it('names why a second finalize is refused', async () => {
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer: wordTokenizer })
+    await collector.finalize()
+    await expect(collector.finalize()).rejects.toMatchObject({
+      response: { error: { code: 'AI_TOKENS_STREAM_USAGE_MISSING', details: { reason: 'the collector was already finalized' } } },
+    })
+  })
+
+  /** A normalizer that fails on the final usage with its own error is reported as malformed usage, with the reason. */
+  it('names why the final usage could not be normalized', async () => {
+    const preset = {
+      ...providerPresets.openaiChat,
+      normalizer: (): never => {
+        throw new TypeError('unreadable')
+      },
+    }
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', preset })
+    collector.push({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } })
+    await expect(collector.finalize()).rejects.toMatchObject({
+      response: { error: { code: 'AI_TOKENS_USAGE_MALFORMED', details: { reason: 'the normalizer could not read the usage token fields' } } },
+    })
+  })
+
+  /** A chunk without a choices list adds no output text. */
+  it('adds no output for a chunk without choices', async () => {
+    const counted: string[] = []
+    const tokenizer: ITokenizer = {
+      countTokens: ({ text }): number => {
+        counted.push(text)
+        return 0
+      },
+    }
+    const collector = new StreamUsageCollector({ provider: 'openai', model: 'gpt-5', tokenizer })
+    collector.push({ id: 'chunk-without-choices' })
+    await collector.finalize()
+    expect(counted).toEqual([''])
+  })
 })

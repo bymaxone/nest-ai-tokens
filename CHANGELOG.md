@@ -19,6 +19,8 @@ that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A host that calls `RedisBu
 - A command that fails now rejects `RedisBudgetCounterStore` with the store's own error: the message `counter command failed`
   and, when the failure has one, its `code` (`OOM`, `READONLY`). The error of the Redis client, with its
   message, command and arguments, is not passed on. A connection URL that cannot be parsed rejects with `invalid connection URL`.
+- Internal: most mutation-testing suppression comments were removed from the source, by adding tests or by rewriting the
+  code that had an equivalent mutant. No change in behaviour is intended.
 
 ### Fixed
 

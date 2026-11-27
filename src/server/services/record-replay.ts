@@ -40,7 +40,6 @@ export const NEUTRAL_MARKUP: ResolvedMarkup = { multiplier: 1, apply: (raw: bigi
 export function requireReportedCost(usage: NormalizedUsage): bigint {
   const cost = usage.providerReportedCostNanoUsd
   if (cost === undefined) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'provider-reported rating requires providerReportedCostNanoUsd' })
   }
   return cost
@@ -52,7 +51,6 @@ export function requireReportedCost(usage: NormalizedUsage): bigint {
  */
 export function unratedFor(normalized: NormalizedUsage, basis: ReplayBasis): RatingResult {
   const raw = basis.providerReported ? requireReportedCost(normalized) : 0n
-  // Stryker disable next-line BooleanLiteral: priceMissing is a derived field that the replay comparison never reads, so either value compares the same
   return { rawCostNanoUsd: raw, surchargeNanoUsd: 0n, priceVersionId: null, priceMissing: false }
 }
 
@@ -69,7 +67,6 @@ const RECORDED: ReadonlySet<UsageStatus> = new Set<UsageStatus>(['posted', 'reve
 /** The stored record when it is a recorded call with the same request as this call, else the idempotency conflict. */
 export function replayOf(stored: UsageRecord, request: NewUsageRecord, basis: ReplayBasis): UsageRecord {
   if (RECORDED.has(stored.status) && sameRequest(stored, request, basis)) return stored
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: stored.tenantId, idempotencyKey: stored.idempotencyKey }))
 }
 

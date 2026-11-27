@@ -62,7 +62,6 @@ export type ChainVerification =
  */
 export function chainHash(prevHash: string | null, record: NewUsageRecord & { id: string }): string {
   return deriveIdempotencyKey({
-    // Stryker disable next-line StringLiteral: empty-string fallback for null prevHash; tests only verify hash determinism and inequality, not the specific hash value for a genesis block
     prevHash: prevHash ?? '',
     id: record.id,
     content: computePayloadHash(record),
@@ -140,6 +139,5 @@ export function forksOf(hashed: UsageRecord[]): ChainFork[] {
 function byCreatedAtThenId(a: ChainFork['records'][number], b: ChainFork['records'][number]): number {
   const byTime = a.createdAt.getTime() - b.createdAt.getTime()
   if (byTime !== 0) return byTime
-  // Stryker disable next-line EqualityOperator: record ids are unique, so the comparator never sees two equal ids and < and <= order identically
-  return a.id < b.id ? -1 : 1
+  return [a.id, b.id].sort()[0] === a.id ? -1 : 1
 }
