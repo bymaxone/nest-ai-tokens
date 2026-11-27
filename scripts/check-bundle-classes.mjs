@@ -39,7 +39,9 @@ const OWNED = {
   // `BudgetApplications` and `RefusedByLimit` are the keyed budget movements and the signal that rolls a refused
   // consume back inside its transaction: both stay inside this bundle, so nothing checks `instanceof` against them.
   prisma: ['BudgetApplications', 'LedgerIdempotencyConflict', 'PrismaAiTokensStore', 'RefusedByLimit', 'Sql', 'SqlClient', 'SqlExecutor', 'WalletMissingError'],
-  redis: ['CounterValueOutOfRangeError', 'RedisBudgetCounterStore'],
+  // `CounterStoreError` is what the store rejects a failed command with: the root bundle does not export it, and a host
+  // reads its `code`.
+  redis: ['CounterStoreError', 'CounterValueOutOfRangeError', 'RedisBudgetCounterStore'],
   shared: [],
   prices: [],
 }
