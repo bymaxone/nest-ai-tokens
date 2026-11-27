@@ -37,10 +37,9 @@ describe('shared catalogs', () => {
     expect(SERVICE_TIERS).toEqual(['standard', 'batch', 'flex', 'priority'])
   })
 
-  /** Ten independently rated token categories exist. */
+  /** The ten independently rated token categories, each by name: the library reads this list to find a usage's counts. */
   it('lists the token categories', () => {
-    expect(TOKEN_CATEGORIES).toHaveLength(10)
-    expect(TOKEN_CATEGORIES).toContain('cacheWrite5m')
+    expect(TOKEN_CATEGORIES).toEqual(['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h', 'reasoning', 'audioIn', 'audioOut', 'imageIn', 'imageOut'])
   })
 
   /** Wallet entry types cover credits and debits. */
