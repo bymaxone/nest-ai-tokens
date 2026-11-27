@@ -16,7 +16,7 @@ that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`.
 ### Fixed
 
 - `reverse()` refuses a compensating record, one with `reversesRecordId`, and `LedgerService.append()` refuses a record
-  whose `reversesRecordId` names one. `reverse()` used to accept it: the ledger and the budget
+  whose `reversesRecordId` names one. `reverse()` used to accept it: the ledger, and for an enforced non-system record the budget,
   counted the charge again while the wallet was not debited. Rows already written that way are not repaired; they are the
   compensating records whose `reversesRecordId` points at another compensating record.
 
