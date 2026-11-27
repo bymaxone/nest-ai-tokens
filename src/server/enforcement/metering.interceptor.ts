@@ -31,6 +31,7 @@ import { defined } from '../utils/defined'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
+import { minBig } from '../services/budget-math'
 import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
@@ -212,8 +213,7 @@ function minBudgetRemaining(enrichment: RequestAiTokens | undefined): bigint | u
   let min: bigint | undefined
   for (const status of enrichment?.status ?? []) {
     const remaining = fieldOf(status.remaining, 'nanoUsd') as bigint | undefined
-    // Stryker disable next-line EqualityOperator: remaining <= min: if two budgets have identical remaining, updating min to the same value is a no-op; < and <= produce the same final minimum
-    if (remaining !== undefined && (min === undefined || remaining < min)) min = remaining
+    if (remaining !== undefined) min = min === undefined ? remaining : minBig(min, remaining)
   }
   return min
 }

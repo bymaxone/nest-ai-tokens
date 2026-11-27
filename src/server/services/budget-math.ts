@@ -170,8 +170,12 @@ export function buildStatus(budget: Budget, windowStart: Date, resetsAt: Date | 
   }
 }
 
-/** Floor a bigint at zero. */
+/** Floor a bigint at zero. Compared with `1n`, not `0n`, so that no other comparison operator gives the same answers. */
 export function max0(value: bigint): bigint {
-  // Stryker disable next-line EqualityOperator: `<=` is equivalent to `<`, both give 0n for 0n
-  return value < 0n ? 0n : value
+  return value < 1n ? 0n : value
+}
+
+/** The smaller of two bigints, by {@link max0}: a comparison of the two would answer a tie the same either way. */
+export function minBig(a: bigint, b: bigint): bigint {
+  return a - max0(a - b)
 }
