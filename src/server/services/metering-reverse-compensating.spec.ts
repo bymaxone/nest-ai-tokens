@@ -1,5 +1,5 @@
 /**
- * @fileoverview Reversing a compensating record through `MeteringService` is refused and moves nothing: not the wallet,
+ * @fileoverview A compensating record given back to `MeteringService` moves nothing: not the wallet,
  * not the budget, not the ledger or its hash chain, and no event is announced.
  * @layer test
  */
@@ -17,14 +17,17 @@ import { MeteringService, type MeteringEventHooks } from './metering.service'
 import { PricingService } from './pricing.service'
 import { WalletService } from './wallet.service'
 
+const WALLETS: NonNullable<ResolvedAiTokensOptions['wallets']> = { enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' }
+const BUDGETS: NonNullable<ResolvedAiTokensOptions['budgets']> = { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true }
+
 const OPTIONS = {
   ratingMode: 'rate-table',
   markup: 1,
   ledger: { hashChain: true },
   pricing: { strict: true, seedFromSnapshot: false, cacheTtlMs: 300_000, modelAliases: {} },
   holds: { ttlSeconds: 3_600, reaperIntervalSeconds: 300 },
-  wallets: { enabled: true, creditRateNanoUsd: 1_000_000_000n, overdraftNanoUsd: 0n, burnOrder: 'expiry' },
-  budgets: { enabled: true, defaultPolicy: 'block', alertThresholds: [0.8, 1], failClosed: true },
+  wallets: WALLETS,
+  budgets: BUDGETS,
 } as ResolvedAiTokensOptions
 
 const WALLET = { tenantId: 'tenant-1', ownerType: 'user', ownerId: 'u1' } as const
@@ -45,14 +48,14 @@ const USAGE: NormalizedUsage = {
   imageOutTokens: 0,
 }
 
-describe('MeteringService.reverse of a compensating record', () => {
-  /** The refused call leaves everything as the first reversal left it. */
-  it('refuses it and moves nothing', async () => {
+describe('MeteringService on a compensating record', () => {
+  /** `reverse` refuses it, `capture` and `release` do nothing with it: everything stays as the first reversal left it. */
+  it('is moved by neither reverse, capture nor release', async () => {
     const ledgerStore = new InMemoryLedgerStore()
     const pricingStore = new InMemoryPricingStore()
     const ledger = new LedgerService(ledgerStore, OPTIONS)
-    const wallets = new WalletService(new InMemoryWalletStore(), OPTIONS.wallets as never)
-    const budgets = new BudgetService(new InMemoryBudgetStore(), ledger, OPTIONS.budgets as never)
+    const wallets = new WalletService(new InMemoryWalletStore(), WALLETS)
+    const budgets = new BudgetService(new InMemoryBudgetStore(), ledger, BUDGETS)
     const events: { [K in keyof MeteringEventHooks]: jest.Mock } = {
       usageRecorded: jest.fn(() => Promise.resolve()),
       priceMissing: jest.fn(() => Promise.resolve()),
@@ -77,7 +80,12 @@ describe('MeteringService.reverse of a compensating record', () => {
     events.audit.mockClear()
 
     const error = await service.reverse(compensating.id, 'second').catch((e: unknown) => e)
+    const caller = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' } } as const
+    const asHold = { ...caller, id: compensating.id, estimatedTokens: 0, estimatedCostNanoUsd: 0n, expiresAt: new Date() }
+    const captured = await service.capture(asHold, caller, USAGE)
+    await service.release(asHold, caller, 'not a hold')
 
+    expect(captured).toStrictEqual(compensating)
     expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_IDEMPOTENCY_CONFLICT')
     expect(await state()).toStrictEqual(before)
     expect(events.usageReversed).not.toHaveBeenCalled()
