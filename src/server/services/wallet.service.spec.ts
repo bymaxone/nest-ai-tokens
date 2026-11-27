@@ -698,6 +698,7 @@ describe('WalletService refusals name their reason', () => {
   it.each([
     ['an asOf too far behind', (service: WalletService) => service.getBalance(REF, { asOf: new Date(start.getTime() - 5001) }), 'asOf is in the past: a balance is answered for now or later, not for an instant that is gone'],
     ['options that are not an object', (service: WalletService) => service.getBalance(REF, 'now' as never), 'options must be an object'],
+    ['an asOf getter that throws', (service: WalletService) => service.getBalance(REF, { get asOf(): never { throw new Error('host-private-text') } }), 'options asOf could not be read'],
     ['an unknown restore mode', (service: WalletService) => service.refund(REF, { ...refund, restore: 'sourse' as never }), "refund restore must be 'source' or 'unallocated'"],
     ['a debitEntryId that is not text', (service: WalletService) => service.refund(REF, { ...refund, restore: 'source', debitEntryId: 7 as never }), 'debitEntryId must be a string'],
     ['a debitEntryId without restore source', (service: WalletService) => service.refund(REF, { ...refund, debitEntryId: 'd1' }), "a debitEntryId names the debit a refund restores: it needs restore: 'source'"],
