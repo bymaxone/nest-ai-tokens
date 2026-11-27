@@ -44,8 +44,6 @@ export class ContentCapture {
    */
   async capture(input: CaptureContentInput): Promise<void> {
     if (!this.options.enabled) return
-    // Stryker disable next-line ConditionalExpression: CE false: removing the early-return is equivalent because the inner guards (input.prompt !== undefined, input.completion !== undefined) prevent any store calls when both are absent
-    if (input.prompt === undefined && input.completion === undefined) return
     const { store, ttlSeconds } = this.options
     const mask = this.options.mask ?? IDENTITY
     try {
