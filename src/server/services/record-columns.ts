@@ -37,7 +37,6 @@ export function buildAppendInput(args: {
     audioOutTokens: normalized.audioOutTokens,
     imageInTokens: normalized.imageInTokens,
     imageOutTokens: normalized.imageOutTokens,
-    // Stryker disable next-line ConditionalExpression,EqualityOperator: CE/EQ: when ratedUnits is empty, spreading { extraUnits: {} } vs omitting the key; downstream consumers check record.extraUnits !== undefined (absent vs present {}); unit tests don't use server tool use, so ratedUnits={} always → no observable difference
     ...(Object.keys(ratedUnits).length > 0 ? { extraUnits: ratedUnits } : {}),
     priceVersionId: rating.priceVersionId,
     rawCostNanoUsd: rating.rawCostNanoUsd,

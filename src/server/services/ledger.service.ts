@@ -432,7 +432,6 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
     audioOutTokens: -original.audioOutTokens,
     imageInTokens: -original.imageInTokens,
     imageOutTokens: -original.imageOutTokens,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { extraUnits: undefined } is equivalent to {} because consumers check !== undefined
     ...(original.extraUnits !== undefined ? { extraUnits: negateUnits(original.extraUnits) } : {}),
     priceVersionId: original.priceVersionId,
     rawCostNanoUsd: -original.rawCostNanoUsd,
