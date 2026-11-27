@@ -956,13 +956,15 @@ The idempotency key should be **derived from request content** (`deriveIdempoten
 
 ### 8.5 Compensation (reversal) semantics
 
-`MeteringService.reverse(usageRecordId, reason)` is the public orchestrator; in **one store transaction** it:
+`MeteringService.reverse(usageRecordId, reason)` is the public orchestrator. It is **not one store transaction**: steps 1 and 2 are two store calls, and step 3 runs after them:
 
 1. Appends a **compensating record**: `status: 'posted'`, negated token counts and costs, `reversesRecordId` → the original, its own idempotency key (`reverse:<originalId>`).
 2. Annotates the original: `status: 'posted' → 'reversed'` + `reversedByRecordId` — **the only permitted post-posting mutation**, an annotation that never alters amounts (`ILedgerStore.transition()` enforces this).
 3. If the original was `enforced`: refunds the linked wallet debit (a `refund` entry) and releases the budget-window consumption — cost, tokens, **and count** — plus the live counter.
 
 `LedgerService.reverse()` is the ledger-only primitive (steps 1–2) for hosts that manage wallet/budget effects themselves. The effects a transition or a reversal owes are recorded in a separate table, `ai_usage_effects_owed` (migration `0003`), written by the same statement and deleted once they ran, so the ledger table gains no column and step 2 stays the only post-posting mutation. Reversing an already-reversed record throws `AI_TOKENS_IDEMPOTENCY_CONFLICT`, and so does reversing a compensating record (one with `reversesRecordId`), through `reverse()` or through an `append()` whose `reversesRecordId` names it: a charge reversed by mistake is recorded again as new usage. Reversing a `pending`/`released` record is invalid (use `release()`).
+
+A failure between steps 1 and 2 leaves the original `posted` with its compensating record written. Calling `reverse()` again completes the reversal: step 1 replays by its idempotency key, so there is never a second compensating record. With a store that keeps the effects-owed marker, the settlement sweep completes it too. A failure after step 2 leaves the original `reversed`, and a retry answers `AI_TOKENS_IDEMPOTENCY_CONFLICT`: only the settlement sweep finishes the refund and the release. A store without the marker calls, or `settlement.enabled: false`, has no such sweep, and the effects that did not run stay undone.
 
 This is the prior implementation's refund-on-failure made first-class: a refunded user immediately regains quota headroom, including the operation-count headroom.
 

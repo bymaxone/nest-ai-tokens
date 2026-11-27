@@ -27,6 +27,9 @@ that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A host that calls `RedisBu
   whose `reversesRecordId` names one. `reverse()` used to accept it: the ledger, and for an enforced non-system record the budget,
   counted the charge again while the wallet was not debited. Rows already written that way are not repaired; they are the
   compensating records whose `reversesRecordId` points at another compensating record.
+- Documentation: the specification said `reverse()` runs in one store transaction. It does not. The specification and the
+  README now say what a failure part-way leaves, what a retry completes, and what needs the settlement sweep. No behaviour
+  changed.
 
 ## [1.1.25] - 2026-11-26
 
