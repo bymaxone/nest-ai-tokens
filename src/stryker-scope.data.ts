@@ -42,7 +42,7 @@ export const EXCLUSIONS: readonly Exclusion[] = [
 export const EXPECTED = {
   entries: 5,
   includes: ['src/server/index.ts', 'src/redis/index.ts', 'src/prisma/index.ts'],
-  minShipped: 60,
+  shipped: 156,
 } as const
 
 /** The end-to-end suites that exercise the subpath of the end-to-end-owned files. */

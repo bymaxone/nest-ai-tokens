@@ -41,7 +41,7 @@ describe('money at the values where the sign of the amount is zero or absent', (
     expect(floatUsdToNanoUsd(usd)).toBe(0n)
   })
 
-  /** NaN and the infinities have no sign to convert and stop at the guard. */
+  /** NaN and the infinities are not amounts, and stop at the guard. */
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
     'floatUsdToNanoUsd refuses %p at the guard',
     (usd) => {

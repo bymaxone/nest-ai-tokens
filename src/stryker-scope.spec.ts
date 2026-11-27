@@ -310,7 +310,7 @@ describe('mutation scope', () => {
   it('finds the shipped source from the package entries', () => {
     expect(entries()).toHaveLength(EXPECTED.entries)
     expect(shipped).toEqual(expect.arrayContaining([...EXPECTED.includes]))
-    expect(shipped.length).toBeGreaterThan(EXPECTED.minShipped)
+    expect(shipped).toHaveLength(EXPECTED.shipped)
   })
 
   /** A shipped file is mutated or its absence is explained; nothing is left out by accident. */
