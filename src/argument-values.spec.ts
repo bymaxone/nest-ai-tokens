@@ -112,6 +112,7 @@ const GETTER_ROWS: readonly (readonly [string, (string | number)[], string, stri
   ['wallets.getBalance', [0], 'tenantId', 'wallet.tenantId'],
   ['wallets.getBalance', [0], 'ownerType', 'wallet.ownerType'],
   ['wallets.getBalance', [0], 'ownerId', 'wallet.ownerId'],
+  ['wallets.debit', [1], 'idempotencyKey', 'idempotencyKey'],
   ['metering.capture', [0], 'id', 'hold.id'],
 ]
 
