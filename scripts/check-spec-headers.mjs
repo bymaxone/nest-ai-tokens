@@ -29,9 +29,9 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 /** Shortest text, outside the layer marker, that can still state a purpose. */
 const MIN_PURPOSE_LENGTH = 20
@@ -176,4 +176,17 @@ function main() {
   console.log('Every spec file opens with a purpose and layer header, or is on the frozen baseline.')
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main()
+/**
+ * Whether Node was started on this file. Both sides are resolved to real paths: a symlinked
+ * spelling that compared unequal would skip the run and still exit 0.
+ */
+function isEntryPoint() {
+  const entry = process.argv[1]
+  return (
+    entry !== undefined &&
+    existsSync(entry) &&
+    realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url))
+  )
+}
+
+if (isEntryPoint()) main()

@@ -17,7 +17,7 @@
  * @layer scripts
  */
 
-import { readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -114,7 +114,20 @@ export function run(argv, root, env) {
   return { status: verdict.ok ? 0 : 1, message: verdict.message }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+/**
+ * Whether Node was started on this file. Both sides are resolved to real paths: a symlinked
+ * spelling that compared unequal would skip the run and still exit 0.
+ */
+function isEntryPoint() {
+  const entry = process.argv[1]
+  return (
+    entry !== undefined &&
+    existsSync(entry) &&
+    realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url))
+  )
+}
+
+if (isEntryPoint()) {
   const { status, message } = run(process.argv.slice(2), process.cwd(), process.env)
   ;(status === 0 ? console.log : console.error)(status === 0 ? message : `✖ ${message}`)
   process.exit(status)
