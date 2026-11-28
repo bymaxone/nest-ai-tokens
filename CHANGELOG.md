@@ -10,6 +10,8 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+## [1.1.26] - 2026-11-27
+
 **Apply:** no database migration and no option change. A host that reverses a compensating record, or appends a record
 that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A host that calls `RedisBudgetCounterStore` itself and reads the
 `message` or `command` of a rejection should read its `code`.
@@ -27,6 +29,9 @@ that does, now gets `AI_TOKENS_IDEMPOTENCY_CONFLICT`. A host that calls `RedisBu
   whose `reversesRecordId` names one. `reverse()` used to accept it: the ledger, and for an enforced non-system record the budget,
   counted the charge again while the wallet was not debited. Rows already written that way are not repaired; they are the
   compensating records whose `reversesRecordId` points at another compensating record.
+- Documentation: the specification said `reverse()` runs in one store transaction. It does not. The specification and the
+  README now say what a failure part-way leaves, what a retry completes, and what needs the settlement sweep. No behaviour
+  changed.
 
 ## [1.1.25] - 2026-11-26
 
@@ -1418,4 +1423,5 @@ have regressed from. They are kept because the reasoning is worth having.
 [1.1.23]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.22...v1.1.23
 [1.1.24]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.23...v1.1.24
 [1.1.25]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.24...v1.1.25
-[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.25...HEAD
+[1.1.26]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.25...v1.1.26
+[Unreleased]: https://github.com/bymaxone/nest-ai-tokens/compare/v1.1.26...HEAD

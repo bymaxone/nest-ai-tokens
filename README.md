@@ -1056,6 +1056,17 @@ sweeping at once hold no lock between them. The sweep re-emits the event a write
 idempotent on the record id. A store without the optional marker calls leaves the sweep inactive, and the reaper says so
 once at boot.
 
+**A reversal that fails part-way.** `reverse()` writes the compensating record, annotates the original and then refunds and
+releases; these are separate calls, not one transaction. It survives a crash at any of those points only with a store that
+implements the three marker calls (`findEffectsOwed`, `findEffectsOwedFor`, `clearEffectsOwed`) and with the sweep on. You
+start nothing: the module's hold reaper runs the sweep from application bootstrap, every `holds.reaperIntervalSeconds`
+(default 300), over markers older than `settlement.graceSeconds` (default 300), 100 rows a tick. With
+`settlement.enabled: false` no sweep runs, and the reaper logs nothing about it.
+
+- Failed before the original was annotated: call `reverse()` again. It completes, with one compensating record.
+- Failed after the original was annotated: a retry answers `AI_TOKENS_IDEMPOTENCY_CONFLICT`, and the sweep finishes the
+  refund and the release. Without the marker calls or the sweep, what did not run stays undone.
+
 **Known limit.** Without those calls, a leg that fails after the ledger commit is not finished by anyone: the record is posted at its actual cost while the wallet keeps the hold's reserved debit, and a second capture returns the posted record without running the leg again. Use a store that keeps the marker (the Prisma store does) when a failed capture leg must be repaired.
 
 **Known limit.** `LedgerService.transition()` checks the status change, not the record: a host that calls it can annotate a compensating record as `reversed`. No money moves. Use `reverse()`.
