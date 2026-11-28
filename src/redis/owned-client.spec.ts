@@ -337,6 +337,7 @@ describe('RedisBudgetCounterStore error events of the client it creates', () => 
     const listener = await errorListener()
     listener(new Error('dummy message'))
     expect(warn.mock.calls).toEqual([['ai_tokens.redis_counter.client_error']])
+    expect(warn.mock.contexts[0]).toMatchObject({ context: 'RedisBudgetCounterStore' })
   })
 
   /** A logger of the host that throws does not throw out of the client's event. */

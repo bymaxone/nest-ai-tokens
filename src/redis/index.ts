@@ -151,7 +151,7 @@ export class CounterValueOutOfRangeError extends Error {
 
 /** The official Redis adapter for the live budget counter port. */
 export class RedisBudgetCounterStore implements IBudgetCounterStore {
-  private readonly logger = new Logger(RedisBudgetCounterStore.name)
+  private readonly logger = new Logger('RedisBudgetCounterStore')
   private readonly keyPrefix: string
   private readonly closeTimeoutMs: number
 
