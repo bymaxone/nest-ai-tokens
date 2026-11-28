@@ -7,7 +7,8 @@
 
 import { createServer, type Socket } from 'node:net'
 import { inspect } from 'node:util'
-import type { Redis } from 'ioredis'
+import { Logger } from '@nestjs/common'
+import RedisClient, { type Redis } from 'ioredis'
 import { RedisBudgetCounterStore } from './index'
 
 /** A stand-in secret that must appear on no rejection. */
@@ -57,8 +58,8 @@ function replyError(message: string, command: { name: string; args: string[] }):
   return Object.assign(new Error(message), { name: 'ReplyError', command })
 }
 
-/** A loopback server that answers `error` to every `eval` and `del`, and `OK` to the rest of the handshake. */
-async function loopbackServer(error: (parts: string[]) => string): Promise<{ port: number; close: () => void }> {
+/** A loopback server that answers `error` to every command named in `refused`, and `OK` to the rest of the handshake. */
+async function loopbackServer(error: (parts: string[]) => string, refused: readonly string[] = ['eval', 'del']): Promise<{ port: number; close: () => void }> {
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
@@ -68,7 +69,7 @@ async function loopbackServer(error: (parts: string[]) => string): Promise<{ por
       buffer += data.toString()
       for (let parts = take(); parts !== null; parts = take()) {
         const name = parts[0]?.toLowerCase()
-        if (name === 'eval' || name === 'del') socket.write(`-${error(parts)}\r\n`)
+        if (name !== undefined && refused.includes(name)) socket.write(`-${error(parts)}\r\n`)
         else if (name === 'info') socket.write('$11\r\nloading:0\r\n\r\n')
         else socket.write('+OK\r\n')
       }
@@ -132,6 +133,40 @@ describe('a failed command of the client the store created', () => {
       expect(`${inspect(error, { depth: 8, showHidden: true })}\n${JSON.stringify(error)}`).not.toContain(PASSWORD)
     }
     await store.onModuleDestroy()
+  })
+})
+
+describe('an error event of the client the store created', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  /**
+   * The error a refused login raises holds the login command with its arguments. The store listens, so the client writes nothing itself,
+   * and every line the store writes is the key with the reply code: no argument of the command reaches a log.
+   */
+  it('logs the key and the reply code, and no argument of the refused command', async () => {
+    const server = await loopbackServer(() => 'WRONGPASS dummy message', ['hello', 'auth'])
+    const url = `redis://:${PASSWORD}@127.0.0.1:${String(server.port)}`
+    const control = new RedisClient(url, { maxRetriesPerRequest: 0 })
+    const raised = await new Promise<{ command?: { args?: unknown[] } }>((done) => control.once('error', done))
+    control.on('error', () => undefined)
+    control.disconnect()
+    expect(JSON.stringify(raised.command?.args)).toContain(PASSWORD)
+
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const others = (['log', 'error', 'debug', 'verbose', 'fatal'] as const).map((level) => jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined))
+    const printed = (['log', 'error', 'warn', 'info', 'debug'] as const).map((level) => jest.spyOn(console, level).mockImplementation(() => undefined))
+    const store = new RedisBudgetCounterStore(url)
+    try {
+      await rejectionOf(store.reset(KEY))
+    } finally {
+      await store.onModuleDestroy()
+      server.close()
+    }
+    expect(warn.mock.calls.length).toBeGreaterThan(0)
+    for (const call of warn.mock.calls) expect(call).toEqual(['ai_tokens.redis_counter.client_error code=WRONGPASS'])
+    for (const spy of [...others, ...printed]) expect(spy).not.toHaveBeenCalled()
   })
 })
 

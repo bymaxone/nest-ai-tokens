@@ -1238,7 +1238,7 @@ WHERE budget_id = :id AND window_start = :ws
   AND (:limitCount IS NULL OR spent_count    + :count  <= :limitCount)
 ```
 
-When a Redis `IBudgetCounterStore` is configured, the live counter is the fast path (`incrIfBelow` per dimension, key `ai_tokens:budget:{budgetId}:{windowStartISO}:{dimension}`, TTL = window length + 1h grace, values stored as int64 strings); `failClosed: true` keeps budgets a hard ceiling even if the counter store degrades (falls back to the DB conditional consume; if the DB is also unavailable, the call fails closed). A failed command rejects the shipped Redis store with its own error, a fixed message and at most the `code` of the failure, never the error of the client; a connection URL that cannot be parsed rejects with `invalid connection URL`.
+When a Redis `IBudgetCounterStore` is configured, the live counter is the fast path (`incrIfBelow` per dimension, key `ai_tokens:budget:{budgetId}:{windowStartISO}:{dimension}`, TTL = window length + 1h grace, values stored as int64 strings); `failClosed: true` keeps budgets a hard ceiling even if the counter store degrades (falls back to the DB conditional consume; if the DB is also unavailable, the call fails closed). A failed command rejects the shipped Redis store with its own error, a fixed message and at most the `code` of the failure, never the error of the client; a connection URL that cannot be parsed rejects with `invalid connection URL`. The store listens for the `error` events of a client it creates and logs `ai_tokens.redis_counter.client_error` with at most the `code`, never the error.
 
 ---
 

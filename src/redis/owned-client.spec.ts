@@ -5,6 +5,7 @@
  * @layer redis
  */
 
+import { Logger } from '@nestjs/common'
 import type { Redis } from 'ioredis'
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
 import { RedisBudgetCounterStore } from './index'
@@ -15,11 +16,15 @@ class MockClient {
   quits = 0
   disconnects = 0
   quitMode: 'ok' | 'hang' | 'fail' = 'ok'
+  readonly listeners = new Map<string, (failure: unknown) => void>()
   constructor(
     readonly url: string,
     readonly options?: Record<string, unknown>,
   ) {
     mockCreated.push(this)
+  }
+  on(event: string, listener: (failure: unknown) => void): void {
+    this.listeners.set(event, listener)
   }
   eval(): Promise<number> {
     return Promise.resolve(1)
@@ -310,5 +315,37 @@ describe('RedisBudgetCounterStore refusals while it connects and while it waits 
     } finally {
       process.off('unhandledRejection', onUnhandled)
     }
+  })
+})
+
+describe('RedisBudgetCounterStore error events of the client it creates', () => {
+  /** The listener of the client a store created, once a call made the store connect. */
+  async function errorListener(): Promise<(failure: unknown) => void> {
+    await new RedisBudgetCounterStore('redis://localhost:6379').incrIfBelow('k', 1n, 10n, 60)
+    const listener = mockCreated[0]?.listeners.get('error')
+    if (listener === undefined) throw new Error('no error listener')
+    return listener
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  /** An error with no code gives the bare key, and nothing of its message. */
+  it('logs the key alone for an error with no code', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const listener = await errorListener()
+    listener(new Error('dummy message'))
+    expect(warn.mock.calls).toEqual([['ai_tokens.redis_counter.client_error']])
+  })
+
+  /** A logger of the host that throws does not throw out of the client's event. */
+  it('drops the line when the logger throws', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      throw new Error('logger down')
+    })
+    const listener = await errorListener()
+    expect(() => listener(Object.assign(new Error('dummy message'), { code: 'ECONNREFUSED' }))).not.toThrow()
+    expect(warn.mock.calls).toEqual([['ai_tokens.redis_counter.client_error code=ECONNREFUSED']])
   })
 })

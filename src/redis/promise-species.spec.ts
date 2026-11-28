@@ -18,6 +18,7 @@ jest.mock('ioredis', () => ({
   __esModule: true,
   default: function Owned(): unknown {
     const client = {
+      on: (): void => undefined,
       status: 'ready',
       quits: 0,
       disconnects: 0,
@@ -85,6 +86,7 @@ describe('the client a store was given is not asked for a then', () => {
 
   it('refuses the reply of a command whose promise the client planted a constructor and then on while it ran', async () => {
     const client = {
+      on: (): void => undefined,
       status: 'ready',
       eval: (): Promise<number> => {
         plantOnce(1)

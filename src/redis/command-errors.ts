@@ -18,7 +18,7 @@ class CounterStoreError extends Error {
 }
 
 /** The code of a failure: the first word of a reply of the server, else its `code`, kept only when it has the shape of a code. */
-function codeOf(failure: unknown): string | undefined {
+export function codeOf(failure: unknown): string | undefined {
   let word: unknown
   try {
     const { name, message, code } = failure as { name?: unknown; message?: unknown; code?: unknown }

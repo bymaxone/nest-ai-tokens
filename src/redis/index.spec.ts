@@ -132,6 +132,7 @@ describe('RedisBudgetCounterStore', () => {
 jest.mock('ioredis', () => ({
   __esModule: true,
   default: class MockRedis {
+    on(): void {}
     eval(): Promise<number> {
       return Promise.resolve(1)
     }

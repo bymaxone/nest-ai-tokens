@@ -10,6 +10,15 @@ Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while
 
 ## [Unreleased]
 
+**Apply:** no database migration and no option change. A host that watched stderr for `[ioredis] Unhandled error event` from the
+counter store should watch for the log line below.
+
+### Changed
+
+- A `RedisBudgetCounterStore` built from a connection URL now handles the error events of the client it creates: each one is a
+  warning `ai_tokens.redis_counter.client_error` with at most the error `code`, in place of the client's own line on stderr. A
+  client the host passes in is not touched.
+
 ## [1.1.26] - 2026-11-27
 
 **Apply:** no database migration and no option change. A host that reverses a compensating record, or appends a record

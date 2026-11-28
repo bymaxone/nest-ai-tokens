@@ -10,7 +10,8 @@
  * accepts a live `Redis` instance, or a connection URL that is lazily connected via
  * a DYNAMIC import so the base library never statically depends on the client.
  * Connection URLs (which may embed credentials) are never logged or placed on an
- * exception, and a failed command rejects without the client's error.
+ * exception, a failed command rejects without the client's error, and an error event
+ * of a client the store created is logged by its code alone.
  * @layer redis
  */
 
@@ -19,9 +20,13 @@ import type { IBudgetCounterStore } from '../server'
 // By package specifier, not by relative path: entry points are separate bundles, so a relative import would copy the
 // class into this one and the server's `instanceof AiTokensException` guards would stop matching what this store throws.
 import { AiTokensException } from '@bymax-one/nest-ai-tokens'
+import { Logger } from '@nestjs/common'
 import { types } from 'node:util'
 import { refusesPromise } from '../shared/utils/native-promise'
-import { commandFailure } from './command-errors'
+import { codeOf, commandFailure } from './command-errors'
+
+/** The log key of an error event of a client the store created. */
+const CLIENT_ERROR_LOG_KEY = 'ai_tokens.redis_counter.client_error'
 
 /**
  * The client, in an object with no prototype. A client reached through a promise is read for `then` by the engine, on its class chain,
@@ -146,6 +151,7 @@ export class CounterValueOutOfRangeError extends Error {
 
 /** The official Redis adapter for the live budget counter port. */
 export class RedisBudgetCounterStore implements IBudgetCounterStore {
+  private readonly logger = new Logger(RedisBudgetCounterStore.name)
   private readonly keyPrefix: string
   private readonly closeTimeoutMs: number
 
@@ -290,6 +296,20 @@ export class RedisBudgetCounterStore implements IBudgetCounterStore {
       throw new Error('invalid connection URL')
     }
     this.#owned = client
+    // A client with no listener of its own writes its errors to stderr itself. Its error object can hold a command and the command's arguments.
+    client.on('error', (failure: unknown) => {
+      this.warnClientError(failure)
+    })
     return boxed(client)
+  }
+
+  /** Log an error event of the owned client: the key and at most the code, never the error. */
+  private warnClientError(failure: unknown): void {
+    const code = codeOf(failure)
+    try {
+      this.logger.warn(code === undefined ? CLIENT_ERROR_LOG_KEY : `${CLIENT_ERROR_LOG_KEY} code=${code}`)
+    } catch {
+      // The line is dropped: a logger of the host that throws here would throw out of the client's event.
+    }
   }
 }

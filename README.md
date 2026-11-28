@@ -837,7 +837,9 @@ specific to security is below.
   alive about two seconds longer.
 - **A failed counter command rejects with the store's own error.** Its message is `counter command failed` and its `code`, when
   the failure has one, is the code of the Redis reply or of the client (`OOM`, `READONLY`); the error of the
-  client is not passed on. A connection URL that cannot be parsed rejects with `invalid connection URL`.
+  client is not passed on. A connection URL that cannot be parsed rejects with `invalid connection URL`. An error event of a client
+  the store created from a URL is logged as `ai_tokens.redis_counter.client_error` with at most its `code`; on a client you pass
+  in, listen for `error` yourself.
 - **A stopped Redis costs one timeout, then the database answers.** The client a `RedisBudgetCounterStore` creates from a URL
   retries a command once and fails it after `commandTimeoutMs` (default 500 ms, a whole number from 1 to 2,147,483,647). Measured
   against a stopped Redis 7, a command failed in about 500 ms (327 to 503 ms), where the `ioredis` defaults held it for 73 and 107 s; the

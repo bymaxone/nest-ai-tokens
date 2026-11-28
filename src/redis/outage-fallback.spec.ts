@@ -11,6 +11,7 @@ import { RedisBudgetCounterStore } from './index'
 jest.mock('ioredis', () => ({
   __esModule: true,
   default: class Stopped {
+    on(): void {}
     eval(): Promise<never> {
       return Promise.reject(new Error('Command timed out'))
     }
