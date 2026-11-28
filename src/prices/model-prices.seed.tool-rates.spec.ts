@@ -149,11 +149,11 @@ describe('the seeded snapshot and the web searches of a call', () => {
     }
   })
 
-  const rated = MODEL_PRICES_SEED.filter((row) => RATED[keyOf(row)] !== undefined)
-  const unrated = MODEL_PRICES_SEED.filter((row) => RATED[keyOf(row)] === undefined)
+  const unratedChat = MODEL_PRICES_SEED.filter((row) => RATED[keyOf(row)] === undefined && row.operation === 'chat')
 
   /** Under strict mode a call with 7 searches on a rated model is billed its tokens and 7 searches at the rate, not refused. */
-  it.each(rated.map((row) => [keyOf(row), row] as const))('prices a call with web searches on %s under strict mode', async (key, row) => {
+  it.each(Object.keys(RATED))('prices a call with web searches on %s under strict mode', async (key) => {
+    const row = MODEL_PRICES_SEED.find((candidate) => keyOf(candidate) === key)!
     const built = await seeded()
     const context = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', serviceTier: row.serviceTier } as const
     const tokensOnly = await built.service.record({ usage: usageOf(row, 0), context: { ...context, idempotencyKey: 'a' } })
@@ -163,11 +163,14 @@ describe('the seeded snapshot and the web searches of a call', () => {
   })
 
   /** Under strict mode a call with searches on a model with no rate is refused before anything is debited. */
-  it.each(unrated.filter((row) => row.operation === 'chat').map((row) => [keyOf(row), row] as const))('refuses a call with web searches on %s under strict mode, before any debit', async (_key, row) => {
-    const built = await seeded()
-    const before = (await built.wallets!.getBalance(WALLET)).nanoUsd
-    const context = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', serviceTier: row.serviceTier, enforce: true } as const
-    expect(await refusalCode(() => built.service.record({ usage: usageOf(row, 7), context }))).toBe('AI_TOKENS_PRICE_NOT_FOUND')
-    expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(before)
+  it('refuses a call with web searches on each unrated chat model under strict mode, before any debit', async () => {
+    expect(unratedChat.length).toBeGreaterThan(0)
+    for (const row of unratedChat) {
+      const built = await seeded()
+      const before = (await built.wallets!.getBalance(WALLET)).nanoUsd
+      const context = { tenantId: 'tenant-1', scope: { type: 'user', id: 'u1' }, feature: 'chat.reply', serviceTier: row.serviceTier, enforce: true } as const
+      expect(await refusalCode(() => built.service.record({ usage: usageOf(row, 7), context }))).toBe('AI_TOKENS_PRICE_NOT_FOUND')
+      expect((await built.wallets!.getBalance(WALLET)).nanoUsd).toBe(before)
+    }
   })
 })
