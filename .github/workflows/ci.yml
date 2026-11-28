@@ -28,7 +28,7 @@ jobs:
   ci:
     uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
     with:
-      run-format-check: false # format check disabled; repo-wide formatting deferred (TASK-ai-403)
+      run-format-check: false # off: the repository is not formatted as a whole
       run-build: false # build + integrity + size verified in the `verify` job below
       unit-command: pnpm test:cov # unit coverage (100% per implemented file); e2e runs separately
       run-mutation: true
