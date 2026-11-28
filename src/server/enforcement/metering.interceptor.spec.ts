@@ -460,7 +460,7 @@ describe('MeteringInterceptor reads the config of @Meter as the handler\'s own',
   it.each([
     ['tags', ['planted']],
     ['preset', providerPresets.openaiChat],
-  ])('passes no %s to record() when %s is planted and the handler declares none', async (key, value) => {
+  ])('passes no %s to record() when one is planted and the handler declares none', async (key, value) => {
     const { built, interceptor } = await world()
     const record = jest.spyOn(built.metering, 'record')
     await planted(key, value, () => lastValueFrom(interceptor.intercept(executionContext(fixture.metered), handlerOf({ usage: normalized() }))))
