@@ -116,7 +116,7 @@ describe('guardedStore', () => {
   })
 
   /** A row nested deeper than a store returns is refused with the library's error and never handed on uncopied, in either direction. */
-  it('refuses a row and an argument nested too deep with the typed error, and passes a getter\'s own error through', () => {
+  it('refuses a row and an argument nested too deep with the typed error, and passes a getter\'s own error through', async () => {
     let deep: unknown = { id: 'leaf' }
     for (let level = 0; level < 10; level += 1) deep = { next: deep }
     const guarded = guardedStore({
@@ -137,6 +137,18 @@ describe('guardedStore', () => {
     expect(nameOf(() => guarded.keep(deep))).toBe('AiTokensException')
     expect(guarded.scalar()).toBeNull()
     expect(nameOf(() => guarded.broken())).toBe('TypeError')
+    const tooDeep = { response: { error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'a record a store takes or returns is nested too deep, or its class chain is too long' } } } }
+    await expect(async () => guarded.returns()).rejects.toMatchObject(tooDeep)
+  })
+
+  /** A promise with a `constructor` of its own would answer the await in the store's place: it is refused, and the refusal says why. */
+  it('refuses a promise that reads a constructor of its own', async () => {
+    const planted = Promise.resolve('row')
+    Reflect.defineProperty(planted, 'constructor', { value: Object })
+    const guarded = guardedStore({ find: (): Promise<string> => planted })
+    await expect(async () => guarded.find()).rejects.toMatchObject({
+      response: { error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'what a store returned reads a constructor or then of its own, or the arrays the library reads were replaced' } } },
+    })
   })
 
   /** A store the host froze cannot have its properties changed, and the proxy must not have to: its methods are still wrapped. */

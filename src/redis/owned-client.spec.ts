@@ -285,7 +285,7 @@ describe('RedisBudgetCounterStore refusals while it connects and while it waits 
     } finally {
       Reflect.defineProperty(Promise.prototype, 'constructor', kept)
     }
-    await expect(call).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    await expect(call).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'the connection reads a constructor or then of its own' } } } })
     await store.onModuleDestroy()
   })
 

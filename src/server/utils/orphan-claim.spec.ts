@@ -10,6 +10,7 @@ import {
   ORPHAN_DEBIT_REASON,
   claimShares,
   isOrphanClaim,
+  lateAppend,
   ledgerKeyOfDebit,
   rollbackOfDebit,
 } from './orphan-claim'
@@ -37,6 +38,14 @@ describe('the claim helpers', () => {
     expect(ledgerKeyOfDebit('capture:x')).toBeNull()
     expect(rollbackOfDebit('capture:x')).toBeNull()
     expect(rollbackOfDebit('xhold:k')).toBeNull()
+  })
+
+  /** A capture whose claim was already written is refused as a conflict that names the tenant and the key. */
+  it('refuses a late append as a conflict naming the tenant and the key', () => {
+    const logger = { error: jest.fn(), warn: jest.fn() } as unknown as Parameters<typeof lateAppend>[0]
+    const refusal = lateAppend(logger, { tenantId: 't1', idempotencyKey: 'k1' } as Parameters<typeof lateAppend>[1])
+    expect(refusal).toHaveProperty('response.error.code', 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    expect(refusal).toHaveProperty('response.error.details', { tenantId: 't1', idempotencyKey: 'k1' })
   })
 
   /** A row is a claim only when its provider and its feature both carry the fixed value. */

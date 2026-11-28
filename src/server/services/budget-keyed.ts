@@ -42,7 +42,6 @@ export function guardOf(outcome: ApplicationOutcome): GuardResult {
 
 /** The refusal of a key that names another call than this one: its movement is already recorded with another delta. */
 export function keyNamesAnotherCall(): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context is internal diagnostics; tests check error code only
   return new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, { reason: 'the budget movement of this key was recorded with another amount' })
 }
 

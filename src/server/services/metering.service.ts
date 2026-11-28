@@ -27,6 +27,7 @@ import type {
   UsageNormalizer,
   UsageRecord,
 } from '../../shared'
+import { defined } from '../utils/defined'
 import { ratedCost } from '../utils/rated-cost'
 import { settled } from '../utils/host-settled'
 import type { ResolvedAiTokensOptions } from '../config'
@@ -40,6 +41,7 @@ import { isAppendWatch } from '../utils/append-watch'
 import { assertEstimateCostInput, assertHold, assertMeteringContext, assertObject, assertText, assertTexts, newVisit } from '../utils/argument-guards'
 import { lookupScope, readDatedArgument } from '../utils/date-guards'
 import { ESTIMATE_COST_SHAPE } from '../utils/input-fields'
+import { max0, minBig } from './budget-math'
 import { isHardExhausted } from './budget-status'
 import { captureInputs, holdArguments, holdOwnerArguments, recordInput } from '../utils/metering-arguments'
 import { fieldOf } from '../utils/field-names'
@@ -227,9 +229,7 @@ export class MeteringService {
     const { context } = input
     const enforcing = context.enforce === true
     if (enforcing && this.wallets === undefined && this.budgets === undefined) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: 'enforce requires the wallets or budgets feature to be enabled',
       })
     }
@@ -291,7 +291,6 @@ export class MeteringService {
     // so holds the debit both share; for any other row the debit was this attempt's own.
     const ownDebit = key === undefined || (row !== null && !this.effects.sharesDebit(row, appendInput.scope))
     // The budget references this attempt took are committed when the row found is this same call, and dropped otherwise.
-    // Stryker disable next-line ObjectLiteral: the instant narrows only which attempts commit and which drop; either verdict ends with exactly one `row`, which the store contract pins for both orders of commit, so omitting it is equivalent
     const sameCall = row !== null && this.effects.sameCall(row, { kind: 'record', scope: appendInput.scope, feature: appendInput.feature, billedCostNanoUsd: appendInput.billedCostNanoUsd, ...(basis.occurredAtSupplied ? { occurredAt: appendInput.occurredAt } : {}) })
     if (enforcement !== null) {
       if (sameCall) await this.effects.commitBudget(enforcement)
@@ -368,8 +367,7 @@ export class MeteringService {
       model: input.model,
       operation: input.operation,
       serviceTier,
-      // Stryker disable next-line ConditionalExpression: CE true: spreading { feature: undefined } is equivalent to {} because markup.resolve treats absent and undefined feature the same
-      ...(input.feature !== undefined ? { feature: input.feature } : {}),
+      ...defined({ feature: input.feature }),
     })
     return { rawCostNanoUsd, billedCostNanoUsd: markup.apply(rawCostNanoUsd) }
   }
@@ -520,8 +518,7 @@ export class MeteringService {
       const result = await settled(fn(), true)
       const row = { appended: false }
       try {
-        // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because record() only reads input.preset?.normalizer / input.preset?.ratingMode, where an absent key and an undefined value behave identically
-        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...(context.preset !== undefined ? { preset: context.preset } : {}), context: { ...context, enforce: true } }, () => (row.appended = true))
+        const { record: usage, replayed } = await this.recordSettled({ usage: extract(result), ...defined({ preset: context.preset }), context: { ...context, enforce: true } }, () => (row.appended = true))
         if (!replayed) this.telemetry.recordDuration(usage, this.now().getTime() - startedAt)
         return { result, usage }
       } catch (error) {
@@ -646,8 +643,7 @@ export class MeteringService {
           priceMissing: false,
           status: 'pending',
           isSystemCost,
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { systemCostCategory: undefined } is equivalent to {}
-          ...(context.systemCostCategory !== undefined ? { systemCostCategory: context.systemCostCategory } : {}),
+          ...defined({ systemCostCategory: context.systemCostCategory }),
           enforced: !isSystemCost,
           occurredAt,
         },
@@ -687,7 +683,6 @@ export class MeteringService {
     assertCaller(caller, signature)
     const record = await this.ledger.findById(hold.id)
     if (record !== null && record.tenantId === caller.tenantId && sameScope(record.scope, caller.scope)) return record
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: hold.id }))
   }
 
@@ -697,20 +692,16 @@ export class MeteringService {
     if (record.status === 'released') {
       const ttlSeconds = (this.options.holds ?? DEFAULT_HOLDS).ttlSeconds
       const expiredAt = record.createdAt.getTime() + ttlSeconds * 1_000
-      // Stryker disable next-line EqualityOperator: >= vs >: InMemoryLedgerStore uses real-clock createdAt (not injected), making now === expiredAt at millisecond precision impossible to construct in unit tests; only observable in integration
       if (this.now().getTime() >= expiredAt) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
         throw new AiTokensException('AI_TOKENS_HOLD_EXPIRED', undefined, suppliedDetails({ holdId: record.id }))
       }
     }
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
     throw new AiTokensException('AI_TOKENS_HOLD_ALREADY_SETTLED', undefined, suppliedDetails({ holdId: record.id }))
   }
 
   /** Reload a record by id, or fail HOLD_NOT_FOUND when it vanished mid-capture. */
   private async reload(id: string): Promise<UsageRecord> {
     const record = await this.ledger.findById(id)
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     if (record === null) throw new AiTokensException('AI_TOKENS_HOLD_NOT_FOUND', undefined, suppliedDetails({ holdId: id }))
     return record
   }
@@ -727,8 +718,7 @@ export class MeteringService {
       // Clamp the collector's own final just as the non-stream path is clamped: a provider-final
       // stream can carry negative counts or cost, and returning it raw let those reach the signed
       // settlement. It is already normalized, so `normalizeCaptureUsage` only floors the negatives.
-      // Stryker disable next-line EqualityOperator,ConditionalExpression: > vs >= on storedTokens: the override runs only when finalized.inputTokens === 0, and storedTokens is a non-negative token total; at storedTokens === 0 the override sets inputTokens back to 0, so the result is identical whether the boundary is `> 0` or `>= 0`. The `storedTokens > 0 → true` ConditionalExpression variant is likewise equivalent (at storedTokens === 0 the override sets inputTokens back to 0, unchanged)
-      if (usage.usedFallback && finalized.inputTokens === 0 && storedTokens > 0) {
+      if (usage.usedFallback && finalized.inputTokens === 0) {
         return normalizeCaptureUsage({ ...finalized, inputTokens: storedTokens })
       }
       return normalizeCaptureUsage(finalized)
@@ -740,10 +730,8 @@ export class MeteringService {
   private async walletSection(tenantId: string, scope: MeteringScope): Promise<AccessStatus['wallet'] | undefined> {
     if (this.wallets === undefined || !scopeOwnsWallet(scope)) return undefined
     const balance = await this.wallets.getBalance(scopeToWalletRef(tenantId, scope))
-    // Stryker disable next-line EqualityOperator: < vs <= at balance.nanoUsd === 0n: both branches contribute 0n to the sum (either the literal 0n or a zero balance), so overdraftRemainingNanoUsd is identical
-    const overdraftRemainingNanoUsd = this.overdraftNanoUsd + (balance.nanoUsd < 0n ? balance.nanoUsd : 0n)
-    // Stryker disable next-line EqualityOperator: < vs <= at overdraftRemainingNanoUsd === 0n: both yield 0n (the floor literal or the value itself), so the returned overdraftRemainingNanoUsd is identical
-    return { balanceNanoUsd: balance.nanoUsd, credits: balance.credits, overdraftRemainingNanoUsd: overdraftRemainingNanoUsd < 0n ? 0n : overdraftRemainingNanoUsd }
+    const overdraftRemainingNanoUsd = this.overdraftNanoUsd + minBig(balance.nanoUsd, 0n)
+    return { balanceNanoUsd: balance.nanoUsd, credits: balance.credits, overdraftRemainingNanoUsd: max0(overdraftRemainingNanoUsd) }
   }
 
   /** Resolve the normalizer chain and produce the normalized usage. */
@@ -751,9 +739,7 @@ export class MeteringService {
     const normalizer = input.normalizer ?? input.preset?.normalizer
     if (normalizer !== undefined) return checkUsageCounts(this.normalize(normalizer, input.usage))
     if (isNormalizedUsage(input.usage)) return checkUsageCounts(input.usage)
-    // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_UNKNOWN_PROVIDER', undefined, {
-      // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
       reason: 'raw usage requires a preset or normalizer, or an already-normalized usage',
     })
   }
@@ -769,7 +755,6 @@ export class MeteringService {
       return normalizer(usage)
     } catch (error) {
       if (error instanceof AiTokensException) throw error
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason text are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the normalizer could not read the usage token fields' })
     }
   }

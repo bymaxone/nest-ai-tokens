@@ -625,7 +625,7 @@ describe('BymaxAiTokensModule.forRootAsync', () => {
       imports: [BymaxAiTokensModule.forRootAsync({ useFactory: () => Promise.reject(new Error('config source down')) })],
     }).compile()
     const error = await boot.catch((e: unknown) => e)
-    expect((error as { getResponse?: () => { error: { code: string } } }).getResponse?.().error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(error).toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'the async options factory rejected or produced invalid options' } } } })
   })
 
   /** An async factory producing invalid options fails with INVALID_CONFIG. */
@@ -646,7 +646,9 @@ describe('BymaxAiTokensModule.forRootAsync', () => {
         return e
       }
     })()
-    expect(((error as AiTokensException).getResponse() as AiTokensErrorResponse).error.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    const refusal = ((error as AiTokensException).getResponse() as AiTokensErrorResponse).error
+    expect(refusal.code).toBe('AI_TOKENS_INVALID_CONFIG')
+    expect(refusal.details).toEqual({ reason: 'forRootAsync requires useFactory, useClass, or useExisting' })
   })
 
   /**

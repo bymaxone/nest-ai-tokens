@@ -27,8 +27,7 @@ const jsonText = JSON.stringify.bind(JSON) as (value: unknown) => string
  * string.
  */
 function canonicalize(value: unknown): string {
-  // Stryker disable next-line ConditionalExpression: `value === undefined → false` is equivalent: dropping the operand leaves `value === null`, and a top-level `undefined` (or an `undefined` array element) that no longer short-circuits here falls through every type check to the final `return 'null'`, producing the identical canonical form
-  if (value === null || value === undefined) return 'null'
+  if (value === null) return 'null'
   if (typeof value === 'bigint') return jsonText(`${value.toString()}n`)
   if (typeof value === 'string' || typeof value === 'boolean') return jsonText(value)
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
@@ -44,7 +43,6 @@ function canonicalize(value: unknown): string {
       .filter((key) => record[key] !== undefined)
       .sort()
       .map((key) => `${jsonText(key)}:${canonicalize(record[key])}`)
-    // Stryker disable next-line StringLiteral: object member separator is behavior-preserving: every member is self-delimited by its quoted key, so dropping the ',' keeps canonicalize injective and key-order-stable — no two distinct payloads can be made to collide
     return `{${members.join(',')}}`
   }
 

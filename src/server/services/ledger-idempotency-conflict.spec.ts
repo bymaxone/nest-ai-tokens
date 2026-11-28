@@ -8,6 +8,7 @@ describe('LedgerIdempotencyConflict', () => {
     expect(error.idempotencyKey).toBe('key-1')
     expect(error.isAiTokensLedgerConflict).toBe(true)
     expect(error.name).toBe('LedgerIdempotencyConflict')
+    expect(error.message).toBe('Ledger idempotency-key payload mismatch')
   })
 })
 

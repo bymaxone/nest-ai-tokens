@@ -74,6 +74,7 @@ describe('MarkupResolver', () => {
     expect(error).toBeInstanceOf(AiTokensException)
     expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_INVALID_CONFIG')
     expect((error as AiTokensException).getStatus()).toBe(500)
+    expect(error).toHaveProperty('response.error.details', { reason: 'markup policy failed to resolve a multiplier' })
   })
 
   /** A policy returning an invalid multiplier fails the call. */
@@ -83,6 +84,7 @@ describe('MarkupResolver', () => {
       const error = await new MarkupResolver({ markup: policy }).resolve(CONTEXT).catch((e: unknown) => e)
       expect(error).toBeInstanceOf(AiTokensException)
       expect(codeOf(error as AiTokensException)).toBe('AI_TOKENS_INVALID_CONFIG')
+      expect(error).toHaveProperty('response.error.details', { reason: 'markup policy returned an invalid multiplier', valueType: 'number' })
     }
   })
 })

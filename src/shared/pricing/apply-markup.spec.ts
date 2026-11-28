@@ -64,5 +64,6 @@ describe('applyMarkup', () => {
   /** Invalid multipliers fail the call rather than defaulting to 1.0. */
   it.each([0, -2, Number.NaN, Number.NEGATIVE_INFINITY])('throws on the invalid multiplier %p', (value) => {
     expect(() => applyMarkup(1_000n, value)).toThrow(RangeError)
+    expect(() => applyMarkup(1_000n, value)).toThrow('applyMarkup: multiplier must be finite and > 0')
   })
 })

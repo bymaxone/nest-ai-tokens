@@ -59,6 +59,10 @@ const SWEEP_FAILED_LOG_KEY = 'ai_tokens.hold_reaper.sweep_failed'
 /** A sweep the timer started, with the clock reading, in milliseconds, at which it started. */
 interface TimedSweep {
   readonly startedAt: number
+  /** Whether a tick skipped because of this sweep has been logged. */
+  skipLogged: boolean
+  /** Whether a tick blocked while this sweep was the latest has been logged. */
+  blockedLogged: boolean
 }
 
 /** The resolved-options subset the reaper consumes. */
@@ -77,14 +81,8 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
   private current: TimedSweep | undefined
   /** The sweep a tick abandoned and that has not settled: while it runs, no further sweep is started, so at most two run at once. */
   private abandoned: TimedSweep | undefined
-  /** Whether the current run of blocked ticks has been logged. */
-  // Stryker disable next-line BooleanLiteral: equivalent: a tick that can be blocked needs a sweep already abandoned, and starting a sweep sets the flag to false first, so the initial value is never read
-  private blockedLogged = false
   /** How long a sweep may run before the next tick abandons it, in milliseconds. */
   private stallAfterMs = STALL_AFTER_MIN_MS
-  /** Whether the current run of skipped ticks has been logged. */
-  // Stryker disable next-line BooleanLiteral: equivalent: a tick that can skip needs a sweep already running, and starting that sweep sets the flag to false first, so the initial value is never read
-  private skipLogged = false
 
   /**
    * @param ledger The ledger service (expired-hold scan + atomic void claim).
@@ -123,24 +121,23 @@ export class HoldReaper implements OnApplicationBootstrap, OnApplicationShutdown
    */
   private tick(): void {
     const nowMs = this.now().getTime()
-    if (this.current !== undefined) {
-      const ranMs = nowMs - this.current.startedAt
+    const { current } = this
+    if (current !== undefined) {
+      const ranMs = nowMs - current.startedAt
       if (ranMs <= this.stallAfterMs) {
-        if (!this.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
-        this.skipLogged = true
+        if (!current.skipLogged) this.logger.warn(`${TICK_SKIPPED_LOG_KEY} the previous sweep is still running`)
+        current.skipLogged = true
         return
       }
       if (this.abandoned !== undefined) {
-        if (!this.blockedLogged) this.logger.warn(`${SWEEP_BLOCKED_LOG_KEY} two sweeps are still running, so no sweep starts until one settles`)
-        this.blockedLogged = true
+        if (!current.blockedLogged) this.logger.warn(`${SWEEP_BLOCKED_LOG_KEY} two sweeps are still running, so no sweep starts until one settles`)
+        current.blockedLogged = true
         return
       }
       this.logger.warn(`${TICK_STALLED_LOG_KEY} the previous sweep ran for ${String(Math.round(ranMs / MS_PER_SECOND))} seconds`)
-      this.abandoned = this.current
+      this.abandoned = current
     }
-    this.skipLogged = false
-    this.blockedLogged = false
-    const sweep: TimedSweep = { startedAt: nowMs }
+    const sweep: TimedSweep = { startedAt: nowMs, skipLogged: false, blockedLogged: false }
     this.current = sweep
     void this.run(sweep)
   }

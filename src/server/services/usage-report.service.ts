@@ -68,7 +68,6 @@ const REPORT_GROUPS: Readonly<Record<ReportGroupBy, true>> = {
 
 /** Throw unless the group-by of a summary is an array of the documented dimensions; a store reads it as one, and a value that is not iterable fails there with a raw error. */
 function assertGroupBy(groupBy: unknown): void {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the argument name
   const refused = (reason: string): AiTokensException => new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
   if (!Array.isArray(groupBy)) throw refused('groupBy must be an array')
   if (!groupBy.every((dimension): boolean => typeof dimension === 'string' && Object.hasOwn(REPORT_GROUPS, dimension))) throw refused('groupBy must name only the documented dimensions')
@@ -121,7 +120,6 @@ export class UsageReportService {
     const summarizeInStore = methodOf(this.store, 'summarize') as ILedgerStore['summarize']
     if (summarizeInStore !== undefined) return summarizeInStore(toLedgerFilter(filter, max), groupBy)
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
-    // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only
     this.assertWithinMaxRows(records.length, 'summarize')
     const groups = new Map<string, UsageSummary>()
     for (const record of records) {
@@ -150,7 +148,6 @@ export class UsageReportService {
     const filter = withReadDates(given, REPORT_FILTER_FIELDS, ['from', 'to'])
     const max = this.options.reporting.maxExportRows
     const records = await this.store.query(toLedgerFilter(filter, max + 1))
-    // Stryker disable next-line StringLiteral: operation name is only used in the error reason string; tests check error code only
     this.assertWithinMaxRows(records.length, 'export')
     this.audit('ai_tokens.audit', { action: 'export', tenantId: filter.tenantId, format, rows: records.length })
     return Readable.from(this.serialize(records, format))
@@ -168,7 +165,6 @@ export class UsageReportService {
   private assertWithinMaxRows(rowCount: number, operation: string): void {
     const max = this.options.reporting.maxExportRows
     if (rowCount > max) {
-      // Stryker disable next-line StringLiteral,ObjectLiteral: error reason template and object are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: `${operation} exceeds reporting.maxExportRows (${String(max)}); paginate the filter` })
     }
   }
@@ -218,29 +214,17 @@ function toLedgerFilter(given: ReportFilter, limit: number): LedgerFilter {
   const filter = ownCopy(given)
   return {
     tenantId: filter.tenantId,
-    // Stryker disable next-line ConditionalExpression: spreading { scope: undefined } is equivalent to {} because InMemoryLedgerStore uses truthiness; the 'false' variant is covered by the scope isolation test
     ...(filter.scope !== undefined ? { scope: filter.scope } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { beneficiary: undefined } is equivalent to {} for the same reason
     ...(filter.beneficiary !== undefined ? { beneficiary: filter.beneficiary } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { feature: undefined } does not change the !== undefined check in matches()
     ...(filter.feature !== undefined ? { feature: filter.feature } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { features: undefined } does not change the truthiness check in matches()
     ...(filter.features !== undefined ? { features: filter.features } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { provider: undefined } does not change the !== undefined check in matches()
     ...(filter.provider !== undefined ? { provider: filter.provider } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { model: undefined } does not change the !== undefined check in matches()
     ...(filter.model !== undefined ? { model: filter.model } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { operation: undefined } does not change the !== undefined check in matches()
     ...(filter.operation !== undefined ? { operation: filter.operation } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { serviceTier: undefined } does not change the !== undefined check in matches()
     ...(filter.serviceTier !== undefined ? { serviceTier: filter.serviceTier } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { tags: undefined } does not change the truthiness check in matches()
     ...(filter.tags !== undefined ? { tags: filter.tags } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { isSystemCost: undefined } does not change the !== undefined check in matches()
     ...(filter.isSystemCost !== undefined ? { isSystemCost: filter.isSystemCost } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { systemCostCategory: undefined } does not change the !== undefined check in matches()
     ...(filter.systemCostCategory !== undefined ? { systemCostCategory: filter.systemCostCategory } : {}),
-    // Stryker disable next-line ConditionalExpression: spreading { enforcedOnly: undefined } does not change the === true check in matches()
     ...(filter.enforcedOnly !== undefined ? { enforcedOnly: filter.enforcedOnly } : {}),
     status: filter.status ?? [...BALANCE_STATUSES],
     from: filter.from,
@@ -358,7 +342,7 @@ function baseCells(record: UsageRecord): [string, string][] {
   ]
 }
 
-// Stryker disable all: exampleRecord values are only used to derive the baseCells key order (cell[0]); the values (cell[1]) are never inspected here
+// Stryker disable StringLiteral,BooleanLiteral: equivalent: only the names (cell[0]) of the cells of this record are read, never its values
 /** A minimal record used only to derive the export header order. */
 const exampleRecord = {
   id: '',
@@ -396,4 +380,4 @@ const exampleRecord = {
   createdAt: new Date(0),
   updatedAt: new Date(0),
 } satisfies UsageRecord
-// Stryker restore all
+// Stryker restore StringLiteral,BooleanLiteral

@@ -16,7 +16,6 @@ import { isCount, isNonNegativeBigint } from './numeric-guards'
 
 /** The typed refusal of an argument, naming it and never repeating a value. */
 function refused(reason: string): AiTokensException {
-  // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check the code and the argument name
   return new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason })
 }
 
@@ -218,7 +217,6 @@ export function assertTexts(values: Readonly<Record<string, unknown>>): void {
  * @throws {AiTokensException} `AI_TOKENS_INVALID_CONFIG` when it is not a non-empty string.
  */
 export function assertTenant(tenantId: unknown): asserts tenantId is string {
-  // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
   if (typeof tenantId !== 'string' || tenantId === '') throw refused('tenantId must be a non-empty string')
   assertText('tenantId', tenantId)
 }

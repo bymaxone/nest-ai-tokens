@@ -93,6 +93,6 @@ describe('the client a store was given is not asked for a then', () => {
     }
     const store = new RedisBudgetCounterStore(client as never)
     const pending = store.incrIfBelow('k', 10n, 5n, 60)
-    await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG' } } })
+    await expect(pending).rejects.toMatchObject({ response: { error: { code: 'AI_TOKENS_INVALID_CONFIG', details: { reason: 'a promise the Redis client returned reads a constructor or then of its own' } } } })
   })
 })

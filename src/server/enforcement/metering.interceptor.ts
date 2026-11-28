@@ -27,9 +27,11 @@ import { AiTokensException } from '../errors'
 import type { Hold, MeteringContext } from '../interfaces'
 import { absorbHostCall } from '../utils/absorb-host-call'
 import { appendWatch } from '../utils/append-watch'
+import { defined } from '../utils/defined'
 import { fieldOf, fieldsOf } from '../utils/field-names'
 import { settled } from '../utils/host-settled'
 import { MeteringService } from '../services'
+import { minBig } from '../services/budget-math'
 import type { RequestAiTokens } from './budget.guard'
 import { METER_METADATA, meterConfigOf } from './decorators'
 import type { MeterConfig } from './decorators'
@@ -152,9 +154,7 @@ export class MeteringInterceptor implements NestInterceptor {
       return await this.metering.record(
         {
           usage: extractUsage(result, config),
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { preset: undefined } is equivalent to {} because MeteringService checks preset !== undefined
-          ...(config.preset !== undefined ? { preset: config.preset } : {}),
-          // Stryker disable next-line ConditionalExpression: CE true: spreading { tags: undefined } is equivalent to {} because MeteringService checks tags !== undefined
+          ...defined({ preset: config.preset }),
           context: { ...context, enforce: true, isSystemCost: config.isSystemCost ?? false, ...(config.tags !== undefined ? { tags: config.tags } : {}) },
         },
         watch,
@@ -169,12 +169,10 @@ export class MeteringInterceptor implements NestInterceptor {
   private async resolveContext(executionContext: ExecutionContext, config: MeterConfig, enrichment: RequestAiTokens | undefined): Promise<MeteringContext> {
     if (enrichment !== undefined) return enrichment.context
     if (this.scopeResolver === undefined) {
-      // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: 'MeteringInterceptor requires options.scopeResolver when no BudgetGuard ran' })
     }
     const resolved = await settled(this.scopeResolver(executionContext))
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,ObjectLiteral: equivalent: this context feeds the no-guard record() path, and record() derives its preset from config.preset directly (passed above), never from context.preset — so adding, omitting, or flipping this spread has no observable effect
-    return { ...resolved, feature: config.feature, ...(config.preset !== undefined ? { preset: config.preset } : {}) }
+    return { ...resolved, feature: config.feature, ...defined({ preset: config.preset }) }
   }
 
   /** Release the guard's hold (if any) and rethrow the ORIGINAL handler error. */
@@ -202,11 +200,9 @@ export class MeteringInterceptor implements NestInterceptor {
 
 /** Extract the raw usage from the handler result, or fail as malformed. */
 function extractUsage(result: unknown, config: MeterConfig): unknown {
-  // Stryker disable next-line ConditionalExpression: CE true on `typeof value === 'object'` is equivalent: the `value !== null` operand still excludes null, and for any non-object non-null primitive `.usage` is undefined — identical to the else branch — so the extracted value is unchanged
   const extract = config.extract ?? ((value: unknown): unknown => (typeof value === 'object' && value !== null ? fieldOf(value, 'usage') : undefined))
   const usage = extract(result)
   if (usage === undefined || usage === null) {
-    // Stryker disable next-line ObjectLiteral,StringLiteral: error context and reason are internal diagnostics; tests check error code only
     throw new AiTokensException('AI_TOKENS_USAGE_MALFORMED', undefined, { reason: 'the handler result carried no extractable usage' })
   }
   return usage
@@ -217,8 +213,7 @@ function minBudgetRemaining(enrichment: RequestAiTokens | undefined): bigint | u
   let min: bigint | undefined
   for (const status of enrichment?.status ?? []) {
     const remaining = fieldOf(status.remaining, 'nanoUsd') as bigint | undefined
-    // Stryker disable next-line EqualityOperator: remaining <= min: if two budgets have identical remaining, updating min to the same value is a no-op; < and <= produce the same final minimum
-    if (remaining !== undefined && (min === undefined || remaining < min)) min = remaining
+    if (remaining !== undefined) min = min === undefined ? remaining : minBig(min, remaining)
   }
   return min
 }

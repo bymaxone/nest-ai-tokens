@@ -18,6 +18,7 @@ import { isLegalLedgerTransition, isLegalTransitionPatchKey } from '../../shared
 import type { LedgerFilter, NewUsageRecord, UsageRecord, UsageStatus } from '../../shared'
 import type { ResolvedAiTokensOptions } from '../config'
 import { AiTokensException } from '../errors'
+import { defined } from '../utils/defined'
 import { suppliedDetails } from '../utils/detail-text'
 import type { ILedgerStore, LedgerCostSummary, OwedEffects, OwedEffectsMarker } from '../interfaces'
 import { methodOf } from '../utils/field-names'
@@ -140,7 +141,6 @@ export class LedgerService {
       return await this.store.append(record, payloadHash, this.hashChainEnabled, owed)
     } catch (error) {
       if (isLedgerIdempotencyConflict(error)) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, suppliedDetails({ tenantId: error.tenantId, idempotencyKey: error.idempotencyKey }))
       }
       throw error
@@ -358,9 +358,7 @@ export class LedgerService {
   async reverse(recordId: string, _reason: string, owed?: OwedEffectsMarker): Promise<UsageRecord> {
     const original = await this.store.findById(recordId)
     if (original?.status !== 'posted') {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-        // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
         reason: original === null ? 'record not found' : `cannot reverse a ${original.status} record`,
         ...suppliedDetails({ recordId }),
       })
@@ -381,18 +379,14 @@ export class LedgerService {
    */
   private assertLegalTransition(from: UsageStatus, to: UsageStatus, patch?: Partial<UsageRecord>): void {
     if (!isLegalLedgerTransition(from, to)) {
-      // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
       throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-        // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
         reason: `illegal transition ${from} → ${to}`,
       })
     }
     if (patch === undefined) return
     for (const key of Object.keys(patch)) {
       if (!isLegalTransitionPatchKey(from, to, key)) {
-        // Stryker disable next-line ObjectLiteral: error context is internal diagnostics
         throw new AiTokensException('AI_TOKENS_IDEMPOTENCY_CONFLICT', undefined, {
-          // Stryker disable next-line StringLiteral: error reason template is internal diagnostics
           reason: `${from} → ${to} may not patch "${key}"`,
         })
       }
@@ -419,14 +413,11 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
   return {
     tenantId: original.tenantId,
     scope: original.scope,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { beneficiary: undefined } is equivalent to {} because downstream consumers check !== undefined
-    ...(original.beneficiary !== undefined ? { beneficiary: original.beneficiary } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedBy: undefined } is equivalent to {}
-    ...(original.requestedBy !== undefined ? { requestedBy: original.requestedBy } : {}),
+    ...defined({ beneficiary: original.beneficiary }),
+    ...defined({ requestedBy: original.requestedBy }),
     provider: original.provider,
     model: original.model,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestedModel: undefined } is equivalent to {}
-    ...(original.requestedModel !== undefined ? { requestedModel: original.requestedModel } : {}),
+    ...defined({ requestedModel: original.requestedModel }),
     operation: original.operation,
     serviceTier: original.serviceTier,
     feature: original.feature,
@@ -441,7 +432,6 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
     audioOutTokens: -original.audioOutTokens,
     imageInTokens: -original.imageInTokens,
     imageOutTokens: -original.imageOutTokens,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { extraUnits: undefined } is equivalent to {} because consumers check !== undefined
     ...(original.extraUnits !== undefined ? { extraUnits: negateUnits(original.extraUnits) } : {}),
     priceVersionId: original.priceVersionId,
     rawCostNanoUsd: -original.rawCostNanoUsd,
@@ -452,13 +442,10 @@ function buildCompensatingRecord(original: UsageRecord): LedgerAppendInput {
     priceMissing: original.priceMissing,
     status: 'posted',
     reversesRecordId: original.id,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { correlationId: undefined } is equivalent to {}
-    ...(original.correlationId !== undefined ? { correlationId: original.correlationId } : {}),
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { requestId: undefined } is equivalent to {}
-    ...(original.requestId !== undefined ? { requestId: original.requestId } : {}),
+    ...defined({ correlationId: original.correlationId }),
+    ...defined({ requestId: original.requestId }),
     isSystemCost: original.isSystemCost,
-    // Stryker disable next-line ConditionalExpression: CE true: spreading { systemCostCategory: undefined } is equivalent to {}
-    ...(original.systemCostCategory !== undefined ? { systemCostCategory: original.systemCostCategory } : {}),
+    ...defined({ systemCostCategory: original.systemCostCategory }),
     enforced: original.enforced,
     occurredAt: original.occurredAt,
   }

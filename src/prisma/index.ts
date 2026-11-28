@@ -117,7 +117,6 @@ import type { BudgetRow, BudgetWindowRow, OpenGrantRow, PriceRow, UsageRow, Wall
  */
 function assertCallerKey(idempotencyKey: string): void {
   if (!isReservedWalletKey(idempotencyKey)) return
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check the error code only
   throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, { reason: RESERVED_KEY_REASON })
 }
 

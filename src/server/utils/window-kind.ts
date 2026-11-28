@@ -21,9 +21,7 @@ export function assertWindowKind(window: unknown): void {
   if (window === 'day' || window === 'week' || window === 'month' || window === 'total') return
   const seconds = typeof window === 'object' && window !== null ? (window as { customSeconds?: unknown }).customSeconds : undefined
   if (typeof seconds === 'number' && Number.isInteger(seconds) && seconds > 0 && seconds <= MAX_CUSTOM_SECONDS) return
-  // Stryker disable next-line ObjectLiteral: error context is internal diagnostics; tests check error code only
   throw new AiTokensException('AI_TOKENS_INVALID_CONFIG', undefined, {
-    // Stryker disable next-line StringLiteral: error reason text is internal diagnostics
     reason: "window must be 'day', 'week', 'month', 'total' or { customSeconds } with a positive whole number of seconds up to 3153600000 (100 years)",
   })
 }

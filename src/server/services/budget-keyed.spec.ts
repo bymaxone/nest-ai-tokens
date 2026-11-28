@@ -276,6 +276,9 @@ describe('BudgetService keyed movements shared by several attempts', () => {
     await service.consume(context(), delta(30n), undefined, 'call-1')
     await expectRejectCode(service.consume(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
     await expectRejectCode(service.adjust(context(), delta(80n), undefined, 'call-1'), 'AI_TOKENS_IDEMPOTENCY_CONFLICT')
+    await expect(service.consume(context(), delta(80n), undefined, 'call-1')).rejects.toMatchObject({
+      response: { error: { details: { reason: 'the budget movement of this key was recorded with another amount' } } },
+    })
     expect((await store.getWindow(budget.id, MONTH))?.spentNanoUsd).toBe(30n)
   })
 
